@@ -23,6 +23,7 @@ export interface ReviewIssue {
   severity: ReviewSeverity;
   description: string;
   suggestion?: string;
+  code?: string;
   confidence: number;
 }
 
