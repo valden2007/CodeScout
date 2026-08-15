@@ -1,0 +1,23 @@
+name: CodeScout self-review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Review this pull request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run local CodeScout action
+        uses: ./
+        with:
+          provider: groq
+          model: llama-3.3-70b-versatile
+          api-key: ${{ secrets.GROQ_API_KEY }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
