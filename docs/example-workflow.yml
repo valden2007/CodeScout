@@ -1,8 +1,8 @@
-name: CodeScout self-review
+name: CodeScout review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -10,20 +10,14 @@ permissions:
 
 jobs:
   review:
-    name: Review this pull request
+    name: AI code review
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run local CodeScout action
-        uses: ./
+      - name: Run CodeScout
+        uses: valden2007/CodeScout@main
         with:
           provider: groq
           model: llama-3.3-70b-versatile
           api-key: ${{ secrets.GROQ_API_KEY }}
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
