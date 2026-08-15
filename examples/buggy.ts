@@ -1,4 +1,4 @@
-// тестовый файл для прогона codescout
+// правка для теста pr
 export function getUserAge(user: any) {
   return new Date().getFullYear() - user.birthYear;
 }
