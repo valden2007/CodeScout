@@ -1,0 +1,28 @@
+{
+  "name": "codescout",
+  "version": "0.1.0",
+  "description": "AI-powered code review GitHub Action with BYOK LLM support",
+  "private": false,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/action.ts -o dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0",
+    "@octokit/rest": "^21.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
