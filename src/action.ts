@@ -5,11 +5,12 @@ import { parseUnifiedDiff, splitPatch, shouldReviewFile } from './diff-parser';
 import { GitHubClient } from './github-client';
 import { createProvider } from './llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT } from './prompt-builder';
-import { postIssues, formatSummary } from './comment-poster';
+import { postIssues } from './comment-poster';
 import { parseReviewResponse } from './response-parser';
 import { DiffFile, ReviewIssue } from './types';
 
 export async function run(): Promise<void> {
+  const startedAt = Date.now();
   try {
     const token = process.env.GITHUB_TOKEN;
     const apiKey = core.getInput('api-key', { required: true });
@@ -29,8 +30,9 @@ export async function run(): Promise<void> {
         issues.push(...result.issues);
       }
     }
-    const posted = await postIssues(client, issues);
-    const summary = formatSummary(issues, files.length);
+    const durationMs = Date.now() - startedAt;
+    const posted = await postIssues(client, issues, files.length, durationMs);
+    const summary = `CodeScout analyzed ${files.length} file(s) and found ${issues.length} actionable issue(s).`;
     core.setOutput('summary', summary);
     core.info(`${summary} Posted ${posted} inline comment(s).`);
   } catch (error) {

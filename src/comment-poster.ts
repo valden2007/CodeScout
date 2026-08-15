@@ -1,16 +1,18 @@
 import { ReviewIssue } from './types';
-import { GitHubClient, formatIssue } from './github-client';
+import { GitHubClient } from './github-client';
+import { buildSummaryComment } from './report-formatter';
 
-export async function postIssues(client: GitHubClient, issues: ReviewIssue[]): Promise<number> {
-  const unique = issues.filter((issue, index, all) => index === all.findIndex((candidate) => candidate.file === issue.file && candidate.line === issue.line && candidate.description === issue.description));
-  for (const issue of unique.slice(0, 100)) await client.postIssue(issue);
-  return Math.min(unique.length, 100);
+function uniqueIssues(issues: ReviewIssue[]): ReviewIssue[] {
+  return issues.filter((issue, index, all) => index === all.findIndex((candidate) => candidate.file === issue.file && candidate.line === issue.line && candidate.description === issue.description));
 }
 
-export function formatSummary(issues: ReviewIssue[], filesAnalyzed: number): string {
-  const counts = issues.reduce<Record<string, number>>((result, issue) => ({ ...result, [issue.severity]: (result[issue.severity] ?? 0) + 1 }), {});
-  const details = Object.entries(counts).map(([severity, count]) => `${severity}: ${count}`).join(', ') || 'no actionable issues';
-  return `CodeScout analyzed ${filesAnalyzed} file(s) and found ${issues.length} actionable issue(s) (${details}).`;
+export async function postIssues(client: GitHubClient, issues: ReviewIssue[], filesAnalyzed: number, durationMs: number): Promise<number> {
+  const unique = uniqueIssues(issues).slice(0, 100);
+  await client.upsertSummaryComment(buildSummaryComment(unique, filesAnalyzed, durationMs));
+  for (const issue of unique) await client.postIssue(issue);
+  return unique.length;
 }
 
-export { formatIssue };
+export function formatSummary(issues: ReviewIssue[], filesAnalyzed: number, durationMs = 0): string {
+  return buildSummaryComment(issues, filesAnalyzed, durationMs);
+}
