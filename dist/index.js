@@ -29973,6 +29973,7 @@ const prompt_builder_1 = __nccwpck_require__(2919);
 const comment_poster_1 = __nccwpck_require__(5174);
 const response_parser_1 = __nccwpck_require__(3430);
 async function run() {
+    const startedAt = Date.now();
     try {
         const token = process.env.GITHUB_TOKEN;
         const apiKey = core.getInput('api-key', { required: true });
@@ -29994,8 +29995,9 @@ async function run() {
                 issues.push(...result.issues);
             }
         }
-        const posted = await (0, comment_poster_1.postIssues)(client, issues);
-        const summary = (0, comment_poster_1.formatSummary)(issues, files.length);
+        const durationMs = Date.now() - startedAt;
+        const posted = await (0, comment_poster_1.postIssues)(client, issues, files.length, durationMs);
+        const summary = `CodeScout analyzed ${files.length} file(s) and found ${issues.length} actionable issue(s).`;
         core.setOutput('summary', summary);
         core.info(`${summary} Posted ${posted} inline comment(s).`);
     }
@@ -30018,21 +30020,21 @@ function parsePatchForTesting(patch) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.formatIssue = void 0;
 exports.postIssues = postIssues;
 exports.formatSummary = formatSummary;
-const github_client_1 = __nccwpck_require__(7890);
-Object.defineProperty(exports, "formatIssue", ({ enumerable: true, get: function () { return github_client_1.formatIssue; } }));
-async function postIssues(client, issues) {
-    const unique = issues.filter((issue, index, all) => index === all.findIndex((candidate) => candidate.file === issue.file && candidate.line === issue.line && candidate.description === issue.description));
-    for (const issue of unique.slice(0, 100))
-        await client.postIssue(issue);
-    return Math.min(unique.length, 100);
+const report_formatter_1 = __nccwpck_require__(4058);
+function uniqueIssues(issues) {
+    return issues.filter((issue, index, all) => index === all.findIndex((candidate) => candidate.file === issue.file && candidate.line === issue.line && candidate.description === issue.description));
 }
-function formatSummary(issues, filesAnalyzed) {
-    const counts = issues.reduce((result, issue) => ({ ...result, [issue.severity]: (result[issue.severity] ?? 0) + 1 }), {});
-    const details = Object.entries(counts).map(([severity, count]) => `${severity}: ${count}`).join(', ') || 'no actionable issues';
-    return `CodeScout analyzed ${filesAnalyzed} file(s) and found ${issues.length} actionable issue(s) (${details}).`;
+async function postIssues(client, issues, filesAnalyzed, durationMs) {
+    const unique = uniqueIssues(issues).slice(0, 100);
+    await client.upsertSummaryComment((0, report_formatter_1.buildSummaryComment)(unique, filesAnalyzed, durationMs));
+    for (const issue of unique)
+        await client.postIssue(issue);
+    return unique.length;
+}
+function formatSummary(issues, filesAnalyzed, durationMs = 0) {
+    return (0, report_formatter_1.buildSummaryComment)(issues, filesAnalyzed, durationMs);
 }
 
 
@@ -30092,13 +30094,14 @@ function splitPatch(patch, maxCharacters = 45000) {
 /***/ }),
 
 /***/ 7890:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.GitHubClient = void 0;
 exports.formatIssue = formatIssue;
+const report_formatter_1 = __nccwpck_require__(4058);
 class GitHubClient {
     octokit;
     context;
@@ -30113,11 +30116,21 @@ class GitHubClient {
     async postIssue(issue) {
         await this.octokit.rest.pulls.createReviewComment({ owner: this.context.owner, repo: this.context.repo, pull_number: this.context.pullNumber, body: formatIssue(issue), commit_id: this.context.headSha, path: issue.file, line: issue.line, side: 'RIGHT' });
     }
+    async upsertSummaryComment(body) {
+        const comments = await this.octokit.paginate(this.octokit.rest.issues.listComments, { owner: this.context.owner, repo: this.context.repo, issue_number: this.context.pullNumber, per_page: 100 });
+        const existing = comments.find((comment) => comment.user?.type === 'Bot' && comment.body?.includes(report_formatter_1.SUMMARY_MARKER));
+        if (existing) {
+            await this.octokit.rest.issues.updateComment({ owner: this.context.owner, repo: this.context.repo, comment_id: existing.id, body });
+            return;
+        }
+        await this.octokit.rest.issues.createComment({ owner: this.context.owner, repo: this.context.repo, issue_number: this.context.pullNumber, body });
+    }
 }
 exports.GitHubClient = GitHubClient;
 function formatIssue(issue) {
-    const title = `${issue.severity.toUpperCase()} ${issue.category}`;
-    return `**${title}**\n\n${issue.description}${issue.suggestion ? `\n\n**Suggestion:** ${issue.suggestion}` : ''}\n\n_Confidence: ${Math.round(issue.confidence * 100)}%_`;
+    const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'high' ? '🟠' : issue.severity === 'medium' ? '🟡' : '🟢';
+    const code = issue.code ?? `line ${issue.line}`;
+    return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${issue.suggestion ?? issue.description}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
 }
 
 
@@ -30193,6 +30206,58 @@ exports.buildReviewPrompt = buildReviewPrompt;
 exports.SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to a changed line when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
     return `Review the following changed file from a pull request.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nPatch:\n---\n${patch}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
+}
+
+
+/***/ }),
+
+/***/ 4058:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.SUMMARY_MARKER = void 0;
+exports.severityEmoji = severityEmoji;
+exports.buildSummaryComment = buildSummaryComment;
+exports.SUMMARY_MARKER = '<!-- codescout-summary -->';
+const MAX_COMMENT_LENGTH = 60_000;
+const SEVERITY_META = {
+    critical: { emoji: '🔴', rank: 0 },
+    high: { emoji: '🟠', rank: 1 },
+    medium: { emoji: '🟡', rank: 2 },
+    low: { emoji: '🟢', rank: 3 }
+};
+function escapeCell(value) {
+    return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+function safeIssueTitle(issue) {
+    return issue.description.split(/[.!?\n]/, 1)[0].trim() || `${issue.category} finding`;
+}
+function truncateSafely(value) {
+    if (value.length <= MAX_COMMENT_LENGTH)
+        return value;
+    const suffix = '\n\n_Отчёт сокращён до лимита GitHub комментария._';
+    return `${value.slice(0, MAX_COMMENT_LENGTH - suffix.length).trimEnd()}${suffix}`;
+}
+function severityEmoji(severity) {
+    return SEVERITY_META[severity]?.emoji ?? '⚪';
+}
+function buildSummaryComment(issues, filesAnalyzed, durationMs) {
+    const sorted = [...issues].sort((left, right) => (SEVERITY_META[left.severity]?.rank ?? 99) - (SEVERITY_META[right.severity]?.rank ?? 99));
+    const seconds = (Math.max(0, durationMs) / 1000).toFixed(1);
+    const rows = sorted.length > 0
+        ? sorted.map((issue) => `| ${severityEmoji(issue.severity)} ${issue.severity} | ${escapeCell(issue.category)} | ${escapeCell(issue.description)} | \`${escapeCell(issue.file)}:${issue.line}\` |`).join('\n')
+        : '| — | — | No actionable issues found. | — |';
+    const details = sorted.map((issue) => {
+        const emoji = severityEmoji(issue.severity);
+        const title = safeIssueTitle(issue);
+        const codeLine = issue.code ?? `line ${issue.line}`;
+        const suggestion = issue.suggestion ? `\n→ ${issue.suggestion}` : '';
+        return `<details><summary>${emoji} <strong>${escapeCell(title)}</strong> — <code>${escapeCell(issue.file)}:${issue.line}</code></summary>\n\n\`${escapeCell(codeLine)}\`${suggestion}\n\nConfidence: ${Math.round(issue.confidence * 100)}%\n</details>`;
+    }).join('\n\n');
+    const report = `${exports.SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;
+    return truncateSafely(report);
 }
 
 
