@@ -1,0 +1,32 @@
+name: CodeScout AI Code Review
+description: Automatically review pull requests with an LLM and post actionable inline comments.
+author: CodeScout contributors
+branding:
+  icon: check-circle
+  color: blue
+inputs:
+  provider:
+    description: LLM provider to use.
+    required: false
+    default: groq
+  model:
+    description: Model name understood by the selected provider.
+    required: false
+    default: llama-3.3-70b-versatile
+  api-key:
+    description: LLM API key. Pass this from a repository secret.
+    required: true
+  max-tokens:
+    description: Maximum completion tokens per file.
+    required: false
+    default: '2000'
+  fail-on-severity:
+    description: Optional severity threshold that fails the action (low, medium, high, critical).
+    required: false
+    default: ''
+outputs:
+  summary:
+    description: Human-readable review summary.
+runs:
+  using: node20
+  main: dist/index.js
