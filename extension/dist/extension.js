@@ -34,7 +34,7 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode = __toESM(require("vscode"));
+var vscode2 = __toESM(require("vscode"));
 
 // ../src/llm-client.ts
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -283,6 +283,9 @@ function readGitDiff(repoPath, options = {}) {
   return mergeFiles([...unstaged, ...staged]);
 }
 
+// src/panel.ts
+var vscode = __toESM(require("vscode"));
+
 // src/reportHtml.ts
 var severityOrder = {
   critical: 0,
@@ -317,12 +320,12 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join("")}</section>`).join("");
-  const body = sections || '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>';
+  const body = sections || (emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -332,10 +335,16 @@ function buildReportHtml(issues, stats) {
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
-.header { padding-bottom: 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+.header { position: sticky; top: -16px; z-index: 2; margin: -16px -14px 0; padding: 14px 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .brand-mark { color: var(--vscode-textLink-foreground); }
-.stats { margin-top: 5px; color: var(--vscode-descriptionForeground); font-size: 12px; }
+.actions { display: flex; gap: 6px; margin-top: 12px; flex-direction: column; }
+button { width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+button:disabled { opacity: 0.65; cursor: default; }
+.spinner { display: inline-block; width: 11px; margin-right: 4px; }
+.stats { margin-top: 9px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .pills { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .pill, .badge { border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .pill.critical, .badge.critical { color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 15%, transparent); }
@@ -362,15 +371,25 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
+    <div class="actions">
+      <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} Review last commit</button>
+      <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} Review uncommitted</button>
+    </div>
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
   <main>${body}</main>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.querySelectorAll('button[data-command]').forEach((button) => {
+      button.addEventListener('click', () => vscode.postMessage({ command: button.dataset.command }));
+    });
+  </script>
 </body>
 </html>`;
 }
 function buildEmptyReportHtml() {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 });
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true);
 }
 
 // src/panel.ts
@@ -378,15 +397,34 @@ var CodeScoutPanel = class {
   view;
   issues = [];
   stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
+  hasRun = false;
+  scanning = false;
   resolveWebviewView(webviewView) {
     this.view = webviewView;
-    webviewView.webview.options = { enableScripts: false };
-    webviewView.webview.html = this.issues.length > 0 || this.stats.files > 0 ? buildReportHtml(this.issues, this.stats) : buildEmptyReportHtml();
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.onDidReceiveMessage((message) => {
+      if (message.command === "scanLastCommit") {
+        void vscode.commands.executeCommand("codescout.scanLastCommit");
+      } else if (message.command === "scanUncommitted") {
+        void vscode.commands.executeCommand("codescout.scanUncommitted");
+      }
+    }, void 0, []);
+    this.render();
+  }
+  setScanning(scanning) {
+    this.scanning = scanning;
+    this.render();
   }
   update(issues, stats) {
     this.issues = issues;
     this.stats = stats;
-    if (this.view) this.view.webview.html = buildReportHtml(issues, stats);
+    this.hasRun = true;
+    this.scanning = false;
+    this.render();
+  }
+  render() {
+    if (!this.view) return;
+    this.view.webview.html = this.hasRun ? buildReportHtml(this.issues, this.stats, this.scanning) : this.scanning ? buildReportHtml([], this.stats, true, true) : buildEmptyReportHtml();
   }
 };
 
@@ -403,7 +441,7 @@ function formatIssue(issue) {
   ${issue.description}${code}${suggestion}`;
 }
 function getWorkspaceRoot() {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 function buildStats(issues, filesAnalyzed, durationMs) {
   return {
@@ -420,7 +458,7 @@ async function reviewWorkspace(lastCommit) {
   if (!workspaceRoot) {
     throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
   }
-  const config = vscode.workspace.getConfiguration("codescout");
+  const config = vscode2.workspace.getConfiguration("codescout");
   const apiKey = config.get("apiKey")?.trim() || process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D Groq API key. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 VS Code \u0438\u043B\u0438 GROQ_API_KEY \u0432 \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u0438.");
@@ -443,11 +481,12 @@ async function runReview(lastCommit, output, panel) {
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
+  panel.setScanning(true);
   try {
     const result = await reviewWorkspace(lastCommit);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
-    await vscode.commands.executeCommand("codescout.panel.focus");
+    await vscode2.commands.executeCommand("codescout.panel.focus");
     if (result.issues.length === 0) {
       output.appendLine("No issues found.");
     } else {
@@ -455,21 +494,22 @@ async function runReview(lastCommit, output, panel) {
       output.appendLine("");
       for (const issue of result.issues) output.appendLine(formatIssue(issue));
     }
-    void vscode.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
+    void vscode2.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
+    panel.setScanning(false);
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
   }
 }
 function activate(context) {
-  const output = vscode.window.createOutputChannel("CodeScout");
+  const output = vscode2.window.createOutputChannel("CodeScout");
   const panel = new CodeScoutPanel();
   context.subscriptions.push(output);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("codescout.panel", panel),
-    vscode.commands.registerCommand("codescout.scanUncommitted", () => runReview(false, output, panel)),
-    vscode.commands.registerCommand("codescout.scanLastCommit", () => runReview(true, output, panel))
+    vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
+    vscode2.commands.registerCommand("codescout.scanUncommitted", () => runReview(false, output, panel)),
+    vscode2.commands.registerCommand("codescout.scanLastCommit", () => runReview(true, output, panel))
   );
 }
 function deactivate() {
