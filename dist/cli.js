@@ -979,6 +979,29 @@ exports.toggle = (force, writableStream) => {
 
 /***/ }),
 
+/***/ 6487:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const spinners = Object.assign({}, __nccwpck_require__(8629)); // eslint-disable-line import/extensions
+
+const spinnersList = Object.keys(spinners);
+
+Object.defineProperty(spinners, 'random', {
+	get() {
+		const randomIndex = Math.floor(Math.random() * spinnersList.length);
+		const spinnerName = spinnersList[randomIndex];
+		return spinners[spinnerName];
+	}
+});
+
+module.exports = spinners;
+
+
+/***/ }),
+
 /***/ 2719:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -2444,6 +2467,41 @@ module.exports = (string, count = 1, options) => {
 
 /***/ }),
 
+/***/ 3763:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+var __webpack_unused_export__;
+
+__webpack_unused_export__ = ({ value: true });
+const React = __nccwpck_require__(7919);
+const react_1 = __nccwpck_require__(7919);
+const ink_1 = __nccwpck_require__(1063);
+const spinners = __nccwpck_require__(6487);
+/**
+ * Spinner.
+ */
+const Spinner = ({ type = 'dots' }) => {
+    const [frame, setFrame] = react_1.useState(0);
+    const spinner = spinners[type];
+    react_1.useEffect(() => {
+        const timer = setInterval(() => {
+            setFrame(previousFrame => {
+                const isLastFrame = previousFrame === spinner.frames.length - 1;
+                return isLastFrame ? 0 : previousFrame + 1;
+            });
+        }, spinner.interval);
+        return () => {
+            clearInterval(timer);
+        };
+    }, [spinner]);
+    return React.createElement(ink_1.Text, null, spinner.frames[frame]);
+};
+exports.A = Spinner;
+
+
+/***/ }),
+
 /***/ 4208:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -3787,39 +3845,38 @@ exports["default"] = useStdout;
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
-var __webpack_unused_export__;
 
-__webpack_unused_export__ = ({ value: true });
+Object.defineProperty(exports, "__esModule", ({ value: true }));
 var render_1 = __nccwpck_require__(1539);
-Object.defineProperty(exports, "XX", ({ enumerable: true, get: function () { return render_1.default; } }));
+Object.defineProperty(exports, "render", ({ enumerable: true, get: function () { return render_1.default; } }));
 var Box_1 = __nccwpck_require__(477);
-Object.defineProperty(exports, "az", ({ enumerable: true, get: function () { return Box_1.default; } }));
+Object.defineProperty(exports, "Box", ({ enumerable: true, get: function () { return Box_1.default; } }));
 var Text_1 = __nccwpck_require__(1289);
-Object.defineProperty(exports, "EY", ({ enumerable: true, get: function () { return Text_1.default; } }));
+Object.defineProperty(exports, "Text", ({ enumerable: true, get: function () { return Text_1.default; } }));
 var Static_1 = __nccwpck_require__(3160);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return Static_1.default; } });
+Object.defineProperty(exports, "Static", ({ enumerable: true, get: function () { return Static_1.default; } }));
 var Transform_1 = __nccwpck_require__(6328);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return Transform_1.default; } });
+Object.defineProperty(exports, "Transform", ({ enumerable: true, get: function () { return Transform_1.default; } }));
 var Newline_1 = __nccwpck_require__(8880);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return Newline_1.default; } });
+Object.defineProperty(exports, "Newline", ({ enumerable: true, get: function () { return Newline_1.default; } }));
 var Spacer_1 = __nccwpck_require__(5014);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return Spacer_1.default; } });
+Object.defineProperty(exports, "Spacer", ({ enumerable: true, get: function () { return Spacer_1.default; } }));
 var use_input_1 = __nccwpck_require__(2146);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_input_1.default; } });
+Object.defineProperty(exports, "useInput", ({ enumerable: true, get: function () { return use_input_1.default; } }));
 var use_app_1 = __nccwpck_require__(6209);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_app_1.default; } });
+Object.defineProperty(exports, "useApp", ({ enumerable: true, get: function () { return use_app_1.default; } }));
 var use_stdin_1 = __nccwpck_require__(4684);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_stdin_1.default; } });
+Object.defineProperty(exports, "useStdin", ({ enumerable: true, get: function () { return use_stdin_1.default; } }));
 var use_stdout_1 = __nccwpck_require__(2755);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_stdout_1.default; } });
+Object.defineProperty(exports, "useStdout", ({ enumerable: true, get: function () { return use_stdout_1.default; } }));
 var use_stderr_1 = __nccwpck_require__(6500);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_stderr_1.default; } });
+Object.defineProperty(exports, "useStderr", ({ enumerable: true, get: function () { return use_stderr_1.default; } }));
 var use_focus_1 = __nccwpck_require__(5374);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_focus_1.default; } });
+Object.defineProperty(exports, "useFocus", ({ enumerable: true, get: function () { return use_focus_1.default; } }));
 var use_focus_manager_1 = __nccwpck_require__(6084);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return use_focus_manager_1.default; } });
+Object.defineProperty(exports, "useFocusManager", ({ enumerable: true, get: function () { return use_focus_manager_1.default; } }));
 var measure_element_1 = __nccwpck_require__(4758);
-__webpack_unused_export__ = ({ enumerable: true, get: function () { return measure_element_1.default; } });
+Object.defineProperty(exports, "measureElement", ({ enumerable: true, get: function () { return measure_element_1.default; } }));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -79342,6 +79399,14 @@ module.exports = /*#__PURE__*/JSON.parse('[{"name":"AppVeyor","constant":"APPVEY
 "use strict";
 module.exports = /*#__PURE__*/JSON.parse('{"single":{"topLeft":"┌","topRight":"┐","bottomRight":"┘","bottomLeft":"└","vertical":"│","horizontal":"─"},"double":{"topLeft":"╔","topRight":"╗","bottomRight":"╝","bottomLeft":"╚","vertical":"║","horizontal":"═"},"round":{"topLeft":"╭","topRight":"╮","bottomRight":"╯","bottomLeft":"╰","vertical":"│","horizontal":"─"},"bold":{"topLeft":"┏","topRight":"┓","bottomRight":"┛","bottomLeft":"┗","vertical":"┃","horizontal":"━"},"singleDouble":{"topLeft":"╓","topRight":"╖","bottomRight":"╜","bottomLeft":"╙","vertical":"║","horizontal":"─"},"doubleSingle":{"topLeft":"╒","topRight":"╕","bottomRight":"╛","bottomLeft":"╘","vertical":"│","horizontal":"═"},"classic":{"topLeft":"+","topRight":"+","bottomRight":"+","bottomLeft":"+","vertical":"|","horizontal":"-"}}');
 
+/***/ }),
+
+/***/ 8629:
+/***/ ((module) => {
+
+"use strict";
+module.exports = /*#__PURE__*/JSON.parse('{"dots":{"interval":80,"frames":["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]},"dots2":{"interval":80,"frames":["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]},"dots3":{"interval":80,"frames":["⠋","⠙","⠚","⠞","⠖","⠦","⠴","⠲","⠳","⠓"]},"dots4":{"interval":80,"frames":["⠄","⠆","⠇","⠋","⠙","⠸","⠰","⠠","⠰","⠸","⠙","⠋","⠇","⠆"]},"dots5":{"interval":80,"frames":["⠋","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋"]},"dots6":{"interval":80,"frames":["⠁","⠉","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠤","⠄","⠄","⠤","⠴","⠲","⠒","⠂","⠂","⠒","⠚","⠙","⠉","⠁"]},"dots7":{"interval":80,"frames":["⠈","⠉","⠋","⠓","⠒","⠐","⠐","⠒","⠖","⠦","⠤","⠠","⠠","⠤","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋","⠉","⠈"]},"dots8":{"interval":80,"frames":["⠁","⠁","⠉","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠤","⠄","⠄","⠤","⠠","⠠","⠤","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋","⠉","⠈","⠈"]},"dots9":{"interval":80,"frames":["⢹","⢺","⢼","⣸","⣇","⡧","⡗","⡏"]},"dots10":{"interval":80,"frames":["⢄","⢂","⢁","⡁","⡈","⡐","⡠"]},"dots11":{"interval":100,"frames":["⠁","⠂","⠄","⡀","⢀","⠠","⠐","⠈"]},"dots12":{"interval":80,"frames":["⢀⠀","⡀⠀","⠄⠀","⢂⠀","⡂⠀","⠅⠀","⢃⠀","⡃⠀","⠍⠀","⢋⠀","⡋⠀","⠍⠁","⢋⠁","⡋⠁","⠍⠉","⠋⠉","⠋⠉","⠉⠙","⠉⠙","⠉⠩","⠈⢙","⠈⡙","⢈⠩","⡀⢙","⠄⡙","⢂⠩","⡂⢘","⠅⡘","⢃⠨","⡃⢐","⠍⡐","⢋⠠","⡋⢀","⠍⡁","⢋⠁","⡋⠁","⠍⠉","⠋⠉","⠋⠉","⠉⠙","⠉⠙","⠉⠩","⠈⢙","⠈⡙","⠈⠩","⠀⢙","⠀⡙","⠀⠩","⠀⢘","⠀⡘","⠀⠨","⠀⢐","⠀⡐","⠀⠠","⠀⢀","⠀⡀"]},"dots13":{"interval":80,"frames":["⣼","⣹","⢻","⠿","⡟","⣏","⣧","⣶"]},"dots8Bit":{"interval":80,"frames":["⠀","⠁","⠂","⠃","⠄","⠅","⠆","⠇","⡀","⡁","⡂","⡃","⡄","⡅","⡆","⡇","⠈","⠉","⠊","⠋","⠌","⠍","⠎","⠏","⡈","⡉","⡊","⡋","⡌","⡍","⡎","⡏","⠐","⠑","⠒","⠓","⠔","⠕","⠖","⠗","⡐","⡑","⡒","⡓","⡔","⡕","⡖","⡗","⠘","⠙","⠚","⠛","⠜","⠝","⠞","⠟","⡘","⡙","⡚","⡛","⡜","⡝","⡞","⡟","⠠","⠡","⠢","⠣","⠤","⠥","⠦","⠧","⡠","⡡","⡢","⡣","⡤","⡥","⡦","⡧","⠨","⠩","⠪","⠫","⠬","⠭","⠮","⠯","⡨","⡩","⡪","⡫","⡬","⡭","⡮","⡯","⠰","⠱","⠲","⠳","⠴","⠵","⠶","⠷","⡰","⡱","⡲","⡳","⡴","⡵","⡶","⡷","⠸","⠹","⠺","⠻","⠼","⠽","⠾","⠿","⡸","⡹","⡺","⡻","⡼","⡽","⡾","⡿","⢀","⢁","⢂","⢃","⢄","⢅","⢆","⢇","⣀","⣁","⣂","⣃","⣄","⣅","⣆","⣇","⢈","⢉","⢊","⢋","⢌","⢍","⢎","⢏","⣈","⣉","⣊","⣋","⣌","⣍","⣎","⣏","⢐","⢑","⢒","⢓","⢔","⢕","⢖","⢗","⣐","⣑","⣒","⣓","⣔","⣕","⣖","⣗","⢘","⢙","⢚","⢛","⢜","⢝","⢞","⢟","⣘","⣙","⣚","⣛","⣜","⣝","⣞","⣟","⢠","⢡","⢢","⢣","⢤","⢥","⢦","⢧","⣠","⣡","⣢","⣣","⣤","⣥","⣦","⣧","⢨","⢩","⢪","⢫","⢬","⢭","⢮","⢯","⣨","⣩","⣪","⣫","⣬","⣭","⣮","⣯","⢰","⢱","⢲","⢳","⢴","⢵","⢶","⢷","⣰","⣱","⣲","⣳","⣴","⣵","⣶","⣷","⢸","⢹","⢺","⢻","⢼","⢽","⢾","⢿","⣸","⣹","⣺","⣻","⣼","⣽","⣾","⣿"]},"sand":{"interval":80,"frames":["⠁","⠂","⠄","⡀","⡈","⡐","⡠","⣀","⣁","⣂","⣄","⣌","⣔","⣤","⣥","⣦","⣮","⣶","⣷","⣿","⡿","⠿","⢟","⠟","⡛","⠛","⠫","⢋","⠋","⠍","⡉","⠉","⠑","⠡","⢁"]},"line":{"interval":130,"frames":["-","\\\\","|","/"]},"line2":{"interval":100,"frames":["⠂","-","–","—","–","-"]},"pipe":{"interval":100,"frames":["┤","┘","┴","└","├","┌","┬","┐"]},"simpleDots":{"interval":400,"frames":[".  ",".. ","...","   "]},"simpleDotsScrolling":{"interval":200,"frames":[".  ",".. ","..."," ..","  .","   "]},"star":{"interval":70,"frames":["✶","✸","✹","✺","✹","✷"]},"star2":{"interval":80,"frames":["+","x","*"]},"flip":{"interval":70,"frames":["_","_","_","-","`","`","\'","´","-","_","_","_"]},"hamburger":{"interval":100,"frames":["☱","☲","☴"]},"growVertical":{"interval":120,"frames":["▁","▃","▄","▅","▆","▇","▆","▅","▄","▃"]},"growHorizontal":{"interval":120,"frames":["▏","▎","▍","▌","▋","▊","▉","▊","▋","▌","▍","▎"]},"balloon":{"interval":140,"frames":[" ",".","o","O","@","*"," "]},"balloon2":{"interval":120,"frames":[".","o","O","°","O","o","."]},"noise":{"interval":100,"frames":["▓","▒","░"]},"bounce":{"interval":120,"frames":["⠁","⠂","⠄","⠂"]},"boxBounce":{"interval":120,"frames":["▖","▘","▝","▗"]},"boxBounce2":{"interval":100,"frames":["▌","▀","▐","▄"]},"triangle":{"interval":50,"frames":["◢","◣","◤","◥"]},"binary":{"interval":80,"frames":["010010","001100","100101","111010","111101","010111","101011","111000","110011","110101"]},"arc":{"interval":100,"frames":["◜","◠","◝","◞","◡","◟"]},"circle":{"interval":120,"frames":["◡","⊙","◠"]},"squareCorners":{"interval":180,"frames":["◰","◳","◲","◱"]},"circleQuarters":{"interval":120,"frames":["◴","◷","◶","◵"]},"circleHalves":{"interval":50,"frames":["◐","◓","◑","◒"]},"squish":{"interval":100,"frames":["╫","╪"]},"toggle":{"interval":250,"frames":["⊶","⊷"]},"toggle2":{"interval":80,"frames":["▫","▪"]},"toggle3":{"interval":120,"frames":["□","■"]},"toggle4":{"interval":100,"frames":["■","□","▪","▫"]},"toggle5":{"interval":100,"frames":["▮","▯"]},"toggle6":{"interval":300,"frames":["ဝ","၀"]},"toggle7":{"interval":80,"frames":["⦾","⦿"]},"toggle8":{"interval":100,"frames":["◍","◌"]},"toggle9":{"interval":100,"frames":["◉","◎"]},"toggle10":{"interval":100,"frames":["㊂","㊀","㊁"]},"toggle11":{"interval":50,"frames":["⧇","⧆"]},"toggle12":{"interval":120,"frames":["☗","☖"]},"toggle13":{"interval":80,"frames":["=","*","-"]},"arrow":{"interval":100,"frames":["←","↖","↑","↗","→","↘","↓","↙"]},"arrow2":{"interval":80,"frames":["⬆️ ","↗️ ","➡️ ","↘️ ","⬇️ ","↙️ ","⬅️ ","↖️ "]},"arrow3":{"interval":120,"frames":["▹▹▹▹▹","▸▹▹▹▹","▹▸▹▹▹","▹▹▸▹▹","▹▹▹▸▹","▹▹▹▹▸"]},"bouncingBar":{"interval":80,"frames":["[    ]","[=   ]","[==  ]","[=== ]","[====]","[ ===]","[  ==]","[   =]","[    ]","[   =]","[  ==]","[ ===]","[====]","[=== ]","[==  ]","[=   ]"]},"bouncingBall":{"interval":80,"frames":["( ●    )","(  ●   )","(   ●  )","(    ● )","(     ●)","(    ● )","(   ●  )","(  ●   )","( ●    )","(●     )"]},"smiley":{"interval":200,"frames":["😄 ","😝 "]},"monkey":{"interval":300,"frames":["🙈 ","🙈 ","🙉 ","🙊 "]},"hearts":{"interval":100,"frames":["💛 ","💙 ","💜 ","💚 ","❤️ "]},"clock":{"interval":100,"frames":["🕛 ","🕐 ","🕑 ","🕒 ","🕓 ","🕔 ","🕕 ","🕖 ","🕗 ","🕘 ","🕙 ","🕚 "]},"earth":{"interval":180,"frames":["🌍 ","🌎 ","🌏 "]},"material":{"interval":17,"frames":["█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","███▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","████▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁","███████▁▁▁▁▁▁▁▁▁▁▁▁▁","████████▁▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","██████████▁▁▁▁▁▁▁▁▁▁","███████████▁▁▁▁▁▁▁▁▁","█████████████▁▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁▁██████████████▁▁▁▁","▁▁▁██████████████▁▁▁","▁▁▁▁█████████████▁▁▁","▁▁▁▁██████████████▁▁","▁▁▁▁██████████████▁▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁▁██████████████","▁▁▁▁▁▁██████████████","▁▁▁▁▁▁▁█████████████","▁▁▁▁▁▁▁█████████████","▁▁▁▁▁▁▁▁████████████","▁▁▁▁▁▁▁▁████████████","▁▁▁▁▁▁▁▁▁███████████","▁▁▁▁▁▁▁▁▁███████████","▁▁▁▁▁▁▁▁▁▁██████████","▁▁▁▁▁▁▁▁▁▁██████████","▁▁▁▁▁▁▁▁▁▁▁▁████████","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁██████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","███▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","████▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","██████▁▁▁▁▁▁▁▁▁▁▁▁▁█","████████▁▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","███████████▁▁▁▁▁▁▁▁▁","████████████▁▁▁▁▁▁▁▁","████████████▁▁▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁▁▁█████████████▁▁▁▁","▁▁▁▁▁████████████▁▁▁","▁▁▁▁▁████████████▁▁▁","▁▁▁▁▁▁███████████▁▁▁","▁▁▁▁▁▁▁▁█████████▁▁▁","▁▁▁▁▁▁▁▁█████████▁▁▁","▁▁▁▁▁▁▁▁▁█████████▁▁","▁▁▁▁▁▁▁▁▁█████████▁▁","▁▁▁▁▁▁▁▁▁▁█████████▁","▁▁▁▁▁▁▁▁▁▁▁████████▁","▁▁▁▁▁▁▁▁▁▁▁████████▁","▁▁▁▁▁▁▁▁▁▁▁▁███████▁","▁▁▁▁▁▁▁▁▁▁▁▁███████▁","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁"]},"moon":{"interval":80,"frames":["🌑 ","🌒 ","🌓 ","🌔 ","🌕 ","🌖 ","🌗 ","🌘 "]},"runner":{"interval":140,"frames":["🚶 ","🏃 "]},"pong":{"interval":80,"frames":["▐⠂       ▌","▐⠈       ▌","▐ ⠂      ▌","▐ ⠠      ▌","▐  ⡀     ▌","▐  ⠠     ▌","▐   ⠂    ▌","▐   ⠈    ▌","▐    ⠂   ▌","▐    ⠠   ▌","▐     ⡀  ▌","▐     ⠠  ▌","▐      ⠂ ▌","▐      ⠈ ▌","▐       ⠂▌","▐       ⠠▌","▐       ⡀▌","▐      ⠠ ▌","▐      ⠂ ▌","▐     ⠈  ▌","▐     ⠂  ▌","▐    ⠠   ▌","▐    ⡀   ▌","▐   ⠠    ▌","▐   ⠂    ▌","▐  ⠈     ▌","▐  ⠂     ▌","▐ ⠠      ▌","▐ ⡀      ▌","▐⠠       ▌"]},"shark":{"interval":120,"frames":["▐|\\\\____________▌","▐_|\\\\___________▌","▐__|\\\\__________▌","▐___|\\\\_________▌","▐____|\\\\________▌","▐_____|\\\\_______▌","▐______|\\\\______▌","▐_______|\\\\_____▌","▐________|\\\\____▌","▐_________|\\\\___▌","▐__________|\\\\__▌","▐___________|\\\\_▌","▐____________|\\\\▌","▐____________/|▌","▐___________/|_▌","▐__________/|__▌","▐_________/|___▌","▐________/|____▌","▐_______/|_____▌","▐______/|______▌","▐_____/|_______▌","▐____/|________▌","▐___/|_________▌","▐__/|__________▌","▐_/|___________▌","▐/|____________▌"]},"dqpb":{"interval":100,"frames":["d","q","p","b"]},"weather":{"interval":100,"frames":["☀️ ","☀️ ","☀️ ","🌤 ","⛅️ ","🌥 ","☁️ ","🌧 ","🌨 ","🌧 ","🌨 ","🌧 ","🌨 ","⛈ ","🌨 ","🌧 ","🌨 ","☁️ ","🌥 ","⛅️ ","🌤 ","☀️ ","☀️ "]},"christmas":{"interval":400,"frames":["🌲","🎄"]},"grenade":{"interval":80,"frames":["،  ","′  "," ´ "," ‾ ","  ⸌","  ⸊","  |","  ⁎","  ⁕"," ෴ ","  ⁓","   ","   ","   "]},"point":{"interval":125,"frames":["∙∙∙","●∙∙","∙●∙","∙∙●","∙∙∙"]},"layer":{"interval":150,"frames":["-","=","≡"]},"betaWave":{"interval":80,"frames":["ρββββββ","βρβββββ","ββρββββ","βββρβββ","ββββρββ","βββββρβ","ββββββρ"]},"fingerDance":{"interval":160,"frames":["🤘 ","🤟 ","🖖 ","✋ ","🤚 ","👆 "]},"fistBump":{"interval":80,"frames":["🤜　　　　🤛 ","🤜　　　　🤛 ","🤜　　　　🤛 ","　🤜　　🤛　 ","　　🤜🤛　　 ","　🤜✨🤛　　 ","🤜　✨　🤛　 "]},"soccerHeader":{"interval":80,"frames":[" 🧑⚽️       🧑 ","🧑  ⚽️      🧑 ","🧑   ⚽️     🧑 ","🧑    ⚽️    🧑 ","🧑     ⚽️   🧑 ","🧑      ⚽️  🧑 ","🧑       ⚽️🧑  ","🧑      ⚽️  🧑 ","🧑     ⚽️   🧑 ","🧑    ⚽️    🧑 ","🧑   ⚽️     🧑 ","🧑  ⚽️      🧑 "]},"mindblown":{"interval":160,"frames":["😐 ","😐 ","😮 ","😮 ","😦 ","😦 ","😧 ","😧 ","🤯 ","💥 ","✨ ","　 ","　 ","　 "]},"speaker":{"interval":160,"frames":["🔈 ","🔉 ","🔊 ","🔉 "]},"orangePulse":{"interval":100,"frames":["🔸 ","🔶 ","🟠 ","🟠 ","🔶 "]},"bluePulse":{"interval":100,"frames":["🔹 ","🔷 ","🔵 ","🔵 ","🔷 "]},"orangeBluePulse":{"interval":100,"frames":["🔸 ","🔶 ","🟠 ","🟠 ","🔶 ","🔹 ","🔷 ","🔵 ","🔵 ","🔷 "]},"timeTravel":{"interval":100,"frames":["🕛 ","🕚 ","🕙 ","🕘 ","🕗 ","🕖 ","🕕 ","🕔 ","🕓 ","🕒 ","🕑 ","🕐 "]},"aesthetic":{"interval":80,"frames":["▰▱▱▱▱▱▱","▰▰▱▱▱▱▱","▰▰▰▱▱▱▱","▰▰▰▰▱▱▱","▰▰▰▰▰▱▱","▰▰▰▰▰▰▱","▰▰▰▰▰▰▰","▰▱▱▱▱▱▱"]},"dwarfFortress":{"interval":80,"frames":[" ██████£££  ","☺██████£££  ","☺██████£££  ","☺▓█████£££  ","☺▓█████£££  ","☺▒█████£££  ","☺▒█████£££  ","☺░█████£££  ","☺░█████£££  ","☺ █████£££  "," ☺█████£££  "," ☺█████£££  "," ☺▓████£££  "," ☺▓████£££  "," ☺▒████£££  "," ☺▒████£££  "," ☺░████£££  "," ☺░████£££  "," ☺ ████£££  ","  ☺████£££  ","  ☺████£££  ","  ☺▓███£££  ","  ☺▓███£££  ","  ☺▒███£££  ","  ☺▒███£££  ","  ☺░███£££  ","  ☺░███£££  ","  ☺ ███£££  ","   ☺███£££  ","   ☺███£££  ","   ☺▓██£££  ","   ☺▓██£££  ","   ☺▒██£££  ","   ☺▒██£££  ","   ☺░██£££  ","   ☺░██£££  ","   ☺ ██£££  ","    ☺██£££  ","    ☺██£££  ","    ☺▓█£££  ","    ☺▓█£££  ","    ☺▒█£££  ","    ☺▒█£££  ","    ☺░█£££  ","    ☺░█£££  ","    ☺ █£££  ","     ☺█£££  ","     ☺█£££  ","     ☺▓£££  ","     ☺▓£££  ","     ☺▒£££  ","     ☺▒£££  ","     ☺░£££  ","     ☺░£££  ","     ☺ £££  ","      ☺£££  ","      ☺£££  ","      ☺▓££  ","      ☺▓££  ","      ☺▒££  ","      ☺▒££  ","      ☺░££  ","      ☺░££  ","      ☺ ££  ","       ☺££  ","       ☺££  ","       ☺▓£  ","       ☺▓£  ","       ☺▒£  ","       ☺▒£  ","       ☺░£  ","       ☺░£  ","       ☺ £  ","        ☺£  ","        ☺£  ","        ☺▓  ","        ☺▓  ","        ☺▒  ","        ☺▒  ","        ☺░  ","        ☺░  ","        ☺   ","        ☺  &","        ☺ ☼&","       ☺ ☼ &","       ☺☼  &","      ☺☼  & ","      ‼   & ","     ☺   &  ","    ‼    &  ","   ☺    &   ","  ‼     &   "," ☺     &    ","‼      &    ","      &     ","      &     ","     &   ░  ","     &   ▒  ","    &    ▓  ","    &    £  ","   &    ░£  ","   &    ▒£  ","  &     ▓£  ","  &     ££  "," &     ░££  "," &     ▒££  ","&      ▓££  ","&      £££  ","      ░£££  ","      ▒£££  ","      ▓£££  ","      █£££  ","     ░█£££  ","     ▒█£££  ","     ▓█£££  ","     ██£££  ","    ░██£££  ","    ▒██£££  ","    ▓██£££  ","    ███£££  ","   ░███£££  ","   ▒███£££  ","   ▓███£££  ","   ████£££  ","  ░████£££  ","  ▒████£££  ","  ▓████£££  ","  █████£££  "," ░█████£££  "," ▒█████£££  "," ▓█████£££  "," ██████£££  "," ██████£££  "]}}');
+
 /***/ })
 
 /******/ 	});
@@ -84898,6 +84963,8 @@ function parseArgs(argv) {
 
 // EXTERNAL MODULE: ./node_modules/react/jsx-runtime.js
 var jsx_runtime = __nccwpck_require__(3687);
+// EXTERNAL MODULE: ./node_modules/ink-spinner/build/index.js
+var ink_spinner_build = __nccwpck_require__(3763);
 ;// CONCATENATED MODULE: external "node:child_process"
 const external_node_child_process_namespaceObject = require("node:child_process");
 ;// CONCATENATED MODULE: ./src/tui/DiffReader.ts
@@ -84929,11 +84996,45 @@ function readGitDiff(repoPath) {
     return parseGitDiff(diff);
 }
 
+;// CONCATENATED MODULE: ./src/tui/components.tsx
+
+
+const severityMeta = {
+    critical: { emoji: '🔴', color: 'red' },
+    medium: { emoji: '🟡', color: 'yellow' },
+    low: { emoji: '🟢', color: 'green' }
+};
+function Header({ path, filesAnalyzed = 0 }) {
+    return ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "cyan", padding: 1, children: (0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "cyan", bold: true, children: "\uD83D\uDD75\uFE0F CodeScout CLI" }), (0,jsx_runtime.jsxs)(build.Text, { children: ["Scanning: ", path] }), (0,jsx_runtime.jsxs)(build.Text, { dimColor: true, children: ["Changed files: ", filesAnalyzed] })] }) }));
+}
+function IssueRow({ issue }) {
+    const meta = severityMeta[issue.severity];
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", marginTop: 1, children: [(0,jsx_runtime.jsxs)(build.Text, { color: meta.color, bold: true, children: [meta.emoji, " ", issue.severity.toUpperCase(), " \u00B7 ", issue.category, " \u00B7 ", issue.confidence, "%"] }), (0,jsx_runtime.jsxs)(build.Text, { dimColor: true, children: ["line ", issue.line, " \u2502 ", issue.code] }), (0,jsx_runtime.jsxs)(build.Text, { color: "green", children: ["\u2192 ", issue.suggestion] })] }));
+}
+function FilePanel({ filename, issues }) {
+    return ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "single", borderColor: "gray", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { bold: true, children: filename }), issues.map((issue, index) => (0,jsx_runtime.jsx)(IssueRow, { issue: issue }, `${filename}-${issue.line}-${index}`))] }) }));
+}
+function SummaryBar({ stats }) {
+    return ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "green", bold: true, children: [stats.issues, " issues \u00B7 ", stats.files, " files \u00B7 ", stats.seconds.toFixed(1), "s \u00B7 \uD83D\uDD34 ", stats.critical, " \u00B7 \uD83D\uDFE1 ", stats.medium, " \u00B7 \uD83D\uDFE2 ", stats.low] }) }));
+}
+
 ;// CONCATENATED MODULE: ./src/tui/App.tsx
 
 
 
 
+
+
+const MOCK_ISSUES = {
+    'examples/buggy2.ts': [
+        { severity: 'critical', category: 'security', confidence: 90, line: 14, code: 'const apiKey = "sk-live-1234567890";', suggestion: 'Use environment variables or a secrets manager' },
+        { severity: 'critical', category: 'bug', confidence: 90, line: 8, code: 'for (let i = 0; i <= prices.length; i++) {', suggestion: 'Change loop condition to i < prices.length' },
+        { severity: 'medium', category: 'bug', confidence: 80, line: 17, code: 'return a / b;', suggestion: 'Add a check for b === 0' }
+    ],
+    'src/payments.ts': [
+        { severity: 'low', category: 'maintainability', confidence: 76, line: 22, code: 'const timeout = 5000;', suggestion: 'Move configuration values into a named settings object' }
+    ]
+};
 function scan(path) {
     try {
         return { files: readGitDiff(path) };
@@ -84944,7 +85045,21 @@ function scan(path) {
 }
 function App({ args }) {
     const [result] = (0,react.useState)(() => scan(args.path));
-    return ((0,jsx_runtime.jsxs)(build/* Box */.az, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(build/* Text */.EY, { color: "cyan", bold: true, children: "\uD83D\uDD75\uFE0F CodeScout CLI" }), (0,jsx_runtime.jsxs)(build/* Text */.EY, { children: ["Command: ", args.command] }), (0,jsx_runtime.jsxs)(build/* Text */.EY, { children: ["Path: ", args.path] }), result.error ? ((0,jsx_runtime.jsxs)(build/* Text */.EY, { color: "red", children: ["Error: ", result.error] })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [(0,jsx_runtime.jsxs)(build/* Text */.EY, { children: ["Scanning ", result.files.length, " file", result.files.length === 1 ? '' : 's', "..."] }), result.files.length === 0 ? ((0,jsx_runtime.jsx)(build/* Text */.EY, { dimColor: true, children: "No changed files found in the latest commit." })) : (result.files.map((file) => (0,jsx_runtime.jsxs)(build/* Text */.EY, { children: ["- ", file.filename] }, file.filename)))] }))] }));
+    const [isScanning, setIsScanning] = (0,react.useState)(true);
+    (0,react.useEffect)(() => {
+        const timer = setTimeout(() => setIsScanning(false), 1000);
+        return () => clearTimeout(timer);
+    }, []);
+    const allIssues = Object.values(MOCK_ISSUES).flat();
+    const stats = {
+        issues: allIssues.length,
+        files: result.files.length,
+        seconds: 1.0,
+        critical: allIssues.filter((issue) => issue.severity === 'critical').length,
+        medium: allIssues.filter((issue) => issue.severity === 'medium').length,
+        low: allIssues.filter((issue) => issue.severity === 'low').length
+    };
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), isScanning ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " Scanning local diff..."] }) })) : result.error ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [(0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "cyan", children: "Visual preview \u2014 mock review findings" }) }), Object.entries(MOCK_ISSUES).map(([filename, issues]) => (0,jsx_runtime.jsx)(FilePanel, { filename: filename, issues: issues }, filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts
@@ -84954,7 +85069,7 @@ function App({ args }) {
 
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    (0,build/* render */.XX)(react_default().createElement(App, { args }));
+    (0,build.render)(react_default().createElement(App, { args }));
 }
 main().catch((error) => {
     console.error(error);
