@@ -1,6 +1,6 @@
 import { DiffFile } from './types';
 
-const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
+const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build|\.next)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
 
 export function shouldReviewFile(filename: string): boolean {
   return !IGNORED_FILE.test(filename);
