@@ -2375,6 +2375,374 @@ module.exports = (str, spaces) => {
 
 /***/ }),
 
+/***/ 8889:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const fs = __nccwpck_require__(9896)
+const path = __nccwpck_require__(6928)
+const os = __nccwpck_require__(857)
+const crypto = __nccwpck_require__(6982)
+const packageJson = __nccwpck_require__(56)
+
+const version = packageJson.version
+
+const LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg
+
+// Parse src into an Object
+function parse (src) {
+  const obj = {}
+
+  // Convert buffer to string
+  let lines = src.toString()
+
+  // Convert line breaks to same format
+  lines = lines.replace(/\r\n?/mg, '\n')
+
+  let match
+  while ((match = LINE.exec(lines)) != null) {
+    const key = match[1]
+
+    // Default undefined or null to empty string
+    let value = (match[2] || '')
+
+    // Remove whitespace
+    value = value.trim()
+
+    // Check if double quoted
+    const maybeQuote = value[0]
+
+    // Remove surrounding quotes
+    value = value.replace(/^(['"`])([\s\S]*)\1$/mg, '$2')
+
+    // Expand newlines if double quoted
+    if (maybeQuote === '"') {
+      value = value.replace(/\\n/g, '\n')
+      value = value.replace(/\\r/g, '\r')
+    }
+
+    // Add to object
+    obj[key] = value
+  }
+
+  return obj
+}
+
+function _parseVault (options) {
+  const vaultPath = _vaultPath(options)
+
+  // Parse .env.vault
+  const result = DotenvModule.configDotenv({ path: vaultPath })
+  if (!result.parsed) {
+    const err = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`)
+    err.code = 'MISSING_DATA'
+    throw err
+  }
+
+  // handle scenario for comma separated keys - for use with key rotation
+  // example: DOTENV_KEY="dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=prod,dotenv://:key_7890@dotenvx.com/vault/.env.vault?environment=prod"
+  const keys = _dotenvKey(options).split(',')
+  const length = keys.length
+
+  let decrypted
+  for (let i = 0; i < length; i++) {
+    try {
+      // Get full key
+      const key = keys[i].trim()
+
+      // Get instructions for decrypt
+      const attrs = _instructions(result, key)
+
+      // Decrypt
+      decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key)
+
+      break
+    } catch (error) {
+      // last key
+      if (i + 1 >= length) {
+        throw error
+      }
+      // try next key
+    }
+  }
+
+  // Parse decrypted .env string
+  return DotenvModule.parse(decrypted)
+}
+
+function _log (message) {
+  console.log(`[dotenv@${version}][INFO] ${message}`)
+}
+
+function _warn (message) {
+  console.log(`[dotenv@${version}][WARN] ${message}`)
+}
+
+function _debug (message) {
+  console.log(`[dotenv@${version}][DEBUG] ${message}`)
+}
+
+function _dotenvKey (options) {
+  // prioritize developer directly setting options.DOTENV_KEY
+  if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
+    return options.DOTENV_KEY
+  }
+
+  // secondary infra already contains a DOTENV_KEY environment variable
+  if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
+    return process.env.DOTENV_KEY
+  }
+
+  // fallback to empty string
+  return ''
+}
+
+function _instructions (result, dotenvKey) {
+  // Parse DOTENV_KEY. Format is a URI
+  let uri
+  try {
+    uri = new URL(dotenvKey)
+  } catch (error) {
+    if (error.code === 'ERR_INVALID_URL') {
+      const err = new Error('INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development')
+      err.code = 'INVALID_DOTENV_KEY'
+      throw err
+    }
+
+    throw error
+  }
+
+  // Get decrypt key
+  const key = uri.password
+  if (!key) {
+    const err = new Error('INVALID_DOTENV_KEY: Missing key part')
+    err.code = 'INVALID_DOTENV_KEY'
+    throw err
+  }
+
+  // Get environment
+  const environment = uri.searchParams.get('environment')
+  if (!environment) {
+    const err = new Error('INVALID_DOTENV_KEY: Missing environment part')
+    err.code = 'INVALID_DOTENV_KEY'
+    throw err
+  }
+
+  // Get ciphertext payload
+  const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`
+  const ciphertext = result.parsed[environmentKey] // DOTENV_VAULT_PRODUCTION
+  if (!ciphertext) {
+    const err = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`)
+    err.code = 'NOT_FOUND_DOTENV_ENVIRONMENT'
+    throw err
+  }
+
+  return { ciphertext, key }
+}
+
+function _vaultPath (options) {
+  let possibleVaultPath = null
+
+  if (options && options.path && options.path.length > 0) {
+    if (Array.isArray(options.path)) {
+      for (const filepath of options.path) {
+        if (fs.existsSync(filepath)) {
+          possibleVaultPath = filepath.endsWith('.vault') ? filepath : `${filepath}.vault`
+        }
+      }
+    } else {
+      possibleVaultPath = options.path.endsWith('.vault') ? options.path : `${options.path}.vault`
+    }
+  } else {
+    possibleVaultPath = path.resolve(process.cwd(), '.env.vault')
+  }
+
+  if (fs.existsSync(possibleVaultPath)) {
+    return possibleVaultPath
+  }
+
+  return null
+}
+
+function _resolveHome (envPath) {
+  return envPath[0] === '~' ? path.join(os.homedir(), envPath.slice(1)) : envPath
+}
+
+function _configVault (options) {
+  _log('Loading env from encrypted .env.vault')
+
+  const parsed = DotenvModule._parseVault(options)
+
+  let processEnv = process.env
+  if (options && options.processEnv != null) {
+    processEnv = options.processEnv
+  }
+
+  DotenvModule.populate(processEnv, parsed, options)
+
+  return { parsed }
+}
+
+function configDotenv (options) {
+  const dotenvPath = path.resolve(process.cwd(), '.env')
+  let encoding = 'utf8'
+  const debug = Boolean(options && options.debug)
+
+  if (options && options.encoding) {
+    encoding = options.encoding
+  } else {
+    if (debug) {
+      _debug('No encoding is specified. UTF-8 is used by default')
+    }
+  }
+
+  let optionPaths = [dotenvPath] // default, look for .env
+  if (options && options.path) {
+    if (!Array.isArray(options.path)) {
+      optionPaths = [_resolveHome(options.path)]
+    } else {
+      optionPaths = [] // reset default
+      for (const filepath of options.path) {
+        optionPaths.push(_resolveHome(filepath))
+      }
+    }
+  }
+
+  // Build the parsed data in a temporary object (because we need to return it).  Once we have the final
+  // parsed data, we will combine it with process.env (or options.processEnv if provided).
+  let lastError
+  const parsedAll = {}
+  for (const path of optionPaths) {
+    try {
+      // Specifying an encoding returns a string instead of a buffer
+      const parsed = DotenvModule.parse(fs.readFileSync(path, { encoding }))
+
+      DotenvModule.populate(parsedAll, parsed, options)
+    } catch (e) {
+      if (debug) {
+        _debug(`Failed to load ${path} ${e.message}`)
+      }
+      lastError = e
+    }
+  }
+
+  let processEnv = process.env
+  if (options && options.processEnv != null) {
+    processEnv = options.processEnv
+  }
+
+  DotenvModule.populate(processEnv, parsedAll, options)
+
+  if (lastError) {
+    return { parsed: parsedAll, error: lastError }
+  } else {
+    return { parsed: parsedAll }
+  }
+}
+
+// Populates process.env from .env file
+function config (options) {
+  // fallback to original dotenv if DOTENV_KEY is not set
+  if (_dotenvKey(options).length === 0) {
+    return DotenvModule.configDotenv(options)
+  }
+
+  const vaultPath = _vaultPath(options)
+
+  // dotenvKey exists but .env.vault file does not exist
+  if (!vaultPath) {
+    _warn(`You set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}. Did you forget to build it?`)
+
+    return DotenvModule.configDotenv(options)
+  }
+
+  return DotenvModule._configVault(options)
+}
+
+function decrypt (encrypted, keyStr) {
+  const key = Buffer.from(keyStr.slice(-64), 'hex')
+  let ciphertext = Buffer.from(encrypted, 'base64')
+
+  const nonce = ciphertext.subarray(0, 12)
+  const authTag = ciphertext.subarray(-16)
+  ciphertext = ciphertext.subarray(12, -16)
+
+  try {
+    const aesgcm = crypto.createDecipheriv('aes-256-gcm', key, nonce)
+    aesgcm.setAuthTag(authTag)
+    return `${aesgcm.update(ciphertext)}${aesgcm.final()}`
+  } catch (error) {
+    const isRange = error instanceof RangeError
+    const invalidKeyLength = error.message === 'Invalid key length'
+    const decryptionFailed = error.message === 'Unsupported state or unable to authenticate data'
+
+    if (isRange || invalidKeyLength) {
+      const err = new Error('INVALID_DOTENV_KEY: It must be 64 characters long (or more)')
+      err.code = 'INVALID_DOTENV_KEY'
+      throw err
+    } else if (decryptionFailed) {
+      const err = new Error('DECRYPTION_FAILED: Please check your DOTENV_KEY')
+      err.code = 'DECRYPTION_FAILED'
+      throw err
+    } else {
+      throw error
+    }
+  }
+}
+
+// Populate process.env with parsed values
+function populate (processEnv, parsed, options = {}) {
+  const debug = Boolean(options && options.debug)
+  const override = Boolean(options && options.override)
+
+  if (typeof parsed !== 'object') {
+    const err = new Error('OBJECT_REQUIRED: Please check the processEnv argument being passed to populate')
+    err.code = 'OBJECT_REQUIRED'
+    throw err
+  }
+
+  // Set process.env
+  for (const key of Object.keys(parsed)) {
+    if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
+      if (override === true) {
+        processEnv[key] = parsed[key]
+      }
+
+      if (debug) {
+        if (override === true) {
+          _debug(`"${key}" is already defined and WAS overwritten`)
+        } else {
+          _debug(`"${key}" is already defined and was NOT overwritten`)
+        }
+      }
+    } else {
+      processEnv[key] = parsed[key]
+    }
+  }
+}
+
+const DotenvModule = {
+  configDotenv,
+  _configVault,
+  _parseVault,
+  config,
+  decrypt,
+  parse,
+  populate
+}
+
+module.exports.configDotenv = DotenvModule.configDotenv
+module.exports._configVault = DotenvModule._configVault
+module.exports._parseVault = DotenvModule._parseVault
+module.exports.config = DotenvModule.config
+module.exports.decrypt = DotenvModule.decrypt
+module.exports.parse = DotenvModule.parse
+module.exports.populate = DotenvModule.populate
+
+module.exports = DotenvModule
+
+
+/***/ }),
+
 /***/ 872:
 /***/ ((module) => {
 
@@ -79345,6 +79713,14 @@ module.exports = require("os");
 
 /***/ }),
 
+/***/ 6928:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("path");
+
+/***/ }),
+
 /***/ 2203:
 /***/ ((module) => {
 
@@ -79406,6 +79782,14 @@ module.exports = /*#__PURE__*/JSON.parse('{"single":{"topLeft":"┌","topRight":
 
 "use strict";
 module.exports = /*#__PURE__*/JSON.parse('{"dots":{"interval":80,"frames":["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]},"dots2":{"interval":80,"frames":["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]},"dots3":{"interval":80,"frames":["⠋","⠙","⠚","⠞","⠖","⠦","⠴","⠲","⠳","⠓"]},"dots4":{"interval":80,"frames":["⠄","⠆","⠇","⠋","⠙","⠸","⠰","⠠","⠰","⠸","⠙","⠋","⠇","⠆"]},"dots5":{"interval":80,"frames":["⠋","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋"]},"dots6":{"interval":80,"frames":["⠁","⠉","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠤","⠄","⠄","⠤","⠴","⠲","⠒","⠂","⠂","⠒","⠚","⠙","⠉","⠁"]},"dots7":{"interval":80,"frames":["⠈","⠉","⠋","⠓","⠒","⠐","⠐","⠒","⠖","⠦","⠤","⠠","⠠","⠤","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋","⠉","⠈"]},"dots8":{"interval":80,"frames":["⠁","⠁","⠉","⠙","⠚","⠒","⠂","⠂","⠒","⠲","⠴","⠤","⠄","⠄","⠤","⠠","⠠","⠤","⠦","⠖","⠒","⠐","⠐","⠒","⠓","⠋","⠉","⠈","⠈"]},"dots9":{"interval":80,"frames":["⢹","⢺","⢼","⣸","⣇","⡧","⡗","⡏"]},"dots10":{"interval":80,"frames":["⢄","⢂","⢁","⡁","⡈","⡐","⡠"]},"dots11":{"interval":100,"frames":["⠁","⠂","⠄","⡀","⢀","⠠","⠐","⠈"]},"dots12":{"interval":80,"frames":["⢀⠀","⡀⠀","⠄⠀","⢂⠀","⡂⠀","⠅⠀","⢃⠀","⡃⠀","⠍⠀","⢋⠀","⡋⠀","⠍⠁","⢋⠁","⡋⠁","⠍⠉","⠋⠉","⠋⠉","⠉⠙","⠉⠙","⠉⠩","⠈⢙","⠈⡙","⢈⠩","⡀⢙","⠄⡙","⢂⠩","⡂⢘","⠅⡘","⢃⠨","⡃⢐","⠍⡐","⢋⠠","⡋⢀","⠍⡁","⢋⠁","⡋⠁","⠍⠉","⠋⠉","⠋⠉","⠉⠙","⠉⠙","⠉⠩","⠈⢙","⠈⡙","⠈⠩","⠀⢙","⠀⡙","⠀⠩","⠀⢘","⠀⡘","⠀⠨","⠀⢐","⠀⡐","⠀⠠","⠀⢀","⠀⡀"]},"dots13":{"interval":80,"frames":["⣼","⣹","⢻","⠿","⡟","⣏","⣧","⣶"]},"dots8Bit":{"interval":80,"frames":["⠀","⠁","⠂","⠃","⠄","⠅","⠆","⠇","⡀","⡁","⡂","⡃","⡄","⡅","⡆","⡇","⠈","⠉","⠊","⠋","⠌","⠍","⠎","⠏","⡈","⡉","⡊","⡋","⡌","⡍","⡎","⡏","⠐","⠑","⠒","⠓","⠔","⠕","⠖","⠗","⡐","⡑","⡒","⡓","⡔","⡕","⡖","⡗","⠘","⠙","⠚","⠛","⠜","⠝","⠞","⠟","⡘","⡙","⡚","⡛","⡜","⡝","⡞","⡟","⠠","⠡","⠢","⠣","⠤","⠥","⠦","⠧","⡠","⡡","⡢","⡣","⡤","⡥","⡦","⡧","⠨","⠩","⠪","⠫","⠬","⠭","⠮","⠯","⡨","⡩","⡪","⡫","⡬","⡭","⡮","⡯","⠰","⠱","⠲","⠳","⠴","⠵","⠶","⠷","⡰","⡱","⡲","⡳","⡴","⡵","⡶","⡷","⠸","⠹","⠺","⠻","⠼","⠽","⠾","⠿","⡸","⡹","⡺","⡻","⡼","⡽","⡾","⡿","⢀","⢁","⢂","⢃","⢄","⢅","⢆","⢇","⣀","⣁","⣂","⣃","⣄","⣅","⣆","⣇","⢈","⢉","⢊","⢋","⢌","⢍","⢎","⢏","⣈","⣉","⣊","⣋","⣌","⣍","⣎","⣏","⢐","⢑","⢒","⢓","⢔","⢕","⢖","⢗","⣐","⣑","⣒","⣓","⣔","⣕","⣖","⣗","⢘","⢙","⢚","⢛","⢜","⢝","⢞","⢟","⣘","⣙","⣚","⣛","⣜","⣝","⣞","⣟","⢠","⢡","⢢","⢣","⢤","⢥","⢦","⢧","⣠","⣡","⣢","⣣","⣤","⣥","⣦","⣧","⢨","⢩","⢪","⢫","⢬","⢭","⢮","⢯","⣨","⣩","⣪","⣫","⣬","⣭","⣮","⣯","⢰","⢱","⢲","⢳","⢴","⢵","⢶","⢷","⣰","⣱","⣲","⣳","⣴","⣵","⣶","⣷","⢸","⢹","⢺","⢻","⢼","⢽","⢾","⢿","⣸","⣹","⣺","⣻","⣼","⣽","⣾","⣿"]},"sand":{"interval":80,"frames":["⠁","⠂","⠄","⡀","⡈","⡐","⡠","⣀","⣁","⣂","⣄","⣌","⣔","⣤","⣥","⣦","⣮","⣶","⣷","⣿","⡿","⠿","⢟","⠟","⡛","⠛","⠫","⢋","⠋","⠍","⡉","⠉","⠑","⠡","⢁"]},"line":{"interval":130,"frames":["-","\\\\","|","/"]},"line2":{"interval":100,"frames":["⠂","-","–","—","–","-"]},"pipe":{"interval":100,"frames":["┤","┘","┴","└","├","┌","┬","┐"]},"simpleDots":{"interval":400,"frames":[".  ",".. ","...","   "]},"simpleDotsScrolling":{"interval":200,"frames":[".  ",".. ","..."," ..","  .","   "]},"star":{"interval":70,"frames":["✶","✸","✹","✺","✹","✷"]},"star2":{"interval":80,"frames":["+","x","*"]},"flip":{"interval":70,"frames":["_","_","_","-","`","`","\'","´","-","_","_","_"]},"hamburger":{"interval":100,"frames":["☱","☲","☴"]},"growVertical":{"interval":120,"frames":["▁","▃","▄","▅","▆","▇","▆","▅","▄","▃"]},"growHorizontal":{"interval":120,"frames":["▏","▎","▍","▌","▋","▊","▉","▊","▋","▌","▍","▎"]},"balloon":{"interval":140,"frames":[" ",".","o","O","@","*"," "]},"balloon2":{"interval":120,"frames":[".","o","O","°","O","o","."]},"noise":{"interval":100,"frames":["▓","▒","░"]},"bounce":{"interval":120,"frames":["⠁","⠂","⠄","⠂"]},"boxBounce":{"interval":120,"frames":["▖","▘","▝","▗"]},"boxBounce2":{"interval":100,"frames":["▌","▀","▐","▄"]},"triangle":{"interval":50,"frames":["◢","◣","◤","◥"]},"binary":{"interval":80,"frames":["010010","001100","100101","111010","111101","010111","101011","111000","110011","110101"]},"arc":{"interval":100,"frames":["◜","◠","◝","◞","◡","◟"]},"circle":{"interval":120,"frames":["◡","⊙","◠"]},"squareCorners":{"interval":180,"frames":["◰","◳","◲","◱"]},"circleQuarters":{"interval":120,"frames":["◴","◷","◶","◵"]},"circleHalves":{"interval":50,"frames":["◐","◓","◑","◒"]},"squish":{"interval":100,"frames":["╫","╪"]},"toggle":{"interval":250,"frames":["⊶","⊷"]},"toggle2":{"interval":80,"frames":["▫","▪"]},"toggle3":{"interval":120,"frames":["□","■"]},"toggle4":{"interval":100,"frames":["■","□","▪","▫"]},"toggle5":{"interval":100,"frames":["▮","▯"]},"toggle6":{"interval":300,"frames":["ဝ","၀"]},"toggle7":{"interval":80,"frames":["⦾","⦿"]},"toggle8":{"interval":100,"frames":["◍","◌"]},"toggle9":{"interval":100,"frames":["◉","◎"]},"toggle10":{"interval":100,"frames":["㊂","㊀","㊁"]},"toggle11":{"interval":50,"frames":["⧇","⧆"]},"toggle12":{"interval":120,"frames":["☗","☖"]},"toggle13":{"interval":80,"frames":["=","*","-"]},"arrow":{"interval":100,"frames":["←","↖","↑","↗","→","↘","↓","↙"]},"arrow2":{"interval":80,"frames":["⬆️ ","↗️ ","➡️ ","↘️ ","⬇️ ","↙️ ","⬅️ ","↖️ "]},"arrow3":{"interval":120,"frames":["▹▹▹▹▹","▸▹▹▹▹","▹▸▹▹▹","▹▹▸▹▹","▹▹▹▸▹","▹▹▹▹▸"]},"bouncingBar":{"interval":80,"frames":["[    ]","[=   ]","[==  ]","[=== ]","[====]","[ ===]","[  ==]","[   =]","[    ]","[   =]","[  ==]","[ ===]","[====]","[=== ]","[==  ]","[=   ]"]},"bouncingBall":{"interval":80,"frames":["( ●    )","(  ●   )","(   ●  )","(    ● )","(     ●)","(    ● )","(   ●  )","(  ●   )","( ●    )","(●     )"]},"smiley":{"interval":200,"frames":["😄 ","😝 "]},"monkey":{"interval":300,"frames":["🙈 ","🙈 ","🙉 ","🙊 "]},"hearts":{"interval":100,"frames":["💛 ","💙 ","💜 ","💚 ","❤️ "]},"clock":{"interval":100,"frames":["🕛 ","🕐 ","🕑 ","🕒 ","🕓 ","🕔 ","🕕 ","🕖 ","🕗 ","🕘 ","🕙 ","🕚 "]},"earth":{"interval":180,"frames":["🌍 ","🌎 ","🌏 "]},"material":{"interval":17,"frames":["█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","███▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","████▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁","██████▁▁▁▁▁▁▁▁▁▁▁▁▁▁","███████▁▁▁▁▁▁▁▁▁▁▁▁▁","████████▁▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","██████████▁▁▁▁▁▁▁▁▁▁","███████████▁▁▁▁▁▁▁▁▁","█████████████▁▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁▁██████████████▁▁▁▁","▁▁▁██████████████▁▁▁","▁▁▁▁█████████████▁▁▁","▁▁▁▁██████████████▁▁","▁▁▁▁██████████████▁▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁██████████████▁","▁▁▁▁▁▁██████████████","▁▁▁▁▁▁██████████████","▁▁▁▁▁▁▁█████████████","▁▁▁▁▁▁▁█████████████","▁▁▁▁▁▁▁▁████████████","▁▁▁▁▁▁▁▁████████████","▁▁▁▁▁▁▁▁▁███████████","▁▁▁▁▁▁▁▁▁███████████","▁▁▁▁▁▁▁▁▁▁██████████","▁▁▁▁▁▁▁▁▁▁██████████","▁▁▁▁▁▁▁▁▁▁▁▁████████","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁██████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","██▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","███▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","████▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","█████▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","██████▁▁▁▁▁▁▁▁▁▁▁▁▁█","████████▁▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","█████████▁▁▁▁▁▁▁▁▁▁▁","███████████▁▁▁▁▁▁▁▁▁","████████████▁▁▁▁▁▁▁▁","████████████▁▁▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","██████████████▁▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁██████████████▁▁▁▁▁","▁▁▁█████████████▁▁▁▁","▁▁▁▁▁████████████▁▁▁","▁▁▁▁▁████████████▁▁▁","▁▁▁▁▁▁███████████▁▁▁","▁▁▁▁▁▁▁▁█████████▁▁▁","▁▁▁▁▁▁▁▁█████████▁▁▁","▁▁▁▁▁▁▁▁▁█████████▁▁","▁▁▁▁▁▁▁▁▁█████████▁▁","▁▁▁▁▁▁▁▁▁▁█████████▁","▁▁▁▁▁▁▁▁▁▁▁████████▁","▁▁▁▁▁▁▁▁▁▁▁████████▁","▁▁▁▁▁▁▁▁▁▁▁▁███████▁","▁▁▁▁▁▁▁▁▁▁▁▁███████▁","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁███████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁","▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁"]},"moon":{"interval":80,"frames":["🌑 ","🌒 ","🌓 ","🌔 ","🌕 ","🌖 ","🌗 ","🌘 "]},"runner":{"interval":140,"frames":["🚶 ","🏃 "]},"pong":{"interval":80,"frames":["▐⠂       ▌","▐⠈       ▌","▐ ⠂      ▌","▐ ⠠      ▌","▐  ⡀     ▌","▐  ⠠     ▌","▐   ⠂    ▌","▐   ⠈    ▌","▐    ⠂   ▌","▐    ⠠   ▌","▐     ⡀  ▌","▐     ⠠  ▌","▐      ⠂ ▌","▐      ⠈ ▌","▐       ⠂▌","▐       ⠠▌","▐       ⡀▌","▐      ⠠ ▌","▐      ⠂ ▌","▐     ⠈  ▌","▐     ⠂  ▌","▐    ⠠   ▌","▐    ⡀   ▌","▐   ⠠    ▌","▐   ⠂    ▌","▐  ⠈     ▌","▐  ⠂     ▌","▐ ⠠      ▌","▐ ⡀      ▌","▐⠠       ▌"]},"shark":{"interval":120,"frames":["▐|\\\\____________▌","▐_|\\\\___________▌","▐__|\\\\__________▌","▐___|\\\\_________▌","▐____|\\\\________▌","▐_____|\\\\_______▌","▐______|\\\\______▌","▐_______|\\\\_____▌","▐________|\\\\____▌","▐_________|\\\\___▌","▐__________|\\\\__▌","▐___________|\\\\_▌","▐____________|\\\\▌","▐____________/|▌","▐___________/|_▌","▐__________/|__▌","▐_________/|___▌","▐________/|____▌","▐_______/|_____▌","▐______/|______▌","▐_____/|_______▌","▐____/|________▌","▐___/|_________▌","▐__/|__________▌","▐_/|___________▌","▐/|____________▌"]},"dqpb":{"interval":100,"frames":["d","q","p","b"]},"weather":{"interval":100,"frames":["☀️ ","☀️ ","☀️ ","🌤 ","⛅️ ","🌥 ","☁️ ","🌧 ","🌨 ","🌧 ","🌨 ","🌧 ","🌨 ","⛈ ","🌨 ","🌧 ","🌨 ","☁️ ","🌥 ","⛅️ ","🌤 ","☀️ ","☀️ "]},"christmas":{"interval":400,"frames":["🌲","🎄"]},"grenade":{"interval":80,"frames":["،  ","′  "," ´ "," ‾ ","  ⸌","  ⸊","  |","  ⁎","  ⁕"," ෴ ","  ⁓","   ","   ","   "]},"point":{"interval":125,"frames":["∙∙∙","●∙∙","∙●∙","∙∙●","∙∙∙"]},"layer":{"interval":150,"frames":["-","=","≡"]},"betaWave":{"interval":80,"frames":["ρββββββ","βρβββββ","ββρββββ","βββρβββ","ββββρββ","βββββρβ","ββββββρ"]},"fingerDance":{"interval":160,"frames":["🤘 ","🤟 ","🖖 ","✋ ","🤚 ","👆 "]},"fistBump":{"interval":80,"frames":["🤜　　　　🤛 ","🤜　　　　🤛 ","🤜　　　　🤛 ","　🤜　　🤛　 ","　　🤜🤛　　 ","　🤜✨🤛　　 ","🤜　✨　🤛　 "]},"soccerHeader":{"interval":80,"frames":[" 🧑⚽️       🧑 ","🧑  ⚽️      🧑 ","🧑   ⚽️     🧑 ","🧑    ⚽️    🧑 ","🧑     ⚽️   🧑 ","🧑      ⚽️  🧑 ","🧑       ⚽️🧑  ","🧑      ⚽️  🧑 ","🧑     ⚽️   🧑 ","🧑    ⚽️    🧑 ","🧑   ⚽️     🧑 ","🧑  ⚽️      🧑 "]},"mindblown":{"interval":160,"frames":["😐 ","😐 ","😮 ","😮 ","😦 ","😦 ","😧 ","😧 ","🤯 ","💥 ","✨ ","　 ","　 ","　 "]},"speaker":{"interval":160,"frames":["🔈 ","🔉 ","🔊 ","🔉 "]},"orangePulse":{"interval":100,"frames":["🔸 ","🔶 ","🟠 ","🟠 ","🔶 "]},"bluePulse":{"interval":100,"frames":["🔹 ","🔷 ","🔵 ","🔵 ","🔷 "]},"orangeBluePulse":{"interval":100,"frames":["🔸 ","🔶 ","🟠 ","🟠 ","🔶 ","🔹 ","🔷 ","🔵 ","🔵 ","🔷 "]},"timeTravel":{"interval":100,"frames":["🕛 ","🕚 ","🕙 ","🕘 ","🕗 ","🕖 ","🕕 ","🕔 ","🕓 ","🕒 ","🕑 ","🕐 "]},"aesthetic":{"interval":80,"frames":["▰▱▱▱▱▱▱","▰▰▱▱▱▱▱","▰▰▰▱▱▱▱","▰▰▰▰▱▱▱","▰▰▰▰▰▱▱","▰▰▰▰▰▰▱","▰▰▰▰▰▰▰","▰▱▱▱▱▱▱"]},"dwarfFortress":{"interval":80,"frames":[" ██████£££  ","☺██████£££  ","☺██████£££  ","☺▓█████£££  ","☺▓█████£££  ","☺▒█████£££  ","☺▒█████£££  ","☺░█████£££  ","☺░█████£££  ","☺ █████£££  "," ☺█████£££  "," ☺█████£££  "," ☺▓████£££  "," ☺▓████£££  "," ☺▒████£££  "," ☺▒████£££  "," ☺░████£££  "," ☺░████£££  "," ☺ ████£££  ","  ☺████£££  ","  ☺████£££  ","  ☺▓███£££  ","  ☺▓███£££  ","  ☺▒███£££  ","  ☺▒███£££  ","  ☺░███£££  ","  ☺░███£££  ","  ☺ ███£££  ","   ☺███£££  ","   ☺███£££  ","   ☺▓██£££  ","   ☺▓██£££  ","   ☺▒██£££  ","   ☺▒██£££  ","   ☺░██£££  ","   ☺░██£££  ","   ☺ ██£££  ","    ☺██£££  ","    ☺██£££  ","    ☺▓█£££  ","    ☺▓█£££  ","    ☺▒█£££  ","    ☺▒█£££  ","    ☺░█£££  ","    ☺░█£££  ","    ☺ █£££  ","     ☺█£££  ","     ☺█£££  ","     ☺▓£££  ","     ☺▓£££  ","     ☺▒£££  ","     ☺▒£££  ","     ☺░£££  ","     ☺░£££  ","     ☺ £££  ","      ☺£££  ","      ☺£££  ","      ☺▓££  ","      ☺▓££  ","      ☺▒££  ","      ☺▒££  ","      ☺░££  ","      ☺░££  ","      ☺ ££  ","       ☺££  ","       ☺££  ","       ☺▓£  ","       ☺▓£  ","       ☺▒£  ","       ☺▒£  ","       ☺░£  ","       ☺░£  ","       ☺ £  ","        ☺£  ","        ☺£  ","        ☺▓  ","        ☺▓  ","        ☺▒  ","        ☺▒  ","        ☺░  ","        ☺░  ","        ☺   ","        ☺  &","        ☺ ☼&","       ☺ ☼ &","       ☺☼  &","      ☺☼  & ","      ‼   & ","     ☺   &  ","    ‼    &  ","   ☺    &   ","  ‼     &   "," ☺     &    ","‼      &    ","      &     ","      &     ","     &   ░  ","     &   ▒  ","    &    ▓  ","    &    £  ","   &    ░£  ","   &    ▒£  ","  &     ▓£  ","  &     ££  "," &     ░££  "," &     ▒££  ","&      ▓££  ","&      £££  ","      ░£££  ","      ▒£££  ","      ▓£££  ","      █£££  ","     ░█£££  ","     ▒█£££  ","     ▓█£££  ","     ██£££  ","    ░██£££  ","    ▒██£££  ","    ▓██£££  ","    ███£££  ","   ░███£££  ","   ▒███£££  ","   ▓███£££  ","   ████£££  ","  ░████£££  ","  ▒████£££  ","  ▓████£££  ","  █████£££  "," ░█████£££  "," ▒█████£££  "," ▓█████£££  "," ██████£££  "," ██████£££  "]}}');
+
+/***/ }),
+
+/***/ 56:
+/***/ ((module) => {
+
+"use strict";
+module.exports = /*#__PURE__*/JSON.parse('{"name":"dotenv","version":"16.4.7","description":"Loads environment variables from .env file","main":"lib/main.js","types":"lib/main.d.ts","exports":{".":{"types":"./lib/main.d.ts","require":"./lib/main.js","default":"./lib/main.js"},"./config":"./config.js","./config.js":"./config.js","./lib/env-options":"./lib/env-options.js","./lib/env-options.js":"./lib/env-options.js","./lib/cli-options":"./lib/cli-options.js","./lib/cli-options.js":"./lib/cli-options.js","./package.json":"./package.json"},"scripts":{"dts-check":"tsc --project tests/types/tsconfig.json","lint":"standard","pretest":"npm run lint && npm run dts-check","test":"tap run --allow-empty-coverage --disable-coverage --timeout=60000","test:coverage":"tap run --show-full-coverage --timeout=60000 --coverage-report=lcov","prerelease":"npm test","release":"standard-version"},"repository":{"type":"git","url":"git://github.com/motdotla/dotenv.git"},"funding":"https://dotenvx.com","keywords":["dotenv","env",".env","environment","variables","config","settings"],"readmeFilename":"README.md","license":"BSD-2-Clause","devDependencies":{"@types/node":"^18.11.3","decache":"^4.6.2","sinon":"^14.0.1","standard":"^17.0.0","standard-version":"^9.5.0","tap":"^19.2.0","typescript":"^4.8.4"},"engines":{"node":">=12"},"browser":{"fs":false}}');
 
 /***/ })
 
@@ -79496,6 +79880,8 @@ var __webpack_exports__ = {};
 // EXTERNAL MODULE: ./node_modules/react/index.js
 var react = __nccwpck_require__(7919);
 var react_default = /*#__PURE__*/__nccwpck_require__.n(react);
+// EXTERNAL MODULE: ./node_modules/dotenv/lib/main.js
+var main = __nccwpck_require__(8889);
 // EXTERNAL MODULE: ./node_modules/ink/build/index.js
 var build = __nccwpck_require__(1063);
 // EXTERNAL MODULE: external "assert"
@@ -79833,8 +80219,8 @@ function ui (opts) {
   })
 }
 
-;// CONCATENATED MODULE: external "path"
-const external_path_namespaceObject = require("path");
+// EXTERNAL MODULE: external "path"
+var external_path_ = __nccwpck_require__(6928);
 // EXTERNAL MODULE: external "fs"
 var external_fs_ = __nccwpck_require__(9896);
 ;// CONCATENATED MODULE: ./node_modules/escalade/sync/index.mjs
@@ -79842,17 +80228,17 @@ var external_fs_ = __nccwpck_require__(9896);
 
 
 /* harmony default export */ function sync(start, callback) {
-	let dir = (0,external_path_namespaceObject.resolve)('.', start);
+	let dir = (0,external_path_.resolve)('.', start);
 	let tmp, stats = (0,external_fs_.statSync)(dir);
 
 	if (!stats.isDirectory()) {
-		dir = (0,external_path_namespaceObject.dirname)(dir);
+		dir = (0,external_path_.dirname)(dir);
 	}
 
 	while (true) {
 		tmp = callback(dir, (0,external_fs_.readdirSync)(dir));
-		if (tmp) return (0,external_path_namespaceObject.resolve)(dir, tmp);
-		dir = (0,external_path_namespaceObject.dirname)(tmp = dir);
+		if (tmp) return (0,external_path_.resolve)(dir, tmp);
+		dir = (0,external_path_.dirname)(tmp = dir);
 		if (tmp === dir) break;
 	}
 }
@@ -81066,8 +81452,8 @@ const parser = new YargsParser({
         return env;
     },
     format: external_util_namespaceObject.format,
-    normalize: external_path_namespaceObject.normalize,
-    resolve: external_path_namespaceObject.resolve,
+    normalize: external_path_.normalize,
+    resolve: external_path_.resolve,
     // TODO: figure  out a  way to combine ESM and CJS coverage, such  that
     // we can exercise all the lines below:
     require: (path) => {
@@ -81135,7 +81521,7 @@ class YError extends Error {
         writeFile: external_fs_.writeFile
     },
     format: external_util_namespaceObject.format,
-    resolve: external_path_namespaceObject.resolve,
+    resolve: external_path_.resolve,
     exists: (file) => {
         try {
             return (0,external_fs_.statSync)(file).isFile();
@@ -81376,11 +81762,11 @@ const mainFilename = esm_dirname.substring(0, esm_dirname.lastIndexOf('node_modu
   mainFilename: mainFilename || process.cwd(),
   Parser: lib,
   path: {
-    basename: external_path_namespaceObject.basename,
-    dirname: external_path_namespaceObject.dirname,
-    extname: external_path_namespaceObject.extname,
-    relative: external_path_namespaceObject.relative,
-    resolve: external_path_namespaceObject.resolve
+    basename: external_path_.basename,
+    dirname: external_path_.dirname,
+    extname: external_path_.extname,
+    relative: external_path_.relative,
+    resolve: external_path_.resolve
   },
   process: {
     argv: () => process.argv,
@@ -81402,7 +81788,7 @@ const mainFilename = esm_dirname.substring(0, esm_dirname.lastIndexOf('node_modu
     return [...str].length
   },
   y18n: node_modules_y18n({
-    directory: (0,external_path_namespaceObject.resolve)(esm_dirname, '../../../locales'),
+    directory: (0,external_path_.resolve)(esm_dirname, '../../../locales'),
     updateFiles: false
   })
 });
@@ -84951,13 +85337,19 @@ function parseArgs(argv) {
         .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
         .option('provider', { type: 'string', choices: ['groq', 'openai'], default: 'groq', describe: 'LLM provider reserved for a future stage' })
         .option('dry-run', { type: 'boolean', default: false, describe: 'Read the diff without calling an LLM' })
+        .option('api-key', { type: 'string', describe: 'Groq API key (overrides GROQ_API_KEY)' })
+        .option('last-commit', { type: 'boolean', default: false, describe: 'Review HEAD~1 instead of working-tree changes' })
+        .option('base', { type: 'string', describe: 'Compare the current branch against a base branch' })
         .help()
         .parseSync();
     return {
         command: typeof parsed.command === 'string' ? parsed.command : 'scan',
         path: parsed.path,
         provider: parsed.provider,
-        dryRun: parsed.dryRun
+        dryRun: parsed.dryRun,
+        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : undefined,
+        lastCommit: Boolean(parsed.lastCommit),
+        base: typeof parsed.base === 'string' ? parsed.base : undefined
     };
 }
 
@@ -84965,35 +85357,184 @@ function parseArgs(argv) {
 var jsx_runtime = __nccwpck_require__(3687);
 // EXTERNAL MODULE: ./node_modules/ink-spinner/build/index.js
 var ink_spinner_build = __nccwpck_require__(3763);
+;// CONCATENATED MODULE: ./src/prompt-builder.ts
+const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to a changed line when possible. Use an empty issues array when there is no meaningful finding.`;
+function buildReviewPrompt(file, patch) {
+    return `Review the following changed file from a pull request.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nPatch:\n---\n${patch}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
+}
+
+;// CONCATENATED MODULE: ./src/llm-client.ts
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+class GroqProvider {
+    apiKey;
+    model;
+    fetcher;
+    lastRequestAt = 0;
+    constructor(apiKey, model, fetcher = fetch) {
+        this.apiKey = apiKey;
+        this.model = model;
+        this.fetcher = fetcher;
+    }
+    async review(systemPrompt, userPrompt) {
+        const wait = 2000 - (Date.now() - this.lastRequestAt);
+        if (wait > 0)
+            await sleep(wait);
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            this.lastRequestAt = Date.now();
+            try {
+                const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
+                });
+                const data = (await response.json());
+                if (!response.ok)
+                    throw new Error(data.error?.message ?? `Groq request failed with ${response.status}`);
+                const content = data.choices?.[0]?.message?.content;
+                if (!content)
+                    throw new Error('Groq returned an empty response');
+                return content;
+            }
+            catch (error) {
+                lastError = error;
+                if (attempt < 2)
+                    await sleep(2 ** attempt * 1000);
+            }
+        }
+        throw lastError instanceof Error ? lastError : new Error('LLM request failed');
+    }
+}
+function createProvider(provider, apiKey, model) {
+    if (provider.toLowerCase() !== 'groq')
+        throw new Error(`Unsupported provider: ${provider}`);
+    return new GroqProvider(apiKey, model);
+}
+
+;// CONCATENATED MODULE: ./src/response-parser.ts
+const categories = new Set(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
+const severities = new Set(['low', 'medium', 'high', 'critical']);
+function extractJson(raw) {
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced)
+        return fenced[1];
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start >= 0 && end > start)
+        return raw.slice(start, end + 1);
+    return raw;
+}
+function parseReviewResponse(raw, filename) {
+    let parsed;
+    try {
+        parsed = JSON.parse(extractJson(raw));
+    }
+    catch {
+        throw new Error(`LLM returned malformed JSON for ${filename}`);
+    }
+    const object = parsed;
+    const rawIssues = Array.isArray(object.issues) ? object.issues : [];
+    const issues = rawIssues.flatMap((item) => {
+        if (!item || typeof item !== 'object')
+            return [];
+        const value = item;
+        const category = categories.has(value.category) ? value.category : 'bug';
+        const severity = severities.has(value.severity) ? value.severity : 'medium';
+        const description = typeof value.description === 'string' ? value.description.trim() : '';
+        if (!description)
+            return [];
+        const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
+        const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+        return [{ file: filename, line, category, severity, description, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
+    });
+    return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
+}
+
+;// CONCATENATED MODULE: ./src/diff-parser.ts
+const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
+function shouldReviewFile(filename) {
+    return !IGNORED_FILE.test(filename);
+}
+function parseUnifiedDiff(diff) {
+    const files = [];
+    const sections = diff.split(/^diff --git /m).slice(1);
+    for (const section of sections) {
+        const header = section.match(/^a\/(.+?) b\/(.+?)(?:\n|$)/);
+        if (!header)
+            continue;
+        const filename = header[2];
+        if (!shouldReviewFile(filename))
+            continue;
+        if (!section.match(/^\+\+\+ b\/.+$/m))
+            continue;
+        const lines = section.split('\n');
+        const additions = lines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
+        const deletions = lines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+        files.push({ filename, status: section.includes('new file mode') ? 'added' : section.includes('deleted file mode') ? 'removed' : 'modified', additions, deletions, patch: section.trim() });
+    }
+    return files;
+}
+function splitPatch(patch, maxCharacters = 45000) {
+    if (patch.length <= maxCharacters)
+        return [patch];
+    const lines = patch.split('\n');
+    const chunks = [];
+    let current = '';
+    for (const line of lines) {
+        if (current && current.length + line.length + 1 > maxCharacters) {
+            chunks.push(current);
+            current = '';
+        }
+        current += `${line}\n`;
+    }
+    if (current.trim())
+        chunks.push(current.trim());
+    return chunks;
+}
+
 ;// CONCATENATED MODULE: external "node:child_process"
 const external_node_child_process_namespaceObject = require("node:child_process");
 ;// CONCATENATED MODULE: ./src/tui/DiffReader.ts
+
 
 function runGit(args, cwd) {
     try {
         return (0,external_node_child_process_namespaceObject.execFileSync)('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     }
     catch {
-        throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least two commits.`);
+        throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least one commit.`);
     }
 }
 function parseGitDiff(diff) {
-    return diff.split(/^diff --git /m).slice(1).flatMap((section) => {
-        const header = section.match(/^a\/(.+?) b\/(.+?)(?:\n|$)/);
-        return header ? [{ filename: header[2], patch: `diff --git ${section.trim()}` }] : [];
-    });
+    return parseUnifiedDiff(diff);
 }
-function readGitDiff(repoPath) {
+function mergeFiles(files) {
+    const merged = new Map();
+    for (const file of files) {
+        const previous = merged.get(file.filename);
+        if (!previous) {
+            merged.set(file.filename, file);
+            continue;
+        }
+        merged.set(file.filename, {
+            ...file,
+            additions: previous.additions + file.additions,
+            deletions: previous.deletions + file.deletions,
+            patch: `${previous.patch}\n${file.patch}`
+        });
+    }
+    return [...merged.values()];
+}
+function readGitDiff(repoPath, options = {}) {
     runGit(['rev-parse', '--is-inside-work-tree'], repoPath);
-    let diff;
-    try {
-        runGit(['rev-parse', '--verify', 'HEAD~1'], repoPath);
-        diff = runGit(['-c', 'color.ui=false', 'diff', 'HEAD~1'], repoPath);
-    }
-    catch {
-        diff = runGit(['-c', 'color.ui=false', 'diff', 'main'], repoPath);
-    }
-    return parseGitDiff(diff);
+    const git = (...args) => runGit(['-c', 'color.ui=false', ...args], repoPath);
+    if (options.base)
+        return parseGitDiff(git('diff', `${options.base}...HEAD`));
+    if (options.lastCommit)
+        return parseGitDiff(git('diff', 'HEAD~1'));
+    const unstaged = parseGitDiff(git('diff'));
+    const staged = parseGitDiff(git('diff', '--cached'));
+    return mergeFiles([...unstaged, ...staged]);
 }
 
 ;// CONCATENATED MODULE: ./src/tui/components.tsx
@@ -85025,41 +85566,102 @@ function SummaryBar({ stats }) {
 
 
 
-const MOCK_ISSUES = {
-    'examples/buggy2.ts': [
-        { severity: 'critical', category: 'security', confidence: 90, line: 14, code: 'const apiKey = "sk-live-1234567890";', suggestion: 'Use environment variables or a secrets manager' },
-        { severity: 'critical', category: 'bug', confidence: 90, line: 8, code: 'for (let i = 0; i <= prices.length; i++) {', suggestion: 'Change loop condition to i < prices.length' },
-        { severity: 'medium', category: 'bug', confidence: 80, line: 17, code: 'return a / b;', suggestion: 'Add a check for b === 0' }
-    ],
-    'src/payments.ts': [
-        { severity: 'low', category: 'maintainability', confidence: 76, line: 22, code: 'const timeout = 5000;', suggestion: 'Move configuration values into a named settings object' }
-    ]
-};
-function scan(path) {
+
+
+
+
+function scan(path, args) {
     try {
-        return { files: readGitDiff(path) };
+        return { files: readGitDiff(path, { lastCommit: args.lastCommit, base: args.base }) };
     }
     catch (error) {
         return { files: [], error: error instanceof Error ? error.message : String(error) };
     }
 }
-function App({ args }) {
-    const [result] = (0,react.useState)(() => scan(args.path));
-    const [isScanning, setIsScanning] = (0,react.useState)(true);
-    (0,react.useEffect)(() => {
-        const timer = setTimeout(() => setIsScanning(false), 1000);
-        return () => clearTimeout(timer);
-    }, []);
-    const allIssues = Object.values(MOCK_ISSUES).flat();
-    const stats = {
-        issues: allIssues.length,
-        files: result.files.length,
-        seconds: 1.0,
-        critical: allIssues.filter((issue) => issue.severity === 'critical').length,
-        medium: allIssues.filter((issue) => issue.severity === 'medium').length,
-        low: allIssues.filter((issue) => issue.severity === 'low').length
+function toDiffFile(file) {
+    return file;
+}
+function toTuiIssue(issue) {
+    const severity = issue.severity === 'low' ? 'low' : issue.severity === 'medium' ? 'medium' : 'critical';
+    return {
+        severity,
+        category: issue.category,
+        confidence: Math.round(issue.confidence * 100),
+        line: issue.line,
+        code: issue.code ?? issue.description,
+        suggestion: issue.suggestion ?? issue.description
     };
-    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), isScanning ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " Scanning local diff..."] }) })) : result.error ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [(0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "cyan", children: "Visual preview \u2014 mock review findings" }) }), Object.entries(MOCK_ISSUES).map(([filename, issues]) => (0,jsx_runtime.jsx)(FilePanel, { filename: filename, issues: issues }, filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
+}
+function isRateLimit(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return /429|rate.?limit|too many requests/i.test(message);
+}
+async function reviewFiles(files, args, apiKey) {
+    const startedAt = Date.now();
+    if (args.dryRun)
+        return { issues: [], durationMs: Date.now() - startedAt, complete: true };
+    try {
+        const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile');
+        const issues = [];
+        let warning;
+        for (const file of files) {
+            for (const chunk of splitPatch(file.patch, 45_000)) {
+                try {
+                    const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(toDiffFile(file), chunk));
+                    issues.push(...parseReviewResponse(raw, file.filename).issues);
+                }
+                catch (error) {
+                    if (isRateLimit(error)) {
+                        warning = 'Groq временно ограничил частоту запросов. Часть файлов не была проверена.';
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+        }
+        return { issues, warning, durationMs: Date.now() - startedAt, complete: true };
+    }
+    catch (error) {
+        return { issues: [], error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, complete: true };
+    }
+}
+function App({ args }) {
+    const [result] = (0,react.useState)(() => scan(args.path, args));
+    const [review, setReview] = (0,react.useState)({ issues: [], durationMs: 0, complete: false });
+    const apiKey = args.apiKey ?? process.env.GROQ_API_KEY;
+    (0,react.useEffect)(() => {
+        if (result.error || result.files.length === 0 || !apiKey || args.dryRun) {
+            if (args.dryRun)
+                setReview({ issues: [], durationMs: 0, complete: true });
+            return;
+        }
+        let active = true;
+        void reviewFiles(result.files, args, apiKey).then((next) => {
+            if (active)
+                setReview(next);
+        });
+        return () => { active = false; };
+    }, [apiKey, args, result.error, result.files]);
+    const noKey = !apiKey && !args.dryRun && !result.error && result.files.length > 0;
+    (0,react.useEffect)(() => {
+        if (noKey)
+            process.exitCode = 1;
+    }, [noKey]);
+    const issueByFile = new Map();
+    for (const issue of review.issues) {
+        const current = issueByFile.get(issue.file) ?? [];
+        current.push(toTuiIssue(issue));
+        issueByFile.set(issue.file, current);
+    }
+    const stats = {
+        issues: review.issues.length,
+        files: result.files.length,
+        seconds: review.durationMs / 1000,
+        critical: review.issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high').length,
+        medium: review.issues.filter((issue) => issue.severity === 'medium').length,
+        low: review.issues.filter((issue) => issue.severity === 'low').length
+    };
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), result.files.map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts
@@ -85067,11 +85669,13 @@ function App({ args }) {
 
 
 
-async function main() {
+
+async function cli_main() {
+    (0,main.config)();
     const args = parseArgs(process.argv.slice(2));
     (0,build.render)(react_default().createElement(App, { args }));
 }
-main().catch((error) => {
+cli_main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
