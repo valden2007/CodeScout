@@ -41,7 +41,7 @@ function toDiffFile(file: LocalDiffFile): DiffFile {
 }
 
 function toTuiIssue(issue: ReviewIssue): Issue {
-  const severity = issue.severity === 'low' ? 'low' : issue.severity === 'medium' ? 'medium' : 'critical';
+  const severity = issue.severity === 'critical' ? 'critical' : issue.severity === 'low' ? 'low' : 'medium';
   return {
     severity,
     category: issue.category,
@@ -89,6 +89,10 @@ async function reviewFiles(files: LocalDiffFile[], args: CliArgs, apiKey: string
   }
 }
 
+export function filesWithIssues(files: LocalDiffFile[], issueByFile: Map<string, Issue[]>): LocalDiffFile[] {
+  return files.filter((file) => (issueByFile.get(file.filename)?.length ?? 0) > 0);
+}
+
 export function App({ args }: Props) {
   const [result] = useState(() => scan(args.path, args));
   const [review, setReview] = useState<ReviewState>({ issues: [], durationMs: 0, complete: false });
@@ -121,7 +125,7 @@ export function App({ args }: Props) {
     issues: review.issues.length,
     files: result.files.length,
     seconds: review.durationMs / 1000,
-    critical: review.issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high').length,
+    critical: review.issues.filter((issue) => issue.severity === 'critical').length,
     medium: review.issues.filter((issue) => issue.severity === 'medium').length,
     low: review.issues.filter((issue) => issue.severity === 'low').length
   };
@@ -148,7 +152,7 @@ export function App({ args }: Props) {
       ) : (
         <>
           {review.warning && <Box borderStyle="round" borderColor="yellow" padding={1} marginTop={1}><Text color="yellow">⚠ {review.warning}</Text></Box>}
-          {result.files.map((file) => <FilePanel key={file.filename} filename={file.filename} issues={issueByFile.get(file.filename) ?? []} />)}
+          {filesWithIssues(result.files, issueByFile).map((file) => <FilePanel key={file.filename} filename={file.filename} issues={issueByFile.get(file.filename) ?? []} />)}
           <SummaryBar stats={stats} />
         </>
       )}

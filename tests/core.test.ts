@@ -4,6 +4,8 @@ import { parseReviewResponse } from '../src/response-parser';
 import { buildSummaryComment } from '../src/report-formatter';
 import { numberPatch } from '../src/line-numbering';
 import { correctIssueLine } from '../src/line-correction';
+import { validateGitPath } from '../src/tui/DiffReader';
+import { filesWithIssues } from '../src/tui/App';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -39,6 +41,36 @@ describe('diff parser', () => {
     const chunks = splitPatch(`${'a'.repeat(8)}\n${'b'.repeat(8)}\n${'c'.repeat(8)}`, 10);
     expect(chunks.join('')).toBe(`${'a'.repeat(8)}\n${'b'.repeat(8)}\n${'c'.repeat(8)}`);
     expect(chunks.length).toBeGreaterThan(1);
+  });
+});
+
+describe('C4.5 quality fixes', () => {
+  it('includes false-positive exclusions in the system prompt', async () => {
+    const { SYSTEM_PROMPT } = await import('../src/prompt-builder');
+    expect(SYSTEM_PROMPT).toContain('DO NOT flag:');
+    expect(SYSTEM_PROMPT).toContain('cuid()');
+    expect(SYSTEM_PROMPT).toContain('seed or migration');
+    expect(SYSTEM_PROMPT).toContain('BE LENIENT on:');
+  });
+
+  it('reports a friendly error for a nonexistent path', () => {
+    const error = validateGitPath('/tmp/codescout-path-does-not-exist');
+    expect(error).toContain('Путь не найден');
+    expect(error).toContain('/tmp/codescout-path-does-not-exist');
+  });
+
+  it('filters files with no issues before rendering panels', () => {
+    const files = [
+      { filename: 'clean.ts', status: 'modified', additions: 0, deletions: 0, patch: '' },
+      { filename: 'buggy.ts', status: 'modified', additions: 1, deletions: 0, patch: '' }
+    ];
+    const issues = new Map([['buggy.ts', [{ severity: 'low' as const, category: 'bug', confidence: 80, line: 2, code: 'x', suggestion: 'fix' }]]]);
+    expect(filesWithIssues(files, issues).map((file) => file.filename)).toEqual(['buggy.ts']);
+  });
+
+  it('demotes low-confidence critical findings to medium', () => {
+    const result = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"critical","description":"Maybe unsafe","confidence":0.6}]}', 'src/app.ts');
+    expect(result.issues[0].severity).toBe('medium');
   });
 });
 
