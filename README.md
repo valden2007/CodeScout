@@ -47,6 +47,40 @@ jobs:
 
 For a production release, pin the action to an immutable tag or commit rather than `main`.
 
+## CLI usage
+
+The same review core can scan local changes from a terminal. Install the package globally or run it through `npx`:
+
+```bash
+npm i -g codescout
+codescout scan
+
+# Or without a global install
+npx codescout scan
+```
+
+The CLI loads `.env` from the current project directory. Create the file with your Groq key, or pass a key explicitly with `--api-key`; the flag takes precedence over `GROQ_API_KEY`.
+
+```bash
+cat > .env <<'EOF'
+GROQ_API_KEY=gsk_your_key_here
+EOF
+
+codescout scan
+```
+
+The `.env` file is ignored by Git. The available scan flags are shown below.
+
+| Flag | Purpose |
+|---|---|
+| `--path <dir>` | Scan a different local Git repository. |
+| `--last-commit` | Review the diff from `HEAD~1` instead of uncommitted changes. |
+| `--base <branch>` | Review the comparison between `<branch>...HEAD`. |
+| `--dry-run` | Read and display the diff without calling Groq. |
+| `--api-key <key>` | Override `GROQ_API_KEY` for one run. |
+
+For example, to inspect only the current working tree without making an LLM request, run `codescout scan --dry-run`. The CLI reports a friendly message when there is no change to review.
+
 ## Configuration
 
 | Input | Required | Default | Description |
