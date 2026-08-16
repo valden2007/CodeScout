@@ -23,7 +23,23 @@
         "command": "codescout.scanLastCommit",
         "title": "CodeScout: review last commit"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "CodeScout",
+      "properties": {
+        "codescout.apiKey": {
+          "type": "string",
+          "description": "Groq API key used for code review. Keep it private; it is stored as a secret-like setting.",
+          "scope": "machine",
+          "password": true
+        },
+        "codescout.provider": {
+          "type": "string",
+          "default": "groq",
+          "description": "LLM provider used by CodeScout."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "node esbuild.js",
