@@ -6,6 +6,7 @@ import { numberPatch } from '../src/line-numbering';
 import { correctIssueLine } from '../src/line-correction';
 import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
+import { parseArgs } from '../src/cli/args';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -33,6 +34,10 @@ describe('diff parser', () => {
 
   it('filters generated, lock, and binary files', () => {
     expect(shouldReviewFile('package-lock.json')).toBe(false);
+    expect(shouldReviewFile('dist/file.ts')).toBe(false);
+    expect(shouldReviewFile('build/output.js')).toBe(false);
+    expect(shouldReviewFile('.next/server/page.js')).toBe(false);
+    expect(shouldReviewFile('node_modules/pkg/index.js')).toBe(false);
     expect(shouldReviewFile('src/app.min.js')).toBe(false);
     expect(shouldReviewFile('src/app.ts')).toBe(true);
   });
@@ -41,6 +46,13 @@ describe('diff parser', () => {
     const chunks = splitPatch(`${'a'.repeat(8)}\n${'b'.repeat(8)}\n${'c'.repeat(8)}`, 10);
     expect(chunks.join('')).toBe(`${'a'.repeat(8)}\n${'b'.repeat(8)}\n${'c'.repeat(8)}`);
     expect(chunks.length).toBeGreaterThan(1);
+  });
+});
+
+describe('C4.8 stabilization', () => {
+  it('rejects unknown flags with a suggested Russian error', () => {
+    expect(() => parseArgs(['--last-co'])).toThrow(/Неизвестный флаг: --last-co/);
+    expect(() => parseArgs(['--last-co'])).toThrow(/--last-commit/);
   });
 });
 
@@ -53,6 +65,7 @@ describe('C4.5 quality fixes', () => {
     expect(SYSTEM_PROMPT).toContain('Next.js singleton patterns');
     expect(SYSTEM_PROMPT).toContain('Precision over recall');
     expect(SYSTEM_PROMPT).toContain('Report at most 3 issues per file');
+    expect(SYSTEM_PROMPT).toContain('ONLY flag when');
     expect(SYSTEM_PROMPT).toContain('BE LENIENT on:');
   });
 
