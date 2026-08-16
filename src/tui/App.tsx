@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import { buildReviewPrompt, SYSTEM_PROMPT } from '../prompt-builder';
@@ -96,6 +96,7 @@ export function filesWithIssues(files: LocalDiffFile[], issueByFile: Map<string,
 export function App({ args }: Props) {
   const [result] = useState(() => scan(args.path, args));
   const [review, setReview] = useState<ReviewState>({ issues: [], durationMs: 0, complete: false });
+  const reviewStarted = useRef(false);
   const apiKey = args.apiKey ?? process.env.GROQ_API_KEY;
 
   useEffect(() => {
@@ -103,6 +104,8 @@ export function App({ args }: Props) {
       if (args.dryRun) setReview({ issues: [], durationMs: 0, complete: true });
       return;
     }
+    if (reviewStarted.current) return;
+    reviewStarted.current = true;
     let active = true;
     void reviewFiles(result.files, args, apiKey).then((next) => {
       if (active) setReview(next);
@@ -115,6 +118,7 @@ export function App({ args }: Props) {
     if (noKey) process.exitCode = 1;
   }, [noKey]);
 
+  const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
   const issueByFile = new Map<string, Issue[]>();
   for (const issue of review.issues) {
     const current = issueByFile.get(issue.file) ?? [];
@@ -132,7 +136,7 @@ export function App({ args }: Props) {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header path={args.path} filesAnalyzed={result.files.length} />
+      {showHeader && <Header path={args.path} filesAnalyzed={result.files.length} />}
       {result.error ? (
         <Box borderStyle="round" borderColor="red" padding={1} marginTop={1}><Text color="red">Error: {result.error}</Text></Box>
       ) : result.files.length === 0 ? (
