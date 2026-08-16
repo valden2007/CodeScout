@@ -85331,7 +85331,32 @@ const helpers_applyExtends = (config, cwd, mergeExtends) => {
 ;// CONCATENATED MODULE: ./src/cli/args.ts
 
 
+const KNOWN_FLAGS = new Set(['--path', '--provider', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+function suggestedFlag(flag) {
+    if (flag.startsWith('--last-'))
+        return '--last-commit';
+    if (flag.startsWith('--dry-'))
+        return '--dry-run';
+    if (flag.startsWith('--api-'))
+        return '--api-key';
+    return undefined;
+}
+function unknownFlagError(flag) {
+    const suggestion = suggestedFlag(flag);
+    const hint = suggestion ? `\n│ Возможно, вы имели в виду: ${suggestion}` : '';
+    return new Error(`┌─ Ошибка CLI ─────────────────────────────────────────────┐\n│ Неизвестный флаг: ${flag}${hint}\n│ Используй codescout --help, чтобы увидеть доступные флаги.\n└───────────────────────────────────────────────────────────┘`);
+}
+function validateFlags(argv) {
+    for (const token of argv) {
+        if (!token.startsWith('--'))
+            continue;
+        const flag = token.split('=', 1)[0];
+        if (!KNOWN_FLAGS.has(flag))
+            throw unknownFlagError(flag);
+    }
+}
 function parseArgs(argv) {
+    validateFlags(argv);
     const parsed = yargs(hideBin(['node', 'codescout', ...argv]))
         .command('$0 [command]', 'Run a CodeScout scan', (builder) => builder.positional('command', { type: 'string', default: 'scan' }))
         .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
@@ -85340,6 +85365,7 @@ function parseArgs(argv) {
         .option('api-key', { type: 'string', describe: 'Groq API key (overrides GROQ_API_KEY)' })
         .option('last-commit', { type: 'boolean', default: false, describe: 'Review HEAD~1 instead of working-tree changes' })
         .option('base', { type: 'string', describe: 'Compare the current branch against a base branch' })
+        .strict()
         .help()
         .parseSync();
     return {
@@ -85397,12 +85423,17 @@ DO NOT flag:
 - Standard Next.js API route structures such as \`export async function GET\` or \`POST\`.
 - Next.js middleware patterns.
 - Standard Next.js fetch patterns with proper error handling.
+- Using .reverse() on small arrays; flag it only when N > 10000 or in a hot path.
+- CSRF protection in Next.js apps; it is handled by the Next.js framework.
+- Debouncing controlled inputs in React; this is a normal pattern.
+- Null checks on NextAuth session.user; the framework guarantees an authenticated session user.
+- Null checks on values that TypeScript already guards.
 BE LENIENT on:
 - console.error in small projects, unless it clearly logs secrets.
 - React fetch patterns that include proper .catch() handling.
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
-Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects.
+Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
 Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
     return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nNumbered patch:\n---\n${numberPatch(patch)}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
@@ -85501,7 +85532,7 @@ function parseReviewResponse(raw, filename) {
 }
 
 ;// CONCATENATED MODULE: ./src/diff-parser.ts
-const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
+const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build|\.next)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
 function shouldReviewFile(filename) {
     return !IGNORED_FILE.test(filename);
 }
@@ -85719,6 +85750,7 @@ function filesWithIssues(files, issueByFile) {
 function App({ args }) {
     const [result] = (0,react.useState)(() => scan(args.path, args));
     const [review, setReview] = (0,react.useState)({ issues: [], durationMs: 0, complete: false });
+    const reviewStarted = (0,react.useRef)(false);
     const apiKey = args.apiKey ?? process.env.GROQ_API_KEY;
     (0,react.useEffect)(() => {
         if (result.error || result.files.length === 0 || !apiKey || args.dryRun) {
@@ -85726,6 +85758,9 @@ function App({ args }) {
                 setReview({ issues: [], durationMs: 0, complete: true });
             return;
         }
+        if (reviewStarted.current)
+            return;
+        reviewStarted.current = true;
         let active = true;
         void reviewFiles(result.files, args, apiKey).then((next) => {
             if (active)
@@ -85738,6 +85773,7 @@ function App({ args }) {
         if (noKey)
             process.exitCode = 1;
     }, [noKey]);
+    const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
     const issueByFile = new Map();
     for (const issue of review.issues) {
         const current = issueByFile.get(issue.file) ?? [];
@@ -85752,7 +85788,7 @@ function App({ args }) {
         medium: review.issues.filter((issue) => issue.severity === 'medium').length,
         low: review.issues.filter((issue) => issue.severity === 'low').length
     };
-    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [showHeader && (0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts
@@ -85764,10 +85800,11 @@ function App({ args }) {
 async function cli_main() {
     (0,main.config)();
     const args = parseArgs(process.argv.slice(2));
-    (0,build.render)(react_default().createElement(App, { args }));
+    const instance = (0,build.render)(react_default().createElement(App, { args }));
+    await instance.waitUntilExit();
 }
 cli_main().catch((error) => {
-    console.error(error);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
 });
 
