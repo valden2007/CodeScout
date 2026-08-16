@@ -50,6 +50,7 @@ describe('C4.5 quality fixes', () => {
     expect(SYSTEM_PROMPT).toContain('DO NOT flag:');
     expect(SYSTEM_PROMPT).toContain('cuid()');
     expect(SYSTEM_PROMPT).toContain('seed or migration');
+    expect(SYSTEM_PROMPT).toContain('Next.js singleton patterns');
     expect(SYSTEM_PROMPT).toContain('BE LENIENT on:');
   });
 

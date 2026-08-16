@@ -7,7 +7,10 @@ DO NOT flag:
 - Standard ORM ID generation such as cuid() or uuid() as a security issue.
 - Missing try-catch in seed or migration files; these are one-off scripts.
 - Missing error logging when a .catch() handler handles the error gracefully.
-
+- Next.js singleton patterns such as \`globalThis as unknown as { prisma: PrismaClient }\`.
+- Standard Next.js API route structures such as \`export async function GET\` or \`POST\`.
+- Next.js middleware patterns.
+- Standard Next.js fetch patterns with proper error handling.
 BE LENIENT on:
 - console.error in small projects, unless it clearly logs secrets.
 - React fetch patterns that include proper .catch() handling.
