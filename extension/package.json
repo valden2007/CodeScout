@@ -1,0 +1,37 @@
+{
+  "name": "codescout-vscode",
+  "displayName": "CodeScout",
+  "description": "AI-powered code review for local Git changes.",
+  "version": "0.1.0",
+  "publisher": "valden2007",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:codescout.scanUncommitted",
+    "onCommand:codescout.scanLastCommit"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codescout.scanUncommitted",
+        "title": "CodeScout: review uncommitted changes"
+      },
+      {
+        "command": "codescout.scanLastCommit",
+        "title": "CodeScout: review last commit"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2"
+  }
+}
