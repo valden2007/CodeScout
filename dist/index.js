@@ -29922,7 +29922,7 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 22:
+/***/ 9392:
 /***/ ((module, __webpack_exports__, __nccwpck_require__) => {
 
 "use strict";
@@ -34089,10 +34089,39 @@ function createProvider(provider, apiKey, model) {
     return new GroqProvider(apiKey, model);
 }
 
+;// CONCATENATED MODULE: ./src/line-numbering.ts
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+function numberPatch(patch) {
+    let newLine = 0;
+    return patch.split('\n').map((line) => {
+        const hunk = line.match(HUNK_HEADER);
+        if (hunk) {
+            newLine = Number(hunk[1]);
+            return line;
+        }
+        if (newLine === 0 || line.startsWith('\\'))
+            return line;
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            const numbered = `${newLine} | ${line}`;
+            newLine += 1;
+            return numbered;
+        }
+        if (line.startsWith(' ')) {
+            const numbered = `${newLine} | ${line}`;
+            newLine += 1;
+            return numbered;
+        }
+        if (line.startsWith('-') && !line.startsWith('---'))
+            return line;
+        return line;
+    }).join('\n');
+}
+
 ;// CONCATENATED MODULE: ./src/prompt-builder.ts
-const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to a changed line when possible. Use an empty issues array when there is no meaningful finding.`;
+
+const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
-    return `Review the following changed file from a pull request.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nPatch:\n---\n${patch}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
+    return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nNumbered patch:\n---\n${numberPatch(patch)}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
 }
 
 ;// CONCATENATED MODULE: ./src/comment-poster.ts
@@ -34145,7 +34174,7 @@ function parseReviewResponse(raw, filename) {
             return [];
         const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
         const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
-        return [{ file: filename, line, category, severity, description, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
+        return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
@@ -36345,7 +36374,7 @@ __webpack_unused_export__ = defaultContentType
 /******/ 	// module cache are used so entry inlining is disabled
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
-/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 22);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 9392);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

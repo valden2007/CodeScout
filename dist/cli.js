@@ -85357,10 +85357,39 @@ function parseArgs(argv) {
 var jsx_runtime = __nccwpck_require__(3687);
 // EXTERNAL MODULE: ./node_modules/ink-spinner/build/index.js
 var ink_spinner_build = __nccwpck_require__(3763);
+;// CONCATENATED MODULE: ./src/line-numbering.ts
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+function numberPatch(patch) {
+    let newLine = 0;
+    return patch.split('\n').map((line) => {
+        const hunk = line.match(HUNK_HEADER);
+        if (hunk) {
+            newLine = Number(hunk[1]);
+            return line;
+        }
+        if (newLine === 0 || line.startsWith('\\'))
+            return line;
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            const numbered = `${newLine} | ${line}`;
+            newLine += 1;
+            return numbered;
+        }
+        if (line.startsWith(' ')) {
+            const numbered = `${newLine} | ${line}`;
+            newLine += 1;
+            return numbered;
+        }
+        if (line.startsWith('-') && !line.startsWith('---'))
+            return line;
+        return line;
+    }).join('\n');
+}
+
 ;// CONCATENATED MODULE: ./src/prompt-builder.ts
-const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to a changed line when possible. Use an empty issues array when there is no meaningful finding.`;
+
+const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
-    return `Review the following changed file from a pull request.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nPatch:\n---\n${patch}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
+    return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nNumbered patch:\n---\n${numberPatch(patch)}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
 }
 
 ;// CONCATENATED MODULE: ./src/llm-client.ts
@@ -85445,7 +85474,7 @@ function parseReviewResponse(raw, filename) {
             return [];
         const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
         const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
-        return [{ file: filename, line, category, severity, description, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
+        return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
@@ -85490,6 +85519,27 @@ function splitPatch(patch, maxCharacters = 45000) {
     if (current.trim())
         chunks.push(current.trim());
     return chunks;
+}
+
+;// CONCATENATED MODULE: external "node:fs"
+const external_node_fs_namespaceObject = require("node:fs");
+;// CONCATENATED MODULE: external "node:path"
+const external_node_path_namespaceObject = require("node:path");
+;// CONCATENATED MODULE: ./src/line-correction.ts
+
+
+function correctIssueLine(issue, repoPath) {
+    if (!issue.code?.trim())
+        return issue;
+    try {
+        const content = (0,external_node_fs_namespaceObject.readFileSync)((0,external_node_path_namespaceObject.join)(repoPath, issue.file), 'utf8');
+        const snippet = issue.code.trim();
+        const matches = content.split('\n').flatMap((line, index) => line.includes(snippet) ? [index + 1] : []);
+        return matches.length === 1 ? { ...issue, line: matches[0] } : issue;
+    }
+    catch {
+        return issue;
+    }
 }
 
 ;// CONCATENATED MODULE: external "node:child_process"
@@ -85570,6 +85620,7 @@ function SummaryBar({ stats }) {
 
 
 
+
 function scan(path, args) {
     try {
         return { files: readGitDiff(path, { lastCommit: args.lastCommit, base: args.base }) };
@@ -85608,7 +85659,8 @@ async function reviewFiles(files, args, apiKey) {
             for (const chunk of splitPatch(file.patch, 45_000)) {
                 try {
                     const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(toDiffFile(file), chunk));
-                    issues.push(...parseReviewResponse(raw, file.filename).issues);
+                    const parsed = parseReviewResponse(raw, file.filename);
+                    issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
                 }
                 catch (error) {
                     if (isRateLimit(error)) {
