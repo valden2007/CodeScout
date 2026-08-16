@@ -1,8 +1,14 @@
 {
   "name": "codescout",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "description": "AI-powered code review for GitHub pull requests and local CLI diffs with Groq BYOK support",
-  "keywords": ["code-review", "ai", "llm", "github-action", "cli"],
+  "keywords": [
+    "code-review",
+    "ai",
+    "llm",
+    "github-action",
+    "cli"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,7 +21,12 @@
   "private": false,
   "type": "commonjs",
   "main": "dist/index.js",
-  "files": ["dist", "action.yml", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "codescout": "./dist/cli.js"
   },
