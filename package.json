@@ -1,10 +1,21 @@
 {
   "name": "codescout",
   "version": "0.1.0",
-  "description": "AI-powered code review GitHub Action with BYOK LLM support",
+  "description": "AI-powered code review for GitHub pull requests and local CLI diffs with Groq BYOK support",
+  "keywords": ["code-review", "ai", "llm", "github-action", "cli"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/valden2007/CodeScout.git"
+  },
+  "bugs": {
+    "url": "https://github.com/valden2007/CodeScout/issues"
+  },
+  "homepage": "https://github.com/valden2007/CodeScout#readme",
   "private": false,
   "type": "commonjs",
   "main": "dist/index.js",
+  "files": ["dist", "action.yml", "README.md", "LICENSE"],
   "bin": {
     "codescout": "./dist/cli.js"
   },
