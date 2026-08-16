@@ -85387,7 +85387,18 @@ function numberPatch(patch) {
 
 ;// CONCATENATED MODULE: ./src/prompt-builder.ts
 
-const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+const SYSTEM_PROMPT = `You are a senior software engineer performing a focused pull request review. Identify only actionable defects introduced by the patch. Do not report preferences or pre-existing issues. Prioritize correctness, security, data loss, reliability, and performance.
+
+DO NOT flag:
+- Standard ORM ID generation such as cuid() or uuid() as a security issue.
+- Missing try-catch in seed or migration files; these are one-off scripts.
+- Missing error logging when a .catch() handler handles the error gracefully.
+
+BE LENIENT on:
+- console.error in small projects, unless it clearly logs secrets.
+- React fetch patterns that include proper .catch() handling.
+
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
     return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nNumbered patch:\n---\n${numberPatch(patch)}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
 }
@@ -85468,12 +85479,13 @@ function parseReviewResponse(raw, filename) {
             return [];
         const value = item;
         const category = categories.has(value.category) ? value.category : 'bug';
-        const severity = severities.has(value.severity) ? value.severity : 'medium';
+        const rawSeverity = severities.has(value.severity) ? value.severity : 'medium';
         const description = typeof value.description === 'string' ? value.description.trim() : '';
         if (!description)
             return [];
         const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
         const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+        const severity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
         return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
@@ -85547,6 +85559,18 @@ const external_node_child_process_namespaceObject = require("node:child_process"
 ;// CONCATENATED MODULE: ./src/tui/DiffReader.ts
 
 
+
+function validateGitPath(repoPath) {
+    if (!(0,external_node_fs_namespaceObject.existsSync)(repoPath))
+        return `Путь не найден: "${repoPath}". Проверь значение --path.`;
+    try {
+        (0,external_node_child_process_namespaceObject.execFileSync)('git', ['-C', repoPath, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        return undefined;
+    }
+    catch {
+        return `Путь "${repoPath}" не является Git-репозиторием. Укажи папку с .git через --path.`;
+    }
+}
 function runGit(args, cwd) {
     try {
         return (0,external_node_child_process_namespaceObject.execFileSync)('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -85576,6 +85600,9 @@ function mergeFiles(files) {
     return [...merged.values()];
 }
 function readGitDiff(repoPath, options = {}) {
+    const validationError = validateGitPath(repoPath);
+    if (validationError)
+        throw new Error(validationError);
     runGit(['rev-parse', '--is-inside-work-tree'], repoPath);
     const git = (...args) => runGit(['-c', 'color.ui=false', ...args], repoPath);
     if (options.base)
@@ -85633,7 +85660,7 @@ function toDiffFile(file) {
     return file;
 }
 function toTuiIssue(issue) {
-    const severity = issue.severity === 'low' ? 'low' : issue.severity === 'medium' ? 'medium' : 'critical';
+    const severity = issue.severity === 'critical' ? 'critical' : issue.severity === 'low' ? 'low' : 'medium';
     return {
         severity,
         category: issue.category,
@@ -85677,6 +85704,9 @@ async function reviewFiles(files, args, apiKey) {
         return { issues: [], error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, complete: true };
     }
 }
+function filesWithIssues(files, issueByFile) {
+    return files.filter((file) => (issueByFile.get(file.filename)?.length ?? 0) > 0);
+}
 function App({ args }) {
     const [result] = (0,react.useState)(() => scan(args.path, args));
     const [review, setReview] = (0,react.useState)({ issues: [], durationMs: 0, complete: false });
@@ -85709,11 +85739,11 @@ function App({ args }) {
         issues: review.issues.length,
         files: result.files.length,
         seconds: review.durationMs / 1000,
-        critical: review.issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high').length,
+        critical: review.issues.filter((issue) => issue.severity === 'critical').length,
         medium: review.issues.filter((issue) => issue.severity === 'medium').length,
         low: review.issues.filter((issue) => issue.severity === 'low').length
     };
-    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), result.files.map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [(0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts
