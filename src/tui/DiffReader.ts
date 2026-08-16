@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { parseUnifiedDiff } from '../diff-parser';
 
 export interface LocalDiffFile {
@@ -12,6 +13,16 @@ export interface LocalDiffFile {
 export interface DiffReadOptions {
   lastCommit?: boolean;
   base?: string;
+}
+
+export function validateGitPath(repoPath: string): string | undefined {
+  if (!existsSync(repoPath)) return `Путь не найден: "${repoPath}". Проверь значение --path.`;
+  try {
+    execFileSync('git', ['-C', repoPath, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return undefined;
+  } catch {
+    return `Путь "${repoPath}" не является Git-репозиторием. Укажи папку с .git через --path.`;
+  }
 }
 
 function runGit(args: string[], cwd: string): string {
@@ -45,6 +56,8 @@ function mergeFiles(files: LocalDiffFile[]): LocalDiffFile[] {
 }
 
 export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): LocalDiffFile[] {
+  const validationError = validateGitPath(repoPath);
+  if (validationError) throw new Error(validationError);
   runGit(['rev-parse', '--is-inside-work-tree'], repoPath);
   const git = (...args: string[]) => runGit(['-c', 'color.ui=false', ...args], repoPath);
 
