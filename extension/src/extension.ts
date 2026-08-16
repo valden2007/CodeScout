@@ -72,6 +72,7 @@ async function runReview(lastCommit: boolean, output: vscode.OutputChannel, pane
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? 'CodeScout: reviewing last commit...' : 'CodeScout: reviewing uncommitted changes...');
+  panel.setScanning(true);
 
   try {
     const result = await reviewWorkspace(lastCommit);
@@ -88,6 +89,7 @@ async function runReview(lastCommit: boolean, output: vscode.OutputChannel, pane
     }
     void vscode.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
+    panel.setScanning(false);
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
