@@ -25,11 +25,12 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     if (!item || typeof item !== 'object') return [];
     const value = item as Record<string, unknown>;
     const category = categories.has(value.category as ReviewCategory) ? value.category as ReviewCategory : 'bug';
-    const severity = severities.has(value.severity as ReviewSeverity) ? value.severity as ReviewSeverity : 'medium';
+    const rawSeverity = severities.has(value.severity as ReviewSeverity) ? value.severity as ReviewSeverity : 'medium';
     const description = typeof value.description === 'string' ? value.description.trim() : '';
     if (!description) return [];
     const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
     const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+    const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
     return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
   });
   return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
