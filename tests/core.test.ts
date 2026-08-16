@@ -51,6 +51,8 @@ describe('C4.5 quality fixes', () => {
     expect(SYSTEM_PROMPT).toContain('cuid()');
     expect(SYSTEM_PROMPT).toContain('seed or migration');
     expect(SYSTEM_PROMPT).toContain('Next.js singleton patterns');
+    expect(SYSTEM_PROMPT).toContain('Precision over recall');
+    expect(SYSTEM_PROMPT).toContain('Report at most 3 issues per file');
     expect(SYSTEM_PROMPT).toContain('BE LENIENT on:');
   });
 
@@ -72,6 +74,10 @@ describe('C4.5 quality fixes', () => {
   it('demotes low-confidence critical findings to medium', () => {
     const result = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"critical","description":"Maybe unsafe","confidence":0.6}]}', 'src/app.ts');
     expect(result.issues[0].severity).toBe('medium');
+  });
+  it('downgrades an index suggestion mislabeled as security', () => {
+    const result = parseReviewResponse('{"issues":[{"line":4,"category":"security","severity":"medium","description":"Missing database index","suggestion":"Add an index for this query","confidence":0.8}]}', 'src/db.ts');
+    expect(result.issues[0].category).toBe('performance');
   });
 });
 
