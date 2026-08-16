@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { parseUnifiedDiff, shouldReviewFile, splitPatch } from '../src/diff-parser';
 import { parseReviewResponse } from '../src/response-parser';
 import { buildSummaryComment } from '../src/report-formatter';
+import { numberPatch } from '../src/line-numbering';
+import { correctIssueLine } from '../src/line-correction';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const diff = `diff --git a/src/app.ts b/src/app.ts
 index 1111111..2222222 100644
@@ -38,6 +42,26 @@ describe('diff parser', () => {
   });
 });
 
+describe('line accuracy', () => {
+  it('numbers added and context lines from the new-file hunk header', () => {
+    const patch = `@@ -17,3 +20,4 @@\n const before = true;\n+const token = input.token;\n const after = true;`;
+    expect(numberPatch(patch)).toContain('20 |  const before = true;');
+    expect(numberPatch(patch)).toContain('21 | +const token = input.token;');
+    expect(numberPatch(patch)).toContain('22 |  const after = true;');
+  });
+
+  it('corrects the line when the code snippet occurs exactly once', () => {
+    const directory = mkdtempSync(join(process.cwd(), 'tmp-line-test-'));
+    try {
+      writeFileSync(join(directory, 'src.ts'), 'const first = 1;\nconst token = input.token;\nconst last = 3;\n');
+      const issue = { file: 'src.ts', line: 18, category: 'bug' as const, severity: 'medium' as const, description: 'Unsafe token use', code: 'const token = input.token;', confidence: 0.9 };
+      expect(correctIssueLine(issue, directory).line).toBe(2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('report formatter', () => {
   const issues = [
     { file: 'src/app.ts', line: 8, category: 'style' as const, severity: 'low' as const, description: 'Minor naming issue.', suggestion: 'Rename the variable.', confidence: 0.8 },
@@ -67,8 +91,8 @@ describe('report formatter', () => {
 
 describe('response parser', () => {
   it('parses fenced JSON and normalizes issue fields', () => {
-    const result = parseReviewResponse('```json\n{"issues":[{"line":4,"category":"security","severity":"high","description":"Unsafe input","confidence":2}],"summary":"Fix input validation"}\n```', 'src/app.ts');
-    expect(result.issues[0]).toMatchObject({ file: 'src/app.ts', line: 4, category: 'security', severity: 'high', confidence: 1 });
+    const result = parseReviewResponse('```json\n{"issues":[{"line":4,"category":"security","severity":"high","description":"Unsafe input","code":"const token = input.token;","confidence":2}],"summary":"Fix input validation"}\n```', 'src/app.ts');
+    expect(result.issues[0]).toMatchObject({ file: 'src/app.ts', line: 4, category: 'security', severity: 'high', code: 'const token = input.token;', confidence: 1 });
   });
 
   it('rejects malformed JSON', () => {

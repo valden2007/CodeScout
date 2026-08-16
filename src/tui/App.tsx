@@ -6,6 +6,7 @@ import { createProvider } from '../llm-client';
 import { parseReviewResponse } from '../response-parser';
 import { DiffFile, ReviewIssue } from '../types';
 import { splitPatch } from '../diff-parser';
+import { correctIssueLine } from '../line-correction';
 import { CliArgs } from '../cli/args';
 import { LocalDiffFile, readGitDiff } from './DiffReader';
 import { FilePanel, Header, Issue, SummaryBar } from './components';
@@ -71,7 +72,8 @@ async function reviewFiles(files: LocalDiffFile[], args: CliArgs, apiKey: string
             SYSTEM_PROMPT,
             buildReviewPrompt(toDiffFile(file), chunk)
           );
-          issues.push(...parseReviewResponse(raw, file.filename).issues);
+          const parsed = parseReviewResponse(raw, file.filename);
+          issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
         } catch (error) {
           if (isRateLimit(error)) {
             warning = 'Groq временно ограничил частоту запросов. Часть файлов не была проверена.';

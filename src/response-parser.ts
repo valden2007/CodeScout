@@ -30,7 +30,7 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     if (!description) return [];
     const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
     const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
-    return [{ file: filename, line, category, severity, description, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
+    return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
   });
   return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
