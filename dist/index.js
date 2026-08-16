@@ -34133,6 +34133,8 @@ BE LENIENT on:
 - console.error in small projects, unless it clearly logs secrets.
 - React fetch patterns that include proper .catch() handling.
 
+Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
+Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects.
 Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function buildReviewPrompt(file, patch) {
     return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.\n\nFile: ${file.filename}\nStatus: ${file.status}\nAdded lines: ${file.additions}; deleted lines: ${file.deletions}\n\nNumbered patch:\n---\n${numberPatch(patch)}\n---\n\nReturn JSON only. Keep descriptions concise and explain why the issue matters. Provide a concrete safer suggestion when one is clear.`;
@@ -34188,8 +34190,12 @@ function parseReviewResponse(raw, filename) {
             return [];
         const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
         const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+        const code = typeof value.code === 'string' ? value.code.trim() : undefined;
+        const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
+        const categoryText = `${description} ${suggestion ?? ''}`;
+        const guardedCategory = category === 'security' && /index|cache|logging|performance/i.test(categoryText) ? 'performance' : category;
         const severity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-        return [{ file: filename, line, category, severity, description, code: typeof value.code === 'string' ? value.code.trim() : undefined, suggestion: typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined, confidence }];
+        return [{ file: filename, line, category: guardedCategory, severity, description, code, suggestion, confidence }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
