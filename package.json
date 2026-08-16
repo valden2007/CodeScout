@@ -5,8 +5,14 @@
   "private": false,
   "type": "commonjs",
   "main": "dist/index.js",
+  "bin": {
+    "codescout": "./dist/cli.js"
+  },
   "scripts": {
-    "build": "ncc build src/action.ts -o dist",
+    "build": "ncc build src/action.ts -o dist && ncc build src/cli.ts -o dist-cli && cp dist-cli/index.js dist/cli.js && rm -rf dist-cli",
+    "build:cli": "ncc build src/cli.ts -o dist-cli && cp dist-cli/index.js dist/cli.js && rm -rf dist-cli",
+    "cli": "tsx src/cli.ts",
+    "cli:scan": "tsx src/cli.ts scan",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -17,11 +23,19 @@
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.0",
-    "@octokit/rest": "^21.1.0"
+    "@octokit/rest": "^21.1.0",
+    "ink": "^3.2.0",
+    "ink-spinner": "^4.0.3",
+    "ink-table": "^3.0.0",
+    "react": "^18.3.1",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/yargs": "^17.0.35",
     "@vercel/ncc": "^0.38.3",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
