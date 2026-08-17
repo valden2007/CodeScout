@@ -7,6 +7,7 @@ import { correctIssueLine } from '../src/line-correction';
 import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
+import { GroqProvider, RetryEvent } from '../src/llm-client';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -24,6 +25,45 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('Groq retry handling', () => {
+  const success = () => new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const rateLimited = () => new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
+  const quickRateLimited = () => new Response(JSON.stringify({ error: { message: 'rate limit, try again in 1s' } }), { status: 429, headers: { 'retry-after': '1' } });
+  const request = ['system', 'user'] as const;
+
+  it('retries 429 with backoff events and succeeds', async () => {
+    const responses = [rateLimited(), rateLimited(), rateLimited(), success()];
+    const waits: number[] = [];
+    const events: RetryEvent[] = [];
+    const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async (ms) => { waits.push(ms); }, (event) => events.push(event));
+    await expect(provider.review(...request)).resolves.toContain('issues');
+    expect(events).toEqual([
+      { attempt: 1, maxRetries: 3, waitSeconds: 15 },
+      { attempt: 2, maxRetries: 3, waitSeconds: 30 },
+      { attempt: 3, maxRetries: 3, waitSeconds: 60 }
+    ]);
+    expect(waits).toEqual([15000, 30000, 60000]);
+  });
+
+  it('returns a friendly error after three exhausted retries', async () => {
+    const provider = new GroqProvider('key', 'model', async () => quickRateLimited(), async () => undefined);
+    await expect(provider.review(...request)).rejects.toMatchObject({
+      name: 'RateLimitError',
+      message: expect.stringContaining('Превышен дневной лимит Groq')
+    });
+  });
+
+  it('does not retry authentication errors', async () => {
+    let calls = 0;
+    const provider = new GroqProvider('key', 'model', async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), { status: 401 });
+    }, async () => undefined);
+    await expect(provider.review(...request)).rejects.toThrow('Invalid API key');
+    expect(calls).toBe(1);
+  });
+});
 
 describe('diff parser', () => {
   it('extracts reviewable files and line counts', () => {
