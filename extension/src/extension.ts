@@ -39,7 +39,7 @@ function buildStats(issues: ReviewIssue[], filesAnalyzed: number, durationMs: nu
   };
 }
 
-async function reviewWorkspace(lastCommit: boolean): Promise<ScanResult> {
+async function reviewWorkspace(lastCommit: boolean, onRetry: (event: import('../../src/llm-client').RetryEvent) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
@@ -56,7 +56,7 @@ async function reviewWorkspace(lastCommit: boolean): Promise<ScanResult> {
   const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
 
-  const provider = createProvider(providerName, apiKey, MODEL);
+  const provider = createProvider(providerName, apiKey, MODEL, onRetry);
   const issues: ReviewIssue[] = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
@@ -75,7 +75,7 @@ async function runReview(lastCommit: boolean, output: vscode.OutputChannel, pane
   panel.setScanning(true);
 
   try {
-    const result = await reviewWorkspace(lastCommit);
+    const result = await reviewWorkspace(lastCommit, (event) => panel.setRetry(event));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -89,8 +89,8 @@ async function runReview(lastCommit: boolean, output: vscode.OutputChannel, pane
     }
     void vscode.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
-    panel.setScanning(false);
     const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
   }

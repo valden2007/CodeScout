@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import { buildReviewPrompt, SYSTEM_PROMPT } from '../prompt-builder';
-import { createProvider } from '../llm-client';
+import { createProvider, RetryEvent } from '../llm-client';
 import { parseReviewResponse } from '../response-parser';
 import { DiffFile, ReviewIssue } from '../types';
 import { splitPatch } from '../diff-parser';
@@ -24,6 +24,7 @@ interface ReviewState {
   issues: ReviewIssue[];
   warning?: string;
   error?: string;
+  retry?: RetryEvent;
   durationMs: number;
   complete: boolean;
 }
@@ -52,38 +53,26 @@ function toTuiIssue(issue: ReviewIssue): Issue {
   };
 }
 
-function isRateLimit(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /429|rate.?limit|too many requests/i.test(message);
-}
-
-async function reviewFiles(files: LocalDiffFile[], args: CliArgs, apiKey: string): Promise<ReviewState> {
+async function reviewFiles(
+  files: LocalDiffFile[],
+  args: CliArgs,
+  apiKey: string,
+  onRetry: (event: RetryEvent) => void
+): Promise<ReviewState> {
   const startedAt = Date.now();
   if (args.dryRun) return { issues: [], durationMs: Date.now() - startedAt, complete: true };
 
   try {
-    const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile');
+    const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile', onRetry);
     const issues: ReviewIssue[] = [];
-    let warning: string | undefined;
     for (const file of files) {
       for (const chunk of splitPatch(file.patch, 45_000)) {
-        try {
-          const raw = await provider.review(
-            SYSTEM_PROMPT,
-            buildReviewPrompt(toDiffFile(file), chunk)
-          );
-          const parsed = parseReviewResponse(raw, file.filename);
-          issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
-        } catch (error) {
-          if (isRateLimit(error)) {
-            warning = 'Groq временно ограничил частоту запросов. Часть файлов не была проверена.';
-            continue;
-          }
-          throw error;
-        }
+        const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(toDiffFile(file), chunk));
+        const parsed = parseReviewResponse(raw, file.filename);
+        issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
       }
     }
-    return { issues, warning, durationMs: Date.now() - startedAt, complete: true };
+    return { issues, durationMs: Date.now() - startedAt, complete: true };
   } catch (error) {
     return { issues: [], error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, complete: true };
   }
@@ -107,7 +96,9 @@ export function App({ args }: Props) {
     if (reviewStarted.current) return;
     reviewStarted.current = true;
     let active = true;
-    void reviewFiles(result.files, args, apiKey).then((next) => {
+    void reviewFiles(result.files, args, apiKey, (retry) => {
+      if (active) setReview((current) => ({ ...current, retry, complete: false }));
+    }).then((next) => {
       if (active) setReview(next);
     });
     return () => { active = false; };
@@ -115,8 +106,8 @@ export function App({ args }: Props) {
 
   const noKey = !apiKey && !args.dryRun && !result.error && result.files.length > 0;
   useEffect(() => {
-    if (noKey) process.exitCode = 1;
-  }, [noKey]);
+    if (noKey || review.error) process.exitCode = 1;
+  }, [noKey, review.error]);
 
   const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
   const issueByFile = new Map<string, Issue[]>();
@@ -133,6 +124,7 @@ export function App({ args }: Props) {
     medium: review.issues.filter((issue) => issue.severity === 'medium').length,
     low: review.issues.filter((issue) => issue.severity === 'low').length
   };
+  const retryText = review.retry ? `⏳ Rate limit, ожидание ${review.retry.waitSeconds}с (попытка ${review.retry.attempt}/${review.retry.maxRetries})...` : '';
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -150,9 +142,9 @@ export function App({ args }: Props) {
           <Text dimColor>   (.env уже в .gitignore — ключ не попадёт в git)</Text>
         </Box>
       ) : !review.complete ? (
-        <Box marginTop={1}><Text color="cyan"><Spinner type="dots" /> 🤖 Отправляю в Groq...</Text></Box>
+        <Box marginTop={1}><Text color={review.retry ? 'yellow' : 'cyan'}><Spinner type="dots" /> {review.retry ? retryText : '🤖 Отправляю в Groq...'}</Text></Box>
       ) : review.error ? (
-        <Box borderStyle="round" borderColor="red" padding={1} marginTop={1}><Text color="red">Error: {review.error}</Text></Box>
+        <Box borderStyle="round" borderColor="red" padding={1} marginTop={1} flexDirection="column"><Text color="red">{review.error}</Text></Box>
       ) : (
         <>
           {review.warning && <Box borderStyle="round" borderColor="yellow" padding={1} marginTop={1}><Text color="yellow">⚠ {review.warning}</Text></Box>}
