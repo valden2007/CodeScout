@@ -85440,23 +85440,52 @@ function buildReviewPrompt(file, patch) {
 }
 
 ;// CONCATENATED MODULE: ./src/llm-client.ts
+class RateLimitError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'RateLimitError';
+    }
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const RETRY_DELAYS_SECONDS = [15, 30, 60];
+function parseRetryAfterSeconds(response, message) {
+    const header = response.headers.get('retry-after');
+    if (header) {
+        const seconds = Number.parseFloat(header);
+        if (Number.isFinite(seconds) && seconds >= 0)
+            return Math.ceil(seconds);
+    }
+    const match = message.match(/try\s+again\s+in\s+(\d+(?:\.\d+)?)\s*s?/i);
+    if (match)
+        return Math.ceil(Number.parseFloat(match[1]));
+    return undefined;
+}
+function finalRateLimitMessage(waitSeconds, details = '') {
+    const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
+    const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? 'tokens per day' : 'tokens per day';
+    return `⚠️ Превышен дневной лимит Groq.\nПопробуйте через ${minutes} минут или используйте другой провайдер.\nТекущий лимит: ${suffix}`;
+}
 class GroqProvider {
     apiKey;
     model;
     fetcher;
+    sleeper;
+    onRetry;
     lastRequestAt = 0;
-    constructor(apiKey, model, fetcher = fetch) {
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
+        this.sleeper = sleeper;
+        this.onRetry = onRetry;
     }
     async review(systemPrompt, userPrompt) {
         const wait = 2000 - (Date.now() - this.lastRequestAt);
         if (wait > 0)
-            await sleep(wait);
-        let lastError;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+            await this.sleeper(wait);
+        let retryCount = 0;
+        let lastRateLimit;
+        while (true) {
             this.lastRequestAt = Date.now();
             try {
                 const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
@@ -85465,26 +85494,43 @@ class GroqProvider {
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
                 });
                 const data = (await response.json());
-                if (!response.ok)
-                    throw new Error(data.error?.message ?? `Groq request failed with ${response.status}`);
+                if (!response.ok) {
+                    const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+                    if (response.status === 429) {
+                        const waitSeconds = parseRetryAfterSeconds(response, details);
+                        throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
+                    }
+                    throw new Error(details);
+                }
                 const content = data.choices?.[0]?.message?.content;
                 if (!content)
                     throw new Error('Groq returned an empty response');
                 return content;
             }
             catch (error) {
-                lastError = error;
-                if (attempt < 2)
-                    await sleep(2 ** attempt * 1000);
+                if (!(error instanceof RateLimitError))
+                    throw error;
+                let parsed = {};
+                try {
+                    parsed = JSON.parse(error.message);
+                }
+                catch { /* use defaults */ }
+                lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
+                if (retryCount >= RETRY_DELAYS_SECONDS.length) {
+                    throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+                }
+                retryCount += 1;
+                const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
+                this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
+                await this.sleeper(waitSeconds * 1000);
             }
         }
-        throw lastError instanceof Error ? lastError : new Error('LLM request failed');
     }
 }
-function createProvider(provider, apiKey, model) {
+function createProvider(provider, apiKey, model, onRetry) {
     if (provider.toLowerCase() !== 'groq')
         throw new Error(`Unsupported provider: ${provider}`);
-    return new GroqProvider(apiKey, model);
+    return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
 }
 
 ;// CONCATENATED MODULE: ./src/response-parser.ts
@@ -85710,35 +85756,21 @@ function toTuiIssue(issue) {
         suggestion: issue.suggestion ?? issue.description
     };
 }
-function isRateLimit(error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return /429|rate.?limit|too many requests/i.test(message);
-}
-async function reviewFiles(files, args, apiKey) {
+async function reviewFiles(files, args, apiKey, onRetry) {
     const startedAt = Date.now();
     if (args.dryRun)
         return { issues: [], durationMs: Date.now() - startedAt, complete: true };
     try {
-        const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile');
+        const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile', onRetry);
         const issues = [];
-        let warning;
         for (const file of files) {
             for (const chunk of splitPatch(file.patch, 45_000)) {
-                try {
-                    const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(toDiffFile(file), chunk));
-                    const parsed = parseReviewResponse(raw, file.filename);
-                    issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
-                }
-                catch (error) {
-                    if (isRateLimit(error)) {
-                        warning = 'Groq временно ограничил частоту запросов. Часть файлов не была проверена.';
-                        continue;
-                    }
-                    throw error;
-                }
+                const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(toDiffFile(file), chunk));
+                const parsed = parseReviewResponse(raw, file.filename);
+                issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, args.path)));
             }
         }
-        return { issues, warning, durationMs: Date.now() - startedAt, complete: true };
+        return { issues, durationMs: Date.now() - startedAt, complete: true };
     }
     catch (error) {
         return { issues: [], error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, complete: true };
@@ -85762,7 +85794,10 @@ function App({ args }) {
             return;
         reviewStarted.current = true;
         let active = true;
-        void reviewFiles(result.files, args, apiKey).then((next) => {
+        void reviewFiles(result.files, args, apiKey, (retry) => {
+            if (active)
+                setReview((current) => ({ ...current, retry, complete: false }));
+        }).then((next) => {
             if (active)
                 setReview(next);
         });
@@ -85770,9 +85805,9 @@ function App({ args }) {
     }, [apiKey, args, result.error, result.files]);
     const noKey = !apiKey && !args.dryRun && !result.error && result.files.length > 0;
     (0,react.useEffect)(() => {
-        if (noKey)
+        if (noKey || review.error)
             process.exitCode = 1;
-    }, [noKey]);
+    }, [noKey, review.error]);
     const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
     const issueByFile = new Map();
     for (const issue of review.issues) {
@@ -85788,7 +85823,8 @@ function App({ args }) {
         medium: review.issues.filter((issue) => issue.severity === 'medium').length,
         low: review.issues.filter((issue) => issue.severity === 'low').length
     };
-    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [showHeader && (0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "cyan", children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " \uD83E\uDD16 \u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u044E \u0432 Groq..."] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", review.error] }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
+    const retryText = review.retry ? `⏳ Rate limit, ожидание ${review.retry.waitSeconds}с (попытка ${review.retry.attempt}/${review.retry.maxRetries})...` : '';
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [showHeader && (0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: review.retry ? 'yellow' : 'cyan', children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " ", review.retry ? retryText : '🤖 Отправляю в Groq...'] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: (0,jsx_runtime.jsx)(build.Text, { color: "red", children: review.error }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts

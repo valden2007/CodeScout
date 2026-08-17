@@ -34042,23 +34042,52 @@ function formatIssue(issue) {
 }
 
 ;// CONCATENATED MODULE: ./src/llm-client.ts
+class RateLimitError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'RateLimitError';
+    }
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const RETRY_DELAYS_SECONDS = [15, 30, 60];
+function parseRetryAfterSeconds(response, message) {
+    const header = response.headers.get('retry-after');
+    if (header) {
+        const seconds = Number.parseFloat(header);
+        if (Number.isFinite(seconds) && seconds >= 0)
+            return Math.ceil(seconds);
+    }
+    const match = message.match(/try\s+again\s+in\s+(\d+(?:\.\d+)?)\s*s?/i);
+    if (match)
+        return Math.ceil(Number.parseFloat(match[1]));
+    return undefined;
+}
+function finalRateLimitMessage(waitSeconds, details = '') {
+    const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
+    const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? 'tokens per day' : 'tokens per day';
+    return `⚠️ Превышен дневной лимит Groq.\nПопробуйте через ${minutes} минут или используйте другой провайдер.\nТекущий лимит: ${suffix}`;
+}
 class GroqProvider {
     apiKey;
     model;
     fetcher;
+    sleeper;
+    onRetry;
     lastRequestAt = 0;
-    constructor(apiKey, model, fetcher = fetch) {
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
+        this.sleeper = sleeper;
+        this.onRetry = onRetry;
     }
     async review(systemPrompt, userPrompt) {
         const wait = 2000 - (Date.now() - this.lastRequestAt);
         if (wait > 0)
-            await sleep(wait);
-        let lastError;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+            await this.sleeper(wait);
+        let retryCount = 0;
+        let lastRateLimit;
+        while (true) {
             this.lastRequestAt = Date.now();
             try {
                 const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
@@ -34067,26 +34096,43 @@ class GroqProvider {
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
                 });
                 const data = (await response.json());
-                if (!response.ok)
-                    throw new Error(data.error?.message ?? `Groq request failed with ${response.status}`);
+                if (!response.ok) {
+                    const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+                    if (response.status === 429) {
+                        const waitSeconds = parseRetryAfterSeconds(response, details);
+                        throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
+                    }
+                    throw new Error(details);
+                }
                 const content = data.choices?.[0]?.message?.content;
                 if (!content)
                     throw new Error('Groq returned an empty response');
                 return content;
             }
             catch (error) {
-                lastError = error;
-                if (attempt < 2)
-                    await sleep(2 ** attempt * 1000);
+                if (!(error instanceof RateLimitError))
+                    throw error;
+                let parsed = {};
+                try {
+                    parsed = JSON.parse(error.message);
+                }
+                catch { /* use defaults */ }
+                lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
+                if (retryCount >= RETRY_DELAYS_SECONDS.length) {
+                    throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+                }
+                retryCount += 1;
+                const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
+                this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
+                await this.sleeper(waitSeconds * 1000);
             }
         }
-        throw lastError instanceof Error ? lastError : new Error('LLM request failed');
     }
 }
-function createProvider(provider, apiKey, model) {
+function createProvider(provider, apiKey, model, onRetry) {
     if (provider.toLowerCase() !== 'groq')
         throw new Error(`Unsupported provider: ${provider}`);
-    return new GroqProvider(apiKey, model);
+    return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
 }
 
 ;// CONCATENATED MODULE: ./src/line-numbering.ts
