@@ -17,7 +17,8 @@
     "onCommand:codescout.scanUncommitted",
     "onCommand:codescout.scanLastCommit",
     "onCommand:codescout.setApiKey",
-    "onCommand:codescout.clearApiKey"
+    "onCommand:codescout.clearApiKey",
+    "onCommand:codescout.chooseModel"
   ],
   "contributes": {
     "viewsContainers": {
@@ -54,6 +55,10 @@
       {
         "command": "codescout.clearApiKey",
         "title": "CodeScout: clear API key"
+      },
+      {
+        "command": "codescout.chooseModel",
+        "title": "CodeScout: choose model"
       }
     ],
     "configuration": {

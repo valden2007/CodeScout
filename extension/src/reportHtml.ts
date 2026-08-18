@@ -120,8 +120,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">Очистить</button>' : ''}</div>
-    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}</div>` : ''}
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
+    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Review last commit</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Review uncommitted</button>

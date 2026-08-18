@@ -33,6 +33,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'clearApiKey') {
         void vscode.commands.executeCommand('codescout.clearApiKey');
+      } else if (message.command === 'chooseModel') {
+        void vscode.commands.executeCommand('codescout.chooseModel');
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
       }
