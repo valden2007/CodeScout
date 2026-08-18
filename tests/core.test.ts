@@ -8,7 +8,7 @@ import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
 import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml } from '../extension/src/reportHtml';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,6 +28,23 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5.6 provider auto-detection', () => {
+  it('detects all supported API-key prefixes and their models', () => {
+    expect(detectProvider('gsk_test')).toEqual({ provider: 'groq', model: 'openai/gpt-oss-20b' });
+    expect(detectProvider('AIza-test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    expect(detectProvider('AQ.test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    expect(detectProvider('sk-or-test')).toEqual({ provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' });
+    expect(detectProvider('ghp_test')).toEqual({ provider: 'github', model: 'gpt-4o-mini' });
+    expect(detectProvider('github_pat_test')).toEqual({ provider: 'github', model: 'gpt-4o-mini' });
+    expect(detectProvider('unknown-key')).toBeNull();
+  });
+
+  it('renders provider and model in the key status line', () => {
+    const html = buildEmptyReportHtml('sk-o•••123', true, 'openrouter', 'meta-llama/llama-3.3-instruct:free');
+    expect(html).toContain('🟢 openrouter · meta-llama/llama-3.3-instruct:free · sk-o•••123');
+  });
+});
 
 describe('E5.5 endpoint URLs', () => {
   it('builds the exact OpenAI-compatible URL for every built-in provider', () => {

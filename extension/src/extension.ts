@@ -4,18 +4,27 @@ import { buildReviewPrompt, SYSTEM_PROMPT } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, keyUrl, resolveApiKeyPriority } from '../../src/providers';
+import { defaultModel, detectProvider, keyUrl, ProviderName, resolveApiKeyPriority } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 
 const SECRET_KEY = 'codescout.apiKey';
+const SECRET_PROVIDER = 'codescout.provider';
+const SECRET_MODEL = 'codescout.model';
 
 interface ScanResult {
   issues: ReviewIssue[];
   filesAnalyzed: number;
   durationMs: number;
+}
+
+interface ProviderSelection {
+  provider: ProviderName;
+  model: string;
+  key?: string;
+  baseUrl?: string;
 }
 
 function formatIssue(issue: ReviewIssue): string {
@@ -40,10 +49,22 @@ function buildStats(issues: ReviewIssue[], filesAnalyzed: number, durationMs: nu
   };
 }
 
-async function resolveExtensionKey(context: vscode.ExtensionContext, providerName: string, legacySetting?: string): Promise<string | undefined> {
-  const secret = await context.secrets.get(SECRET_KEY);
-  if (secret?.trim()) return secret.trim();
-  return resolveApiKeyPriority(undefined, providerName, legacySetting);
+async function resolveExtensionSelection(context: vscode.ExtensionContext): Promise<ProviderSelection> {
+  const config = vscode.workspace.getConfiguration('codescout');
+  const secretKey = await context.secrets.get(SECRET_KEY);
+  const secretProvider = await context.secrets.get(SECRET_PROVIDER);
+  const secretModel = await context.secrets.get(SECRET_MODEL);
+  const settingsProvider = config.get<string>('provider')?.trim();
+  const settingsModel = config.get<string>('model')?.trim();
+  const provider = (secretProvider?.trim() || settingsProvider || 'gemini') as ProviderName;
+  const model = secretModel?.trim() || settingsModel || defaultModel(provider);
+  const key = resolveApiKeyPriority(secretKey, provider, config.get<string>('apiKey'));
+  return {
+    provider,
+    model,
+    key,
+    baseUrl: config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL
+  };
 }
 
 async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
@@ -51,18 +72,14 @@ async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boo
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
 
-  const config = vscode.workspace.getConfiguration('codescout');
-  const providerName = config.get<string>('provider', 'gemini');
-  const model = config.get<string>('model')?.trim() || defaultModel(providerName);
-  const baseUrl = config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL;
-  const apiKey = await resolveExtensionKey(context, providerName, config.get<string>('apiKey'));
-  if (!apiKey) {
-    throw new Error(`Не найден API-ключ для ${providerName}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(providerName)}`);
+  const selection = await resolveExtensionSelection(context);
+  if (!selection.key) {
+    throw new Error(`Не найден API-ключ для ${selection.provider}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(selection.provider)}`);
   }
   const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
 
-  const provider = createProvider(providerName, apiKey, model, (event) => onRetry(event, model), baseUrl);
+  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues: ReviewIssue[] = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
@@ -104,9 +121,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const panel = new CodeScoutPanel();
   context.subscriptions.push(output);
   const syncKeyStatus = async (): Promise<void> => {
-    const config = vscode.workspace.getConfiguration('codescout');
-    const provider = config.get<string>('provider', 'gemini');
-    panel.setKey(await resolveExtensionKey(context, provider, config.get<string>('apiKey')));
+    const selection = await resolveExtensionSelection(context);
+    panel.setKey(selection.key, selection.provider, selection.model);
   };
   void syncKeyStatus();
   context.subscriptions.push(
@@ -116,14 +132,26 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставь API-ключ Gemini (начинается с AIza)' });
       if (!key?.trim()) return;
+      const detected = detectProvider(key);
+      let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
+      if (!selection) {
+        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'custom'], { placeHolder: 'Выбери провайдер' });
+        if (!picked) return;
+        selection = { provider: picked as ProviderName, model: defaultModel(picked) };
+      }
       await context.secrets.store(SECRET_KEY, key.trim());
-      panel.setKey(key.trim());
-      void vscode.window.showInformationMessage('✅ Ключ сохранён защищённо');
+      await context.secrets.store(SECRET_PROVIDER, selection.provider);
+      await context.secrets.store(SECRET_MODEL, selection.model);
+      panel.setKey(key.trim(), selection.provider, selection.model);
+      const source = detected ? 'определено автоматически' : 'выбрано вручную';
+      void vscode.window.showInformationMessage(`✅ Ключ сохранён. Провайдер: ${selection.provider}, модель: ${selection.model} (${source})`);
     }),
     vscode.commands.registerCommand('codescout.clearApiKey', async () => {
       const answer = await vscode.window.showWarningMessage('Удалить сохранённый API-ключ CodeScout?', { modal: true }, 'Удалить');
       if (answer !== 'Удалить') return;
       await context.secrets.delete(SECRET_KEY);
+      await context.secrets.delete(SECRET_PROVIDER);
+      await context.secrets.delete(SECRET_MODEL);
       panel.setKey(undefined);
       void vscode.window.showInformationMessage('Ключ удалён из защищённого хранилища');
     })

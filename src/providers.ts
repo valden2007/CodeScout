@@ -1,5 +1,10 @@
 export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'custom';
 
+export interface DetectedProvider {
+  provider: ProviderName;
+  model: string;
+}
+
 export interface ProviderDefinition {
   baseUrl: string;
   envKey: string;
@@ -33,6 +38,15 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
     keyUrl: 'https://github.com/settings/tokens'
   }
 };
+
+export function detectProvider(key: string): DetectedProvider | null {
+  const value = key.trim();
+  if (value.startsWith('gsk_')) return { provider: 'groq', model: 'openai/gpt-oss-20b' };
+  if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-2.5-flash' };
+  if (value.startsWith('sk-or-')) return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
+  if (value.startsWith('ghp_') || value.startsWith('github_pat_')) return { provider: 'github', model: 'gpt-4o-mini' };
+  return null;
+}
 
 export function normalizeProvider(provider?: string): ProviderName {
   const value = provider?.trim().toLowerCase() || 'gemini';
