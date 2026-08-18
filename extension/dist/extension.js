@@ -63,6 +63,14 @@ var PROVIDERS = {
     keyUrl: "https://github.com/settings/tokens"
   }
 };
+function detectProvider(key) {
+  const value = key.trim();
+  if (value.startsWith("gsk_")) return { provider: "groq", model: "openai/gpt-oss-20b" };
+  if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-2.5-flash" };
+  if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
+  if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
+  return null;
+}
 function normalizeProvider(provider) {
   const value = provider?.trim().toLowerCase() || "gemini";
   if (value === "custom") return "custom";
@@ -438,12 +446,12 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join("")}</section>`).join("");
-  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438 API-\u043A\u043B\u044E\u0447 Gemini \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
+  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438 API-\u043A\u043B\u044E\u0447 Gemini \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -502,7 +510,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} \u041A\u043B\u044E\u0447: ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>' : ""}</div>
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>' : ""}</div>
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}</div>` : ""}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} Review last commit</button>
@@ -521,8 +529,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false) {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model);
 }
 
 // src/panel.ts
@@ -536,6 +544,8 @@ var CodeScoutPanel = class {
   statusKind = "retry";
   keyMask = "";
   keyConfigured = false;
+  provider = "gemini";
+  model = "gemini-2.5-flash";
   resolveWebviewView(webviewView) {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
@@ -554,9 +564,11 @@ var CodeScoutPanel = class {
     }, void 0, []);
     this.render();
   }
-  setKey(key) {
+  setKey(key, provider = "gemini", model = "gemini-2.5-flash") {
     this.keyConfigured = Boolean(key?.trim());
     this.keyMask = key ? maskApiKey(key) : "";
+    this.provider = provider;
+    this.model = model;
     this.render();
   }
   setScanning(scanning) {
@@ -591,12 +603,14 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured) : buildEmptyReportHtml(this.keyMask, this.keyConfigured);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 };
 
 // src/extension.ts
 var SECRET_KEY = "codescout.apiKey";
+var SECRET_PROVIDER = "codescout.provider";
+var SECRET_MODEL = "codescout.model";
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -619,26 +633,34 @@ function buildStats(issues, filesAnalyzed, durationMs) {
     low: issues.filter((issue) => issue.severity === "low").length
   };
 }
-async function resolveExtensionKey(context, providerName, legacySetting) {
-  const secret = await context.secrets.get(SECRET_KEY);
-  if (secret?.trim()) return secret.trim();
-  return resolveApiKeyPriority(void 0, providerName, legacySetting);
+async function resolveExtensionSelection(context) {
+  const config = vscode2.workspace.getConfiguration("codescout");
+  const secretKey = await context.secrets.get(SECRET_KEY);
+  const secretProvider = await context.secrets.get(SECRET_PROVIDER);
+  const secretModel = await context.secrets.get(SECRET_MODEL);
+  const settingsProvider = config.get("provider")?.trim();
+  const settingsModel = config.get("model")?.trim();
+  const provider = secretProvider?.trim() || settingsProvider || "gemini";
+  const model = secretModel?.trim() || settingsModel || defaultModel(provider);
+  const key = resolveApiKeyPriority(secretKey, provider, config.get("apiKey"));
+  return {
+    provider,
+    model,
+    key,
+    baseUrl: config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL
+  };
 }
 async function reviewWorkspace(context, lastCommit, onRetry) {
   const startedAt = Date.now();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
-  const config = vscode2.workspace.getConfiguration("codescout");
-  const providerName = config.get("provider", "gemini");
-  const model = config.get("model")?.trim() || defaultModel(providerName);
-  const baseUrl = config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL;
-  const apiKey = await resolveExtensionKey(context, providerName, config.get("apiKey"));
-  if (!apiKey) {
-    throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${providerName}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(providerName)}`);
+  const selection = await resolveExtensionSelection(context);
+  if (!selection.key) {
+    throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider)}`);
   }
   const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(providerName, apiKey, model, (event) => onRetry(event, model), baseUrl);
+  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45e3)) {
@@ -678,9 +700,8 @@ function activate(context) {
   const panel = new CodeScoutPanel();
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
-    const config = vscode2.workspace.getConfiguration("codescout");
-    const provider = config.get("provider", "gemini");
-    panel.setKey(await resolveExtensionKey(context, provider, config.get("apiKey")));
+    const selection = await resolveExtensionSelection(context);
+    panel.setKey(selection.key, selection.provider, selection.model);
   };
   void syncKeyStatus();
   context.subscriptions.push(
@@ -690,14 +711,26 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.setApiKey", async () => {
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 Gemini (\u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F \u0441 AIza)" });
       if (!key?.trim()) return;
+      const detected = detectProvider(key);
+      let selection = detected ?? void 0;
+      if (!selection) {
+        const picked = await vscode2.window.showQuickPick(["gemini", "groq", "openrouter", "github", "custom"], { placeHolder: "\u0412\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440" });
+        if (!picked) return;
+        selection = { provider: picked, model: defaultModel(picked) };
+      }
       await context.secrets.store(SECRET_KEY, key.trim());
-      panel.setKey(key.trim());
-      void vscode2.window.showInformationMessage("\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E");
+      await context.secrets.store(SECRET_PROVIDER, selection.provider);
+      await context.secrets.store(SECRET_MODEL, selection.model);
+      panel.setKey(key.trim(), selection.provider, selection.model);
+      const source = detected ? "\u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043E \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438" : "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E";
+      void vscode2.window.showInformationMessage(`\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: ${selection.provider}, \u043C\u043E\u0434\u0435\u043B\u044C: ${selection.model} (${source})`);
     }),
     vscode2.commands.registerCommand("codescout.clearApiKey", async () => {
       const answer = await vscode2.window.showWarningMessage("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?", { modal: true }, "\u0423\u0434\u0430\u043B\u0438\u0442\u044C");
       if (answer !== "\u0423\u0434\u0430\u043B\u0438\u0442\u044C") return;
       await context.secrets.delete(SECRET_KEY);
+      await context.secrets.delete(SECRET_PROVIDER);
+      await context.secrets.delete(SECRET_MODEL);
       panel.setKey(void 0);
       void vscode2.window.showInformationMessage("\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430");
     })

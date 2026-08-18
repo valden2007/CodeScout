@@ -18,6 +18,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private statusKind: 'retry' | 'error' = 'retry';
   private keyMask = '';
   private keyConfigured = false;
+  private provider = 'gemini';
+  private model = 'gemini-2.5-flash';
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -38,9 +40,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setKey(key?: string): void {
+  setKey(key: string | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
     this.keyConfigured = Boolean(key?.trim());
     this.keyMask = key ? maskApiKey(key) : '';
+    this.provider = provider;
+    this.model = model;
     this.render();
   }
 
@@ -81,7 +85,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 }

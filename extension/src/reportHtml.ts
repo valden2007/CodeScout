@@ -52,13 +52,13 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' = 'retry', keyMask = '', keyConfigured = false): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash'): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join('')}</section>`).join('');
   const body = sections || (emptyState && !keyConfigured
-    ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получи API-ключ Gemini в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
+    ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получи API-ключ Gemini в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ — провайдер определится сам</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
     : emptyState
       ? '<div class="empty"><div class="empty-icon">🕵️</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>'
       : '<div class="empty"><div class="empty-icon">✓</div><div>No issues found</div><small>Your changes look clean.</small></div>');
@@ -120,7 +120,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 Ключ: ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">Очистить</button>' : ''}</div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">Очистить</button>' : ''}</div>
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}</div>` : ''}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Review last commit</button>
@@ -140,6 +140,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash'): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model);
 }
