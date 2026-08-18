@@ -52,14 +52,16 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' = 'retry'): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' = 'retry', keyMask = '', keyConfigured = false): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join('')}</section>`).join('');
-  const body = sections || (emptyState
-    ? '<div class="empty"><div class="empty-icon">🕵️</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>'
-    : '<div class="empty"><div class="empty-icon">✓</div><div>No issues found</div><small>Your changes look clean.</small></div>');
+  const body = sections || (emptyState && !keyConfigured
+    ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получи API-ключ Gemini в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
+    : emptyState
+      ? '<div class="empty"><div class="empty-icon">🕵️</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>'
+      : '<div class="empty"><div class="empty-icon">✓</div><div>No issues found</div><small>Your changes look clean.</small></div>');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -72,6 +74,15 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .header { position: sticky; top: -16px; z-index: 2; margin: -16px -14px 0; padding: 14px 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .brand-mark { color: var(--vscode-textLink-foreground); }
+.key-status { display: flex; align-items: center; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
+.key-status.ready { color: var(--vscode-testing-iconPassed); }
+.key-status.missing { color: var(--vscode-errorForeground); }
+.onboarding { padding: 36px 10px; text-align: center; }
+.onboarding h1 { margin: 0 0 14px; font-size: 16px; }
+.onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
+.link-button { display: inline; width: auto; padding: 0; color: var(--vscode-textLink-foreground); background: transparent; text-decoration: underline; }
+.primary-action { width: auto; margin: 4px auto 8px; padding: 8px 14px; text-align: center; }
 .actions { display: flex; gap: 6px; margin-top: 12px; flex-direction: column; }
 button { width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
 button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
@@ -109,6 +120,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 Ключ: ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">Очистить</button>' : ''}</div>
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}</div>` : ''}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Review last commit</button>
@@ -120,14 +132,14 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <main>${body}</main>
   <script>
     const vscode = acquireVsCodeApi();
-    document.querySelectorAll('button[data-command]').forEach((button) => {
-      button.addEventListener('click', () => vscode.postMessage({ command: button.dataset.command }));
+    document.querySelectorAll('[data-command]').forEach((element) => {
+      element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
     });
   </script>
 </body>
 </html>`;
 }
 
-export function buildEmptyReportHtml(): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured);
 }

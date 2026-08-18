@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
+import { maskApiKey } from '../../src/providers';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
 
 interface ScanMessage {
@@ -15,6 +16,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private scanning = false;
   private statusMessage = '';
   private statusKind: 'retry' | 'error' = 'retry';
+  private keyMask = '';
+  private keyConfigured = false;
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -24,8 +27,20 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
       } else if (message.command === 'scanUncommitted') {
         void vscode.commands.executeCommand('codescout.scanUncommitted');
+      } else if (message.command === 'setApiKey') {
+        void vscode.commands.executeCommand('codescout.setApiKey');
+      } else if (message.command === 'clearApiKey') {
+        void vscode.commands.executeCommand('codescout.clearApiKey');
+      } else if (message.command === 'openKeyLink') {
+        void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
       }
     }, undefined, []);
+    this.render();
+  }
+
+  setKey(key?: string): void {
+    this.keyConfigured = Boolean(key?.trim());
+    this.keyMask = key ? maskApiKey(key) : '';
     this.render();
   }
 
@@ -66,7 +81,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind)
-      : buildEmptyReportHtml();
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured);
   }
 }
