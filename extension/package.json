@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "valden2007",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valden2007/CodeScout.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -63,7 +67,13 @@
         },
         "codescout.provider": {
           "type": "string",
-          "enum": ["gemini", "groq", "openrouter", "github", "custom"],
+          "enum": [
+            "gemini",
+            "groq",
+            "openrouter",
+            "github",
+            "custom"
+          ],
           "default": "gemini",
           "description": "LLM provider used by CodeScout."
         },
@@ -82,10 +92,12 @@
   },
   "scripts": {
     "compile": "node esbuild.js",
-    "watch": "node esbuild.js --watch"
+    "watch": "node esbuild.js --watch",
+    "package": "npm run compile && vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.2"
   }
