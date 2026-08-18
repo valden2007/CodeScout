@@ -8,11 +8,11 @@ inputs:
   provider:
     description: LLM provider to use.
     required: false
-    default: groq
+    default: gemini
   model:
     description: Model name understood by the selected provider.
     required: false
-    default: llama-3.3-70b-versatile
+    default: gemini-2.5-flash
   api-key:
     description: LLM API key. Pass this from a repository secret.
     required: true

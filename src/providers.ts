@@ -1,0 +1,70 @@
+export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'custom';
+
+export interface ProviderDefinition {
+  baseUrl: string;
+  envKey: string;
+  defaultModel: string;
+  keyUrl: string;
+}
+
+export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefinition> = {
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    envKey: 'GEMINI_API_KEY',
+    defaultModel: 'gemini-2.5-flash',
+    keyUrl: 'https://aistudio.google.com/apikey'
+  },
+  groq: {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    envKey: 'GROQ_API_KEY',
+    defaultModel: 'llama-3.3-70b-versatile',
+    keyUrl: 'https://console.groq.com'
+  },
+  openrouter: {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    envKey: 'OPENROUTER_API_KEY',
+    defaultModel: 'openai/gpt-4o-mini',
+    keyUrl: 'https://openrouter.ai/keys'
+  },
+  github: {
+    baseUrl: 'https://models.inference.ai.azure.com',
+    envKey: 'GITHUB_TOKEN',
+    defaultModel: 'gpt-4o-mini',
+    keyUrl: 'https://github.com/settings/tokens'
+  }
+};
+
+export function normalizeProvider(provider?: string): ProviderName {
+  const value = provider?.trim().toLowerCase() || 'gemini';
+  if (value === 'custom') return 'custom';
+  if (value in PROVIDERS) return value as Exclude<ProviderName, 'custom'>;
+  throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
+}
+
+export function resolveApiKey(provider: string, explicitKey?: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (explicitKey?.trim()) return explicitKey.trim();
+  const normalized = normalizeProvider(provider);
+  if (normalized === 'custom') return env.CODESCOUT_API_KEY?.trim();
+  return env[PROVIDERS[normalized].envKey]?.trim();
+}
+
+export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {
+  if (customBaseUrl?.trim()) return customBaseUrl.trim().replace(/\/+$/, '');
+  const normalized = normalizeProvider(provider);
+  if (normalized === 'custom') throw new Error('Для provider custom укажи --base-url или CODESCOUT_BASE_URL.');
+  return PROVIDERS[normalized].baseUrl;
+}
+
+export function defaultModel(provider?: string): string {
+  const normalized = normalizeProvider(provider);
+  return normalized === 'custom' ? '' : PROVIDERS[normalized].defaultModel;
+}
+
+export function keyUrl(provider: string): string {
+  const normalized = normalizeProvider(provider);
+  return normalized === 'custom' ? 'https://docs.ollama.com' : PROVIDERS[normalized].keyUrl;
+}
+
+export function completionUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+}

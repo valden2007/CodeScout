@@ -1,4 +1,5 @@
 import { LLMProvider } from './types';
+import { completionUrl, normalizeProvider, resolveBaseUrl } from './providers';
 
 interface GroqResponse {
   choices?: Array<{ message?: { content?: string } }>;
@@ -32,22 +33,25 @@ function parseRetryAfterSeconds(response: Response, message: string): number | u
   return undefined;
 }
 
-function finalRateLimitMessage(waitSeconds?: number, details = ''): string {
+function finalRateLimitMessage(model: string, waitSeconds?: number): string {
   const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
-  const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? 'tokens per day' : 'tokens per day';
-  return `⚠️ Превышен дневной лимит Groq.\nПопробуйте через ${minutes} минут или используйте другой провайдер.\nТекущий лимит: ${suffix}`;
+  return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
 }
 
-export class GroqProvider implements LLMProvider {
+export class OpenAICompatibleProvider implements LLMProvider {
   private lastRequestAt = 0;
+  private readonly endpoint: string;
 
   constructor(
     private readonly apiKey: string,
     private readonly model: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly sleeper: (ms: number) => Promise<void> = sleep,
-    private readonly onRetry?: (event: RetryEvent) => void
-  ) {}
+    private readonly onRetry?: (event: RetryEvent) => void,
+    baseUrl = 'https://api.groq.com/openai/v1'
+  ) {
+    this.endpoint = completionUrl(baseUrl);
+  }
 
   async review(systemPrompt: string, userPrompt: string): Promise<string> {
     const wait = 2000 - (Date.now() - this.lastRequestAt);
@@ -58,14 +62,14 @@ export class GroqProvider implements LLMProvider {
     while (true) {
       this.lastRequestAt = Date.now();
       try {
-        const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
+        const response = await this.fetcher(this.endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
         });
         const data = (await response.json()) as GroqResponse;
         if (!response.ok) {
-          const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+          const details = data.error?.message ?? `LLM request failed with ${response.status}`;
           if (response.status === 429) {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
@@ -73,15 +77,15 @@ export class GroqProvider implements LLMProvider {
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
-        if (!content) throw new Error('Groq returned an empty response');
+        if (!content) throw new Error('LLM returned an empty response');
         return content;
       } catch (error) {
         if (!(error instanceof RateLimitError)) throw error;
         let parsed: { waitSeconds?: number; details?: string } = {};
-        try { parsed = JSON.parse(error.message) as typeof parsed; } catch { /* use defaults */ }
+        try { parsed = JSON.parse(error.message) as typeof parsed; } catch { /* final public error */ }
         lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-          throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+          throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
         const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
@@ -92,7 +96,10 @@ export class GroqProvider implements LLMProvider {
   }
 }
 
-export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void): LLMProvider {
-  if (provider.toLowerCase() !== 'groq') throw new Error(`Unsupported provider: ${provider}`);
-  return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
+export { OpenAICompatibleProvider as GroqProvider };
+
+export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void, baseUrl?: string): LLMProvider {
+  const normalized = normalizeProvider(provider);
+  const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
 }

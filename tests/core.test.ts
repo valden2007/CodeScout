@@ -7,7 +7,9 @@ import { correctIssueLine } from '../src/line-correction';
 import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
-import { GroqProvider, RetryEvent } from '../src/llm-client';
+import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
+import { resolveApiKey, resolveBaseUrl } from '../src/providers';
+import { reviewStatus } from '../src/tui/App';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -25,6 +27,25 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('universal providers', () => {
+  it('custom baseUrl overrides the built-in provider URL', async () => {
+    let endpoint = '';
+    const provider = new OpenAICompatibleProvider('key', 'model', async (url) => { endpoint = String(url); return new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200 }); }, async () => undefined, undefined, resolveBaseUrl('groq', 'http://localhost:11434/v1'));
+    await provider.review('system', 'user');
+    expect(endpoint).toBe('http://localhost:11434/v1/chat/completions');
+  });
+
+  it('resolves explicit key before the provider environment key', () => {
+    expect(resolveApiKey('gemini', ' explicit ', { GEMINI_API_KEY: 'env-key' })).toBe('explicit');
+    expect(resolveApiKey('gemini', undefined, { GEMINI_API_KEY: 'env-key' })).toBe('env-key');
+  });
+
+  it('includes the selected model in status text', () => {
+    expect(reviewStatus('qwen2.5-coder')).toContain('qwen2.5-coder');
+    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 15 })).toContain('Rate limit у qwen2.5-coder');
+  });
+});
 
 describe('Groq retry handling', () => {
   const success = () => new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -50,7 +71,7 @@ describe('Groq retry handling', () => {
     const provider = new GroqProvider('key', 'model', async () => quickRateLimited(), async () => undefined);
     await expect(provider.review(...request)).rejects.toMatchObject({
       name: 'RateLimitError',
-      message: expect.stringContaining('Превышен дневной лимит Groq')
+      message: expect.stringContaining('Превышен лимит модели model')
     });
   });
 
