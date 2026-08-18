@@ -1,7 +1,12 @@
-**/*.ts
-**/*.map
+src/**
 .vscode/**
 node_modules/**
+**/*.ts
+**/*.map
+**/*.test.*
+tests/**
 esbuild.js
 tsconfig.json
 npm-debug.log*
+*.vsix
+.gitignore
