@@ -1,22 +1,26 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { defaultModel, ProviderName } from '../providers';
 
 export interface CliArgs {
   command: string;
   path: string;
-  provider: 'groq' | 'openai';
+  provider: ProviderName;
+  model: string;
+  baseUrl?: string;
   dryRun: boolean;
   apiKey?: string;
   lastCommit: boolean;
   base?: string;
 }
 
-const KNOWN_FLAGS = new Set(['--path', '--provider', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
 
 function suggestedFlag(flag: string): string | undefined {
   if (flag.startsWith('--last-')) return '--last-commit';
   if (flag.startsWith('--dry-')) return '--dry-run';
   if (flag.startsWith('--api-')) return '--api-key';
+  if (flag.startsWith('--base-u')) return '--base-url';
   return undefined;
 }
 
@@ -39,19 +43,24 @@ export function parseArgs(argv: string[]): CliArgs {
   const parsed = yargs(hideBin(['node', 'codescout', ...argv]))
     .command('$0 [command]', 'Run a CodeScout scan', (builder) => builder.positional('command', { type: 'string', default: 'scan' }))
     .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
-    .option('provider', { type: 'string', choices: ['groq', 'openai'] as const, default: 'groq', describe: 'LLM provider reserved for a future stage' })
+    .option('provider', { type: 'string', choices: ['gemini', 'groq', 'openrouter', 'github', 'custom'] as const, default: 'gemini', describe: 'LLM provider' })
+    .option('model', { type: 'string', describe: 'Model name understood by the selected provider' })
+    .option('base-url', { type: 'string', describe: 'Custom OpenAI-compatible endpoint base URL' })
     .option('dry-run', { type: 'boolean', default: false, describe: 'Read the diff without calling an LLM' })
-    .option('api-key', { type: 'string', describe: 'Groq API key (overrides GROQ_API_KEY)' })
+    .option('api-key', { type: 'string', describe: 'API key for the selected provider' })
     .option('last-commit', { type: 'boolean', default: false, describe: 'Review HEAD~1 instead of working-tree changes' })
     .option('base', { type: 'string', describe: 'Compare the current branch against a base branch' })
     .strict()
     .help()
     .parseSync();
 
+  const provider = parsed.provider as ProviderName;
   return {
     command: typeof parsed.command === 'string' ? parsed.command : 'scan',
     path: parsed.path,
-    provider: parsed.provider as 'groq' | 'openai',
+    provider,
+    model: typeof parsed.model === 'string' ? parsed.model : defaultModel(provider),
+    baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : process.env.CODESCOUT_BASE_URL,
     dryRun: parsed.dryRun,
     apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : undefined,
     lastCommit: Boolean(parsed.lastCommit),

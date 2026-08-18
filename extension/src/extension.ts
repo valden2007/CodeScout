@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { createProvider } from '../../src/llm-client';
+import { createProvider, RetryEvent } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -8,8 +8,7 @@ import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
-
-const MODEL = 'llama-3.3-70b-versatile';
+import { defaultModel, keyUrl, resolveApiKey } from '../../src/providers';
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -39,7 +38,7 @@ function buildStats(issues: ReviewIssue[], filesAnalyzed: number, durationMs: nu
   };
 }
 
-async function reviewWorkspace(lastCommit: boolean, onRetry: (event: import('../../src/llm-client').RetryEvent) => void): Promise<ScanResult> {
+async function reviewWorkspace(lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
@@ -47,16 +46,17 @@ async function reviewWorkspace(lastCommit: boolean, onRetry: (event: import('../
   }
 
   const config = vscode.workspace.getConfiguration('codescout');
-  const apiKey = config.get<string>('apiKey')?.trim() || process.env.GROQ_API_KEY?.trim();
+  const providerName = config.get<string>('provider', 'gemini');
+  const model = config.get<string>('model')?.trim() || defaultModel(providerName);
+  const baseUrl = config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL;
+  const apiKey = resolveApiKey(providerName, config.get<string>('apiKey'));
   if (!apiKey) {
-    throw new Error('Не найден Groq API key. Укажи codescout.apiKey в настройках VS Code или GROQ_API_KEY в окружении.');
+    throw new Error(`Не найден API-ключ для ${providerName}. Укажи codescout.apiKey или переменную окружения. Получить ключ: ${keyUrl(providerName)}`);
   }
-
-  const providerName = config.get<string>('provider', 'groq');
   const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
 
-  const provider = createProvider(providerName, apiKey, MODEL, onRetry);
+  const provider = createProvider(providerName, apiKey, model, (event) => onRetry(event, model), baseUrl);
   const issues: ReviewIssue[] = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
@@ -75,7 +75,7 @@ async function runReview(lastCommit: boolean, output: vscode.OutputChannel, pane
   panel.setScanning(true);
 
   try {
-    const result = await reviewWorkspace(lastCommit, (event) => panel.setRetry(event));
+    const result = await reviewWorkspace(lastCommit, (event, model) => panel.setRetry(event, model));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');

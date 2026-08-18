@@ -47,14 +47,25 @@
       "properties": {
         "codescout.apiKey": {
           "type": "string",
-          "description": "Groq API key used for code review. Keep it private; it is stored as a secret-like setting.",
+          "description": "API key for the selected provider. Keep it private; it is stored as a secret-like setting.",
           "scope": "machine",
           "password": true
         },
         "codescout.provider": {
           "type": "string",
-          "default": "groq",
+          "enum": ["gemini", "groq", "openrouter", "github", "custom"],
+          "default": "gemini",
           "description": "LLM provider used by CodeScout."
+        },
+        "codescout.model": {
+          "type": "string",
+          "default": "gemini-2.5-flash",
+          "description": "Model name understood by the selected provider."
+        },
+        "codescout.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional OpenAI-compatible base URL. Set this for Ollama, LM Studio, or another proxy."
         }
       }
     }
