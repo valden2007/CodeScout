@@ -37,6 +37,20 @@ module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
 
 // ../src/providers.ts
+function parseLiveModels(payload) {
+  if (!payload || typeof payload !== "object") return [];
+  const data = payload.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((item) => item && typeof item === "object" && typeof item.id === "string" ? item.id : "").filter((id) => Boolean(id));
+}
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch) {
+  const response = await fetcher(`${baseUrl.replace(/\/+$/, "")}/models`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiKey}` }
+  });
+  if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
+  return parseLiveModels(await response.json());
+}
 var PROVIDERS = {
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -510,8 +524,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? '<button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>' : ""}</div>
-    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}</div>` : ""}
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
+    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} Review last commit</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} Review uncommitted</button>
@@ -558,6 +572,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.setApiKey");
       } else if (message.command === "clearApiKey") {
         void vscode.commands.executeCommand("codescout.clearApiKey");
+      } else if (message.command === "chooseModel") {
+        void vscode.commands.executeCommand("codescout.chooseModel");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
       }
@@ -611,6 +627,7 @@ var CodeScoutPanel = class {
 var SECRET_KEY = "codescout.apiKey";
 var SECRET_PROVIDER = "codescout.provider";
 var SECRET_MODEL = "codescout.model";
+var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -633,21 +650,55 @@ function buildStats(issues, filesAnalyzed, durationMs) {
     low: issues.filter((issue) => issue.severity === "low").length
   };
 }
+function preferredLiveModel(models, fallback) {
+  return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
+}
+async function fetchModels(selection) {
+  if (!selection.key) return [];
+  const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
+  return fetchLiveModels(baseUrl, selection.key);
+}
+async function chooseLiveModel(selection, placeHolder) {
+  let models = [];
+  try {
+    models = await fetchModels(selection);
+  } catch {
+    const manual = await vscode2.window.showInputBox({ prompt: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C /models. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E", value: selection.model });
+    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+  }
+  if (models.length === 0) {
+    const manual = await vscode2.window.showInputBox({ prompt: "\u0421\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u043F\u0443\u0441\u0442. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E", value: selection.model });
+    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+  }
+  const picked = await vscode2.window.showQuickPick([preferredLiveModel(models, selection.model), ...models.filter((model) => model !== preferredLiveModel(models, selection.model))], { placeHolder, matchOnDescription: true });
+  return { model: picked || preferredLiveModel(models, selection.model), userChosen: Boolean(picked) };
+}
+async function validateDefaultModel(selection) {
+  try {
+    const models = await fetchModels(selection);
+    if (models.includes(selection.model)) return { model: selection.model, userChosen: false };
+    return chooseLiveModel({ ...selection, model: preferredLiveModel(models, selection.model) }, "\u0412\u044B\u0431\u0435\u0440\u0438 \u043C\u043E\u0434\u0435\u043B\u044C");
+  } catch {
+    return { model: selection.model, userChosen: false };
+  }
+}
 async function resolveExtensionSelection(context) {
   const config = vscode2.workspace.getConfiguration("codescout");
   const secretKey = await context.secrets.get(SECRET_KEY);
   const secretProvider = await context.secrets.get(SECRET_PROVIDER);
   const secretModel = await context.secrets.get(SECRET_MODEL);
+  const userChosenModel = await context.secrets.get(SECRET_MODEL_CHOSEN) === "true";
   const settingsProvider = config.get("provider")?.trim();
   const settingsModel = config.get("model")?.trim();
   const provider = secretProvider?.trim() || settingsProvider || "gemini";
-  const model = secretModel?.trim() || settingsModel || defaultModel(provider);
+  const model = userChosenModel ? secretModel?.trim() || settingsModel || defaultModel(provider) : settingsModel || secretModel?.trim() || defaultModel(provider);
   const key = resolveApiKeyPriority(secretKey, provider, config.get("apiKey"));
   return {
     provider,
     model,
     key,
-    baseUrl: config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL
+    baseUrl: config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL,
+    userChosenModel
   };
 }
 async function reviewWorkspace(context, lastCommit, onRetry) {
@@ -698,6 +749,7 @@ async function runReview(context, lastCommit, output, panel) {
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
   const panel = new CodeScoutPanel();
+  let lastScanWasLastCommit = false;
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
     const selection = await resolveExtensionSelection(context);
@@ -706,8 +758,14 @@ function activate(context) {
   void syncKeyStatus();
   context.subscriptions.push(
     vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
-    vscode2.commands.registerCommand("codescout.scanUncommitted", () => runReview(context, false, output, panel)),
-    vscode2.commands.registerCommand("codescout.scanLastCommit", () => runReview(context, true, output, panel)),
+    vscode2.commands.registerCommand("codescout.scanUncommitted", () => {
+      lastScanWasLastCommit = false;
+      return runReview(context, false, output, panel);
+    }),
+    vscode2.commands.registerCommand("codescout.scanLastCommit", () => {
+      lastScanWasLastCommit = true;
+      return runReview(context, true, output, panel);
+    }),
     vscode2.commands.registerCommand("codescout.setApiKey", async () => {
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 Gemini (\u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F \u0441 AIza)" });
       if (!key?.trim()) return;
@@ -718,12 +776,27 @@ function activate(context) {
         if (!picked) return;
         selection = { provider: picked, model: defaultModel(picked) };
       }
+      const validated = await validateDefaultModel({ provider: selection.provider, model: selection.model, key: key.trim() });
+      selection = { provider: selection.provider, model: validated.model };
       await context.secrets.store(SECRET_KEY, key.trim());
       await context.secrets.store(SECRET_PROVIDER, selection.provider);
       await context.secrets.store(SECRET_MODEL, selection.model);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       panel.setKey(key.trim(), selection.provider, selection.model);
       const source = detected ? "\u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043E \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438" : "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E";
       void vscode2.window.showInformationMessage(`\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: ${selection.provider}, \u043C\u043E\u0434\u0435\u043B\u044C: ${selection.model} (${source})`);
+    }),
+    vscode2.commands.registerCommand("codescout.chooseModel", async () => {
+      const current = await resolveExtensionSelection(context);
+      if (!current.key) {
+        void vscode2.window.showErrorMessage("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0447\u0435\u0440\u0435\u0437 CodeScout: set API key.");
+        return;
+      }
+      const chosen = await chooseLiveModel(current, "\u0412\u044B\u0431\u0435\u0440\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C");
+      await context.secrets.store(SECRET_MODEL, chosen.model);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
+      panel.setKey(current.key, current.provider, chosen.model);
+      void runReview(context, lastScanWasLastCommit, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.clearApiKey", async () => {
       const answer = await vscode2.window.showWarningMessage("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?", { modal: true }, "\u0423\u0434\u0430\u043B\u0438\u0442\u044C");
@@ -731,6 +804,7 @@ function activate(context) {
       await context.secrets.delete(SECRET_KEY);
       await context.secrets.delete(SECRET_PROVIDER);
       await context.secrets.delete(SECRET_MODEL);
+      await context.secrets.delete(SECRET_MODEL_CHOSEN);
       panel.setKey(void 0);
       void vscode2.window.showInformationMessage("\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430");
     })

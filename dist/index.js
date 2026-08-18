@@ -34042,6 +34042,25 @@ function formatIssue(issue) {
 }
 
 ;// CONCATENATED MODULE: ./src/providers.ts
+function parseLiveModels(payload) {
+    if (!payload || typeof payload !== 'object')
+        return [];
+    const data = payload.data;
+    if (!Array.isArray(data))
+        return [];
+    return data
+        .map((item) => (item && typeof item === 'object' && typeof item.id === 'string' ? item.id : ''))
+        .filter((id) => Boolean(id));
+}
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch) {
+    const response = await fetcher(`${baseUrl.replace(/\/+$/, '')}/models`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!response.ok)
+        throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
+    return parseLiveModels(await response.json());
+}
 const PROVIDERS = {
     gemini: {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
