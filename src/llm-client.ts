@@ -33,6 +33,10 @@ function parseRetryAfterSeconds(response: Response, message: string): number | u
   return undefined;
 }
 
+function notFoundMessage(model: string): string {
+  return `⚠️ 404: эндпоинт или модель ${model} не найдены. Проверь provider/model.`;
+}
+
 function finalRateLimitMessage(model: string, waitSeconds?: number): string {
   const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
   return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
@@ -74,6 +78,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
           }
+          if (response.status === 404) throw new Error(notFoundMessage(this.model));
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;

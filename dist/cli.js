@@ -85371,6 +85371,9 @@ function resolveApiKey(provider, explicitKey, env = process.env) {
         return env.CODESCOUT_API_KEY?.trim();
     return env[PROVIDERS[normalized].envKey]?.trim();
 }
+function resolveApiKeyPriority(secretKey, provider, legacySetting, env = process.env) {
+    return secretKey?.trim() || resolveApiKey(provider, undefined, env) || legacySetting?.trim() || undefined;
+}
 function resolveBaseUrl(provider, customBaseUrl) {
     if (customBaseUrl?.trim())
         return customBaseUrl.trim().replace(/\/+$/, '');
@@ -85389,6 +85392,15 @@ function keyUrl(provider) {
 }
 function completionUrl(baseUrl) {
     return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+}
+function maskApiKey(key) {
+    const trimmed = key.trim();
+    if (!trimmed)
+        return '';
+    if (trimmed.length <= 3)
+        return `•••${trimmed}`;
+    const prefix = trimmed.length >= 7 ? trimmed.slice(0, 4) : '';
+    return `${prefix}•••${trimmed.slice(-3)}`;
 }
 
 ;// CONCATENATED MODULE: ./src/cli/args.ts
@@ -85532,6 +85544,9 @@ function parseRetryAfterSeconds(response, message) {
         return Math.ceil(Number.parseFloat(match[1]));
     return undefined;
 }
+function notFoundMessage(model) {
+    return `⚠️ 404: эндпоинт или модель ${model} не найдены. Проверь provider/model.`;
+}
 function finalRateLimitMessage(model, waitSeconds) {
     const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
     return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
@@ -85573,6 +85588,8 @@ class OpenAICompatibleProvider {
                         const waitSeconds = parseRetryAfterSeconds(response, details);
                         throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
                     }
+                    if (response.status === 404)
+                        throw new Error(notFoundMessage(this.model));
                     throw new Error(details);
                 }
                 const content = data.choices?.[0]?.message?.content;

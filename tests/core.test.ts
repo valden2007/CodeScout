@@ -8,7 +8,7 @@ import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
 import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml } from '../extension/src/reportHtml';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,6 +28,19 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5.5 endpoint URLs', () => {
+  it('builds the exact OpenAI-compatible URL for every built-in provider', () => {
+    expect(completionUrl(resolveBaseUrl('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+    expect(completionUrl(resolveBaseUrl('groq'))).toBe('https://api.groq.com/openai/v1/chat/completions');
+    expect(completionUrl(resolveBaseUrl('openrouter'))).toBe('https://openrouter.ai/api/v1/chat/completions');
+  });
+
+  it('returns a friendly Russian error for a missing endpoint or model', async () => {
+    const provider = new OpenAICompatibleProvider('key', 'gemini-2.5-flash', async () => new Response(JSON.stringify({ error: { message: 'not found' } }), { status: 404 }), async () => undefined);
+    await expect(provider.review('system', 'user')).rejects.toThrow('⚠️ 404: эндпоинт или модель gemini-2.5-flash не найдены. Проверь provider/model.');
+  });
+});
 
 describe('E5 onboarding and secure keys', () => {
   it('resolves SecretStorage before env and legacy settings', () => {

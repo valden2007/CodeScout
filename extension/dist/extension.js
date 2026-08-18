@@ -122,6 +122,9 @@ function parseRetryAfterSeconds(response, message) {
   if (match) return Math.ceil(Number.parseFloat(match[1]));
   return void 0;
 }
+function notFoundMessage(model) {
+  return `\u26A0\uFE0F 404: \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442 \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C ${model} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B. \u041F\u0440\u043E\u0432\u0435\u0440\u044C provider/model.`;
+}
 function finalRateLimitMessage(model, waitSeconds) {
   const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
   return `\u26A0\uFE0F \u041F\u0440\u0435\u0432\u044B\u0448\u0435\u043D \u043B\u0438\u043C\u0438\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 ${model}.
@@ -159,6 +162,7 @@ var OpenAICompatibleProvider = class {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
           }
+          if (response.status === 404) throw new Error(notFoundMessage(this.model));
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
