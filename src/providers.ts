@@ -5,6 +5,24 @@ export interface DetectedProvider {
   model: string;
 }
 
+export function parseLiveModels(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((item) => (item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' ? (item as { id: string }).id : ''))
+    .filter((id): id is string => Boolean(id));
+}
+
+export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<string[]> {
+  const response = await fetcher(`${baseUrl.replace(/\/+$/, '')}/models`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` }
+  });
+  if (!response.ok) throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
+  return parseLiveModels(await response.json());
+}
+
 export interface ProviderDefinition {
   baseUrl: string;
   envKey: string;

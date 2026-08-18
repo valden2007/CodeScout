@@ -8,9 +8,9 @@ import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
 import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
-import { buildEmptyReportHtml } from '../extension/src/reportHtml';
+import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -28,6 +28,18 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5.7 live model picker', () => {
+  it('parses model ids from an OpenAI-compatible /models response', () => {
+    expect(parseLiveModels({ data: [{ id: 'gemini-2.5-flash' }, { id: 'qwen-coder' }, { object: 'model' }, { id: 42 }] })).toEqual(['gemini-2.5-flash', 'qwen-coder']);
+  });
+
+  it('shows an available-model picker action after a 404', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, true, '⚠️ 404: эндпоинт или модель model не найдены. Проверь provider/model.', 'error', 'AIza•••123', true, 'gemini', 'model');
+    expect(html).toContain('🔄 Выбрать доступную модель');
+    expect(html).toContain('data-command="chooseModel"');
+  });
+});
 
 describe('E5.6 provider auto-detection', () => {
   it('detects all supported API-key prefixes and their models', () => {
