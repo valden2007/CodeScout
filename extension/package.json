@@ -11,7 +11,9 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onCommand:codescout.scanUncommitted",
-    "onCommand:codescout.scanLastCommit"
+    "onCommand:codescout.scanLastCommit",
+    "onCommand:codescout.setApiKey",
+    "onCommand:codescout.clearApiKey"
   ],
   "contributes": {
     "viewsContainers": {
@@ -40,6 +42,14 @@
       {
         "command": "codescout.scanLastCommit",
         "title": "CodeScout: review last commit"
+      },
+      {
+        "command": "codescout.setApiKey",
+        "title": "CodeScout: set API key"
+      },
+      {
+        "command": "codescout.clearApiKey",
+        "title": "CodeScout: clear API key"
       }
     ],
     "configuration": {

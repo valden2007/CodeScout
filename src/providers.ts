@@ -48,6 +48,10 @@ export function resolveApiKey(provider: string, explicitKey?: string, env: NodeJ
   return env[PROVIDERS[normalized].envKey]?.trim();
 }
 
+export function resolveApiKeyPriority(secretKey: string | undefined, provider: string, legacySetting: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return secretKey?.trim() || resolveApiKey(provider, undefined, env) || legacySetting?.trim() || undefined;
+}
+
 export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {
   if (customBaseUrl?.trim()) return customBaseUrl.trim().replace(/\/+$/, '');
   const normalized = normalizeProvider(provider);
@@ -67,4 +71,12 @@ export function keyUrl(provider: string): string {
 
 export function completionUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+}
+
+export function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= 3) return `•••${trimmed}`;
+  const prefix = trimmed.length >= 7 ? trimmed.slice(0, 4) : '';
+  return `${prefix}•••${trimmed.slice(-3)}`;
 }
