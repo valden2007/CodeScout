@@ -8,8 +8,9 @@ import { validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs } from '../src/cli/args';
 import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { resolveApiKey, resolveBaseUrl } from '../src/providers';
+import { maskApiKey, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
+import { buildEmptyReportHtml } from '../extension/src/reportHtml';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -27,6 +28,29 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5 onboarding and secure keys', () => {
+  it('resolves SecretStorage before env and legacy settings', () => {
+    const env = { GEMINI_API_KEY: 'env-key' };
+    expect(resolveApiKeyPriority('secret-key', 'gemini', 'legacy-key', env)).toBe('secret-key');
+    expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', env)).toBe('env-key');
+    expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', {})).toBe('legacy-key');
+  });
+
+  it('renders onboarding link and key button when no key is configured', () => {
+    const html = buildEmptyReportHtml('', false);
+    expect(html).toContain('Привет! Это CodeScout');
+    expect(html).toContain('https://aistudio.google.com/apikey');
+    expect(html).toContain('data-command="setApiKey"');
+    expect(html).toContain('data-command="openKeyLink"');
+  });
+
+  it('masks API keys while preserving only the last three characters', () => {
+    expect(maskApiKey('AIzaSyAbcXYZ')).toBe('AIza•••XYZ');
+    expect(maskApiKey('super-secret')).not.toContain('secret');
+    expect(maskApiKey('super-secret').endsWith('ret')).toBe(true);
+  });
+});
 
 describe('universal providers', () => {
   it('custom baseUrl overrides the built-in provider URL', async () => {
