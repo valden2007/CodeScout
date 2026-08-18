@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import { buildReviewPrompt, SYSTEM_PROMPT } from '../prompt-builder';
 import { createProvider, RetryEvent } from '../llm-client';
+import { keyUrl, resolveApiKey } from '../providers';
 import { parseReviewResponse } from '../response-parser';
 import { DiffFile, ReviewIssue } from '../types';
 import { splitPatch } from '../diff-parser';
@@ -53,6 +54,12 @@ function toTuiIssue(issue: ReviewIssue): Issue {
   };
 }
 
+export function reviewStatus(model: string, retry?: RetryEvent): string {
+  return retry
+    ? `⏳ Rate limit у ${model}, ожидание ${retry.waitSeconds}с (попытка ${retry.attempt}/${retry.maxRetries})...`
+    : `🤖 Отправляю запрос в ${model}...`;
+}
+
 async function reviewFiles(
   files: LocalDiffFile[],
   args: CliArgs,
@@ -63,7 +70,7 @@ async function reviewFiles(
   if (args.dryRun) return { issues: [], durationMs: Date.now() - startedAt, complete: true };
 
   try {
-    const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile', onRetry);
+    const provider = createProvider(args.provider, apiKey, args.model, onRetry, args.baseUrl);
     const issues: ReviewIssue[] = [];
     for (const file of files) {
       for (const chunk of splitPatch(file.patch, 45_000)) {
@@ -86,7 +93,7 @@ export function App({ args }: Props) {
   const [result] = useState(() => scan(args.path, args));
   const [review, setReview] = useState<ReviewState>({ issues: [], durationMs: 0, complete: false });
   const reviewStarted = useRef(false);
-  const apiKey = args.apiKey ?? process.env.GROQ_API_KEY;
+  const apiKey = resolveApiKey(args.provider, args.apiKey);
 
   useEffect(() => {
     if (result.error || result.files.length === 0 || !apiKey || args.dryRun) {
@@ -124,7 +131,7 @@ export function App({ args }: Props) {
     medium: review.issues.filter((issue) => issue.severity === 'medium').length,
     low: review.issues.filter((issue) => issue.severity === 'low').length
   };
-  const retryText = review.retry ? `⏳ Rate limit, ожидание ${review.retry.waitSeconds}с (попытка ${review.retry.attempt}/${review.retry.maxRetries})...` : '';
+  const retryText = reviewStatus(args.model, review.retry);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -135,14 +142,14 @@ export function App({ args }: Props) {
         <Box borderStyle="round" borderColor="green" padding={1} marginTop={1}><Text color="green">✅ Нет изменений — ревьюить нечего</Text></Box>
       ) : noKey ? (
         <Box borderStyle="round" borderColor="red" padding={1} marginTop={1} flexDirection="column">
-          <Text color="red" bold>🔑 Нет API-ключа Groq.</Text>
-          <Text>1. Получи бесплатно: https://console.groq.com</Text>
+          <Text color="red" bold>🔑 Нет API-ключа для {args.provider}.</Text>
+          <Text>1. Получи ключ: {keyUrl(args.provider)}</Text>
           <Text>2. Создай файл .env в папке проекта:</Text>
-          <Text>   GROQ_API_KEY=gsk_твой_ключ</Text>
+          <Text>   {args.provider === 'custom' ? 'CODESCOUT_API_KEY' : `${args.provider.toUpperCase()}_API_KEY`}=твой_ключ</Text>
           <Text dimColor>   (.env уже в .gitignore — ключ не попадёт в git)</Text>
         </Box>
       ) : !review.complete ? (
-        <Box marginTop={1}><Text color={review.retry ? 'yellow' : 'cyan'}><Spinner type="dots" /> {review.retry ? retryText : '🤖 Отправляю в Groq...'}</Text></Box>
+        <Box marginTop={1}><Text color={review.retry ? 'yellow' : 'cyan'}><Spinner type="dots" /> {retryText}</Text></Box>
       ) : review.error ? (
         <Box borderStyle="round" borderColor="red" padding={1} marginTop={1} flexDirection="column"><Text color="red">{review.error}</Text></Box>
       ) : (

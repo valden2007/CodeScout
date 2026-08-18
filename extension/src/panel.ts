@@ -38,10 +38,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setRetry(event: RetryEvent): void {
+  setRetry(event: RetryEvent, model = 'model'): void {
     this.scanning = true;
     this.statusKind = 'retry';
-    this.statusMessage = `⏳ Rate limit, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
+    this.statusMessage = `⏳ Rate limit у ${model}, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
     this.render();
   }
 

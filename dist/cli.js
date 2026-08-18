@@ -85328,10 +85328,74 @@ const helpers_applyExtends = (config, cwd, mergeExtends) => {
 
 
 
+;// CONCATENATED MODULE: ./src/providers.ts
+const PROVIDERS = {
+    gemini: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        envKey: 'GEMINI_API_KEY',
+        defaultModel: 'gemini-2.5-flash',
+        keyUrl: 'https://aistudio.google.com/apikey'
+    },
+    groq: {
+        baseUrl: 'https://api.groq.com/openai/v1',
+        envKey: 'GROQ_API_KEY',
+        defaultModel: 'llama-3.3-70b-versatile',
+        keyUrl: 'https://console.groq.com'
+    },
+    openrouter: {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        envKey: 'OPENROUTER_API_KEY',
+        defaultModel: 'openai/gpt-4o-mini',
+        keyUrl: 'https://openrouter.ai/keys'
+    },
+    github: {
+        baseUrl: 'https://models.inference.ai.azure.com',
+        envKey: 'GITHUB_TOKEN',
+        defaultModel: 'gpt-4o-mini',
+        keyUrl: 'https://github.com/settings/tokens'
+    }
+};
+function normalizeProvider(provider) {
+    const value = provider?.trim().toLowerCase() || 'gemini';
+    if (value === 'custom')
+        return 'custom';
+    if (value in PROVIDERS)
+        return value;
+    throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
+}
+function resolveApiKey(provider, explicitKey, env = process.env) {
+    if (explicitKey?.trim())
+        return explicitKey.trim();
+    const normalized = normalizeProvider(provider);
+    if (normalized === 'custom')
+        return env.CODESCOUT_API_KEY?.trim();
+    return env[PROVIDERS[normalized].envKey]?.trim();
+}
+function resolveBaseUrl(provider, customBaseUrl) {
+    if (customBaseUrl?.trim())
+        return customBaseUrl.trim().replace(/\/+$/, '');
+    const normalized = normalizeProvider(provider);
+    if (normalized === 'custom')
+        throw new Error('Для provider custom укажи --base-url или CODESCOUT_BASE_URL.');
+    return PROVIDERS[normalized].baseUrl;
+}
+function defaultModel(provider) {
+    const normalized = normalizeProvider(provider);
+    return normalized === 'custom' ? '' : PROVIDERS[normalized].defaultModel;
+}
+function keyUrl(provider) {
+    const normalized = normalizeProvider(provider);
+    return normalized === 'custom' ? 'https://docs.ollama.com' : PROVIDERS[normalized].keyUrl;
+}
+function completionUrl(baseUrl) {
+    return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+}
+
 ;// CONCATENATED MODULE: ./src/cli/args.ts
 
 
-const KNOWN_FLAGS = new Set(['--path', '--provider', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+
+const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
 function suggestedFlag(flag) {
     if (flag.startsWith('--last-'))
         return '--last-commit';
@@ -85339,6 +85403,8 @@ function suggestedFlag(flag) {
         return '--dry-run';
     if (flag.startsWith('--api-'))
         return '--api-key';
+    if (flag.startsWith('--base-u'))
+        return '--base-url';
     return undefined;
 }
 function unknownFlagError(flag) {
@@ -85360,18 +85426,23 @@ function parseArgs(argv) {
     const parsed = yargs(hideBin(['node', 'codescout', ...argv]))
         .command('$0 [command]', 'Run a CodeScout scan', (builder) => builder.positional('command', { type: 'string', default: 'scan' }))
         .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
-        .option('provider', { type: 'string', choices: ['groq', 'openai'], default: 'groq', describe: 'LLM provider reserved for a future stage' })
+        .option('provider', { type: 'string', choices: ['gemini', 'groq', 'openrouter', 'github', 'custom'], default: 'gemini', describe: 'LLM provider' })
+        .option('model', { type: 'string', describe: 'Model name understood by the selected provider' })
+        .option('base-url', { type: 'string', describe: 'Custom OpenAI-compatible endpoint base URL' })
         .option('dry-run', { type: 'boolean', default: false, describe: 'Read the diff without calling an LLM' })
-        .option('api-key', { type: 'string', describe: 'Groq API key (overrides GROQ_API_KEY)' })
+        .option('api-key', { type: 'string', describe: 'API key for the selected provider' })
         .option('last-commit', { type: 'boolean', default: false, describe: 'Review HEAD~1 instead of working-tree changes' })
         .option('base', { type: 'string', describe: 'Compare the current branch against a base branch' })
         .strict()
         .help()
         .parseSync();
+    const provider = parsed.provider;
     return {
         command: typeof parsed.command === 'string' ? parsed.command : 'scan',
         path: parsed.path,
-        provider: parsed.provider,
+        provider,
+        model: typeof parsed.model === 'string' ? parsed.model : defaultModel(provider),
+        baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : process.env.CODESCOUT_BASE_URL,
         dryRun: parsed.dryRun,
         apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : undefined,
         lastCommit: Boolean(parsed.lastCommit),
@@ -85440,6 +85511,7 @@ function buildReviewPrompt(file, patch) {
 }
 
 ;// CONCATENATED MODULE: ./src/llm-client.ts
+
 class RateLimitError extends Error {
     constructor(message) {
         super(message);
@@ -85460,24 +85532,25 @@ function parseRetryAfterSeconds(response, message) {
         return Math.ceil(Number.parseFloat(match[1]));
     return undefined;
 }
-function finalRateLimitMessage(waitSeconds, details = '') {
+function finalRateLimitMessage(model, waitSeconds) {
     const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
-    const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? 'tokens per day' : 'tokens per day';
-    return `⚠️ Превышен дневной лимит Groq.\nПопробуйте через ${minutes} минут или используйте другой провайдер.\nТекущий лимит: ${suffix}`;
+    return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
 }
-class GroqProvider {
+class OpenAICompatibleProvider {
     apiKey;
     model;
     fetcher;
     sleeper;
     onRetry;
     lastRequestAt = 0;
-    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry) {
+    endpoint;
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1') {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
         this.sleeper = sleeper;
         this.onRetry = onRetry;
+        this.endpoint = completionUrl(baseUrl);
     }
     async review(systemPrompt, userPrompt) {
         const wait = 2000 - (Date.now() - this.lastRequestAt);
@@ -85488,14 +85561,14 @@ class GroqProvider {
         while (true) {
             this.lastRequestAt = Date.now();
             try {
-                const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
+                const response = await this.fetcher(this.endpoint, {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
                 });
                 const data = (await response.json());
                 if (!response.ok) {
-                    const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+                    const details = data.error?.message ?? `LLM request failed with ${response.status}`;
                     if (response.status === 429) {
                         const waitSeconds = parseRetryAfterSeconds(response, details);
                         throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
@@ -85504,7 +85577,7 @@ class GroqProvider {
                 }
                 const content = data.choices?.[0]?.message?.content;
                 if (!content)
-                    throw new Error('Groq returned an empty response');
+                    throw new Error('LLM returned an empty response');
                 return content;
             }
             catch (error) {
@@ -85514,10 +85587,10 @@ class GroqProvider {
                 try {
                     parsed = JSON.parse(error.message);
                 }
-                catch { /* use defaults */ }
+                catch { /* final public error */ }
                 lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
                 if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-                    throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+                    throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
                 }
                 retryCount += 1;
                 const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
@@ -85527,10 +85600,11 @@ class GroqProvider {
         }
     }
 }
-function createProvider(provider, apiKey, model, onRetry) {
-    if (provider.toLowerCase() !== 'groq')
-        throw new Error(`Unsupported provider: ${provider}`);
-    return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
+
+function createProvider(provider, apiKey, model, onRetry, baseUrl) {
+    const normalized = normalizeProvider(provider);
+    const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
 }
 
 ;// CONCATENATED MODULE: ./src/response-parser.ts
@@ -85734,6 +85808,7 @@ function SummaryBar({ stats }) {
 
 
 
+
 function scan(path, args) {
     try {
         return { files: readGitDiff(path, { lastCommit: args.lastCommit, base: args.base }) };
@@ -85756,12 +85831,17 @@ function toTuiIssue(issue) {
         suggestion: issue.suggestion ?? issue.description
     };
 }
+function reviewStatus(model, retry) {
+    return retry
+        ? `⏳ Rate limit у ${model}, ожидание ${retry.waitSeconds}с (попытка ${retry.attempt}/${retry.maxRetries})...`
+        : `🤖 Отправляю запрос в ${model}...`;
+}
 async function reviewFiles(files, args, apiKey, onRetry) {
     const startedAt = Date.now();
     if (args.dryRun)
         return { issues: [], durationMs: Date.now() - startedAt, complete: true };
     try {
-        const provider = createProvider(args.provider, apiKey, 'llama-3.3-70b-versatile', onRetry);
+        const provider = createProvider(args.provider, apiKey, args.model, onRetry, args.baseUrl);
         const issues = [];
         for (const file of files) {
             for (const chunk of splitPatch(file.patch, 45_000)) {
@@ -85783,7 +85863,7 @@ function App({ args }) {
     const [result] = (0,react.useState)(() => scan(args.path, args));
     const [review, setReview] = (0,react.useState)({ issues: [], durationMs: 0, complete: false });
     const reviewStarted = (0,react.useRef)(false);
-    const apiKey = args.apiKey ?? process.env.GROQ_API_KEY;
+    const apiKey = resolveApiKey(args.provider, args.apiKey);
     (0,react.useEffect)(() => {
         if (result.error || result.files.length === 0 || !apiKey || args.dryRun) {
             if (args.dryRun)
@@ -85823,8 +85903,8 @@ function App({ args }) {
         medium: review.issues.filter((issue) => issue.severity === 'medium').length,
         low: review.issues.filter((issue) => issue.severity === 'low').length
     };
-    const retryText = review.retry ? `⏳ Rate limit, ожидание ${review.retry.waitSeconds}с (попытка ${review.retry.attempt}/${review.retry.maxRetries})...` : '';
-    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [showHeader && (0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsx)(build.Text, { color: "red", bold: true, children: "\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 Groq." }), (0,jsx_runtime.jsx)(build.Text, { children: "1. \u041F\u043E\u043B\u0443\u0447\u0438 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E: https://console.groq.com" }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsx)(build.Text, { children: "   GROQ_API_KEY=gsk_\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447" }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: review.retry ? 'yellow' : 'cyan', children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " ", review.retry ? retryText : '🤖 Отправляю в Groq...'] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: (0,jsx_runtime.jsx)(build.Text, { color: "red", children: review.error }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
+    const retryText = reviewStatus(args.model, review.retry);
+    return ((0,jsx_runtime.jsxs)(build.Box, { flexDirection: "column", padding: 1, children: [showHeader && (0,jsx_runtime.jsx)(Header, { path: args.path, filesAnalyzed: result.files.length }), result.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "red", children: ["Error: ", result.error] }) })) : result.files.length === 0 ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "green", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsx)(build.Text, { color: "green", children: "\u2705 \u041D\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u2014 \u0440\u0435\u0432\u044C\u044E\u0438\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E" }) })) : noKey ? ((0,jsx_runtime.jsxs)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: [(0,jsx_runtime.jsxs)(build.Text, { color: "red", bold: true, children: ["\uD83D\uDD11 \u041D\u0435\u0442 API-\u043A\u043B\u044E\u0447\u0430 \u0434\u043B\u044F ", args.provider, "."] }), (0,jsx_runtime.jsxs)(build.Text, { children: ["1. \u041F\u043E\u043B\u0443\u0447\u0438 \u043A\u043B\u044E\u0447: ", keyUrl(args.provider)] }), (0,jsx_runtime.jsx)(build.Text, { children: "2. \u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B .env \u0432 \u043F\u0430\u043F\u043A\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430:" }), (0,jsx_runtime.jsxs)(build.Text, { children: ["   ", args.provider === 'custom' ? 'CODESCOUT_API_KEY' : `${args.provider.toUpperCase()}_API_KEY`, "=\u0442\u0432\u043E\u0439_\u043A\u043B\u044E\u0447"] }), (0,jsx_runtime.jsx)(build.Text, { dimColor: true, children: "   (.env \u0443\u0436\u0435 \u0432 .gitignore \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0451\u0442 \u0432 git)" })] })) : !review.complete ? ((0,jsx_runtime.jsx)(build.Box, { marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: review.retry ? 'yellow' : 'cyan', children: [(0,jsx_runtime.jsx)(ink_spinner_build/* default */.A, { type: "dots" }), " ", retryText] }) })) : review.error ? ((0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "red", padding: 1, marginTop: 1, flexDirection: "column", children: (0,jsx_runtime.jsx)(build.Text, { color: "red", children: review.error }) })) : ((0,jsx_runtime.jsxs)(jsx_runtime.Fragment, { children: [review.warning && (0,jsx_runtime.jsx)(build.Box, { borderStyle: "round", borderColor: "yellow", padding: 1, marginTop: 1, children: (0,jsx_runtime.jsxs)(build.Text, { color: "yellow", children: ["\u26A0 ", review.warning] }) }), filesWithIssues(result.files, issueByFile).map((file) => (0,jsx_runtime.jsx)(FilePanel, { filename: file.filename, issues: issueByFile.get(file.filename) ?? [] }, file.filename)), (0,jsx_runtime.jsx)(SummaryBar, { stats: stats })] }))] }));
 }
 
 ;// CONCATENATED MODULE: ./src/cli.ts

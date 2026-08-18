@@ -36,6 +36,63 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
 
+// ../src/providers.ts
+var PROVIDERS = {
+  gemini: {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    envKey: "GEMINI_API_KEY",
+    defaultModel: "gemini-2.5-flash",
+    keyUrl: "https://aistudio.google.com/apikey"
+  },
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1",
+    envKey: "GROQ_API_KEY",
+    defaultModel: "llama-3.3-70b-versatile",
+    keyUrl: "https://console.groq.com"
+  },
+  openrouter: {
+    baseUrl: "https://openrouter.ai/api/v1",
+    envKey: "OPENROUTER_API_KEY",
+    defaultModel: "openai/gpt-4o-mini",
+    keyUrl: "https://openrouter.ai/keys"
+  },
+  github: {
+    baseUrl: "https://models.inference.ai.azure.com",
+    envKey: "GITHUB_TOKEN",
+    defaultModel: "gpt-4o-mini",
+    keyUrl: "https://github.com/settings/tokens"
+  }
+};
+function normalizeProvider(provider) {
+  const value = provider?.trim().toLowerCase() || "gemini";
+  if (value === "custom") return "custom";
+  if (value in PROVIDERS) return value;
+  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github \u0438\u043B\u0438 custom.`);
+}
+function resolveApiKey(provider, explicitKey, env = process.env) {
+  if (explicitKey?.trim()) return explicitKey.trim();
+  const normalized = normalizeProvider(provider);
+  if (normalized === "custom") return env.CODESCOUT_API_KEY?.trim();
+  return env[PROVIDERS[normalized].envKey]?.trim();
+}
+function resolveBaseUrl(provider, customBaseUrl) {
+  if (customBaseUrl?.trim()) return customBaseUrl.trim().replace(/\/+$/, "");
+  const normalized = normalizeProvider(provider);
+  if (normalized === "custom") throw new Error("\u0414\u043B\u044F provider custom \u0443\u043A\u0430\u0436\u0438 --base-url \u0438\u043B\u0438 CODESCOUT_BASE_URL.");
+  return PROVIDERS[normalized].baseUrl;
+}
+function defaultModel(provider) {
+  const normalized = normalizeProvider(provider);
+  return normalized === "custom" ? "" : PROVIDERS[normalized].defaultModel;
+}
+function keyUrl(provider) {
+  const normalized = normalizeProvider(provider);
+  return normalized === "custom" ? "https://docs.ollama.com" : PROVIDERS[normalized].keyUrl;
+}
+function completionUrl(baseUrl) {
+  return `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+}
+
 // ../src/llm-client.ts
 var RateLimitError = class extends Error {
   constructor(message) {
@@ -55,22 +112,23 @@ function parseRetryAfterSeconds(response, message) {
   if (match) return Math.ceil(Number.parseFloat(match[1]));
   return void 0;
 }
-function finalRateLimitMessage(waitSeconds, details = "") {
+function finalRateLimitMessage(model, waitSeconds) {
   const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
-  const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? "tokens per day" : "tokens per day";
-  return `\u26A0\uFE0F \u041F\u0440\u0435\u0432\u044B\u0448\u0435\u043D \u0434\u043D\u0435\u0432\u043D\u043E\u0439 \u043B\u0438\u043C\u0438\u0442 Groq.
-\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 ${minutes} \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u043E\u0439 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.
-\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043B\u0438\u043C\u0438\u0442: ${suffix}`;
+  return `\u26A0\uFE0F \u041F\u0440\u0435\u0432\u044B\u0448\u0435\u043D \u043B\u0438\u043C\u0438\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 ${model}.
+\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 ${minutes} \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C.
+\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043B\u0438\u043C\u0438\u0442: tokens per day`;
 }
-var GroqProvider = class {
-  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry) {
+var OpenAICompatibleProvider = class {
+  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1") {
     this.apiKey = apiKey;
     this.model = model;
     this.fetcher = fetcher;
     this.sleeper = sleeper;
     this.onRetry = onRetry;
+    this.endpoint = completionUrl(baseUrl);
   }
   lastRequestAt = 0;
+  endpoint;
   async review(systemPrompt, userPrompt) {
     const wait = 2e3 - (Date.now() - this.lastRequestAt);
     if (wait > 0) await this.sleeper(wait);
@@ -79,14 +137,14 @@ var GroqProvider = class {
     while (true) {
       this.lastRequestAt = Date.now();
       try {
-        const response = await this.fetcher("https://api.groq.com/openai/v1/chat/completions", {
+        const response = await this.fetcher(this.endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] })
         });
         const data = await response.json();
         if (!response.ok) {
-          const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+          const details = data.error?.message ?? `LLM request failed with ${response.status}`;
           if (response.status === 429) {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
@@ -94,7 +152,7 @@ var GroqProvider = class {
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
-        if (!content) throw new Error("Groq returned an empty response");
+        if (!content) throw new Error("LLM returned an empty response");
         return content;
       } catch (error) {
         if (!(error instanceof RateLimitError)) throw error;
@@ -105,7 +163,7 @@ var GroqProvider = class {
         }
         lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? "" };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-          throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+          throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
         const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
@@ -115,9 +173,10 @@ var GroqProvider = class {
     }
   }
 };
-function createProvider(provider, apiKey, model, onRetry) {
-  if (provider.toLowerCase() !== "groq") throw new Error(`Unsupported provider: ${provider}`);
-  return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
+function createProvider(provider, apiKey, model, onRetry, baseUrl) {
+  const normalized = normalizeProvider(provider);
+  const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
 }
 
 // ../src/line-numbering.ts
@@ -471,10 +530,10 @@ var CodeScoutPanel = class {
     }
     this.render();
   }
-  setRetry(event) {
+  setRetry(event, model = "model") {
     this.scanning = true;
     this.statusKind = "retry";
-    this.statusMessage = `\u23F3 Rate limit, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 ${event.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${event.attempt}/${event.maxRetries})...`;
+    this.statusMessage = `\u23F3 Rate limit \u0443 ${model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 ${event.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${event.attempt}/${event.maxRetries})...`;
     this.render();
   }
   setError(message) {
@@ -500,7 +559,6 @@ var CodeScoutPanel = class {
 };
 
 // src/extension.ts
-var MODEL = "llama-3.3-70b-versatile";
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -530,14 +588,16 @@ async function reviewWorkspace(lastCommit, onRetry) {
     throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
   }
   const config = vscode2.workspace.getConfiguration("codescout");
-  const apiKey = config.get("apiKey")?.trim() || process.env.GROQ_API_KEY?.trim();
+  const providerName = config.get("provider", "gemini");
+  const model = config.get("model")?.trim() || defaultModel(providerName);
+  const baseUrl = config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL;
+  const apiKey = resolveApiKey(providerName, config.get("apiKey"));
   if (!apiKey) {
-    throw new Error("\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D Groq API key. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 VS Code \u0438\u043B\u0438 GROQ_API_KEY \u0432 \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u0438.");
+    throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${providerName}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u043F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u0443\u044E \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u044F. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(providerName)}`);
   }
-  const providerName = config.get("provider", "groq");
   const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(providerName, apiKey, MODEL, onRetry);
+  const provider = createProvider(providerName, apiKey, model, (event) => onRetry(event, model), baseUrl);
   const issues = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45e3)) {
@@ -554,7 +614,7 @@ async function runReview(lastCommit, output, panel) {
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(lastCommit, (event) => panel.setRetry(event));
+    const result = await reviewWorkspace(lastCommit, (event, model) => panel.setRetry(event, model));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");

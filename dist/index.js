@@ -29922,7 +29922,7 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 9392:
+/***/ 7273:
 /***/ ((module, __webpack_exports__, __nccwpck_require__) => {
 
 "use strict";
@@ -34041,7 +34041,71 @@ function formatIssue(issue) {
     return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${issue.suggestion ?? issue.description}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
 }
 
+;// CONCATENATED MODULE: ./src/providers.ts
+const PROVIDERS = {
+    gemini: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        envKey: 'GEMINI_API_KEY',
+        defaultModel: 'gemini-2.5-flash',
+        keyUrl: 'https://aistudio.google.com/apikey'
+    },
+    groq: {
+        baseUrl: 'https://api.groq.com/openai/v1',
+        envKey: 'GROQ_API_KEY',
+        defaultModel: 'llama-3.3-70b-versatile',
+        keyUrl: 'https://console.groq.com'
+    },
+    openrouter: {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        envKey: 'OPENROUTER_API_KEY',
+        defaultModel: 'openai/gpt-4o-mini',
+        keyUrl: 'https://openrouter.ai/keys'
+    },
+    github: {
+        baseUrl: 'https://models.inference.ai.azure.com',
+        envKey: 'GITHUB_TOKEN',
+        defaultModel: 'gpt-4o-mini',
+        keyUrl: 'https://github.com/settings/tokens'
+    }
+};
+function normalizeProvider(provider) {
+    const value = provider?.trim().toLowerCase() || 'gemini';
+    if (value === 'custom')
+        return 'custom';
+    if (value in PROVIDERS)
+        return value;
+    throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
+}
+function resolveApiKey(provider, explicitKey, env = process.env) {
+    if (explicitKey?.trim())
+        return explicitKey.trim();
+    const normalized = normalizeProvider(provider);
+    if (normalized === 'custom')
+        return env.CODESCOUT_API_KEY?.trim();
+    return env[PROVIDERS[normalized].envKey]?.trim();
+}
+function resolveBaseUrl(provider, customBaseUrl) {
+    if (customBaseUrl?.trim())
+        return customBaseUrl.trim().replace(/\/+$/, '');
+    const normalized = normalizeProvider(provider);
+    if (normalized === 'custom')
+        throw new Error('Для provider custom укажи --base-url или CODESCOUT_BASE_URL.');
+    return PROVIDERS[normalized].baseUrl;
+}
+function defaultModel(provider) {
+    const normalized = normalizeProvider(provider);
+    return normalized === 'custom' ? '' : PROVIDERS[normalized].defaultModel;
+}
+function keyUrl(provider) {
+    const normalized = normalizeProvider(provider);
+    return normalized === 'custom' ? 'https://docs.ollama.com' : PROVIDERS[normalized].keyUrl;
+}
+function completionUrl(baseUrl) {
+    return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+}
+
 ;// CONCATENATED MODULE: ./src/llm-client.ts
+
 class RateLimitError extends Error {
     constructor(message) {
         super(message);
@@ -34062,24 +34126,25 @@ function parseRetryAfterSeconds(response, message) {
         return Math.ceil(Number.parseFloat(match[1]));
     return undefined;
 }
-function finalRateLimitMessage(waitSeconds, details = '') {
+function finalRateLimitMessage(model, waitSeconds) {
     const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
-    const suffix = /tokens?\s+per\s+day|tpd/i.test(details) ? 'tokens per day' : 'tokens per day';
-    return `⚠️ Превышен дневной лимит Groq.\nПопробуйте через ${minutes} минут или используйте другой провайдер.\nТекущий лимит: ${suffix}`;
+    return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
 }
-class GroqProvider {
+class OpenAICompatibleProvider {
     apiKey;
     model;
     fetcher;
     sleeper;
     onRetry;
     lastRequestAt = 0;
-    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry) {
+    endpoint;
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1') {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
         this.sleeper = sleeper;
         this.onRetry = onRetry;
+        this.endpoint = completionUrl(baseUrl);
     }
     async review(systemPrompt, userPrompt) {
         const wait = 2000 - (Date.now() - this.lastRequestAt);
@@ -34090,14 +34155,14 @@ class GroqProvider {
         while (true) {
             this.lastRequestAt = Date.now();
             try {
-                const response = await this.fetcher('https://api.groq.com/openai/v1/chat/completions', {
+                const response = await this.fetcher(this.endpoint, {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
                 });
                 const data = (await response.json());
                 if (!response.ok) {
-                    const details = data.error?.message ?? `Groq request failed with ${response.status}`;
+                    const details = data.error?.message ?? `LLM request failed with ${response.status}`;
                     if (response.status === 429) {
                         const waitSeconds = parseRetryAfterSeconds(response, details);
                         throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
@@ -34106,7 +34171,7 @@ class GroqProvider {
                 }
                 const content = data.choices?.[0]?.message?.content;
                 if (!content)
-                    throw new Error('Groq returned an empty response');
+                    throw new Error('LLM returned an empty response');
                 return content;
             }
             catch (error) {
@@ -34116,10 +34181,10 @@ class GroqProvider {
                 try {
                     parsed = JSON.parse(error.message);
                 }
-                catch { /* use defaults */ }
+                catch { /* final public error */ }
                 lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
                 if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-                    throw new RateLimitError(finalRateLimitMessage(lastRateLimit.waitSeconds, lastRateLimit.details));
+                    throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
                 }
                 retryCount += 1;
                 const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
@@ -34129,10 +34194,11 @@ class GroqProvider {
         }
     }
 }
-function createProvider(provider, apiKey, model, onRetry) {
-    if (provider.toLowerCase() !== 'groq')
-        throw new Error(`Unsupported provider: ${provider}`);
-    return new GroqProvider(apiKey, model, fetch, sleep, onRetry);
+
+function createProvider(provider, apiKey, model, onRetry, baseUrl) {
+    const normalized = normalizeProvider(provider);
+    const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
 }
 
 ;// CONCATENATED MODULE: ./src/line-numbering.ts
@@ -34274,7 +34340,7 @@ async function run() {
         const pullRequest = github.context.payload.pull_request;
         const context = { owner: github.context.repo.owner, repo: github.context.repo.repo, pullNumber: pullRequest.number, headSha: pullRequest.head.sha };
         const client = new GitHubClient(new dist_src_Octokit({ auth: token }), context);
-        const provider = createProvider(core.getInput('provider') || 'groq', apiKey, core.getInput('model') || 'llama-3.3-70b-versatile');
+        const provider = createProvider(core.getInput('provider') || 'gemini', apiKey, core.getInput('model') || 'gemini-2.5-flash');
         const allFiles = await client.getPullRequestFiles();
         const files = allFiles.filter((file) => shouldReviewFile(file.filename) && file.patch);
         const issues = [];
@@ -36446,7 +36512,7 @@ __webpack_unused_export__ = defaultContentType
 /******/ 	// module cache are used so entry inlining is disabled
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
-/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 9392);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 7273);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()
