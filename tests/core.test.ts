@@ -32,6 +32,25 @@ diff --git a/package-lock.json b/package-lock.json
 -old
 +new`;
 
+describe('E9 scan progress and labels', () => {
+  it('renders Russian-first scan button labels and live progress text', () => {
+    const html = buildReportHtml([], { files: 2, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Проверяю файл 1/2: src/app.ts...');
+    expect(html).toContain('🔍 Проверить последний коммит');
+    expect(html).toContain('📝 Проверить изменения до коммита');
+    expect(html).toContain('🔎 Проверяю файл 1/2: src/app.ts...');
+    expect(html).toContain('data-command="scanLastCommit"');
+    expect(html).toContain('data-command="scanUncommitted"');
+  });
+
+  it('emits progress and model-thinking callbacks inside the file chunk loop', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('onProgress?.(fileIndex + 1, files.length, file.filename)');
+    expect(extension).toContain('onThinking?.()');
+    expect(extension).toContain('panel.setProgress(index, total, filename)');
+    expect(extension).toContain('panel.setModelThinking()');
+  });
+});
+
 describe('E5.9.1 self-test sample', () => {
   it('renders a clear clean-review state with the self-test action', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1.2, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');

@@ -19,6 +19,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private statusMessage = '';
   private   statusKind: 'retry' | 'error' | 'test' = 'retry';
   private testMode = false;
+  private progressMessage = '';
   private keyMask = '';
   private keyConfigured = false;
   private provider = 'gemini';
@@ -77,8 +78,21 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.scanning = scanning;
     if (scanning) {
       this.statusMessage = '';
+      this.progressMessage = '';
       this.statusKind = 'retry';
     }
+    this.render();
+  }
+
+  setProgress(index: number, total: number, filename: string): void {
+    this.scanning = true;
+    this.progressMessage = `🔎 Проверяю файл ${index}/${total}: ${filename}...`;
+    this.render();
+  }
+
+  setModelThinking(): void {
+    this.scanning = true;
+    this.progressMessage = '🤖 Модель думает...';
     this.render();
   }
 
@@ -93,6 +107,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
+    this.progressMessage = '';
     this.statusKind = 'error';
     this.statusMessage = message;
     this.render();
@@ -104,6 +119,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
+    this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
     this.render();
@@ -112,7 +128,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 }

@@ -460,7 +460,7 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "") {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
@@ -499,6 +499,7 @@ button:disabled { opacity: 0.65; cursor: default; }
 .test-badge { display: inline-block; margin-left: 8px; color: var(--vscode-testing-iconPassed); font-size: 11px; font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
+.progress-line { margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .stats { margin-top: 9px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .pills { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .pill, .badge { border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -530,9 +531,10 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}
     <div class="actions">
-      <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} Review last commit</button>
-      <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} Review uncommitted</button>
+      <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
+      <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
     </div>
+    ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
@@ -547,7 +549,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false);
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "");
 }
 
 // src/panel.ts
@@ -560,6 +562,7 @@ var CodeScoutPanel = class {
   statusMessage = "";
   statusKind = "retry";
   testMode = false;
+  progressMessage = "";
   keyMask = "";
   keyConfigured = false;
   provider = "gemini";
@@ -615,8 +618,19 @@ var CodeScoutPanel = class {
     this.scanning = scanning;
     if (scanning) {
       this.statusMessage = "";
+      this.progressMessage = "";
       this.statusKind = "retry";
     }
+    this.render();
+  }
+  setProgress(index, total, filename) {
+    this.scanning = true;
+    this.progressMessage = `\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B ${index}/${total}: ${filename}...`;
+    this.render();
+  }
+  setModelThinking() {
+    this.scanning = true;
+    this.progressMessage = "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442...";
     this.render();
   }
   setRetry(event, model = "model") {
@@ -629,6 +643,7 @@ var CodeScoutPanel = class {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
+    this.progressMessage = "";
     this.statusKind = "error";
     this.statusMessage = message;
     this.render();
@@ -639,13 +654,14 @@ var CodeScoutPanel = class {
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
+    this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
     this.render();
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 };
 
@@ -767,7 +783,7 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -776,8 +792,10 @@ async function reviewFiles(context, files, workspaceRoot, onRetry) {
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues = [];
-  for (const file of files) {
+  for (const [fileIndex, file] of files.entries()) {
     for (const chunk of splitPatch(file.patch, 45e3)) {
+      onProgress?.(fileIndex + 1, files.length, file.filename);
+      onThinking?.();
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
       issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
@@ -785,10 +803,10 @@ async function reviewFiles(context, files, workspaceRoot, onRetry) {
   }
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
-async function reviewWorkspace(context, lastCommit, onRetry) {
+async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking);
 }
 async function runSampleReview(context, output, panel) {
   output.clear();
@@ -796,7 +814,7 @@ async function runSampleReview(context, output, panel) {
   output.appendLine("CodeScout: running built-in self-test...");
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model));
+    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -815,7 +833,7 @@ async function runReview(context, lastCommit, output, panel) {
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");

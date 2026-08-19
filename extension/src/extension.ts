@@ -115,7 +115,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -124,8 +124,10 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues: ReviewIssue[] = [];
-  for (const file of files) {
+  for (const [fileIndex, file] of files.entries()) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
+      onProgress?.(fileIndex + 1, files.length, file.filename);
+      onThinking?.();
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
       issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
@@ -134,10 +136,10 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking);
 }
 
 async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
@@ -146,7 +148,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model));
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -166,7 +168,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
   output.appendLine(lastCommit ? 'CodeScout: reviewing last commit...' : 'CodeScout: reviewing uncommitted changes...');
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
