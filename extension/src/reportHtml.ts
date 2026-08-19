@@ -45,7 +45,7 @@ function issueCard(issue: ReviewIssue): string {
   const suggestion = issue.suggestion ? `<div class="suggestion"><span>→</span> ${escapeHtml(issue.suggestion)}</div>` : '';
   return `<article class="issue-card ${severity}">
   <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span><span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
-  <div class="location">${escapeHtml(issue.file)}:${issue.line}</div>
+  <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
   ${suggestion}
@@ -58,7 +58,7 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join('')}</section>`).join('');
   const body = sections || (emptyState && !keyConfigured
-    ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получи API-ключ Gemini в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ — провайдер определится сам</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
+    ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получите API-ключ провайдера в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ — провайдер определится сам</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
     : emptyState
       ? '<div class="empty"><div class="empty-icon">🕵️</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>'
       : '<div class="empty"><div class="empty-icon">✓</div><div>No issues found</div><small>Your changes look clean.</small></div>');
@@ -83,8 +83,8 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
 .link-button { display: inline; width: auto; padding: 0; color: var(--vscode-textLink-foreground); background: transparent; text-decoration: underline; }
 .primary-action { width: auto; margin: 4px auto 8px; padding: 8px 14px; text-align: center; }
-.actions { display: flex; gap: 6px; margin-top: 12px; flex-direction: column; }
-button { width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+button { flex: 1 1 150px; width: auto; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
 button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 button:disabled { opacity: 0.65; cursor: default; }
@@ -107,7 +107,7 @@ h2 { margin: 0 0 8px; color: var(--vscode-textLink-foreground); font-size: 13px;
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .category { color: var(--vscode-descriptionForeground); font-size: 11px; }
 .confidence { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; font-variant-numeric: tabular-nums; }
-.location { margin: 6px 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow-wrap: anywhere; }
+.location { display: block; margin: 6px 0; color: var(--vscode-textLink-foreground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow-wrap: anywhere; text-decoration: underline; }
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vscode-textBlockQuote-border); border-radius: 3px; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font-family: var(--vscode-editor-font-family); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
 .suggestion { color: var(--vscode-testing-iconPassed); }
