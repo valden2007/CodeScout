@@ -6,6 +6,8 @@ import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml
 
 interface ScanMessage {
   command?: string;
+  file?: string;
+  line?: number | string;
 }
 
 export class CodeScoutPanel implements vscode.WebviewViewProvider {
@@ -37,6 +39,24 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.chooseModel');
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
+      } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!root) {
+          void vscode.window.showErrorMessage('Открой папку workspace, чтобы перейти к файлу.');
+          return;
+        }
+        const fileUri = vscode.Uri.joinPath(root, message.file);
+        void vscode.workspace.openTextDocument(fileUri).then((document) => {
+          const line = Math.max(0, Number(message.line) - 1);
+          const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
+          return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
+            const range = new vscode.Range(position, position);
+            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+            editor.selection = new vscode.Selection(position, position);
+          });
+        }, () => {
+          void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
+        });
       }
     }, undefined, []);
     this.render();
