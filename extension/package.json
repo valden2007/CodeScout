@@ -18,7 +18,8 @@
     "onCommand:codescout.scanLastCommit",
     "onCommand:codescout.setApiKey",
     "onCommand:codescout.clearApiKey",
-    "onCommand:codescout.chooseModel"
+    "onCommand:codescout.chooseModel",
+    "onCommand:codescout.testSample"
   ],
   "contributes": {
     "viewsContainers": {
@@ -59,6 +60,10 @@
       {
         "command": "codescout.chooseModel",
         "title": "CodeScout: choose model"
+      },
+      {
+        "command": "codescout.testSample",
+        "title": "CodeScout: test on sample"
       }
     ],
     "configuration": {

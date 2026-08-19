@@ -460,12 +460,12 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join("")}</section>`).join("");
-  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
+  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : testMode ? '<div class="empty"><div class="empty-icon">\u{1F9EA}</div><strong>\u{1F9EA} \u0422\u0415\u0421\u0422</strong><small>\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.</small></div>' : `<div class="empty"><div class="empty-icon">\u2705</div><strong>\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${stats.files} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</strong><small>\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:</small><button class="primary-action" type="button" data-command="testSample">\u{1F9EA} \u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435</button></div>`);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -495,6 +495,8 @@ button:disabled { opacity: 0.65; cursor: default; }
 .spinner { display: inline-block; width: 11px; margin-right: 4px; }
 .status-banner { margin-top: 10px; padding: 7px 8px; border-left: 3px solid var(--vscode-editorWarning-foreground); border-radius: 3px; color: var(--vscode-editorWarning-foreground); background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent); font-size: 12px; }
 .status-banner.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
+.status-banner.test { border-left-color: var(--vscode-testing-iconPassed); color: var(--vscode-testing-iconPassed); background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, transparent); }
+.test-badge { display: inline-block; margin-left: 8px; color: var(--vscode-testing-iconPassed); font-size: 11px; font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
 .stats { margin-top: 9px; color: var(--vscode-descriptionForeground); font-size: 12px; }
@@ -525,6 +527,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
+    ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} Review last commit</button>
@@ -544,7 +547,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model);
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false);
 }
 
 // src/panel.ts
@@ -556,6 +559,7 @@ var CodeScoutPanel = class {
   scanning = false;
   statusMessage = "";
   statusKind = "retry";
+  testMode = false;
   keyMask = "";
   keyConfigured = false;
   provider = "gemini";
@@ -576,6 +580,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.chooseModel");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
+      } else if (message.command === "testSample") {
+        void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!root) {
@@ -622,24 +628,59 @@ var CodeScoutPanel = class {
   setError(message) {
     this.scanning = false;
     this.hasRun = true;
+    this.testMode = false;
     this.statusKind = "error";
     this.statusMessage = message;
     this.render();
   }
-  update(issues, stats) {
+  update(issues, stats, testMode = false, testMessage = "", testWarning = false) {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
-    this.statusMessage = "";
-    this.statusKind = "retry";
+    this.testMode = testMode;
+    this.statusMessage = testMessage;
+    this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
     this.render();
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 };
+
+// src/sampleReview.ts
+var SAMPLE_DIFF = `diff --git a/codescout-sample.ts b/codescout-sample.ts
+new file mode 100644
+--- /dev/null
++++ b/codescout-sample.ts
+@@ -0,0 +1,16 @@
++export async function loadUser(id: string) {
++  try {
++    return await db.users.findById(id);
++  } catch (e) {}
++}
++
++export function connect() {
++  const password = "secret123";
++  return db.connect({ password });
++}
++
++export function findUser(name: string) {
++  const query = "SELECT * FROM users WHERE name = '" + name + "'";
++  return db.query(query);
++}
++`;
+var SAMPLE_FILE = {
+  filename: "codescout-sample.ts",
+  status: "added",
+  additions: 14,
+  deletions: 0,
+  patch: SAMPLE_DIFF
+};
+function sampleTestSummary(found) {
+  return `\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${found}. ${found === 0 ? "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F" : "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!"}`;
+}
 
 // src/extension.ts
 var SECRET_KEY = "codescout.apiKey";
@@ -726,15 +767,12 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewWorkspace(context, lastCommit, onRetry) {
+async function reviewFiles(context, files, workspaceRoot, onRetry) {
   const startedAt = Date.now();
-  const workspaceRoot = getWorkspaceRoot();
-  if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider)}`);
   }
-  const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues = [];
@@ -742,10 +780,34 @@ async function reviewWorkspace(context, lastCommit, onRetry) {
     for (const chunk of splitPatch(file.patch, 45e3)) {
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
-      issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, workspaceRoot)));
+      issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
     }
   }
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
+}
+async function reviewWorkspace(context, lastCommit, onRetry) {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry);
+}
+async function runSampleReview(context, output, panel) {
+  output.clear();
+  output.show(true);
+  output.appendLine("CodeScout: running built-in self-test...");
+  panel.setScanning(true);
+  try {
+    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model));
+    const summary = sampleTestSummary(result.issues.length);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
+    output.appendLine(`${summary}`);
+    for (const issue of result.issues) output.appendLine(formatIssue(issue));
+    void vscode2.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Self-test error: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  }
 }
 async function runReview(context, lastCommit, output, panel) {
   output.clear();
@@ -792,6 +854,7 @@ function activate(context) {
       lastScanWasLastCommit = true;
       return runReview(context, true, output, panel);
     }),
+    vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
     vscode2.commands.registerCommand("codescout.setApiKey", async () => {
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438" });
       if (!key?.trim()) return;

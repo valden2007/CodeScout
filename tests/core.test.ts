@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseUnifiedDiff, shouldReviewFile, splitPatch } from '../src/diff-parser';
 import { parseReviewResponse } from '../src/response-parser';
+import { buildReviewPrompt } from '../src/prompt-builder';
 import { buildSummaryComment } from '../src/report-formatter';
 import { numberPatch } from '../src/line-numbering';
 import { correctIssueLine } from '../src/line-correction';
@@ -11,6 +12,7 @@ import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-c
 import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
+import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
 import { readFileSync } from 'node:fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,6 +31,38 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5.9.1 self-test sample', () => {
+  it('renders a clear clean-review state with the self-test action', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1.2, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
+    expect(html).toContain('✅');
+    expect(html).toContain('Проверено файлов: 1 — проблем не найдено');
+    expect(html).toContain('Сомневаешься? Проверь, как CodeScout ловит баги:');
+    expect(html).toContain('🧪 Тест на примере');
+    expect(html).toContain('0 issues</strong> · 1 files');
+  });
+
+  it('warns when the self-test model finds no planted issues', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, 'Пример: ожидалось 2-3 бага, найдено 0. ⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️', 'error', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', true);
+    expect(html).toContain('Модель слишком слабая для ревью');
+    expect(html).toContain('🧪 ТЕСТ');
+  });
+  it('contains three planted bug patterns', () => {
+    expect(SAMPLE_DIFF).toContain('catch (e) {}');
+    expect(SAMPLE_DIFF).toContain('const password = "secret123"');
+    expect(SAMPLE_DIFF).toContain('"SELECT * FROM users WHERE name = \'" + name');
+    expect(SAMPLE_FILE.filename).toBe('codescout-sample.ts');
+  });
+
+  it('passes a mocked LLM response through the same provider and parser flow', async () => {
+    const response = JSON.stringify({ issues: [{ file: SAMPLE_FILE.filename, line: 4, category: 'bug', severity: 'high', description: 'silent catch', suggestion: 'handle the error', code: 'catch (e) {}', confidence: 0.99 }] });
+    const provider = new OpenAICompatibleProvider('test-key', 'test-model', async () => new Response(JSON.stringify({ choices: [{ message: { content: response } }] }), { status: 200 }), async () => undefined, undefined, 'http://mock.test/v1');
+    const raw = await provider.review('system', buildReviewPrompt(SAMPLE_FILE, SAMPLE_FILE.patch));
+    const parsed = parseReviewResponse(raw, SAMPLE_FILE.filename);
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0].code).toBe('catch (e) {}');
+  });
+});
 
 describe('E5.9 combined UX fixes', () => {
   it('renders clickable file and line metadata and neutral onboarding text', () => {

@@ -9,6 +9,7 @@ import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
+import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 
 const SECRET_KEY = 'codescout.apiKey';
 const SECRET_PROVIDER = 'codescout.provider';
@@ -114,28 +115,49 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
   const startedAt = Date.now();
-  const workspaceRoot = getWorkspaceRoot();
-  if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
-
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`Не найден API-ключ для ${selection.provider}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(selection.provider)}`);
   }
-  const files = readGitDiff(workspaceRoot, { lastCommit });
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
-
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
   const issues: ReviewIssue[] = [];
   for (const file of files) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
-      issues.push(...parsed.issues.map((issue) => correctIssueLine(issue, workspaceRoot)));
+      issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
     }
   }
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
+}
+
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void): Promise<ScanResult> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry);
+}
+
+async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+  output.clear();
+  output.show(true);
+  output.appendLine('CodeScout: running built-in self-test...');
+  panel.setScanning(true);
+  try {
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model));
+    const summary = sampleTestSummary(result.issues.length);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
+    output.appendLine(`${summary}`);
+    for (const issue of result.issues) output.appendLine(formatIssue(issue));
+    void vscode.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Self-test error: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  }
 }
 
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
@@ -180,6 +202,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
+    vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставьте API-ключ провайдера — провайдер определится автоматически' });
       if (!key?.trim()) return;

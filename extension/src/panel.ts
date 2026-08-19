@@ -17,7 +17,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private hasRun = false;
   private scanning = false;
   private statusMessage = '';
-  private statusKind: 'retry' | 'error' = 'retry';
+  private   statusKind: 'retry' | 'error' | 'test' = 'retry';
+  private testMode = false;
   private keyMask = '';
   private keyConfigured = false;
   private provider = 'gemini';
@@ -39,6 +40,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.chooseModel');
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
+      } else if (message.command === 'testSample') {
+        void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!root) {
@@ -89,25 +92,27 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   setError(message: string): void {
     this.scanning = false;
     this.hasRun = true;
+    this.testMode = false;
     this.statusKind = 'error';
     this.statusMessage = message;
     this.render();
   }
 
-  update(issues: ReviewIssue[], stats: ReportStats): void {
+  update(issues: ReviewIssue[], stats: ReportStats, testMode = false, testMessage = '', testWarning = false): void {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
-    this.statusMessage = '';
-    this.statusKind = 'retry';
+    this.testMode = testMode;
+    this.statusMessage = testMessage;
+    this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
     this.render();
   }
 
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
   }
 }
