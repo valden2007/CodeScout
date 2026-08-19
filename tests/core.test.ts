@@ -11,6 +11,7 @@ import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-c
 import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
+import { readFileSync } from 'node:fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -28,6 +29,34 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E5.9 combined UX fixes', () => {
+  it('renders clickable file and line metadata and neutral onboarding text', () => {
+    const html = buildReportHtml([{ file: 'src/app.ts', line: 12, category: 'bug', severity: 'medium', description: 'problem', confidence: 0.9 }], { files: 1, seconds: 1, critical: 0, medium: 1, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
+    expect(html).toContain('data-command="openFile"');
+    expect(html).toContain('data-file="src/app.ts"');
+    expect(html).toContain('data-line="12"');
+    expect(html).toContain('flex-wrap: wrap');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('Вставьте API-ключ провайдера — провайдер определится автоматически');
+    expect(extension).not.toContain('Вставь API-ключ Gemini');
+  });
+
+  it('persists corrected models and uses a fresh provider during each scan', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("await context.secrets.store(SECRET_MODEL, corrected)");
+    expect(extension).toContain("await context.secrets.store(SECRET_MODEL_CHOSEN, 'false')");
+    expect(extension).toContain('createProvider(selection.provider, selection.key, selection.model');
+    expect(extension).toContain('await resolveExtensionSelection(context)');
+  });
+
+  it('resolves openFile against workspace and reveals the requested line', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('vscode.Uri.joinPath(root, message.file)');
+    expect(panel).toContain('new vscode.Range(position, position)');
+    expect(panel).toContain('Файл не найден в workspace');
+  });
+});
 
 describe('E5.7 live model picker', () => {
   it('parses model ids from an OpenAI-compatible /models response', () => {
