@@ -454,7 +454,7 @@ function issueCard(issue) {
   const suggestion = issue.suggestion ? `<div class="suggestion"><span>\u2192</span> ${escapeHtml(issue.suggestion)}</div>` : "";
   return `<article class="issue-card ${severity}">
   <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span><span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
-  <div class="location">${escapeHtml(issue.file)}:${issue.line}</div>
+  <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
   ${suggestion}
@@ -465,7 +465,7 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join("")}</section>`).join("");
-  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438 API-\u043A\u043B\u044E\u0447 Gemini \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
+  const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : '<div class="empty"><div class="empty-icon">\u2713</div><div>No issues found</div><small>Your changes look clean.</small></div>');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -478,7 +478,7 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .header { position: sticky; top: -16px; z-index: 2; margin: -16px -14px 0; padding: 14px 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .brand-mark { color: var(--vscode-textLink-foreground); }
-.key-status { display: flex; align-items: center; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.key-status { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
@@ -487,8 +487,8 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
 .link-button { display: inline; width: auto; padding: 0; color: var(--vscode-textLink-foreground); background: transparent; text-decoration: underline; }
 .primary-action { width: auto; margin: 4px auto 8px; padding: 8px 14px; text-align: center; }
-.actions { display: flex; gap: 6px; margin-top: 12px; flex-direction: column; }
-button { width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+button { flex: 1 1 150px; width: auto; padding: 6px 9px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
 button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 button:disabled { opacity: 0.65; cursor: default; }
@@ -511,7 +511,7 @@ h2 { margin: 0 0 8px; color: var(--vscode-textLink-foreground); font-size: 13px;
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .category { color: var(--vscode-descriptionForeground); font-size: 11px; }
 .confidence { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; font-variant-numeric: tabular-nums; }
-.location { margin: 6px 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow-wrap: anywhere; }
+.location { display: block; margin: 6px 0; color: var(--vscode-textLink-foreground); font-family: var(--vscode-editor-font-family); font-size: 11px; overflow-wrap: anywhere; text-decoration: underline; }
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vscode-textBlockQuote-border); border-radius: 3px; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font-family: var(--vscode-editor-font-family); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
 .suggestion { color: var(--vscode-testing-iconPassed); }
@@ -576,6 +576,24 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.chooseModel");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
+      } else if (message.command === "openFile" && message.file && message.line !== void 0) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!root) {
+          void vscode.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.");
+          return;
+        }
+        const fileUri = vscode.Uri.joinPath(root, message.file);
+        void vscode.workspace.openTextDocument(fileUri).then((document) => {
+          const line = Math.max(0, Number(message.line) - 1);
+          const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
+          return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
+            const range = new vscode.Range(position, position);
+            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+            editor.selection = new vscode.Selection(position, position);
+          });
+        }, () => {
+          void vscode.window.showErrorMessage(`\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: ${message.file}`);
+        });
       }
     }, void 0, []);
     this.render();
@@ -673,11 +691,18 @@ async function chooseLiveModel(selection, placeHolder) {
   const picked = await vscode2.window.showQuickPick([preferredLiveModel(models, selection.model), ...models.filter((model) => model !== preferredLiveModel(models, selection.model))], { placeHolder, matchOnDescription: true });
   return { model: picked || preferredLiveModel(models, selection.model), userChosen: Boolean(picked) };
 }
-async function validateDefaultModel(selection) {
+async function validateDefaultModel(context, selection, persistCorrection = false) {
   try {
     const models = await fetchModels(selection);
     if (models.includes(selection.model)) return { model: selection.model, userChosen: false };
-    return chooseLiveModel({ ...selection, model: preferredLiveModel(models, selection.model) }, "\u0412\u044B\u0431\u0435\u0440\u0438 \u043C\u043E\u0434\u0435\u043B\u044C");
+    if (persistCorrection) {
+      const corrected = preferredLiveModel(models, selection.model);
+      if (!corrected) return { model: selection.model, userChosen: false };
+      await context.secrets.store(SECRET_MODEL, corrected);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
+      return { model: corrected, userChosen: false };
+    }
+    return chooseLiveModel(selection, "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u0437 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445");
   } catch {
     return { model: selection.model, userChosen: false };
   }
@@ -753,7 +778,8 @@ function activate(context) {
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
     const selection = await resolveExtensionSelection(context);
-    panel.setKey(selection.key, selection.provider, selection.model);
+    const validated = selection.key && !selection.userChosenModel ? await validateDefaultModel(context, selection, true) : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
+    panel.setKey(selection.key, selection.provider, validated.model);
   };
   void syncKeyStatus();
   context.subscriptions.push(
@@ -767,7 +793,7 @@ function activate(context) {
       return runReview(context, true, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.setApiKey", async () => {
-      const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 Gemini (\u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F \u0441 AIza)" });
+      const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438" });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
       let selection = detected ?? void 0;
@@ -776,7 +802,7 @@ function activate(context) {
         if (!picked) return;
         selection = { provider: picked, model: defaultModel(picked) };
       }
-      const validated = await validateDefaultModel({ provider: selection.provider, model: selection.model, key: key.trim() });
+      const validated = await validateDefaultModel(context, { provider: selection.provider, model: selection.model, key: key.trim() });
       selection = { provider: selection.provider, model: validated.model };
       await context.secrets.store(SECRET_KEY, key.trim());
       await context.secrets.store(SECRET_PROVIDER, selection.provider);

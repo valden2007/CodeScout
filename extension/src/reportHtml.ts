@@ -74,7 +74,7 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .header { position: sticky; top: -16px; z-index: 2; margin: -16px -14px 0; padding: 14px 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .brand-mark { color: var(--vscode-textLink-foreground); }
-.key-status { display: flex; align-items: center; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.key-status { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
