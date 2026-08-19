@@ -77,11 +77,18 @@ async function chooseLiveModel(selection: ProviderSelection, placeHolder: string
   return { model: picked || preferredLiveModel(models, selection.model), userChosen: Boolean(picked) };
 }
 
-async function validateDefaultModel(selection: ProviderSelection): Promise<{ model: string; userChosen: boolean }> {
+async function validateDefaultModel(context: vscode.ExtensionContext, selection: ProviderSelection, persistCorrection = false): Promise<{ model: string; userChosen: boolean }> {
   try {
     const models = await fetchModels(selection);
     if (models.includes(selection.model)) return { model: selection.model, userChosen: false };
-    return chooseLiveModel({ ...selection, model: preferredLiveModel(models, selection.model) }, 'Выбери модель');
+    if (persistCorrection) {
+      const corrected = preferredLiveModel(models, selection.model);
+      if (!corrected) return { model: selection.model, userChosen: false };
+      await context.secrets.store(SECRET_MODEL, corrected);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
+      return { model: corrected, userChosen: false };
+    }
+    return chooseLiveModel(selection, 'Выберите модель из доступных');
   } catch {
     return { model: selection.model, userChosen: false };
   }
@@ -163,7 +170,10 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
   const syncKeyStatus = async (): Promise<void> => {
     const selection = await resolveExtensionSelection(context);
-    panel.setKey(selection.key, selection.provider, selection.model);
+    const validated = selection.key && !selection.userChosenModel
+      ? await validateDefaultModel(context, selection, true)
+      : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
+    panel.setKey(selection.key, selection.provider, validated.model);
   };
   void syncKeyStatus();
   context.subscriptions.push(
@@ -171,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
-      const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставь API-ключ Gemini (начинается с AIza)' });
+      const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставьте API-ключ провайдера — провайдер определится автоматически' });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
       let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
@@ -180,7 +190,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!picked) return;
         selection = { provider: picked as ProviderName, model: defaultModel(picked) };
       }
-      const validated = await validateDefaultModel({ provider: selection.provider, model: selection.model, key: key.trim() });
+      const validated = await validateDefaultModel(context, { provider: selection.provider, model: selection.model, key: key.trim() });
       selection = { provider: selection.provider, model: validated.model };
       await context.secrets.store(SECRET_KEY, key.trim());
       await context.secrets.store(SECRET_PROVIDER, selection.provider);
