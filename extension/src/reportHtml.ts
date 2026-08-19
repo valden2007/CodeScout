@@ -52,7 +52,7 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash'): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
@@ -61,7 +61,9 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
     ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получите API-ключ провайдера в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ — провайдер определится сам</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
     : emptyState
       ? '<div class="empty"><div class="empty-icon">🕵️</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>'
-      : '<div class="empty"><div class="empty-icon">✓</div><div>No issues found</div><small>Your changes look clean.</small></div>');
+      : testMode
+        ? '<div class="empty"><div class="empty-icon">🧪</div><strong>🧪 ТЕСТ</strong><small>Проверка завершена на встроенном примере.</small></div>'
+        : `<div class="empty"><div class="empty-icon">✅</div><strong>Проверено файлов: ${stats.files} — проблем не найдено</strong><small>Сомневаешься? Проверь, как CodeScout ловит баги:</small><button class="primary-action" type="button" data-command="testSample">🧪 Тест на примере</button></div>`);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -91,6 +93,8 @@ button:disabled { opacity: 0.65; cursor: default; }
 .spinner { display: inline-block; width: 11px; margin-right: 4px; }
 .status-banner { margin-top: 10px; padding: 7px 8px; border-left: 3px solid var(--vscode-editorWarning-foreground); border-radius: 3px; color: var(--vscode-editorWarning-foreground); background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent); font-size: 12px; }
 .status-banner.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
+.status-banner.test { border-left-color: var(--vscode-testing-iconPassed); color: var(--vscode-testing-iconPassed); background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, transparent); }
+.test-badge { display: inline-block; margin-left: 8px; color: var(--vscode-testing-iconPassed); font-size: 11px; font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
 .stats { margin-top: 9px; color: var(--vscode-descriptionForeground); font-size: 12px; }
@@ -121,6 +125,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
+    ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Review last commit</button>
@@ -141,5 +146,5 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 }
 
 export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash'): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model);
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false);
 }
