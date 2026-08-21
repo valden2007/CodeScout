@@ -33,6 +33,30 @@ diff --git a/package-lock.json b/package-lock.json
 -old
 +new`;
 
+describe('E9.10 live ticker and smart audit banner', () => {
+  it('includes a one-second webview ticker while scanning', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 0, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'key', true, 'groq', 'model', false, '🤖 Модель думает... · ⏱ 0с');
+    expect(html).toContain('setInterval');
+    expect(html).toContain('1000');
+  });
+
+  it('emits progress to both panel and Output', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('panel.setProgress(index, total, filename');
+    expect(extension).toContain('output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱');
+    expect(extension).toContain('output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱');
+  });
+
+  it('supports stale audit metadata and reset onboarding', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('projectContext.auditMeta.provider !== selection.provider');
+    expect(extension).toContain('projectContext.auditMeta.model !== selection.model');
+    expect(extension).toContain("context.secrets.delete(SECRET_FULL_AUDIT_WELCOME)");
+    const audit = readFileSync('extension/src/projectAudit.ts', 'utf8');
+    expect(audit).toContain('auditMeta?: AuditMeta');
+  });
+});
+
 describe('E9.8 rules and W1.0 project context', () => {
   it('appends rules.md to the project prompt and tolerates a missing rules file', () => {
     const root = mkdtempSync('/tmp/codescout-rules-');

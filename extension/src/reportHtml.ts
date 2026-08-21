@@ -52,7 +52,7 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new'): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
@@ -128,7 +128,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
-    ${welcomeBanner ? '<div class="welcome-banner"><strong>🔬 CodeScout может изучить твой проект целиком — тогда ревью станет точнее. Запустить полный аудит?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🚀 Запустить аудит</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>' : ''}
+    ${welcomeBanner ? (welcomeReason === 'stale' ? '<div class="welcome-banner"><strong>⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🔄 Обновить</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>' : '<div class="welcome-banner"><strong>🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🚀 Запустить аудит</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>') : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
@@ -138,22 +138,30 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Проверить изменения до коммита</button>
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
     </div>
-    ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ''}
+    ${progressMessage ? `<div class="progress-line" data-ticker="${/^(?:🤖 Модель думает|🔎 Проверяю|🔬 Полный аудит)/.test(progressMessage) ? 'true' : 'false'}">${escapeHtml(progressMessage)}</div>` : ''}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">⛔ Остановить</button>' : ''}
     <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">🔴 ${stats.critical}</span><span class="pill medium">🟡 ${stats.medium}</span><span class="pill low">🟢 ${stats.low}</span></div>
   </header>
   <main>${body}</main>
-  <script>
+    <script>
     const vscode = acquireVsCodeApi();
     document.querySelectorAll('[data-command]').forEach((element) => {
       element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
     });
+    const ticker = document.querySelector('[data-ticker="true"]');
+    if (ticker) {
+      let elapsed = Number((ticker.textContent.match(/⏱\\s*(\\d+)с/) || [])[1] || 0);
+      setInterval(() => {
+        elapsed += 1;
+        ticker.textContent = ticker.textContent.replace(/⏱\\s*\\d+с/, '⏱ ' + elapsed + 'с');
+      }, 1000);
+    }
   </script>
 </body>
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new'): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason);
 }
