@@ -10,11 +10,13 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
+import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeProjectContext } from './projectAudit';
 
 const SECRET_KEY = 'codescout.apiKey';
 const SECRET_PROVIDER = 'codescout.provider';
 const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
+const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -115,7 +117,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -129,7 +131,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
       if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
       onProgress?.(fileIndex + 1, files.length, file.filename);
       onThinking?.();
-      const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
+      const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
       issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
     }
@@ -137,11 +139,11 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal): Promise<ScanResult> {
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
   if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt);
 }
 
 let activeAbortController: AbortController | undefined;
@@ -179,6 +181,43 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   }
 }
 
+async function runFullAudit(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
+  const workspaceRoot = getWorkspaceRoot();
+  output.clear();
+  output.show(true);
+  panel.setScanning(true);
+  if (!workspaceRoot) {
+    panel.setError('Открой папку workspace для полного аудита.');
+    if (activeAbortController === controller) activeAbortController = undefined;
+    return;
+  }
+  output.appendLine('CodeScout: starting full project audit...');
+  try {
+    const audit = collectAuditFiles(workspaceRoot);
+    output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
+    for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
+    else output.appendLine('ℹ️ Правил нет — дефолт');
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename, '🔎 Полный аудит: файл'), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
+    await vscode.commands.executeCommand('codescout.panel.focus');
+    output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
+  } catch (error) {
+    if (isAbortError(error)) { panel.setCancelled(); return; }
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Error: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = undefined;
+  }
+}
+
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -188,7 +227,10 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
   output.appendLine(lastCommit ? 'CodeScout: reviewing last commit...' : 'CodeScout: reviewing uncommitted changes...');
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
+    const workspaceRoot = getWorkspaceRoot();
+    const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
+    output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -231,6 +273,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
+    vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
     vscode.commands.registerCommand('codescout.cancelScan', () => {
       activeAbortController?.abort();
       panel.setCancelled();
@@ -279,6 +322,14 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage('Ключ удалён из защищённого хранилища');
     })
   );
+  void (async () => {
+    const workspaceRoot = getWorkspaceRoot();
+    if (workspaceRoot && !readProjectContext(workspaceRoot) && (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) !== 'true') {
+      await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true');
+      const answer = await vscode.window.showInformationMessage('👋 Запустить полный аудит для контекста?', 'Да', 'Позже');
+      if (answer === 'Да') void vscode.commands.executeCommand('codescout.scanFull');
+    }
+  })();
 }
 
 export function deactivate(): void {}
