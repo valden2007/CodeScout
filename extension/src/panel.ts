@@ -33,6 +33,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
       } else if (message.command === 'scanUncommitted') {
         void vscode.commands.executeCommand('codescout.scanUncommitted');
+      } else if (message.command === 'scanFull') {
+        void vscode.commands.executeCommand('codescout.scanFull');
       } else if (message.command === 'setApiKey') {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'clearApiKey') {
@@ -86,9 +88,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setProgress(index: number, total: number, filename: string): void {
+  setProgress(index: number, total: number, filename: string, label = '🔎 Проверяю файл'): void {
     this.scanning = true;
-    this.progressMessage = `🔎 Проверяю файл ${index}/${total}: ${filename}...`;
+    this.progressMessage = `${label} ${index}/${total}: ${filename}...`;
     this.render();
   }
 

@@ -132,12 +132,12 @@ var RateLimitError = class extends Error {
     this.name = "RateLimitError";
   }
 };
-var sleep = (ms, signal) => new Promise((resolve, reject) => {
+var sleep = (ms, signal) => new Promise((resolve2, reject) => {
   if (signal?.aborted) {
     reject(new DOMException("The operation was aborted", "AbortError"));
     return;
   }
-  const timer = setTimeout(resolve, ms);
+  const timer = setTimeout(resolve2, ms);
   signal?.addEventListener("abort", () => {
     clearTimeout(timer);
     reject(new DOMException("The operation was aborted", "AbortError"));
@@ -548,6 +548,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
+      <button type="button" data-command="scanFull" ${isScanning ? "disabled" : ""}>\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430</button>
     </div>
     ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ""}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
@@ -591,6 +592,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.scanLastCommit");
       } else if (message.command === "scanUncommitted") {
         void vscode.commands.executeCommand("codescout.scanUncommitted");
+      } else if (message.command === "scanFull") {
+        void vscode.commands.executeCommand("codescout.scanFull");
       } else if (message.command === "setApiKey") {
         void vscode.commands.executeCommand("codescout.setApiKey");
       } else if (message.command === "clearApiKey") {
@@ -641,9 +644,9 @@ var CodeScoutPanel = class {
     }
     this.render();
   }
-  setProgress(index, total, filename) {
+  setProgress(index, total, filename, label = "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B") {
     this.scanning = true;
-    this.progressMessage = `\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B ${index}/${total}: ${filename}...`;
+    this.progressMessage = `${label} ${index}/${total}: ${filename}...`;
     this.render();
   }
   setModelThinking() {
@@ -724,11 +727,99 @@ function sampleTestSummary(found) {
   return `\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${found}. ${found === 0 ? "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F" : "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!"}`;
 }
 
+// src/projectAudit.ts
+var import_node_fs3 = require("node:fs");
+var import_node_path2 = require("node:path");
+var IGNORED_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
+var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
+function loadProjectRules(workspaceRoot) {
+  const path = (0, import_node_path2.join)(workspaceRoot, ".codescout", "rules.md");
+  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  const rules = (0, import_node_fs3.readFileSync)(path, "utf8").trim();
+  return rules || void 0;
+}
+function readProjectContext(workspaceRoot) {
+  const path = (0, import_node_path2.join)(workspaceRoot, ".codescout", "context.json");
+  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  try {
+    return JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function buildProjectSystemPrompt(basePrompt, workspaceRoot) {
+  const rules = loadProjectRules(workspaceRoot);
+  const context = readProjectContext(workspaceRoot);
+  let prompt = basePrompt;
+  if (rules) prompt += `
+
+## PROJECT SPECIFIC RULES
+${rules}`;
+  if (context && context.topFindings.length > 0) {
+    const zones = context.topFindings.map((finding) => `${finding.file} (${finding.severity}/${finding.category})`).join(", ");
+    prompt += `
+
+\u0418\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0435 \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u043D\u044B\u0435 \u0437\u043E\u043D\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430: ${zones}`;
+  }
+  return { prompt, rulesLoaded: Boolean(rules), contextLoaded: Boolean(context) };
+}
+function walkSourceFiles(root, current, result) {
+  for (const entry of (0, import_node_fs3.readdirSync)(current, { withFileTypes: true })) {
+    if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+    const path = (0, import_node_path2.join)(current, entry.name);
+    if (entry.isDirectory()) walkSourceFiles(root, path, result);
+    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) result.push((0, import_node_path2.relative)(root, path).replaceAll("\\", "/"));
+  }
+}
+function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
+  const relativePaths = [];
+  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths);
+  const files = [];
+  const skippedLarge = [];
+  for (const filename of relativePaths.sort().slice(0, maxFiles)) {
+    const absolute = (0, import_node_path2.join)(workspaceRoot, filename);
+    const content = (0, import_node_fs3.readFileSync)(absolute, "utf8");
+    const lines = content.split(/\r?\n/);
+    if (lines.length > maxLines) {
+      skippedLarge.push(filename);
+      continue;
+    }
+    files.push({ filename, status: "audit", additions: lines.length, deletions: 0, patch: `--- /dev/null
++++ b/${filename}
+@@ -0,0 +1,${lines.length} @@
+${lines.map((line) => `+${line}`).join("\n")}` });
+  }
+  return { files, skippedLarge };
+}
+function projectStack(workspaceRoot) {
+  const packagePath = (0, import_node_path2.join)(workspaceRoot, "package.json");
+  if (!(0, import_node_fs3.existsSync)(packagePath)) return [];
+  try {
+    const pkg = JSON.parse((0, import_node_fs3.readFileSync)(packagePath, "utf8"));
+    return [.../* @__PURE__ */ new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})])].sort();
+  } catch {
+    return [];
+  }
+}
+function writeProjectContext(workspaceRoot, filesCount, issues) {
+  const context = {
+    stack: projectStack(workspaceRoot),
+    filesCount,
+    topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category }))
+  };
+  const directory = (0, import_node_path2.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs3.writeFileSync)((0, import_node_path2.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
+`, "utf8");
+  return context;
+}
+
 // src/extension.ts
 var SECRET_KEY = "codescout.apiKey";
 var SECRET_PROVIDER = "codescout.provider";
 var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
+var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -809,7 +900,7 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -823,18 +914,18 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
       if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
       onProgress?.(fileIndex + 1, files.length, file.filename);
       onThinking?.();
-      const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
+      const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
       const parsed = parseReviewResponse(raw, file.filename);
       issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
     }
   }
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
-async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal) {
+async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
   if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt);
 }
 var activeAbortController;
 function isAbortError(error) {
@@ -868,6 +959,45 @@ async function runSampleReview(context, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
+async function runFullAudit(context, output, panel) {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
+  const workspaceRoot = getWorkspaceRoot();
+  output.clear();
+  output.show(true);
+  panel.setScanning(true);
+  if (!workspaceRoot) {
+    panel.setError("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0434\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430.");
+    if (activeAbortController === controller) activeAbortController = void 0;
+    return;
+  }
+  output.appendLine("CodeScout: starting full project audit...");
+  try {
+    const audit = collectAuditFiles(workspaceRoot);
+    output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
+    for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
+    else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B"), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
+    await vscode2.commands.executeCommand("codescout.panel.focus");
+    output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
+  } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Error: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = void 0;
+  }
+}
 async function runReview(context, lastCommit, output, panel) {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -877,7 +1007,10 @@ async function runReview(context, lastCommit, output, panel) {
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
+    const workspaceRoot = getWorkspaceRoot();
+    const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
+    output.appendLine(projectPrompt.rulesLoaded ? "\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" : "\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -923,6 +1056,7 @@ function activate(context) {
       return runReview(context, true, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
+    vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
     vscode2.commands.registerCommand("codescout.cancelScan", () => {
       activeAbortController?.abort();
       panel.setCancelled();
@@ -971,6 +1105,14 @@ function activate(context) {
       void vscode2.window.showInformationMessage("\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430");
     })
   );
+  void (async () => {
+    const workspaceRoot = getWorkspaceRoot();
+    if (workspaceRoot && !readProjectContext(workspaceRoot) && await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) !== "true") {
+      await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
+      const answer = await vscode2.window.showInformationMessage("\u{1F44B} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0434\u043B\u044F \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430?", "\u0414\u0430", "\u041F\u043E\u0437\u0436\u0435");
+      if (answer === "\u0414\u0430") void vscode2.commands.executeCommand("codescout.scanFull");
+    }
+  })();
 }
 function deactivate() {
 }

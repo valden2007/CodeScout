@@ -13,8 +13,9 @@ import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiK
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
+import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeProjectContext } from '../extension/src/projectAudit';
 import { readFileSync } from 'node:fs';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const diff = `diff --git a/src/app.ts b/src/app.ts
@@ -31,6 +32,53 @@ diff --git a/package-lock.json b/package-lock.json
 @@ -1 +1 @@
 -old
 +new`;
+
+describe('E9.8 rules and W1.0 project context', () => {
+  it('appends rules.md to the project prompt and tolerates a missing rules file', () => {
+    const root = mkdtempSync('/tmp/codescout-rules-');
+    mkdirSync(join(root, '.codescout'), { recursive: true });
+    writeFileSync(join(root, '.codescout', 'rules.md'), 'DO NOT flag tenant-scoped Prisma reads.');
+    const loaded = buildProjectSystemPrompt('BASE PROMPT', root);
+    expect(loaded.prompt).toContain('## PROJECT SPECIFIC RULES');
+    expect(loaded.prompt).toContain('DO NOT flag tenant-scoped Prisma reads.');
+    expect(loaded.rulesLoaded).toBe(true);
+    const empty = buildProjectSystemPrompt('BASE PROMPT', mkdtempSync('/tmp/codescout-no-rules-'));
+    expect(empty.prompt).toBe('BASE PROMPT');
+    expect(empty.rulesLoaded).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('caps full audit at 100 files and filters generated directories', () => {
+    const root = mkdtempSync('/tmp/codescout-audit-');
+    mkdirSync(join(root, 'src'), { recursive: true });
+    mkdirSync(join(root, 'dist'), { recursive: true });
+    for (let i = 0; i < 105; i++) writeFileSync(join(root, 'src', `file-${i}.ts`), `export const value${i} = ${i};\n`);
+    writeFileSync(join(root, 'dist', 'generated.ts'), 'export const generated = true;\n');
+    const audit = collectAuditFiles(root);
+    expect(audit.files.length).toBeLessThanOrEqual(100);
+    expect(audit.files.every((file) => !file.filename.startsWith('dist/'))).toBe(true);
+    const html = buildEmptyReportHtml();
+    expect(html).toContain('🔬 Полный аудит проекта');
+    expect(readFileSync('extension/package.json', 'utf8')).toContain('codescout.scanFull');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('writes context.json and reads its finding summary into the prompt', () => {
+    const root = mkdtempSync('/tmp/codescout-context-');
+    const context = writeProjectContext(root, 4, [{ file: 'src/auth.ts', line: 4, severity: 'high', category: 'security', confidence: 0.99, description: 'auth bug', code: '', suggestion: '' }]);
+    expect(context.filesCount).toBe(4);
+    expect(readProjectContext(root)?.topFindings[0].file).toBe('src/auth.ts');
+    expect(buildProjectSystemPrompt('BASE', root).prompt).toContain('Известные проблемные зоны проекта: src/auth.ts');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('has a one-time welcome guard contract', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('codescout.fullAuditWelcomeShown');
+    expect(extension).toContain('👋 Запустить полный аудит для контекста?');
+    expect(extension).toContain("await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true')");
+  });
+});
 
 describe('E9.5 scan cancellation', () => {
   it('renders a stop button only while scanning and shows cancelled status support', () => {

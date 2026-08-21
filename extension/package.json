@@ -20,7 +20,8 @@
     "onCommand:codescout.clearApiKey",
     "onCommand:codescout.chooseModel",
     "onCommand:codescout.testSample",
-    "onCommand:codescout.cancelScan"
+    "onCommand:codescout.cancelScan",
+    "onCommand:codescout.scanFull"
   ],
   "contributes": {
     "viewsContainers": {
@@ -69,6 +70,10 @@
       {
         "command": "codescout.cancelScan",
         "title": "CodeScout: stop scan"
+      },
+      {
+        "command": "codescout.scanFull",
+        "title": "CodeScout: full project audit"
       }
     ],
     "configuration": {

@@ -132,6 +132,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Проверить последний коммит</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Проверить изменения до коммита</button>
+      <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
     </div>
     ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ''}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">⛔ Остановить</button>' : ''}
