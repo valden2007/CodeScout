@@ -32,6 +32,34 @@ diff --git a/package-lock.json b/package-lock.json
 -old
 +new`;
 
+describe('E9.5 scan cancellation', () => {
+  it('renders a stop button only while scanning and shows cancelled status support', () => {
+    const scanningHtml = buildReportHtml([], { files: 2, seconds: 1, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Проверяю файл 1/2: src/app.ts...');
+    expect(scanningHtml).toContain('⛔ Остановить');
+    expect(scanningHtml).toContain('data-command="cancelScan"');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('⛔ Сканирование остановлено пользователем');
+    expect(panel).toContain("message.command === 'cancelScan'");
+  });
+
+  it('passes AbortSignal to mocked fetch and guards the scan loop', async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const controller = new AbortController();
+    const provider = new OpenAICompatibleProvider('test-key', 'test-model', async (_url, init) => {
+      receivedSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        receivedSignal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+    }, async () => undefined, undefined, 'http://mock.test/v1', controller.signal);
+    const pending = provider.review('system', 'user');
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(receivedSignal).toBe(controller.signal);
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('if (signal?.aborted) throw new DOMException');
+  });
+});
+
 describe('E9 scan progress and labels', () => {
   it('renders Russian-first scan button labels and live progress text', () => {
     const html = buildReportHtml([], { files: 2, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Проверяю файл 1/2: src/app.ts...');

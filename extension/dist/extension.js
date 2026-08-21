@@ -132,7 +132,17 @@ var RateLimitError = class extends Error {
     this.name = "RateLimitError";
   }
 };
-var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+var sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(new DOMException("The operation was aborted", "AbortError"));
+    return;
+  }
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener("abort", () => {
+    clearTimeout(timer);
+    reject(new DOMException("The operation was aborted", "AbortError"));
+  }, { once: true });
+});
 var RETRY_DELAYS_SECONDS = [15, 30, 60];
 function parseRetryAfterSeconds(response, message) {
   const header = response.headers.get("retry-after");
@@ -154,28 +164,31 @@ function finalRateLimitMessage(model, waitSeconds) {
 \u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043B\u0438\u043C\u0438\u0442: tokens per day`;
 }
 var OpenAICompatibleProvider = class {
-  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1") {
+  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1", signal) {
     this.apiKey = apiKey;
     this.model = model;
     this.fetcher = fetcher;
     this.sleeper = sleeper;
     this.onRetry = onRetry;
+    this.signal = signal;
     this.endpoint = completionUrl(baseUrl);
   }
   lastRequestAt = 0;
   endpoint;
   async review(systemPrompt, userPrompt) {
     const wait = 2e3 - (Date.now() - this.lastRequestAt);
-    if (wait > 0) await this.sleeper(wait);
+    if (wait > 0) await this.sleeper(wait, this.signal);
     let retryCount = 0;
     let lastRateLimit;
     while (true) {
+      if (this.signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
       this.lastRequestAt = Date.now();
       try {
         const response = await this.fetcher(this.endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] })
+          body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] }),
+          signal: this.signal
         });
         const data = await response.json();
         if (!response.ok) {
@@ -191,6 +204,7 @@ var OpenAICompatibleProvider = class {
         if (!content) throw new Error("LLM returned an empty response");
         return content;
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
         if (!(error instanceof RateLimitError)) throw error;
         let parsed = {};
         try {
@@ -204,15 +218,15 @@ var OpenAICompatibleProvider = class {
         retryCount += 1;
         const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
-        await this.sleeper(waitSeconds * 1e3);
+        await this.sleeper(waitSeconds * 1e3, this.signal);
       }
     }
   }
 };
-function createProvider(provider, apiKey, model, onRetry, baseUrl) {
+function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
   const normalized = normalizeProvider(provider);
   const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
-  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
+  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal);
 }
 
 // ../src/line-numbering.ts
@@ -492,6 +506,7 @@ button { flex: 1 1 150px; width: auto; padding: 6px 9px; border: 1px solid trans
 button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 button:disabled { opacity: 0.65; cursor: default; }
+.cancel-action { display: block; margin-top: 8px; border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 14%, transparent); }
 .spinner { display: inline-block; width: 11px; margin-right: 4px; }
 .status-banner { margin-top: 10px; padding: 7px 8px; border-left: 3px solid var(--vscode-editorWarning-foreground); border-radius: 3px; color: var(--vscode-editorWarning-foreground); background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent); font-size: 12px; }
 .status-banner.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
@@ -535,6 +550,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
     </div>
     ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ""}
+    ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
@@ -585,6 +601,8 @@ var CodeScoutPanel = class {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
       } else if (message.command === "testSample") {
         void vscode.commands.executeCommand("codescout.testSample");
+      } else if (message.command === "cancelScan") {
+        void vscode.commands.executeCommand("codescout.cancelScan");
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!root) {
@@ -637,6 +655,14 @@ var CodeScoutPanel = class {
     this.scanning = true;
     this.statusKind = "retry";
     this.statusMessage = `\u23F3 Rate limit \u0443 ${model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 ${event.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${event.attempt}/${event.maxRetries})...`;
+    this.render();
+  }
+  setCancelled() {
+    this.scanning = false;
+    this.hasRun = true;
+    this.progressMessage = "";
+    this.statusKind = "error";
+    this.statusMessage = "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C";
     this.render();
   }
   setError(message) {
@@ -783,17 +809,18 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider)}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
+  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues = [];
   for (const [fileIndex, file] of files.entries()) {
     for (const chunk of splitPatch(file.patch, 45e3)) {
+      if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
       onProgress?.(fileIndex + 1, files.length, file.filename);
       onThinking?.();
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
@@ -803,37 +830,54 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   }
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
-async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking) {
+async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking);
+  if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal);
+}
+var activeAbortController;
+function isAbortError(error) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 async function runSampleReview(context, output, panel) {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
   output.clear();
   output.show(true);
   output.appendLine("CodeScout: running built-in self-test...");
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
+    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
     for (const issue of result.issues) output.appendLine(formatIssue(issue));
     void vscode2.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
   } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Self-test error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
 async function runReview(context, lastCommit, output, panel) {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -845,10 +889,16 @@ async function runReview(context, lastCommit, output, panel) {
     }
     void vscode2.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
 function activate(context) {
@@ -873,6 +923,11 @@ function activate(context) {
       return runReview(context, true, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
+    vscode2.commands.registerCommand("codescout.cancelScan", () => {
+      activeAbortController?.abort();
+      panel.setCancelled();
+      output.appendLine("Scan cancelled by user");
+    }),
     vscode2.commands.registerCommand("codescout.setApiKey", async () => {
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438" });
       if (!key?.trim()) return;

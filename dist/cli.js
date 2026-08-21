@@ -85561,7 +85561,14 @@ class RateLimitError extends Error {
         this.name = 'RateLimitError';
     }
 }
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+        reject(new DOMException('The operation was aborted', 'AbortError'));
+        return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('The operation was aborted', 'AbortError')); }, { once: true });
+});
 const RETRY_DELAYS_SECONDS = [15, 30, 60];
 function parseRetryAfterSeconds(response, message) {
     const header = response.headers.get('retry-after');
@@ -85588,29 +85595,34 @@ class OpenAICompatibleProvider {
     fetcher;
     sleeper;
     onRetry;
+    signal;
     lastRequestAt = 0;
     endpoint;
-    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1') {
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
         this.sleeper = sleeper;
         this.onRetry = onRetry;
+        this.signal = signal;
         this.endpoint = completionUrl(baseUrl);
     }
     async review(systemPrompt, userPrompt) {
         const wait = 2000 - (Date.now() - this.lastRequestAt);
         if (wait > 0)
-            await this.sleeper(wait);
+            await this.sleeper(wait, this.signal);
         let retryCount = 0;
         let lastRateLimit;
         while (true) {
+            if (this.signal?.aborted)
+                throw new DOMException('The operation was aborted', 'AbortError');
             this.lastRequestAt = Date.now();
             try {
                 const response = await this.fetcher(this.endpoint, {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
+                    body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
+                    signal: this.signal
                 });
                 const data = (await response.json());
                 if (!response.ok) {
@@ -85629,6 +85641,8 @@ class OpenAICompatibleProvider {
                 return content;
             }
             catch (error) {
+                if (error instanceof DOMException && error.name === 'AbortError')
+                    throw error;
                 if (!(error instanceof RateLimitError))
                     throw error;
                 let parsed = {};
@@ -85643,16 +85657,16 @@ class OpenAICompatibleProvider {
                 retryCount += 1;
                 const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
                 this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
-                await this.sleeper(waitSeconds * 1000);
+                await this.sleeper(waitSeconds * 1000, this.signal);
             }
         }
     }
 }
 
-function createProvider(provider, apiKey, model, onRetry, baseUrl) {
+function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
     const normalized = normalizeProvider(provider);
     const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
-    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl);
+    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal);
 }
 
 ;// CONCATENATED MODULE: ./src/response-parser.ts

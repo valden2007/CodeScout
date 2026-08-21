@@ -115,17 +115,18 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`Не найден API-ключ для ${selection.provider}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(selection.provider)}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl);
+  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues: ReviewIssue[] = [];
   for (const [fileIndex, file] of files.entries()) {
     for (const chunk of splitPatch(file.patch, 45_000)) {
+      if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
       onProgress?.(fileIndex + 1, files.length, file.filename);
       onThinking?.();
       const raw = await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, chunk));
@@ -136,39 +137,58 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void): Promise<ScanResult> {
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking);
+  if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal);
+}
+
+let activeAbortController: AbortController | undefined;
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
   output.clear();
   output.show(true);
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
     for (const issue of result.issues) output.appendLine(formatIssue(issue));
     void vscode.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
   } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Self-test error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = undefined;
   }
 }
 
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? 'CodeScout: reviewing last commit...' : 'CodeScout: reviewing uncommitted changes...');
   panel.setScanning(true);
   try {
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking());
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -180,10 +200,16 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     }
     void vscode.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = undefined;
   }
 }
 
@@ -205,6 +231,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
+    vscode.commands.registerCommand('codescout.cancelScan', () => {
+      activeAbortController?.abort();
+      panel.setCancelled();
+      output.appendLine('Scan cancelled by user');
+    }),
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставьте API-ключ провайдера — провайдер определится автоматически' });
       if (!key?.trim()) return;
