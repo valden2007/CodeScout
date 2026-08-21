@@ -132,12 +132,12 @@ var RateLimitError = class extends Error {
     this.name = "RateLimitError";
   }
 };
-var sleep = (ms, signal) => new Promise((resolve2, reject) => {
+var sleep = (ms, signal) => new Promise((resolve3, reject) => {
   if (signal?.aborted) {
     reject(new DOMException("The operation was aborted", "AbortError"));
     return;
   }
-  const timer = setTimeout(resolve2, ms);
+  const timer = setTimeout(resolve3, ms);
   signal?.addEventListener("abort", () => {
     clearTimeout(timer);
     reject(new DOMException("The operation was aborted", "AbortError"));
@@ -439,6 +439,7 @@ function readGitDiff(repoPath, options = {}) {
 
 // src/panel.ts
 var vscode = __toESM(require("vscode"));
+var import_node_path2 = require("node:path");
 
 // src/reportHtml.ts
 var severityOrder = {
@@ -474,7 +475,7 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
@@ -496,6 +497,9 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
+.welcome-banner { margin: 0 0 10px; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.welcome-actions button { flex: 1 1 120px; }
 .onboarding { padding: 36px 10px; text-align: center; }
 .onboarding h1 { margin: 0 0 14px; font-size: 16px; }
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
@@ -541,6 +545,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
+    ${welcomeBanner ? '<div class="welcome-banner"><strong>\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u0442\u0432\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0442\u043E\u0433\u0434\u0430 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : ""}
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
@@ -565,8 +570,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash") {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "");
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner);
 }
 
 // src/panel.ts
@@ -584,6 +589,8 @@ var CodeScoutPanel = class {
   keyConfigured = false;
   provider = "gemini";
   model = "gemini-2.5-flash";
+  welcomeBanner = false;
+  onWelcomeChoice;
   resolveWebviewView(webviewView) {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
@@ -592,8 +599,15 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.scanLastCommit");
       } else if (message.command === "scanUncommitted") {
         void vscode.commands.executeCommand("codescout.scanUncommitted");
-      } else if (message.command === "scanFull") {
+      } else if (message.command === "scanFull" || message.command === "startFullAudit") {
+        this.onWelcomeChoice?.();
+        this.welcomeBanner = false;
+        this.render();
         void vscode.commands.executeCommand("codescout.scanFull");
+      } else if (message.command === "dismissWelcome") {
+        this.onWelcomeChoice?.();
+        this.welcomeBanner = false;
+        this.render();
       } else if (message.command === "setApiKey") {
         void vscode.commands.executeCommand("codescout.setApiKey");
       } else if (message.command === "clearApiKey") {
@@ -612,7 +626,13 @@ var CodeScoutPanel = class {
           void vscode.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.");
           return;
         }
-        const fileUri = vscode.Uri.joinPath(root, message.file);
+        const candidate = (0, import_node_path2.resolve)(root.fsPath, message.file);
+        const outsideWorkspace = (0, import_node_path2.relative)(root.fsPath, candidate).startsWith("..");
+        if (outsideWorkspace) {
+          void vscode.window.showErrorMessage(`\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: ${message.file}`);
+          return;
+        }
+        const fileUri = vscode.Uri.file(candidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
           const line = Math.max(0, Number(message.line) - 1);
           const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
@@ -626,6 +646,13 @@ var CodeScoutPanel = class {
         });
       }
     }, void 0, []);
+    this.render();
+  }
+  setWelcomeChoiceHandler(handler) {
+    this.onWelcomeChoice = handler;
+  }
+  setWelcomeBanner(visible) {
+    this.welcomeBanner = visible;
     this.render();
   }
   setKey(key, provider = "gemini", model = "gemini-2.5-flash") {
@@ -644,14 +671,14 @@ var CodeScoutPanel = class {
     }
     this.render();
   }
-  setProgress(index, total, filename, label = "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B") {
+  setProgress(index, total, filename, label = "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs = 0) {
     this.scanning = true;
-    this.progressMessage = `${label} ${index}/${total}: ${filename}...`;
+    this.progressMessage = `${label} ${index}/${total}: ${filename}... \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`;
     this.render();
   }
-  setModelThinking() {
+  setModelThinking(elapsedMs = 0) {
     this.scanning = true;
-    this.progressMessage = "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442...";
+    this.progressMessage = `\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`;
     this.render();
   }
   setRetry(event, model = "model") {
@@ -690,7 +717,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner);
   }
 };
 
@@ -729,17 +756,17 @@ function sampleTestSummary(found) {
 
 // src/projectAudit.ts
 var import_node_fs3 = require("node:fs");
-var import_node_path2 = require("node:path");
+var import_node_path3 = require("node:path");
 var IGNORED_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
 var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
 function loadProjectRules(workspaceRoot) {
-  const path = (0, import_node_path2.join)(workspaceRoot, ".codescout", "rules.md");
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "rules.md");
   if (!(0, import_node_fs3.existsSync)(path)) return void 0;
   const rules = (0, import_node_fs3.readFileSync)(path, "utf8").trim();
   return rules || void 0;
 }
 function readProjectContext(workspaceRoot) {
-  const path = (0, import_node_path2.join)(workspaceRoot, ".codescout", "context.json");
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "context.json");
   if (!(0, import_node_fs3.existsSync)(path)) return void 0;
   try {
     return JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
@@ -766,9 +793,9 @@ ${rules}`;
 function walkSourceFiles(root, current, result) {
   for (const entry of (0, import_node_fs3.readdirSync)(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
-    const path = (0, import_node_path2.join)(current, entry.name);
+    const path = (0, import_node_path3.join)(current, entry.name);
     if (entry.isDirectory()) walkSourceFiles(root, path, result);
-    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) result.push((0, import_node_path2.relative)(root, path).replaceAll("\\", "/"));
+    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) result.push((0, import_node_path3.relative)(root, path).replaceAll("\\", "/"));
   }
 }
 function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
@@ -777,7 +804,7 @@ function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
   const files = [];
   const skippedLarge = [];
   for (const filename of relativePaths.sort().slice(0, maxFiles)) {
-    const absolute = (0, import_node_path2.join)(workspaceRoot, filename);
+    const absolute = (0, import_node_path3.join)(workspaceRoot, filename);
     const content = (0, import_node_fs3.readFileSync)(absolute, "utf8");
     const lines = content.split(/\r?\n/);
     if (lines.length > maxLines) {
@@ -792,7 +819,7 @@ ${lines.map((line) => `+${line}`).join("\n")}` });
   return { files, skippedLarge };
 }
 function projectStack(workspaceRoot) {
-  const packagePath = (0, import_node_path2.join)(workspaceRoot, "package.json");
+  const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
   if (!(0, import_node_fs3.existsSync)(packagePath)) return [];
   try {
     const pkg = JSON.parse((0, import_node_fs3.readFileSync)(packagePath, "utf8"));
@@ -807,9 +834,9 @@ function writeProjectContext(workspaceRoot, filesCount, issues) {
     filesCount,
     topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category }))
   };
-  const directory = (0, import_node_path2.join)(workspaceRoot, ".codescout");
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
   (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
-  (0, import_node_fs3.writeFileSync)((0, import_node_path2.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
+  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
 `, "utf8");
   return context;
 }
@@ -900,26 +927,45 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider)}`);
   }
-  if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
+  if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues = [];
+  let skippedFiles = 0;
   for (const [fileIndex, file] of files.entries()) {
-    for (const chunk of splitPatch(file.patch, 45e3)) {
-      if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
-      onProgress?.(fileIndex + 1, files.length, file.filename);
-      onThinking?.();
-      const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
-      const parsed = parseReviewResponse(raw, file.filename);
-      issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+    let completed = false;
+    let lastError;
+    for (let attempt = 0; attempt < 2 && !completed; attempt++) {
+      const fileIssues = [];
+      try {
+        for (const chunk of splitPatch(file.patch, 45e3)) {
+          if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+          const elapsedMs = Date.now() - startedAt;
+          onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
+          onThinking?.(elapsedMs);
+          const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
+          const parsed = parseReviewResponse(raw, file.filename);
+          fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+        }
+        issues.push(...fileIssues);
+        completed = true;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+      }
+    }
+    if (!completed) {
+      if (!continueOnFileError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+      skippedFiles++;
+      onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
 }
 async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
   const workspaceRoot = getWorkspaceRoot();
@@ -940,7 +986,7 @@ async function runSampleReview(context, output, panel) {
   output.appendLine("CodeScout: running built-in self-test...");
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
+    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -980,11 +1026,12 @@ async function runFullAudit(context, output, panel) {
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B"), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
     writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + result.skippedFiles}`);
   } catch (error) {
     if (isAbortError(error)) {
       panel.setCancelled();
@@ -1010,7 +1057,7 @@ async function runReview(context, lastCommit, output, panel) {
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? "\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" : "\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -1037,6 +1084,9 @@ async function runReview(context, lastCommit, output, panel) {
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
   const panel = new CodeScoutPanel();
+  panel.setWelcomeChoiceHandler(() => {
+    void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
+  });
   let lastScanWasLastCommit = false;
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
@@ -1108,9 +1158,7 @@ function activate(context) {
   void (async () => {
     const workspaceRoot = getWorkspaceRoot();
     if (workspaceRoot && !readProjectContext(workspaceRoot) && await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) !== "true") {
-      await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
-      const answer = await vscode2.window.showInformationMessage("\u{1F44B} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0434\u043B\u044F \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430?", "\u0414\u0430", "\u041F\u043E\u0437\u0436\u0435");
-      if (answer === "\u0414\u0430") void vscode2.commands.executeCommand("codescout.scanFull");
+      panel.setWelcomeBanner(true);
     }
   })();
 }

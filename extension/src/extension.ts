@@ -21,6 +21,7 @@ const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 interface ScanResult {
   issues: ReviewIssue[];
   filesAnalyzed: number;
+  skippedFiles: number;
   durationMs: number;
 }
 
@@ -117,29 +118,49 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
     throw new Error(`Не найден API-ключ для ${selection.provider}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(selection.provider)}`);
   }
-  if (files.length === 0) return { issues: [], filesAnalyzed: 0, durationMs: Date.now() - startedAt };
+  if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues: ReviewIssue[] = [];
+  // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
+  let skippedFiles = 0;
   for (const [fileIndex, file] of files.entries()) {
-    for (const chunk of splitPatch(file.patch, 45_000)) {
-      if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
-      onProgress?.(fileIndex + 1, files.length, file.filename);
-      onThinking?.();
-      const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
-      const parsed = parseReviewResponse(raw, file.filename);
-      issues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+    let completed = false;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2 && !completed; attempt++) {
+      const fileIssues: ReviewIssue[] = [];
+      try {
+        for (const chunk of splitPatch(file.patch, 45_000)) {
+          if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+          const elapsedMs = Date.now() - startedAt;
+          onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
+          onThinking?.(elapsedMs);
+          const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
+          const parsed = parseReviewResponse(raw, file.filename);
+          fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+        }
+        issues.push(...fileIssues);
+        completed = true;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      }
+    }
+    if (!completed) {
+      if (!continueOnFileError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+      skippedFiles++;
+      onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length, durationMs: Date.now() - startedAt };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string) => void, onThinking?: () => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
   if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
@@ -161,7 +182,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal);
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -202,11 +223,12 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename, '🔎 Полный аудит: файл'), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
     writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + result.skippedFiles}`);
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
@@ -230,7 +252,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename) => panel.setProgress(index, total, filename), () => panel.setModelThinking(), controller.signal, projectPrompt.prompt);
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -258,6 +280,9 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeScout');
   const panel = new CodeScoutPanel();
+  // The old one-time flow used: await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true')
+  // 👋 Запустить полный аудит для контекста?
+  panel.setWelcomeChoiceHandler(() => { void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true'); });
   let lastScanWasLastCommit = false;
   context.subscriptions.push(output);
   const syncKeyStatus = async (): Promise<void> => {
@@ -325,9 +350,7 @@ export function activate(context: vscode.ExtensionContext): void {
   void (async () => {
     const workspaceRoot = getWorkspaceRoot();
     if (workspaceRoot && !readProjectContext(workspaceRoot) && (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) !== 'true') {
-      await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true');
-      const answer = await vscode.window.showInformationMessage('👋 Запустить полный аудит для контекста?', 'Да', 'Позже');
-      if (answer === 'Да') void vscode.commands.executeCommand('codescout.scanFull');
+      panel.setWelcomeBanner(true);
     }
   })();
 }

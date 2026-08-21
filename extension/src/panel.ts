@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
+import { relative, resolve } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
 
 interface ScanMessage {
@@ -24,6 +25,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private keyConfigured = false;
   private provider = 'gemini';
   private model = 'gemini-2.5-flash';
+  private welcomeBanner = false;
+  private onWelcomeChoice?: () => void;
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -33,8 +36,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
       } else if (message.command === 'scanUncommitted') {
         void vscode.commands.executeCommand('codescout.scanUncommitted');
-      } else if (message.command === 'scanFull') {
+      } else if (message.command === 'scanFull' || message.command === 'startFullAudit') {
+        this.onWelcomeChoice?.();
+        this.welcomeBanner = false;
+        this.render();
         void vscode.commands.executeCommand('codescout.scanFull');
+      } else if (message.command === 'dismissWelcome') {
+        this.onWelcomeChoice?.();
+        this.welcomeBanner = false;
+        this.render();
       } else if (message.command === 'setApiKey') {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'clearApiKey') {
@@ -53,7 +63,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
           void vscode.window.showErrorMessage('Открой папку workspace, чтобы перейти к файлу.');
           return;
         }
-        const fileUri = vscode.Uri.joinPath(root, message.file);
+        // Legacy path contract: vscode.Uri.joinPath(root, message.file)
+        const candidate = resolve(root.fsPath, message.file);
+        const outsideWorkspace = relative(root.fsPath, candidate).startsWith('..');
+        if (outsideWorkspace) {
+          void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
+          return;
+        }
+        const fileUri = vscode.Uri.file(candidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
           const line = Math.max(0, Number(message.line) - 1);
           const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
@@ -67,6 +84,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         });
       }
     }, undefined, []);
+    this.render();
+  }
+
+  setWelcomeChoiceHandler(handler: () => void): void {
+    this.onWelcomeChoice = handler;
+  }
+
+  setWelcomeBanner(visible: boolean): void {
+    this.welcomeBanner = visible;
     this.render();
   }
 
@@ -88,15 +114,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setProgress(index: number, total: number, filename: string, label = '🔎 Проверяю файл'): void {
+  setProgress(index: number, total: number, filename: string, label = '🔎 Проверяю файл', elapsedMs = 0): void {
     this.scanning = true;
-    this.progressMessage = `${label} ${index}/${total}: ${filename}...`;
+    this.progressMessage = `${label} ${index}/${total}: ${filename}... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
     this.render();
   }
 
-  setModelThinking(): void {
+  setModelThinking(elapsedMs = 0): void {
     this.scanning = true;
-    this.progressMessage = '🤖 Модель думает...';
+    this.progressMessage = `🤖 Модель думает... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
     this.render();
   }
 
@@ -141,7 +167,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner);
   }
 }

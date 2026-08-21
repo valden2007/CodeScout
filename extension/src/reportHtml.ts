@@ -52,7 +52,7 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = ''): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
@@ -80,6 +80,9 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
+.welcome-banner { margin: 0 0 10px; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.welcome-actions button { flex: 1 1 120px; }
 .onboarding { padding: 36px 10px; text-align: center; }
 .onboarding h1 { margin: 0 0 14px; font-size: 16px; }
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
@@ -125,6 +128,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
+    ${welcomeBanner ? '<div class="welcome-banner"><strong>🔬 CodeScout может изучить твой проект целиком — тогда ревью станет точнее. Запустить полный аудит?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🚀 Запустить аудит</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>' : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
@@ -150,6 +154,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash'): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '');
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner);
 }
