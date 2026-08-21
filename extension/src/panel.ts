@@ -26,7 +26,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private provider = 'gemini';
   private model = 'gemini-2.5-flash';
   private welcomeBanner = false;
-  private onWelcomeChoice?: () => void;
+  private welcomeReason: 'new' | 'stale' = 'new';
+  private onWelcomeStart?: () => void;
+  private onWelcomeDismiss?: () => void;
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -37,12 +39,12 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'scanUncommitted') {
         void vscode.commands.executeCommand('codescout.scanUncommitted');
       } else if (message.command === 'scanFull' || message.command === 'startFullAudit') {
-        this.onWelcomeChoice?.();
+        this.onWelcomeStart?.();
         this.welcomeBanner = false;
         this.render();
         void vscode.commands.executeCommand('codescout.scanFull');
       } else if (message.command === 'dismissWelcome') {
-        this.onWelcomeChoice?.();
+        this.onWelcomeDismiss?.();
         this.welcomeBanner = false;
         this.render();
       } else if (message.command === 'setApiKey') {
@@ -87,12 +89,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setWelcomeChoiceHandler(handler: () => void): void {
-    this.onWelcomeChoice = handler;
+  setWelcomeChoiceHandler(onStart: () => void, onDismiss?: () => void): void {
+    this.onWelcomeStart = onStart;
+    this.onWelcomeDismiss = onDismiss;
   }
 
-  setWelcomeBanner(visible: boolean): void {
+  setWelcomeBanner(visible: boolean, reason: 'new' | 'stale' = 'new'): void {
     this.welcomeBanner = visible;
+    this.welcomeReason = reason;
     this.render();
   }
 
@@ -167,7 +171,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 }

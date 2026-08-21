@@ -11,10 +11,17 @@ export interface AuditCollection {
   skippedLarge: string[];
 }
 
+export interface AuditMeta {
+  provider: string;
+  model: string;
+  timestamp: number;
+}
+
 export interface ProjectContext {
   stack: string[];
   filesCount: number;
   topFindings: Array<{ file: string; severity: string; category: string }>;
+  auditMeta?: AuditMeta;
 }
 
 export function loadProjectRules(workspaceRoot: string): string | undefined {
@@ -84,11 +91,12 @@ function projectStack(workspaceRoot: string): string[] {
   }
 }
 
-export function writeProjectContext(workspaceRoot: string, filesCount: number, issues: ReviewIssue[]): ProjectContext {
+export function writeProjectContext(workspaceRoot: string, filesCount: number, issues: ReviewIssue[], auditMeta?: AuditMeta): ProjectContext {
   const context: ProjectContext = {
     stack: projectStack(workspaceRoot),
     filesCount,
-    topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category }))
+    topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category })),
+    ...(auditMeta ? { auditMeta } : {})
   };
   const directory = join(workspaceRoot, '.codescout');
   mkdirSync(directory, { recursive: true });
