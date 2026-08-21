@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { createProvider, RetryEvent } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
@@ -17,6 +19,7 @@ const SECRET_PROVIDER = 'codescout.provider';
 const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
+const CONTEXT_FILE = '.codescout/context.json';
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -182,7 +185,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -223,8 +226,9 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
+    const auditSelection = await resolveExtensionSelection(context);
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
@@ -252,7 +256,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -299,6 +303,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
     vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
+    vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
+      await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
+      const workspaceRoot = getWorkspaceRoot();
+      if (workspaceRoot && existsSync(join(workspaceRoot, CONTEXT_FILE))) {
+        const answer = await vscode.window.showWarningMessage('Удалить сохранённый контекст проекта?', { modal: true }, 'Удалить');
+        if (answer === 'Удалить') unlinkSync(join(workspaceRoot, CONTEXT_FILE));
+      }
+      if (workspaceRoot) panel.setWelcomeBanner(true, 'new');
+      void vscode.window.showInformationMessage('✅ Онбординг сброшен');
+    }),
     vscode.commands.registerCommand('codescout.cancelScan', () => {
       activeAbortController?.abort();
       panel.setCancelled();
@@ -349,9 +363,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   void (async () => {
     const workspaceRoot = getWorkspaceRoot();
-    if (workspaceRoot && !readProjectContext(workspaceRoot) && (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) !== 'true') {
-      panel.setWelcomeBanner(true);
-    }
+    if (!workspaceRoot) return;
+    const projectContext = readProjectContext(workspaceRoot);
+    const selection = await resolveExtensionSelection(context);
+    const choiceStored = (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) === 'true';
+    const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');
+    else if (stale) panel.setWelcomeBanner(true, 'stale');
   })();
 }
 
