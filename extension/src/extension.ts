@@ -44,6 +44,19 @@ function formatIssue(issue: ReviewIssue): string {
   return `[${severity}] ${issue.category} · ${location} · confidence ${Math.round(issue.confidence * 100)}%\n  ${issue.description}${code}${suggestion}`;
 }
 
+function dumpFindings(output: vscode.OutputChannel, issues: ReviewIssue[], summary: string): void {
+  output.appendLine('');
+  output.appendLine('===== CodeScout findings =====');
+  for (const issue of issues) {
+    output.appendLine(`[${issue.severity.toUpperCase()}] ${issue.category} ${issue.file}:${issue.line}`);
+    output.appendLine(issue.description);
+    output.appendLine(`→ ${issue.suggestion || 'нет рекомендации'}`);
+    output.appendLine('');
+  }
+  output.appendLine(summary);
+  output.show(true);
+}
+
 function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
@@ -223,6 +236,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const audit = collectAuditFiles(workspaceRoot);
     output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
+    for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
@@ -232,7 +246,8 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
-    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + result.skippedFiles}`);
+    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles}`);
+    dumpFindings(output, result.issues, `Итог аудита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
@@ -260,6 +275,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
+    dumpFindings(output, result.issues, `Итог проверки коммита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine('No issues found.');
     else {
       output.appendLine(`${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found:`);

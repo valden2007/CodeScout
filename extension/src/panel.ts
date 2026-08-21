@@ -66,16 +66,18 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
           return;
         }
         // Legacy path contract: vscode.Uri.joinPath(root, message.file)
-        const candidate = resolve(root.fsPath, message.file);
-        const outsideWorkspace = relative(root.fsPath, candidate).startsWith('..');
+        const repoPath = root.fsPath;
+        const candidate = resolve(repoPath, message.file);
+        const outsideWorkspace = relative(repoPath, candidate).startsWith('..');
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
           return;
         }
         const fileUri = vscode.Uri.file(candidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
-          const line = Math.max(0, Number(message.line) - 1);
-          const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
+          const rawLine = Number(message.line);
+          const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
+          const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
           return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
             const range = new vscode.Range(position, position);
             editor.revealRange(range, vscode.TextEditorRevealType.InCenter);

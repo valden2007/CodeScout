@@ -146,8 +146,14 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <main>${body}</main>
     <script>
     const vscode = acquireVsCodeApi();
-    document.querySelectorAll('[data-command]').forEach((element) => {
+    document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
       element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
+    });
+    document.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;
+      if (!target) return;
+      event.preventDefault();
+      vscode.postMessage({ command: 'openFile', file: target.getAttribute('data-file'), line: target.getAttribute('data-line') });
     });
     const ticker = document.querySelector('[data-ticker="true"]');
     if (ticker) {
