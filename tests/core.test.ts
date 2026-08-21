@@ -33,6 +33,30 @@ diff --git a/package-lock.json b/package-lock.json
 -old
 +new`;
 
+describe('UX and audit regression fixes', () => {
+  it('uses delegated anchor clicks for findings and dumps findings to Output', () => {
+    const html = buildReportHtml([{ file: 'examples/buggy2.ts', line: 13, category: 'bug', severity: 'medium', description: 'issue', confidence: 0.9 }], { files: 1, seconds: 1, critical: 0, medium: 1, low: 0 });
+    expect(html).toContain('<a class="location" href="#" data-command="openFile" data-file="examples/buggy2.ts" data-line="13">');
+    expect(html).toContain("closest('a[data-file]')");
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('===== CodeScout findings =====');
+    expect(extension).toContain('Итог аудита:');
+    expect(extension).toContain('Итог проверки коммита:');
+  });
+
+  it('contains the audit and CLI safety fixes', () => {
+    const audit = readFileSync('extension/src/projectAudit.ts', 'utf8');
+    expect(audit).toContain('path.split(/[/');
+    expect(audit).toContain('IGNORED_DIRS.has(part)');
+    expect(audit).toContain('skippedUnreadable');
+    const correction = readFileSync('src/line-correction.ts', 'utf8');
+    expect(correction).toContain('if (!abs.startsWith(root + sep)) return issue;');
+    const args = readFileSync('src/cli/args.ts', 'utf8');
+    expect(args).toContain('Неизвестный провайдер');
+    expect(args).toContain('hideBin');
+  });
+});
+
 describe('E9.10 live ticker and smart audit banner', () => {
   it('includes a one-second webview ticker while scanning', () => {
     const html = buildReportHtml([], { files: 1, seconds: 0, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'key', true, 'groq', 'model', false, '🤖 Модель думает... · ⏱ 0с');

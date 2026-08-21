@@ -15,6 +15,7 @@ export interface CliArgs {
 }
 
 const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+const PROVIDERS = new Set<ProviderName>(['gemini', 'groq', 'openrouter', 'github', 'custom']);
 
 function suggestedFlag(flag: string): string | undefined {
   if (flag.startsWith('--last-')) return '--last-commit';
@@ -54,7 +55,11 @@ export function parseArgs(argv: string[]): CliArgs {
     .help()
     .parseSync();
 
-  const provider = parsed.provider as ProviderName;
+  const rawProvider = String(parsed.provider ?? 'gemini');
+  if (!PROVIDERS.has(rawProvider as ProviderName)) {
+    throw new Error(`Неизвестный провайдер: ${rawProvider}. Доступны: gemini, groq, openrouter, github, custom.`);
+  }
+  const provider = rawProvider as ProviderName;
   return {
     command: typeof parsed.command === 'string' ? parsed.command : 'scan',
     path: parsed.path,

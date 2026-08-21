@@ -134,12 +134,12 @@ var RateLimitError = class extends Error {
     this.name = "RateLimitError";
   }
 };
-var sleep = (ms, signal) => new Promise((resolve3, reject) => {
+var sleep = (ms, signal) => new Promise((resolve4, reject) => {
   if (signal?.aborted) {
     reject(new DOMException("The operation was aborted", "AbortError"));
     return;
   }
-  const timer = setTimeout(resolve3, ms);
+  const timer = setTimeout(resolve4, ms);
   signal?.addEventListener("abort", () => {
     clearTimeout(timer);
     reject(new DOMException("The operation was aborted", "AbortError"));
@@ -340,7 +340,10 @@ var import_node_path = require("node:path");
 function correctIssueLine(issue, repoPath) {
   if (!issue.code?.trim()) return issue;
   try {
-    const content = (0, import_node_fs.readFileSync)((0, import_node_path.join)(repoPath, issue.file), "utf8");
+    const root = (0, import_node_path.resolve)(repoPath);
+    const abs = (0, import_node_path.resolve)(repoPath, issue.file);
+    if (!abs.startsWith(root + import_node_path.sep)) return issue;
+    const content = (0, import_node_fs.readFileSync)(abs, "utf8");
     const snippet = issue.code.trim();
     const matches = content.split("\n").flatMap((line, index) => line.includes(snippet) ? [index + 1] : []);
     return matches.length === 1 ? { ...issue, line: matches[0] } : issue;
@@ -565,8 +568,14 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <main>${body}</main>
     <script>
     const vscode = acquireVsCodeApi();
-    document.querySelectorAll('[data-command]').forEach((element) => {
+    document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
       element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
+    });
+    document.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;
+      if (!target) return;
+      event.preventDefault();
+      vscode.postMessage({ command: 'openFile', file: target.getAttribute('data-file'), line: target.getAttribute('data-line') });
     });
     const ticker = document.querySelector('[data-ticker="true"]');
     if (ticker) {
@@ -638,16 +647,18 @@ var CodeScoutPanel = class {
           void vscode.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.");
           return;
         }
-        const candidate = (0, import_node_path2.resolve)(root.fsPath, message.file);
-        const outsideWorkspace = (0, import_node_path2.relative)(root.fsPath, candidate).startsWith("..");
+        const repoPath = root.fsPath;
+        const candidate = (0, import_node_path2.resolve)(repoPath, message.file);
+        const outsideWorkspace = (0, import_node_path2.relative)(repoPath, candidate).startsWith("..");
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: ${message.file}`);
           return;
         }
         const fileUri = vscode.Uri.file(candidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
-          const line = Math.max(0, Number(message.line) - 1);
-          const position = new vscode.Position(Math.min(line, document.lineCount - 1), 0);
+          const rawLine = Number(message.line);
+          const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
+          const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
           return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
             const range = new vscode.Range(position, position);
             editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
@@ -817,9 +828,16 @@ function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
   walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths);
   const files = [];
   const skippedLarge = [];
+  const skippedUnreadable = [];
   for (const filename of relativePaths.sort().slice(0, maxFiles)) {
     const absolute = (0, import_node_path3.join)(workspaceRoot, filename);
-    const content = (0, import_node_fs3.readFileSync)(absolute, "utf8");
+    let content;
+    try {
+      content = (0, import_node_fs3.readFileSync)(absolute, "utf8");
+    } catch {
+      skippedUnreadable.push(filename);
+      continue;
+    }
     const lines = content.split(/\r?\n/);
     if (lines.length > maxLines) {
       skippedLarge.push(filename);
@@ -830,7 +848,7 @@ function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
 @@ -0,0 +1,${lines.length} @@
 ${lines.map((line) => `+${line}`).join("\n")}` });
   }
-  return { files, skippedLarge };
+  return { files, skippedLarge, skippedUnreadable };
 }
 function projectStack(workspaceRoot) {
   const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
@@ -872,6 +890,18 @@ function formatIssue(issue) {
   suggestion: ${issue.suggestion}` : "";
   return `[${severity}] ${issue.category} \xB7 ${location} \xB7 confidence ${Math.round(issue.confidence * 100)}%
   ${issue.description}${code}${suggestion}`;
+}
+function dumpFindings(output, issues, summary) {
+  output.appendLine("");
+  output.appendLine("===== CodeScout findings =====");
+  for (const issue of issues) {
+    output.appendLine(`[${issue.severity.toUpperCase()}] ${issue.category} ${issue.file}:${issue.line}`);
+    output.appendLine(issue.description);
+    output.appendLine(`\u2192 ${issue.suggestion || "\u043D\u0435\u0442 \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438"}`);
+    output.appendLine("");
+  }
+  output.appendLine(summary);
+  output.show(true);
 }
 function getWorkspaceRoot() {
   return vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -1042,6 +1072,7 @@ async function runFullAudit(context, output, panel) {
     const audit = collectAuditFiles(workspaceRoot);
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
+    for (const filename of audit.skippedUnreadable) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0439 \u0444\u0430\u0439\u043B: ${filename}`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
@@ -1054,7 +1085,8 @@ async function runFullAudit(context, output, panel) {
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
-    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + result.skippedFiles}`);
+    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles}`);
+    dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
   } catch (error) {
     if (isAbortError(error)) {
       panel.setCancelled();
@@ -1087,6 +1119,7 @@ async function runReview(context, lastCommit, output, panel) {
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
+    dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043A\u043E\u043C\u043C\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine("No issues found.");
     else {
       output.appendLine(`${result.issues.length} issue${result.issues.length === 1 ? "" : "s"} found:`);

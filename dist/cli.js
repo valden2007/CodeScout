@@ -85439,6 +85439,7 @@ function maskApiKey(key) {
 
 
 const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+const args_PROVIDERS = new Set(['gemini', 'groq', 'openrouter', 'github', 'custom']);
 function suggestedFlag(flag) {
     if (flag.startsWith('--last-'))
         return '--last-commit';
@@ -85479,7 +85480,11 @@ function parseArgs(argv) {
         .strict()
         .help()
         .parseSync();
-    const provider = parsed.provider;
+    const rawProvider = String(parsed.provider ?? 'gemini');
+    if (!args_PROVIDERS.has(rawProvider)) {
+        throw new Error(`Неизвестный провайдер: ${rawProvider}. Доступны: gemini, groq, openrouter, github, custom.`);
+    }
+    const provider = rawProvider;
     return {
         command: typeof parsed.command === 'string' ? parsed.command : 'scan',
         path: parsed.path,
@@ -85766,7 +85771,11 @@ function correctIssueLine(issue, repoPath) {
     if (!issue.code?.trim())
         return issue;
     try {
-        const content = (0,external_node_fs_namespaceObject.readFileSync)((0,external_node_path_namespaceObject.join)(repoPath, issue.file), 'utf8');
+        const root = (0,external_node_path_namespaceObject.resolve)(repoPath);
+        const abs = (0,external_node_path_namespaceObject.resolve)(repoPath, issue.file);
+        if (!abs.startsWith(root + external_node_path_namespaceObject.sep))
+            return issue;
+        const content = (0,external_node_fs_namespaceObject.readFileSync)(abs, 'utf8');
         const snippet = issue.code.trim();
         const matches = content.split('\n').flatMap((line, index) => line.includes(snippet) ? [index + 1] : []);
         return matches.length === 1 ? { ...issue, line: matches[0] } : issue;

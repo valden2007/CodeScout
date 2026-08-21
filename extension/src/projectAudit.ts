@@ -9,6 +9,7 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
 export interface AuditCollection {
   files: LocalDiffFile[];
   skippedLarge: string[];
+  skippedUnreadable: string[];
 }
 
 export interface AuditMeta {
@@ -67,9 +68,16 @@ export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLine
   walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths);
   const files: LocalDiffFile[] = [];
   const skippedLarge: string[] = [];
+  const skippedUnreadable: string[] = [];
   for (const filename of relativePaths.sort().slice(0, maxFiles)) {
     const absolute = join(workspaceRoot, filename);
-    const content = readFileSync(absolute, 'utf8');
+    let content: string;
+    try {
+      content = readFileSync(absolute, 'utf8');
+    } catch {
+      skippedUnreadable.push(filename);
+      continue;
+    }
     const lines = content.split(/\r?\n/);
     if (lines.length > maxLines) {
       skippedLarge.push(filename);
@@ -77,7 +85,7 @@ export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLine
     }
     files.push({ filename, status: 'audit', additions: lines.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}` });
   }
-  return { files, skippedLarge };
+  return { files, skippedLarge, skippedUnreadable };
 }
 
 function projectStack(workspaceRoot: string): string[] {
@@ -122,7 +130,7 @@ export function isAuditSource(path: string): boolean {
 }
 
 export function isIgnoredAuditPath(path: string): boolean {
-  return path.split('/').some((part) => IGNORED_DIRS.has(part));
+  return path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part));
 }
 
 export function auditFileExists(workspaceRoot: string, filename: string): boolean {
