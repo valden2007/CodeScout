@@ -43,6 +43,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
       } else if (message.command === 'testSample') {
         void vscode.commands.executeCommand('codescout.testSample');
+      } else if (message.command === 'cancelScan') {
+        void vscode.commands.executeCommand('codescout.cancelScan');
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!root) {
@@ -100,6 +102,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.scanning = true;
     this.statusKind = 'retry';
     this.statusMessage = `⏳ Rate limit у ${model}, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
+    this.render();
+  }
+
+  setCancelled(): void {
+    this.scanning = false;
+    this.hasRun = true;
+    this.progressMessage = '';
+    this.statusKind = 'error';
+    this.statusMessage = '⛔ Сканирование остановлено пользователем';
     this.render();
   }
 
