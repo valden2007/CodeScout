@@ -21,7 +21,8 @@
     "onCommand:codescout.chooseModel",
     "onCommand:codescout.testSample",
     "onCommand:codescout.cancelScan",
-    "onCommand:codescout.scanFull"
+    "onCommand:codescout.scanFull",
+    "onCommand:codescout.resetOnboarding"
   ],
   "contributes": {
     "viewsContainers": {
@@ -74,6 +75,10 @@
       {
         "command": "codescout.scanFull",
         "title": "CodeScout: full project audit"
+      },
+      {
+        "command": "codescout.resetOnboarding",
+        "title": "CodeScout: сброс онбординга"
       }
     ],
     "configuration": {

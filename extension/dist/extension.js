@@ -35,6 +35,8 @@ __export(extension_exports, {
 });
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
+var import_node_fs4 = require("node:fs");
+var import_node_path4 = require("node:path");
 
 // ../src/providers.ts
 function parseLiveModels(payload) {
@@ -475,7 +477,7 @@ function issueCard(issue) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new") {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
@@ -545,7 +547,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
-    ${welcomeBanner ? '<div class="welcome-banner"><strong>\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u0442\u0432\u043E\u0439 \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0442\u043E\u0433\u0434\u0430 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : ""}
+    ${welcomeBanner ? welcomeReason === "stale" ? '<div class="welcome-banner"><strong>\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : '<div class="welcome-banner"><strong>\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : ""}
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
@@ -555,23 +557,31 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
       <button type="button" data-command="scanFull" ${isScanning ? "disabled" : ""}>\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430</button>
     </div>
-    ${progressMessage ? `<div class="progress-line">${escapeHtml(progressMessage)}</div>` : ""}
+    ${progressMessage ? `<div class="progress-line" data-ticker="${/^(?:🤖 Модель думает|🔎 Проверяю|🔬 Полный аудит)/.test(progressMessage) ? "true" : "false"}">${escapeHtml(progressMessage)}</div>` : ""}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
   <main>${body}</main>
-  <script>
+    <script>
     const vscode = acquireVsCodeApi();
     document.querySelectorAll('[data-command]').forEach((element) => {
       element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
     });
+    const ticker = document.querySelector('[data-ticker="true"]');
+    if (ticker) {
+      let elapsed = Number((ticker.textContent.match(/\u23F1\\s*(\\d+)\u0441/) || [])[1] || 0);
+      setInterval(() => {
+        elapsed += 1;
+        ticker.textContent = ticker.textContent.replace(/\u23F1\\s*\\d+\u0441/, '\u23F1 ' + elapsed + '\u0441');
+      }, 1000);
+    }
   </script>
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false) {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new") {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason);
 }
 
 // src/panel.ts
@@ -590,7 +600,9 @@ var CodeScoutPanel = class {
   provider = "gemini";
   model = "gemini-2.5-flash";
   welcomeBanner = false;
-  onWelcomeChoice;
+  welcomeReason = "new";
+  onWelcomeStart;
+  onWelcomeDismiss;
   resolveWebviewView(webviewView) {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
@@ -600,12 +612,12 @@ var CodeScoutPanel = class {
       } else if (message.command === "scanUncommitted") {
         void vscode.commands.executeCommand("codescout.scanUncommitted");
       } else if (message.command === "scanFull" || message.command === "startFullAudit") {
-        this.onWelcomeChoice?.();
+        this.onWelcomeStart?.();
         this.welcomeBanner = false;
         this.render();
         void vscode.commands.executeCommand("codescout.scanFull");
       } else if (message.command === "dismissWelcome") {
-        this.onWelcomeChoice?.();
+        this.onWelcomeDismiss?.();
         this.welcomeBanner = false;
         this.render();
       } else if (message.command === "setApiKey") {
@@ -648,11 +660,13 @@ var CodeScoutPanel = class {
     }, void 0, []);
     this.render();
   }
-  setWelcomeChoiceHandler(handler) {
-    this.onWelcomeChoice = handler;
+  setWelcomeChoiceHandler(onStart, onDismiss) {
+    this.onWelcomeStart = onStart;
+    this.onWelcomeDismiss = onDismiss;
   }
-  setWelcomeBanner(visible) {
+  setWelcomeBanner(visible, reason = "new") {
     this.welcomeBanner = visible;
+    this.welcomeReason = reason;
     this.render();
   }
   setKey(key, provider = "gemini", model = "gemini-2.5-flash") {
@@ -717,7 +731,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 };
 
@@ -828,11 +842,12 @@ function projectStack(workspaceRoot) {
     return [];
   }
 }
-function writeProjectContext(workspaceRoot, filesCount, issues) {
+function writeProjectContext(workspaceRoot, filesCount, issues, auditMeta) {
   const context = {
     stack: projectStack(workspaceRoot),
     filesCount,
-    topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category }))
+    topFindings: issues.slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 10).map((issue) => ({ file: issue.file, severity: issue.severity, category: issue.category })),
+    ...auditMeta ? { auditMeta } : {}
   };
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
   (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
@@ -847,6 +862,7 @@ var SECRET_PROVIDER = "codescout.provider";
 var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
+var CONTEXT_FILE = ".codescout/context.json";
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -986,7 +1002,10 @@ async function runSampleReview(context, output, panel) {
   output.appendLine("CodeScout: running built-in self-test...");
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
+    const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
+      panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs);
+      output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -1026,8 +1045,12 @@ async function runFullAudit(context, output, panel) {
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues);
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
+      panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs);
+      output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
+    const auditSelection = await resolveExtensionSelection(context);
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
@@ -1057,7 +1080,10 @@ async function runReview(context, lastCommit, output, panel) {
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? "\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" : "\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs), (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
+      panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs);
+      output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -1107,6 +1133,16 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
     vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
+    vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
+      await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
+      const workspaceRoot = getWorkspaceRoot();
+      if (workspaceRoot && (0, import_node_fs4.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
+        const answer = await vscode2.window.showWarningMessage("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430?", { modal: true }, "\u0423\u0434\u0430\u043B\u0438\u0442\u044C");
+        if (answer === "\u0423\u0434\u0430\u043B\u0438\u0442\u044C") (0, import_node_fs4.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
+      }
+      if (workspaceRoot) panel.setWelcomeBanner(true, "new");
+      void vscode2.window.showInformationMessage("\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D");
+    }),
     vscode2.commands.registerCommand("codescout.cancelScan", () => {
       activeAbortController?.abort();
       panel.setCancelled();
@@ -1157,9 +1193,13 @@ function activate(context) {
   );
   void (async () => {
     const workspaceRoot = getWorkspaceRoot();
-    if (workspaceRoot && !readProjectContext(workspaceRoot) && await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) !== "true") {
-      panel.setWelcomeBanner(true);
-    }
+    if (!workspaceRoot) return;
+    const projectContext = readProjectContext(workspaceRoot);
+    const selection = await resolveExtensionSelection(context);
+    const choiceStored = await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) === "true";
+    const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
+    else if (stale) panel.setWelcomeBanner(true, "stale");
   })();
 }
 function deactivate() {
