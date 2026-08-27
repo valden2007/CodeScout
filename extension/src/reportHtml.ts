@@ -80,9 +80,14 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
-.welcome-banner { margin: 0 0 10px; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
+.welcome-banner { margin: 0; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .welcome-actions button { flex: 1 1 120px; }
+.welcome-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--vscode-editor-background) 68%, transparent); backdrop-filter: blur(2px); z-index: 9999; pointer-events: auto; }
+.welcome-card { pointer-events: auto; }
+body.modal { pointer-events: none; }
+body.modal .welcome-overlay { pointer-events: auto; }
+body.modal .welcome-overlay * { pointer-events: auto; }
 .onboarding { padding: 36px 10px; text-align: center; }
 .onboarding h1 { margin: 0 0 14px; font-size: 16px; }
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
@@ -128,7 +133,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
-    ${welcomeBanner ? (welcomeReason === 'stale' ? '<div class="welcome-banner"><strong>⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🔄 Обновить</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>' : '<div class="welcome-banner"><strong>🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">🚀 Запустить аудит</button><button type="button" data-command="dismissWelcome">Позже</button></div></div>') : ''}
+    ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? '⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : '🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === 'stale' ? '🔄 Обновить' : '🚀 Запустить аудит'}</button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
@@ -146,8 +151,38 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <main>${body}</main>
     <script>
     const vscode = acquireVsCodeApi();
+    const overlay = document.querySelector('.welcome-overlay');
+    if (overlay) {
+      document.body.classList.add('modal');
+      if (!document.body.dataset.codescoutWelcomeBound) {
+        document.body.dataset.codescoutWelcomeBound = 'true';
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
+            event.preventDefault();
+            vscode.postMessage({ command: 'dismissWelcome' });
+          }
+        });
+        overlay.addEventListener('keydown', (event) => {
+          if (event.key !== 'Tab') return;
+          const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+          if (!focusable.length) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+          }
+        });
+      }
+    } else {
+      document.body.classList.remove('modal');
+    }
     document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
-      element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
+      element.addEventListener('click', (event) => {
+        if (element.classList.contains('welcome-overlay') && event.target !== element) return;
+        event.preventDefault();
+        vscode.postMessage({ command: element.dataset.command });
+      });
     });
     document.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;

@@ -502,9 +502,14 @@ body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
 .key-status.ready { color: var(--vscode-testing-iconPassed); }
 .key-status.missing { color: var(--vscode-errorForeground); }
-.welcome-banner { margin: 0 0 10px; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
+.welcome-banner { margin: 0; padding: 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .welcome-actions button { flex: 1 1 120px; }
+.welcome-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--vscode-editor-background) 68%, transparent); backdrop-filter: blur(2px); z-index: 9999; pointer-events: auto; }
+.welcome-card { pointer-events: auto; }
+body.modal { pointer-events: none; }
+body.modal .welcome-overlay { pointer-events: auto; }
+body.modal .welcome-overlay * { pointer-events: auto; }
 .onboarding { padding: 36px 10px; text-align: center; }
 .onboarding h1 { margin: 0 0 14px; font-size: 16px; }
 .onboarding p { margin: 12px 0; color: var(--vscode-descriptionForeground); }
@@ -550,7 +555,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </head>
 <body>
   <header class="header">
-    ${welcomeBanner ? welcomeReason === "stale" ? '<div class="welcome-banner"><strong>\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : '<div class="welcome-banner"><strong>\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div>' : ""}
+    ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === "stale" ? "\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?" : "\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?"}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === "stale" ? "\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C" : "\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442"}</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div></div></div>` : ""}
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
@@ -568,8 +573,38 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <main>${body}</main>
     <script>
     const vscode = acquireVsCodeApi();
+    const overlay = document.querySelector('.welcome-overlay');
+    if (overlay) {
+      document.body.classList.add('modal');
+      if (!document.body.dataset.codescoutWelcomeBound) {
+        document.body.dataset.codescoutWelcomeBound = 'true';
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
+            event.preventDefault();
+            vscode.postMessage({ command: 'dismissWelcome' });
+          }
+        });
+        overlay.addEventListener('keydown', (event) => {
+          if (event.key !== 'Tab') return;
+          const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+          if (!focusable.length) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+          }
+        });
+      }
+    } else {
+      document.body.classList.remove('modal');
+    }
     document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
-      element.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ command: element.dataset.command }); });
+      element.addEventListener('click', (event) => {
+        if (element.classList.contains('welcome-overlay') && event.target !== element) return;
+        event.preventDefault();
+        vscode.postMessage({ command: element.dataset.command });
+      });
     });
     document.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;
