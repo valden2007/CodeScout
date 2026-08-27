@@ -1,4 +1,4 @@
-# Changelog / История изменений
+﻿# Changelog / История изменений
 
 ## v1.1.0 — VS Code extension
 
