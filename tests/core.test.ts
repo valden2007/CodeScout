@@ -17,6 +17,7 @@ import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeP
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const diff = `diff --git a/src/app.ts b/src/app.ts
 index 1111111..2222222 100644
@@ -83,21 +84,21 @@ describe('E9.10 live ticker and smart audit banner', () => {
 
 describe('E9.8 rules and W1.0 project context', () => {
   it('appends rules.md to the project prompt and tolerates a missing rules file', () => {
-    const root = mkdtempSync('/tmp/codescout-rules-');
+    const root = mkdtempSync(join(tmpdir(), 'codescout-rules-'));
     mkdirSync(join(root, '.codescout'), { recursive: true });
     writeFileSync(join(root, '.codescout', 'rules.md'), 'DO NOT flag tenant-scoped Prisma reads.');
     const loaded = buildProjectSystemPrompt('BASE PROMPT', root);
     expect(loaded.prompt).toContain('## PROJECT SPECIFIC RULES');
     expect(loaded.prompt).toContain('DO NOT flag tenant-scoped Prisma reads.');
     expect(loaded.rulesLoaded).toBe(true);
-    const empty = buildProjectSystemPrompt('BASE PROMPT', mkdtempSync('/tmp/codescout-no-rules-'));
+    const empty = buildProjectSystemPrompt('BASE PROMPT', mkdtempSync(join(tmpdir(), 'codescout-no-rules-')));
     expect(empty.prompt).toBe('BASE PROMPT');
     expect(empty.rulesLoaded).toBe(false);
     rmSync(root, { recursive: true, force: true });
   });
 
   it('caps full audit at 100 files and filters generated directories', () => {
-    const root = mkdtempSync('/tmp/codescout-audit-');
+    const root = mkdtempSync(join(tmpdir(), 'codescout-audit-'));
     mkdirSync(join(root, 'src'), { recursive: true });
     mkdirSync(join(root, 'dist'), { recursive: true });
     for (let i = 0; i < 105; i++) writeFileSync(join(root, 'src', `file-${i}.ts`), `export const value${i} = ${i};\n`);
@@ -112,7 +113,7 @@ describe('E9.8 rules and W1.0 project context', () => {
   });
 
   it('writes context.json and reads its finding summary into the prompt', () => {
-    const root = mkdtempSync('/tmp/codescout-context-');
+    const root = mkdtempSync(join(tmpdir(), 'codescout-context-'));
     const context = writeProjectContext(root, 4, [{ file: 'src/auth.ts', line: 4, severity: 'high', category: 'security', confidence: 0.99, description: 'auth bug', code: '', suggestion: '' }]);
     expect(context.filesCount).toBe(4);
     expect(readProjectContext(root)?.topFindings[0].file).toBe('src/auth.ts');
