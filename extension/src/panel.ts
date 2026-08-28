@@ -122,15 +122,29 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  private liveWebview(): vscode.Webview | undefined {
+    return this.view && this.scanning ? this.view.webview : undefined;
+  }
+
   setProgress(index: number, total: number, filename: string, label = '🔎 Проверяю файл', elapsedMs = 0): void {
     this.scanning = true;
     this.progressMessage = `${label} ${index}/${total}: ${filename}... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: 'progress', text: this.progressMessage, elapsedMs });
+      return;
+    }
     this.render();
   }
 
   setModelThinking(elapsedMs = 0): void {
     this.scanning = true;
     this.progressMessage = `🤖 Модель думает... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: 'progress', text: this.progressMessage, elapsedMs });
+      return;
+    }
     this.render();
   }
 
@@ -138,6 +152,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.scanning = true;
     this.statusKind = 'retry';
     this.statusMessage = `⏳ Rate limit у ${model}, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: 'status', message: this.statusMessage, kind: 'retry' });
+      return;
+    }
     this.render();
   }
 

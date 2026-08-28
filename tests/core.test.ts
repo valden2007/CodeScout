@@ -605,6 +605,34 @@ describe('E1.2a settings page (skeleton + keys)', () => {
   });
 });
 
+describe('E1.2b incremental panel render', () => {
+  const stats = { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 };
+  it('live ticks go through postMessage, html is assigned only in render()', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    const live = panel.slice(panel.indexOf('setProgress('), panel.indexOf('setCancelled('));
+    expect(live).toContain("postMessage({ type: 'progress', text: this.progressMessage");
+    expect(live).toContain("postMessage({ type: 'status', message: this.statusMessage");
+    expect(panel.match(/webview\.html/g) ?? []).toHaveLength(1);
+  });
+
+  it('webview patches #progressLine and #statusSlot in place from messages', () => {
+    const html = buildReportHtml([], stats, true, false, '', 'retry', 'k', true, 'gemini', 'm', false, '🔎 Проверяю файл 1/2: src/app.ts... · ⏱ 5с');
+    expect(html).toContain('id="progressLine"');
+    expect(html).toContain('id="statusSlot"');
+    expect(html).toContain("window.addEventListener('message'");
+    expect(html).toContain("data.type === 'progress'");
+    expect(html).toContain("data.type === 'status'");
+    expect(html).not.toContain('data-ticker');
+  });
+
+  it('drops the welcome-bound hack and binds keyboard once per document', () => {
+    const welcome = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', true, 'new');
+    expect(welcome).not.toContain('codescoutWelcomeBound');
+    expect((welcome.match(/addEventListener\('keydown'/g) ?? []).length).toBe(2);
+    expect((welcome.match(/postMessage\(\{ command: 'dismissWelcome' \}\)/g) ?? []).length).toBe(1);
+  });
+});
+
 describe('H1.1.2 path traversal guards', () => {
   it('checks workspace prefix with separator and resolves symlinks via realpath', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');

@@ -137,13 +137,13 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button><button type="button" data-command="openSettings" title="Настройки CodeScout">⚙️ Настройки</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
-    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}
+    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Проверить последний коммит</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Проверить изменения до коммита</button>
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
     </div>
-    ${progressMessage ? `<div class="progress-line" data-ticker="${/^(?:🤖 Модель думает|🔎 Проверяю|🔬 Полный аудит)/.test(progressMessage) ? 'true' : 'false'}">${escapeHtml(progressMessage)}</div>` : ''}
+    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || 'Запускаю проверку…')}</div>` : ''}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">⛔ Остановить</button>' : ''}
     <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">🔴 ${stats.critical}</span><span class="pill medium">🟡 ${stats.medium}</span><span class="pill low">🟢 ${stats.low}</span></div>
@@ -154,50 +154,86 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     const overlay = document.querySelector('.welcome-overlay');
     if (overlay) {
       document.body.classList.add('modal');
-      if (!document.body.dataset.codescoutWelcomeBound) {
-        document.body.dataset.codescoutWelcomeBound = 'true';
-        document.addEventListener('keydown', (event) => {
-          if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
-            event.preventDefault();
-            vscode.postMessage({ command: 'dismissWelcome' });
-          }
-        });
-        overlay.addEventListener('keydown', (event) => {
-          if (event.key !== 'Tab') return;
-          const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
-          if (!focusable.length) return;
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-            event.preventDefault();
-            (event.shiftKey ? last : first).focus();
-          }
-        });
-      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
+          event.preventDefault();
+          vscode.postMessage({ command: 'dismissWelcome' });
+        }
+      });
+      overlay.addEventListener('keydown', (event) => {
+        if (event.key !== 'Tab') return;
+        const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      });
     } else {
       document.body.classList.remove('modal');
     }
-    document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
-      element.addEventListener('click', (event) => {
-        if (element.classList.contains('welcome-overlay') && event.target !== element) return;
-        event.preventDefault();
-        vscode.postMessage({ command: element.dataset.command });
-      });
-    });
-    document.addEventListener('click', (event) => {
-      const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;
-      if (!target) return;
-      event.preventDefault();
-      vscode.postMessage({ command: 'openFile', file: target.getAttribute('data-file'), line: target.getAttribute('data-line') });
-    });
-    const ticker = document.querySelector('[data-ticker="true"]');
-    if (ticker) {
-      let elapsed = Number((ticker.textContent.match(/⏱\\s*(\\d+)с/) || [])[1] || 0);
-      setInterval(() => {
-        elapsed += 1;
-        ticker.textContent = ticker.textContent.replace(/⏱\\s*\\d+с/, '⏱ ' + elapsed + 'с');
-      }, 1000);
+    function escapeText(value) {
+      const div = document.createElement('div');
+      div.textContent = value;
+      return div.innerHTML;
     }
+    function applyProgressText(text) {
+      const line = document.getElementById('progressLine');
+      if (line) line.textContent = text;
+    }
+    function applyStatus(message, kind) {
+      const slot = document.getElementById('statusSlot');
+      if (!slot) return;
+      if (!message) {
+        slot.innerHTML = '';
+        return;
+      }
+      const dots = kind === 'retry' ? '<span class="animated-dots">...</span>' : '';
+      const fix = kind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : '';
+      slot.innerHTML = '<div class="status-banner ' + kind + '">' + escapeText(message) + dots + fix + '</div>';
+    }
+    const live = { text: '', elapsed: 0, tick: false };
+    const progressLine = document.getElementById('progressLine');
+    if (progressLine) {
+      live.text = progressLine.textContent;
+      live.elapsed = Number((live.text.match(/⏱\\s*(\\d+)с/) || [])[1] || 0);
+      live.tick = progressLine.dataset.live === 'true' && /⏱\\s*\\d+с/.test(live.text);
+    }
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (data.type === 'progress') {
+        live.text = String(data.text || '');
+        live.elapsed = Math.floor(Number(data.elapsedMs || 0) / 1000);
+        live.tick = true;
+        applyProgressText(live.text);
+      } else if (data.type === 'status') {
+        applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : 'retry');
+      }
+    });
+    setInterval(() => {
+      if (!live.tick) return;
+      live.elapsed += 1;
+      live.text = live.text.replace(/⏱\\s*\\d+с/, '⏱ ' + live.elapsed + 'с');
+      applyProgressText(live.text);
+    }, 1000);
+    document.addEventListener('click', (event) => {
+      const origin = event.target instanceof Element ? event.target : null;
+      const anchor = origin ? origin.closest('a[data-file]') : null;
+      if (anchor) {
+        event.preventDefault();
+        vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
+        return;
+      }
+      const element = origin ? origin.closest('[data-command]') : null;
+      if (!element) return;
+      if (element.classList.contains('welcome-overlay') && event.target !== element) {
+        return;
+      }
+      event.preventDefault();
+      vscode.postMessage({ command: element.dataset.command });
+    });
   </script>
 </body>
 </html>`;

@@ -56,7 +56,15 @@ line-correction realpathSync). Tests: 53 in vitest.
    (codescout.reportLanguage ru/en wired into prompts via
    withReportLanguage), audit banner toggle (codescout.showAuditBanner
    gates welcome banner at activation), gear button in panel header.
-2. Incremental render (update panel DOM without full HTML rebuild)
+2. Incremental render — DONE in 1.2b: panel.ts keeps one webview
+   document during a scan; setProgress/setModelThinking/setRetry send
+   postMessage {type:'progress'|'status'} and the webview script
+   patches #progressLine / #statusSlot DOM in place (ticker moves the
+   seconds counter without rebuilds, scroll preserved). Full
+   buildReportHtml runs only on key state changes (scan start/stop,
+   new report, error/cancel, key/model, welcome banner). The
+   dataset.codescoutWelcomeBound hack is gone — one Escape + one
+   tab-trap keydown listener per document, clicks fully delegated.
 3. Ignore-lists for full audit (.gitignore-aware, custom globs)
 4. Diff of findings between audits (new/fixed since last run)
 UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,

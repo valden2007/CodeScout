@@ -572,13 +572,13 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button><button type="button" data-command="openSettings" title="\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
-    ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}
+    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
       <button type="button" data-command="scanFull" ${isScanning ? "disabled" : ""}>\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430</button>
     </div>
-    ${progressMessage ? `<div class="progress-line" data-ticker="${/^(?:🤖 Модель думает|🔎 Проверяю|🔬 Полный аудит)/.test(progressMessage) ? "true" : "false"}">${escapeHtml(progressMessage)}</div>` : ""}
+    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026")}</div>` : ""}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
@@ -589,50 +589,86 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     const overlay = document.querySelector('.welcome-overlay');
     if (overlay) {
       document.body.classList.add('modal');
-      if (!document.body.dataset.codescoutWelcomeBound) {
-        document.body.dataset.codescoutWelcomeBound = 'true';
-        document.addEventListener('keydown', (event) => {
-          if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
-            event.preventDefault();
-            vscode.postMessage({ command: 'dismissWelcome' });
-          }
-        });
-        overlay.addEventListener('keydown', (event) => {
-          if (event.key !== 'Tab') return;
-          const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
-          if (!focusable.length) return;
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
-            event.preventDefault();
-            (event.shiftKey ? last : first).focus();
-          }
-        });
-      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.querySelector('.welcome-overlay')) {
+          event.preventDefault();
+          vscode.postMessage({ command: 'dismissWelcome' });
+        }
+      });
+      overlay.addEventListener('keydown', (event) => {
+        if (event.key !== 'Tab') return;
+        const focusable = overlay.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      });
     } else {
       document.body.classList.remove('modal');
     }
-    document.querySelectorAll('[data-command]:not(a[data-file])').forEach((element) => {
-      element.addEventListener('click', (event) => {
-        if (element.classList.contains('welcome-overlay') && event.target !== element) return;
-        event.preventDefault();
-        vscode.postMessage({ command: element.dataset.command });
-      });
-    });
-    document.addEventListener('click', (event) => {
-      const target = event.target instanceof Element ? event.target.closest('a[data-file]') : null;
-      if (!target) return;
-      event.preventDefault();
-      vscode.postMessage({ command: 'openFile', file: target.getAttribute('data-file'), line: target.getAttribute('data-line') });
-    });
-    const ticker = document.querySelector('[data-ticker="true"]');
-    if (ticker) {
-      let elapsed = Number((ticker.textContent.match(/\u23F1\\s*(\\d+)\u0441/) || [])[1] || 0);
-      setInterval(() => {
-        elapsed += 1;
-        ticker.textContent = ticker.textContent.replace(/\u23F1\\s*\\d+\u0441/, '\u23F1 ' + elapsed + '\u0441');
-      }, 1000);
+    function escapeText(value) {
+      const div = document.createElement('div');
+      div.textContent = value;
+      return div.innerHTML;
     }
+    function applyProgressText(text) {
+      const line = document.getElementById('progressLine');
+      if (line) line.textContent = text;
+    }
+    function applyStatus(message, kind) {
+      const slot = document.getElementById('statusSlot');
+      if (!slot) return;
+      if (!message) {
+        slot.innerHTML = '';
+        return;
+      }
+      const dots = kind === 'retry' ? '<span class="animated-dots">...</span>' : '';
+      const fix = kind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : '';
+      slot.innerHTML = '<div class="status-banner ' + kind + '">' + escapeText(message) + dots + fix + '</div>';
+    }
+    const live = { text: '', elapsed: 0, tick: false };
+    const progressLine = document.getElementById('progressLine');
+    if (progressLine) {
+      live.text = progressLine.textContent;
+      live.elapsed = Number((live.text.match(/\u23F1\\s*(\\d+)\u0441/) || [])[1] || 0);
+      live.tick = progressLine.dataset.live === 'true' && /\u23F1\\s*\\d+\u0441/.test(live.text);
+    }
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (data.type === 'progress') {
+        live.text = String(data.text || '');
+        live.elapsed = Math.floor(Number(data.elapsedMs || 0) / 1000);
+        live.tick = true;
+        applyProgressText(live.text);
+      } else if (data.type === 'status') {
+        applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : 'retry');
+      }
+    });
+    setInterval(() => {
+      if (!live.tick) return;
+      live.elapsed += 1;
+      live.text = live.text.replace(/\u23F1\\s*\\d+\u0441/, '\u23F1 ' + live.elapsed + '\u0441');
+      applyProgressText(live.text);
+    }, 1000);
+    document.addEventListener('click', (event) => {
+      const origin = event.target instanceof Element ? event.target : null;
+      const anchor = origin ? origin.closest('a[data-file]') : null;
+      if (anchor) {
+        event.preventDefault();
+        vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
+        return;
+      }
+      const element = origin ? origin.closest('[data-command]') : null;
+      if (!element) return;
+      if (element.classList.contains('welcome-overlay') && event.target !== element) {
+        return;
+      }
+      event.preventDefault();
+      vscode.postMessage({ command: element.dataset.command });
+    });
   </script>
 </body>
 </html>`;
@@ -746,20 +782,38 @@ var CodeScoutPanel = class {
     }
     this.render();
   }
+  liveWebview() {
+    return this.view && this.scanning ? this.view.webview : void 0;
+  }
   setProgress(index, total, filename, label = "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs = 0) {
     this.scanning = true;
     this.progressMessage = `${label} ${index}/${total}: ${filename}... \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: "progress", text: this.progressMessage, elapsedMs });
+      return;
+    }
     this.render();
   }
   setModelThinking(elapsedMs = 0) {
     this.scanning = true;
     this.progressMessage = `\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: "progress", text: this.progressMessage, elapsedMs });
+      return;
+    }
     this.render();
   }
   setRetry(event, model = "model") {
     this.scanning = true;
     this.statusKind = "retry";
     this.statusMessage = `\u23F3 Rate limit \u0443 ${model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 ${event.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${event.attempt}/${event.maxRetries})...`;
+    const webview = this.liveWebview();
+    if (webview) {
+      void webview.postMessage({ type: "status", message: this.statusMessage, kind: "retry" });
+      return;
+    }
     this.render();
   }
   setCancelled() {
