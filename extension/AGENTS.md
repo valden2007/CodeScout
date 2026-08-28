@@ -48,8 +48,18 @@ silent downgrade, path-traversal guards (panel openFile sep-check,
 line-correction realpathSync). Tests: 53 in vitest.
 
 ## Plan for v1.2
-1. Settings Page (native webview form instead of QuickPick chain)
+1. Settings Page — DONE in 1.2a: command codescout.openSettings,
+   webview "CodeScout: Настройки" (extension/src/settingsHtml.ts) with
+   key (SecretStorage, masked, never echoed raw), provider auto/manual,
+   baseUrl for custom (config codescout.baseUrl, Global target,
+   priority setting > env CODESCOUT_BASE_URL), report language
+   (codescout.reportLanguage ru/en wired into prompts via
+   withReportLanguage), audit banner toggle (codescout.showAuditBanner
+   gates welcome banner at activation), gear button in panel header.
 2. Incremental render (update panel DOM without full HTML rebuild)
 3. Ignore-lists for full audit (.gitignore-aware, custom globs)
 4. Diff of findings between audits (new/fixed since last run)
+UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,
+no decoration). FULL VISUAL REDESIGN is scheduled for v2.0 — do not
+pre-design now.
 Backlog v2.x (RAG, GitLab CI, compliance mode) — DO NOT start, scope freeze.

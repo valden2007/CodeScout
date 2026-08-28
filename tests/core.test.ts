@@ -516,7 +516,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', reportLanguage: 'ru' as const, showAuditBanner: true };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true };
   it('renders both settings sections in the existing panel style', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('Ключ и провайдер');
@@ -554,6 +554,23 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(withReportLanguage('BASE', 'ru')).toContain('по-русски');
     expect(withReportLanguage('BASE', 'en')).toContain('in English');
     expect(withReportLanguage('BASE', 'ru')).not.toContain('in English');
+  });
+
+  it('shows baseUrl field only for custom provider and keeps saved value', () => {
+    const visible = buildSettingsHtml({ ...state, provider: 'custom', baseUrl: 'http://localhost:11434/v1' });
+    expect(visible).toContain('id="baseUrlRow" class=""');
+    expect(visible).toContain('value="http://localhost:11434/v1"');
+    expect(visible).toContain('CODESCOUT_BASE_URL');
+    const hidden = buildSettingsHtml({ ...state, provider: 'gemini', baseUrl: '' });
+    expect(hidden).toContain('id="baseUrlRow" class="hidden"');
+  });
+
+  it('persists baseUrl globally with setting-over-env priority', () => {
+    expect(resolveBaseUrl('groq', 'http://custom.test/v1/')).toBe('http://custom.test/v1');
+    expect(() => resolveBaseUrl('custom')).toThrow('CODESCOUT_BASE_URL');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL");
+    expect(extension).toContain("update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global)");
   });
 });
 

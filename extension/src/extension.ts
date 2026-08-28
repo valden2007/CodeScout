@@ -303,6 +303,7 @@ interface SettingsMessage {
   command: string;
   apiKey?: string;
   providerKey?: string;
+  baseUrl?: string;
   reportLanguage?: string;
   showAuditBanner?: boolean;
 }
@@ -325,6 +326,7 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     keyConfigured: Boolean(key?.trim()),
     provider: selection.provider,
     model: selection.model,
+    baseUrl: vscode.workspace.getConfiguration('codescout').get<string>('baseUrl')?.trim() || '',
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled()
   };
@@ -357,9 +359,12 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     }
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
+  const baseUrl = message.baseUrl?.trim() || '';
+  await vscode.workspace.getConfiguration('codescout').update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
+  if (provider === 'custom' && !baseUrl) notes.push('custom без Base URL — заполни поле или env CODESCOUT_BASE_URL');
   const storedKey = key || (await context.secrets.get(SECRET_KEY));
   if (storedKey) {
-    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: selection.baseUrl }, true);
+    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: baseUrl || selection.baseUrl }, true);
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);

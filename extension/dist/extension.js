@@ -954,6 +954,7 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 .checkbox { display: flex; align-items: center; gap: 8px; }
 .checkbox input { width: auto; }
 .hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
+.hidden { display: none; }
 .status { margin-top: 14px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? "" : "display: none;"} }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
 </style>
@@ -969,6 +970,11 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
   <label for="apiKey">API-\u043A\u043B\u044E\u0447 ( SecretStorage )</label>
   <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447" : "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C"}">
   <label class="checkbox"><input id="revealKey" type="checkbox"> \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447</label>
+  <div id="baseUrlRow" class="${state.provider === "custom" ? "" : "hidden"}">
+    <label for="baseUrl">Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)</label>
+    <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml2(state.baseUrl)}">
+    <p class="hint">\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 &gt; env CODESCOUT_BASE_URL.</p>
+  </div>
   <div class="current-key">\u0441\u0435\u0439\u0447\u0430\u0441: ${state.keyConfigured ? `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(state.model)}` : "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"}</div>
   <div class="row">
     <button id="saveKey" type="button">\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
@@ -992,11 +998,15 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 </main>
 <script>
 const vscode = acquireVsCodeApi();
+const providerSelect = document.getElementById('provider');
+const baseUrlRow = document.getElementById('baseUrlRow');
+function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
+providerSelect.addEventListener('change', toggleBaseUrl);
 document.getElementById('revealKey').addEventListener('change', (event) => {
   document.getElementById('apiKey').type = event.target.checked ? 'text' : 'password';
 });
 document.getElementById('saveKey').addEventListener('click', () => {
-  const payload = { command: 'saveKeyProvider', providerKey: document.getElementById('provider').value };
+  const payload = { command: 'saveKeyProvider', providerKey: providerSelect.value, baseUrl: document.getElementById('baseUrl').value.trim() };
   const key = document.getElementById('apiKey').value.trim();
   if (key) payload.apiKey = key;
   vscode.postMessage(payload);
@@ -1010,6 +1020,7 @@ document.getElementById('saveAppearance').addEventListener('click', () => {
     showAuditBanner: document.getElementById('showBanner').checked
   });
 });
+toggleBaseUrl();
 </script>
 </body>
 </html>`;
@@ -1296,6 +1307,7 @@ async function readSettingsState(context) {
     keyConfigured: Boolean(key?.trim()),
     provider: selection.provider,
     model: selection.model,
+    baseUrl: vscode2.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled()
   };
@@ -1327,9 +1339,12 @@ async function saveKeyProvider(context, message) {
     }
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
+  const baseUrl = message.baseUrl?.trim() || "";
+  await vscode2.workspace.getConfiguration("codescout").update("baseUrl", baseUrl, vscode2.ConfigurationTarget.Global);
+  if (provider === "custom" && !baseUrl) notes.push("custom \u0431\u0435\u0437 Base URL \u2014 \u0437\u0430\u043F\u043E\u043B\u043D\u0438 \u043F\u043E\u043B\u0435 \u0438\u043B\u0438 env CODESCOUT_BASE_URL");
   const storedKey = key || await context.secrets.get(SECRET_KEY);
   if (storedKey) {
-    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: selection.baseUrl }, true);
+    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: baseUrl || selection.baseUrl }, true);
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);

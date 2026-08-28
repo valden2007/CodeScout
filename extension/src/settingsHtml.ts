@@ -3,6 +3,7 @@ export interface SettingsState {
   keyConfigured: boolean;
   provider: string;
   model: string;
+  baseUrl: string;
   reportLanguage: 'ru' | 'en';
   showAuditBanner: boolean;
 }
@@ -45,6 +46,7 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 .checkbox { display: flex; align-items: center; gap: 8px; }
 .checkbox input { width: auto; }
 .hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
+.hidden { display: none; }
 .status { margin-top: 14px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? '' : 'display: none;'} }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
 </style>
@@ -60,6 +62,11 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
   <label for="apiKey">API-ключ ( SecretStorage )</label>
   <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? 'пустое поле = оставить текущий ключ' : 'вставь ключ — провайдер определится сам'}">
   <label class="checkbox"><input id="revealKey" type="checkbox"> показать введённый ключ</label>
+  <div id="baseUrlRow" class="${state.provider === 'custom' ? '' : 'hidden'}">
+    <label for="baseUrl">Base URL (OpenAI-совместимый эндпоинт)</label>
+    <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml(state.baseUrl)}">
+    <p class="hint">Нужен для custom: Ollama, LM Studio, свой прокси. Приоритет: эта настройка &gt; env CODESCOUT_BASE_URL.</p>
+  </div>
   <div class="current-key">сейчас: ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : 'ключ не настроен'}</div>
   <div class="row">
     <button id="saveKey" type="button">💾 Сохранить</button>
@@ -83,11 +90,15 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 </main>
 <script>
 const vscode = acquireVsCodeApi();
+const providerSelect = document.getElementById('provider');
+const baseUrlRow = document.getElementById('baseUrlRow');
+function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
+providerSelect.addEventListener('change', toggleBaseUrl);
 document.getElementById('revealKey').addEventListener('change', (event) => {
   document.getElementById('apiKey').type = event.target.checked ? 'text' : 'password';
 });
 document.getElementById('saveKey').addEventListener('click', () => {
-  const payload = { command: 'saveKeyProvider', providerKey: document.getElementById('provider').value };
+  const payload = { command: 'saveKeyProvider', providerKey: providerSelect.value, baseUrl: document.getElementById('baseUrl').value.trim() };
   const key = document.getElementById('apiKey').value.trim();
   if (key) payload.apiKey = key;
   vscode.postMessage(payload);
@@ -101,6 +112,7 @@ document.getElementById('saveAppearance').addEventListener('click', () => {
     showAuditBanner: document.getElementById('showBanner').checked
   });
 });
+toggleBaseUrl();
 </script>
 </body>
 </html>`;
