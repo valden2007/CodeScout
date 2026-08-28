@@ -33,7 +33,7 @@ CodeScout — AI code reviewer with THREE interfaces:
 - Providers are OpenAI-compatible; models come from live GET /models
 - Keys stored in SecretStorage (extension) / env (CLI) / Secrets (action)
 
-## Current state (v1.1.0 released)
+## Current state (v1.1.2 released)
 Done: zero-config onboarding (provider auto-detected by key prefix),
 live model picker, optional full project audit with
 .codescout/context.json, .codescout/rules.md custom rules,
@@ -41,6 +41,11 @@ clickable findings (open file at line), scan progress with live
 seconds ticker, cancel button, rate-limit retry, self-test sample,
 reports dumped to Output channel, modal audit welcome banner
 (overlay with pointer-events lock, Escape to dismiss, tab-trap).
+
+v1.1.2 security hotfix: commit_id per changed file, prompt-injection
+sanitization in buildReviewPrompt, no more security→performance
+silent downgrade, path-traversal guards (panel openFile sep-check,
+line-correction realpathSync). Tests: 53 in vitest.
 
 ## Plan for v1.2
 1. Settings Page (native webview form instead of QuickPick chain)

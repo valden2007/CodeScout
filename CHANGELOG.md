@@ -1,5 +1,17 @@
 ﻿# Changelog / История изменений
 
+## v1.1.2 — хотфикс безопасности (security fixes)
+
+### RU
+- Инлайн-комментарии в PR привязаны к коммиту, изменившему файл (issue.commitId), а не всегда к head — меньше 422-ошибок при многокоммитных PR.
+- Защита от prompt injection в buildReviewPrompt: контроль-символы и bidirectional-символы вырезаются из имени файла и патча, делимитеры блока заменены на нефальсифицируемые маркеры, патч помечен как недоверенные данные.
+- Убран heuristic-понижение security→performance в парсере ответов — уязвимости больше не переквалифицируются молча.
+- Защита от path traversal при клике по находке в панели (префикс workspace проверяется с разделителем пути).
+- line-correction проверяет реальный путь через realpathSync — симлинки нарушу репозитория больше не обходят проверку.
+
+### EN
+Security hotfix: per-file commit_id for review comments, prompt-injection sanitization in buildReviewPrompt, removed silent security→performance downgrade, path-traversal guards in panel openFile and line-correction (realpath).
+
 ## v1.1.0 — VS Code extension
 
 ### RU
