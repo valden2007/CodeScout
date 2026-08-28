@@ -53,13 +53,14 @@ function issueCard(issue: ReviewIssue, isNew = false): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = ''): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join('')}</section>`).join('');
   const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : '';
+  const customBanner = customFocus ? `<div class="diff-summary custom">🎯 Кастомное ревью: ${escapeHtml(customFocus.slice(0, 160))}</div>` : '';
   const fixedBlock = findingsDiff && findingsDiff.fixed.length
     ? `<details class="fixed-block"><summary>✅ Починено с прошлого скана (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
     : '';
@@ -141,6 +142,15 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .fixed-block summary { cursor: pointer; color: var(--vscode-testing-iconPassed); font-size: 12px; font-weight: 600; }
 .fixed-block ul { margin: 8px 0; padding-left: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .fixed-block li { margin: 4px 0; overflow-wrap: anywhere; }
+.hidden { display: none; }
+.custom-form { margin-top: 10px; padding: 10px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; }
+.custom-form label { display: block; margin: 0 0 5px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.custom-form textarea, .custom-form select, .custom-form input { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
+.custom-form textarea { resize: vertical; }
+.custom-scope { margin-top: 8px; }
+.custom-scope select { width: auto; }
+.custom-actions { margin-top: 8px; }
+.custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
 </style>
 </head>
 <body>
@@ -155,12 +165,27 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Проверить изменения до коммита</button>
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
     </div>
+    <div class="custom-form${isScanning ? ' hidden' : ''}" id="customForm">
+      <label for="customFocusText">Что проверить?</label>
+      <textarea id="customFocusText" rows="3" placeholder="например: все ли обращения к БД внутри транзакций?"></textarea>
+      <div class="custom-scope">
+        <select id="customScope">
+          <option value="all">все файлы проекта</option>
+          <option value="active">только открытый файл</option>
+          <option value="list">список файлов (глобы через запятую)</option>
+        </select>
+        <input id="customGlobs" type="text" class="hidden" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+      </div>
+      <div class="custom-actions">
+        <button type="button" id="startCustomReview">🎯 Запустить своё ревью</button>
+      </div>
+    </div>
     ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || 'Запускаю проверку…')}</div>` : ''}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">⛔ Остановить</button>' : ''}
     <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">🔴 ${stats.critical}</span><span class="pill medium">🟡 ${stats.medium}</span><span class="pill low">🟢 ${stats.low}</span></div>
   </header>
-  <main>${diffSummary}${body}${fixedBlock}</main>
+  <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
     const overlay = document.querySelector('.welcome-overlay');
@@ -246,6 +271,25 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       event.preventDefault();
       vscode.postMessage({ command: element.dataset.command });
     });
+    const customToggle = document.getElementById('toggleCustomForm');
+    const customForm = document.getElementById('customForm');
+    if (customToggle && customForm) {
+      const customScope = document.getElementById('customScope');
+      const customGlobs = document.getElementById('customGlobs');
+      const customFocusText = document.getElementById('customFocusText');
+      customToggle.addEventListener('click', () => {
+        customForm.classList.toggle('hidden');
+        customToggle.textContent = customForm.classList.contains('hidden') ? '🎯 Своё ревью' : '✖ Свернуть';
+      });
+      customScope.addEventListener('change', () => {
+        customGlobs.classList.toggle('hidden', customScope.value !== 'list');
+      });
+      document.getElementById('startCustomReview').addEventListener('click', () => {
+        const focus = customFocusText.value.trim();
+        if (!focus) { customFocusText.focus(); return; }
+        vscode.postMessage({ command: 'customReview', focus, scope: customScope.value, globs: customGlobs.value.trim() });
+      });
+    }
   </script>
 </body>
 </html>`;

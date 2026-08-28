@@ -23,6 +23,7 @@
     "onCommand:codescout.cancelScan",
     "onCommand:codescout.scanFull",
     "onCommand:codescout.resetOnboarding",
+    "onCommand:codescout.customReview",
     "onCommand:codescout.openSettings"
   ],
   "contributes": {
@@ -80,6 +81,10 @@
       {
         "command": "codescout.resetOnboarding",
         "title": "CodeScout: сброс онбординга"
+      },
+      {
+        "command": "codescout.customReview",
+        "title": "CodeScout: своё ревью с фокусом"
       },
       {
         "command": "codescout.openSettings",

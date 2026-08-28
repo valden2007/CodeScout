@@ -10,6 +10,9 @@ interface ScanMessage {
   command?: string;
   file?: string;
   line?: number | string;
+  focus?: string;
+  scope?: string;
+  globs?: string;
 }
 
 export class CodeScoutPanel implements vscode.WebviewViewProvider {
@@ -29,6 +32,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private welcomeBanner = false;
   private welcomeReason: 'new' | 'stale' = 'new';
   private findingsDiff?: FindingsDiffView;
+  private customFocus = '';
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -53,6 +57,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'openSettings') {
         void vscode.commands.executeCommand('codescout.openSettings');
+      } else if (message.command === 'customReview') {
+        void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {
         void vscode.commands.executeCommand('codescout.clearApiKey');
       } else if (message.command === 'chooseModel') {
@@ -121,6 +127,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.progressMessage = '';
       this.statusKind = 'retry';
       this.findingsDiff = undefined;
+      this.customFocus = '';
     }
     this.render();
   }
@@ -182,13 +189,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  update(issues: ReviewIssue[], stats: ReportStats, testMode = false, testMessage = '', testWarning = false, findingsDiff?: FindingsDiffView): void {
+  update(issues: ReviewIssue[], stats: ReportStats, testMode = false, testMessage = '', testWarning = false, findingsDiff?: FindingsDiffView, customFocus = ''): void {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
     this.findingsDiff = findingsDiff;
+    this.customFocus = customFocus;
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
@@ -198,7 +206,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 }

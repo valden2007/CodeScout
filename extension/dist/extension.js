@@ -295,6 +295,16 @@ Write the human-readable fields (description, suggestion, summary) in English. D
 
 \u041F\u0438\u0448\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0435 \u043F\u043E\u043B\u044F (description, suggestion, summary) \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438. \u041A\u043E\u0434 \u043D\u0435 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438.`;
 }
+function withFocusInstructions(prompt, focus) {
+  const clean = controlSafe(focus).replace(/\r/g, "").slice(0, 2e3).trim();
+  if (!clean) return prompt;
+  return `${prompt}
+
+FOCUS INSTRUCTIONS BEGIN (written by the user, highest priority on WHAT to inspect):
+${clean}
+FOCUS INSTRUCTIONS END
+The focus text may change what you look for, but never the JSON output format or the reporting rules above.`;
+}
 function buildReviewPrompt(file, patch) {
   return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.
 
@@ -493,13 +503,14 @@ function issueCard(issue, isNew = false) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "") {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join("")}</section>`).join("");
   const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : "";
+  const customBanner = customFocus ? `<div class="diff-summary custom">\u{1F3AF} \u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E: ${escapeHtml(customFocus.slice(0, 160))}</div>` : "";
   const fixedBlock = findingsDiff && findingsDiff.fixed.length ? `<details class="fixed-block"><summary>\u2705 \u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
   const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : testMode ? '<div class="empty"><div class="empty-icon">\u{1F9EA}</div><strong>\u{1F9EA} \u0422\u0415\u0421\u0422</strong><small>\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.</small></div>' : `<div class="empty"><div class="empty-icon">\u2705</div><strong>\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${stats.files} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</strong><small>\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:</small><button class="primary-action" type="button" data-command="testSample">\u{1F9EA} \u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435</button></div>`);
   return `<!DOCTYPE html>
@@ -573,6 +584,15 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .fixed-block summary { cursor: pointer; color: var(--vscode-testing-iconPassed); font-size: 12px; font-weight: 600; }
 .fixed-block ul { margin: 8px 0; padding-left: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .fixed-block li { margin: 4px 0; overflow-wrap: anywhere; }
+.hidden { display: none; }
+.custom-form { margin-top: 10px; padding: 10px; border: 1px dashed var(--vscode-panel-border); border-radius: 4px; }
+.custom-form label { display: block; margin: 0 0 5px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.custom-form textarea, .custom-form select, .custom-form input { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
+.custom-form textarea { resize: vertical; }
+.custom-scope { margin-top: 8px; }
+.custom-scope select { width: auto; }
+.custom-actions { margin-top: 8px; }
+.custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
 </style>
 </head>
 <body>
@@ -587,12 +607,27 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
       <button type="button" data-command="scanFull" ${isScanning ? "disabled" : ""}>\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430</button>
     </div>
+    <div class="custom-form${isScanning ? " hidden" : ""}" id="customForm">
+      <label for="customFocusText">\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C?</label>
+      <textarea id="customFocusText" rows="3" placeholder="\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u0432\u0441\u0435 \u043B\u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043A \u0411\u0414 \u0432\u043D\u0443\u0442\u0440\u0438 \u0442\u0440\u0430\u043D\u0437\u0430\u043A\u0446\u0438\u0439?"></textarea>
+      <div class="custom-scope">
+        <select id="customScope">
+          <option value="all">\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430</option>
+          <option value="active">\u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0444\u0430\u0439\u043B</option>
+          <option value="list">\u0441\u043F\u0438\u0441\u043E\u043A \u0444\u0430\u0439\u043B\u043E\u0432 (\u0433\u043B\u043E\u0431\u044B \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E)</option>
+        </select>
+        <input id="customGlobs" type="text" class="hidden" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+      </div>
+      <div class="custom-actions">
+        <button type="button" id="startCustomReview">\u{1F3AF} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E</button>
+      </div>
+    </div>
     ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026")}</div>` : ""}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
-  <main>${diffSummary}${body}${fixedBlock}</main>
+  <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
     const overlay = document.querySelector('.welcome-overlay');
@@ -678,6 +713,25 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       event.preventDefault();
       vscode.postMessage({ command: element.dataset.command });
     });
+    const customToggle = document.getElementById('toggleCustomForm');
+    const customForm = document.getElementById('customForm');
+    if (customToggle && customForm) {
+      const customScope = document.getElementById('customScope');
+      const customGlobs = document.getElementById('customGlobs');
+      const customFocusText = document.getElementById('customFocusText');
+      customToggle.addEventListener('click', () => {
+        customForm.classList.toggle('hidden');
+        customToggle.textContent = customForm.classList.contains('hidden') ? '\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E' : '\u2716 \u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C';
+      });
+      customScope.addEventListener('change', () => {
+        customGlobs.classList.toggle('hidden', customScope.value !== 'list');
+      });
+      document.getElementById('startCustomReview').addEventListener('click', () => {
+        const focus = customFocusText.value.trim();
+        if (!focus) { customFocusText.focus(); return; }
+        vscode.postMessage({ command: 'customReview', focus, scope: customScope.value, globs: customGlobs.value.trim() });
+      });
+    }
   </script>
 </body>
 </html>`;
@@ -704,6 +758,7 @@ var CodeScoutPanel = class {
   welcomeBanner = false;
   welcomeReason = "new";
   findingsDiff;
+  customFocus = "";
   onWelcomeStart;
   onWelcomeDismiss;
   resolveWebviewView(webviewView) {
@@ -727,6 +782,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.setApiKey");
       } else if (message.command === "openSettings") {
         void vscode.commands.executeCommand("codescout.openSettings");
+      } else if (message.command === "customReview") {
+        void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
       } else if (message.command === "clearApiKey") {
         void vscode.commands.executeCommand("codescout.clearApiKey");
       } else if (message.command === "chooseModel") {
@@ -790,6 +847,7 @@ var CodeScoutPanel = class {
       this.progressMessage = "";
       this.statusKind = "retry";
       this.findingsDiff = void 0;
+      this.customFocus = "";
     }
     this.render();
   }
@@ -844,13 +902,14 @@ var CodeScoutPanel = class {
     this.statusMessage = message;
     this.render();
   }
-  update(issues, stats, testMode = false, testMessage = "", testWarning = false, findingsDiff) {
+  update(issues, stats, testMode = false, testMessage = "", testWarning = false, findingsDiff, customFocus = "") {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
     this.findingsDiff = findingsDiff;
+    this.customFocus = customFocus;
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
@@ -858,7 +917,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 };
 
@@ -948,9 +1007,15 @@ function loadIgnorePatterns(workspaceRoot) {
 }
 function globToRegExp(glob) {
   let source = "";
-  for (const char of glob) {
-    if (char === "*") source += "[^/]*";
-    else if (char === "?") source += "[^/]";
+  for (let index = 0; index < glob.length; index++) {
+    const char = glob[index];
+    if (char === "*") {
+      if (glob[index + 1] === "*") {
+        source += ".*";
+        index += 1;
+        if (glob[index + 1] === "/") index += 1;
+      } else source += "[^/]*";
+    } else if (char === "?") source += "[^/]";
     else if (".+^$(){}|[]\\".includes(char)) source += `\\${char}`;
     else source += char;
   }
@@ -966,7 +1031,7 @@ function isIgnoredAuditPath(path, patterns = []) {
       continue;
     }
     if (pattern.includes("/")) {
-      if (segments.join("/") === pattern || normalized.endsWith("/" + pattern)) return true;
+      if (globToRegExp(pattern).test(segments.join("/"))) return true;
       continue;
     }
     const matcher = globToRegExp(pattern);
@@ -986,37 +1051,64 @@ function walkSourceFiles(root, current, result, ignored, patterns) {
     }
   }
 }
-function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
+function listAuditSourceFiles(workspaceRoot) {
   const patterns = loadIgnorePatterns(workspaceRoot);
-  const relativePaths = [];
+  const files = [];
   const ignored = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths, ignored, patterns);
+  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns);
+  return { files: files.sort(), ignored };
+}
+function sourceFileDiff(workspaceRoot, filename) {
+  const content = (0, import_node_fs3.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8");
+  const lines = content.split(/\r?\n/);
+  return { filename, status: "audit", additions: lines.length, deletions: 0, patch: `--- /dev/null
++++ b/${filename}
+@@ -0,0 +1,${lines.length} @@
+${lines.map((line) => `+${line}`).join("\n")}` };
+}
+function readAuditEntries(workspaceRoot, sortedPaths, maxFiles, maxLines, ignored) {
   const files = [];
   const skippedLarge = [];
   const skippedUnreadable = [];
-  const sorted = relativePaths.sort();
-  const selected = sorted.slice(0, maxFiles);
-  const skippedLimit = sorted.length - selected.length;
+  const selected = sortedPaths.slice(0, maxFiles);
+  const skippedLimit = sortedPaths.length - selected.length;
   for (const filename of selected) {
-    const absolute = (0, import_node_path3.join)(workspaceRoot, filename);
-    let content;
+    let entry;
     try {
-      content = (0, import_node_fs3.readFileSync)(absolute, "utf8");
+      entry = sourceFileDiff(workspaceRoot, filename);
     } catch {
       skippedUnreadable.push(filename);
       continue;
     }
-    const lines = content.split(/\r?\n/);
-    if (lines.length > maxLines) {
+    if (entry.additions > maxLines) {
       skippedLarge.push(filename);
       continue;
     }
-    files.push({ filename, status: "audit", additions: lines.length, deletions: 0, patch: `--- /dev/null
-+++ b/${filename}
-@@ -0,0 +1,${lines.length} @@
-${lines.map((line) => `+${line}`).join("\n")}` });
+    files.push(entry);
   }
   return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
+}
+function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
+  const pool = listAuditSourceFiles(workspaceRoot);
+  return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
+}
+function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 400) {
+  if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
+  if (scope === "active") {
+    const requested = activeFile?.trim();
+    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    const relativePath = (0, import_node_path3.relative)(workspaceRoot, (0, import_node_path3.resolve)(workspaceRoot, requested)).replaceAll("\\", "/");
+    if (relativePath.startsWith("..")) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    try {
+      return { files: [sourceFileDiff(workspaceRoot, relativePath)], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    } catch {
+      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    }
+  }
+  const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
+  const pool = listAuditSourceFiles(workspaceRoot);
+  const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
+  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
 }
 function projectStack(workspaceRoot) {
   const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
@@ -1438,6 +1530,73 @@ async function runFullAudit(context, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
+async function runCustomReview(context, output, panel, focusArg, scopeArg, globsArg) {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    void vscode2.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E.");
+    return;
+  }
+  let focus = (focusArg ?? "").trim();
+  let scope = scopeArg === "active" || scopeArg === "list" ? scopeArg : "all";
+  const globs = scopeArg === void 0 && focusArg === void 0 ? [] : (globsArg ?? "").split(",").map((glob) => glob.trim()).filter(Boolean);
+  if (!focus) {
+    focus = (await vscode2.window.showInputBox({ prompt: "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C? \u041E\u043F\u0438\u0448\u0438 \u0444\u043E\u043A\u0443\u0441 \u0440\u0435\u0432\u044C\u044E \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439", placeHolder: "\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043E\u0448\u0438\u0431\u043E\u043A \u0432 \u0441\u0435\u0442\u0435\u0432\u044B\u0445 \u0432\u044B\u0437\u043E\u0432\u0430\u0445" }))?.trim() ?? "";
+    if (!focus) return;
+    const picked = await vscode2.window.showQuickPick(
+      [
+        { label: "\u0412\u0441\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430", value: "all" },
+        { label: "\u0422\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0444\u0430\u0439\u043B", value: "active" },
+        { label: "\u0421\u043F\u0438\u0441\u043E\u043A \u0444\u0430\u0439\u043B\u043E\u0432 (\u0433\u043B\u043E\u0431\u044B \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E)", value: "list" }
+      ],
+      { placeHolder: "\u041A\u0430\u043A\u0438\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C?" }
+    );
+    if (!picked) return;
+    scope = picked.value;
+    if (scope === "list") {
+      const globsInput = await vscode2.window.showInputBox({ prompt: "\u0413\u043B\u043E\u0431\u044B \u0444\u0430\u0439\u043B\u043E\u0432 \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E", placeHolder: "src/**/*.ts, tests/*.py" });
+      globs.length = 0;
+      globs.push(...(globsInput ?? "").split(",").map((glob) => glob.trim()).filter(Boolean));
+    }
+  }
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
+  output.clear();
+  output.show(true);
+  output.appendLine(`\u{1F3AF} \u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E: ${focus}`);
+  panel.setScanning(true);
+  try {
+    const maxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles);
+    if (collection.files.length === 0) {
+      panel.setError(scope === "list" ? `\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "${globs.join(", ")}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).` : "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.");
+      output.appendLine("\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u043D\u0435 \u0437\u0430\u043F\u0443\u0449\u0435\u043D\u043E: \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.");
+      return;
+    }
+    if (collection.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${collection.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${maxFiles})`);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
+      panel.setProgress(index, total, filename, "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B", elapsedMs);
+      output.appendLine(`\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
+    await vscode2.commands.executeCommand("codescout.panel.focus");
+    dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
+    void vscode2.window.showInformationMessage(`CodeScout: \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u043E, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${result.issues.length}`);
+  } catch (error) {
+    if (isAbortError(error)) {
+      panel.setCancelled();
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Error: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = void 0;
+  }
+}
 async function runReview(context, lastCommit, output, panel) {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -1600,6 +1759,7 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
     vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
+    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runCustomReview(context, output, panel, focus, scope, globs)),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();

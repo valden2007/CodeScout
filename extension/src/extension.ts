@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createProvider, RetryEvent } from '../../src/llm-client';
-import { buildReviewPrompt, SYSTEM_PROMPT } from '../../src/prompt-builder';
+import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, readFindingsHistory, readProjectContext, writeFindingsHistory, writeProjectContext } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, collectFilesForScope, readFindingsHistory, readProjectContext, ReviewScope, writeFindingsHistory, writeProjectContext } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -269,6 +269,70 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
   }
 }
 
+async function runCustomReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, focusArg?: string, scopeArg?: string, globsArg?: string): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    void vscode.window.showErrorMessage('Открой папку workspace, чтобы запустить своё ревью.');
+    return;
+  }
+  let focus = (focusArg ?? '').trim();
+  let scope = scopeArg === 'active' || scopeArg === 'list' ? scopeArg : 'all';
+  const globs = scopeArg === undefined && focusArg === undefined
+    ? []
+    : (globsArg ?? '').split(',').map((glob) => glob.trim()).filter(Boolean);
+  if (!focus) {
+    focus = (await vscode.window.showInputBox({ prompt: 'Что проверить? Опиши фокус ревью одной строкой', placeHolder: 'например: проверить обработку ошибок в сетевых вызовах' }))?.trim() ?? '';
+    if (!focus) return;
+    const picked = await vscode.window.showQuickPick(
+      [
+        { label: 'Все файлы проекта', value: 'all' },
+        { label: 'Только открытый файл', value: 'active' },
+        { label: 'Список файлов (глобы через запятую)', value: 'list' }
+      ],
+      { placeHolder: 'Какие файлы проверяем?' }
+    );
+    if (!picked) return;
+    scope = picked.value;
+    if (scope === 'list') {
+      const globsInput = await vscode.window.showInputBox({ prompt: 'Глобы файлов через запятую', placeHolder: 'src/**/*.ts, tests/*.py' });
+      globs.length = 0;
+      globs.push(...(globsInput ?? '').split(',').map((glob) => glob.trim()).filter(Boolean));
+    }
+  }
+  const controller = new AbortController();
+  activeAbortController?.abort();
+  activeAbortController = controller;
+  output.clear();
+  output.show(true);
+  output.appendLine(`🎯 Кастомное ревью: ${focus}`);
+  panel.setScanning(true);
+  try {
+    const maxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
+    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles);
+    if (collection.files.length === 0) {
+      panel.setError(scope === 'list' ? `По глобам "${globs.join(', ')}" не подошло ни одного файла (проверь игнор-листы).` : 'Нет доступных файлов для ревью.');
+      output.appendLine('Своё ревью не запущено: файлов для проверки не найдено.');
+      return;
+    }
+    if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🎯 Своё ревью: файл', elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
+    await vscode.commands.executeCommand('codescout.panel.focus');
+    dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
+    void vscode.window.showInformationMessage(`CodeScout: своё ревью завершено, найдено ${result.issues.length}`);
+  } catch (error) {
+    if (isAbortError(error)) { panel.setCancelled(); return; }
+    const message = error instanceof Error ? error.message : String(error);
+    panel.setError(message);
+    output.appendLine(`Error: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  } finally {
+    if (activeAbortController === controller) activeAbortController = undefined;
+  }
+}
+
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -437,6 +501,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
     vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
+    vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runCustomReview(context, output, panel, focus, scope, globs)),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();

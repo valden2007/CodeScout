@@ -97,9 +97,15 @@ export function loadIgnorePatterns(workspaceRoot: string): string[] {
 
 function globToRegExp(glob: string): RegExp {
   let source = '';
-  for (const char of glob) {
-    if (char === '*') source += '[^/]*';
-    else if (char === '?') source += '[^/]';
+  for (let index = 0; index < glob.length; index++) {
+    const char = glob[index];
+    if (char === '*') {
+      if (glob[index + 1] === '*') {
+        source += '.*';
+        index += 1;
+        if (glob[index + 1] === '/') index += 1;
+      } else source += '[^/]*';
+    } else if (char === '?') source += '[^/]';
     else if ('.+^$(){}|[]\\'.includes(char)) source += `\\${char}`;
     else source += char;
   }
@@ -116,7 +122,7 @@ export function isIgnoredAuditPath(path: string, patterns: string[] = []): boole
       continue;
     }
     if (pattern.includes('/')) {
-      if (segments.join('/') === pattern || normalized.endsWith('/' + pattern)) return true;
+      if (globToRegExp(pattern).test(segments.join('/'))) return true;
       continue;
     }
     const matcher = globToRegExp(pattern);
@@ -138,34 +144,67 @@ function walkSourceFiles(root: string, current: string, result: string[], ignore
   }
 }
 
-export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 400): AuditCollection {
+export function listAuditSourceFiles(workspaceRoot: string): { files: string[]; ignored: string[] } {
   const patterns = loadIgnorePatterns(workspaceRoot);
-  const relativePaths: string[] = [];
+  const files: string[] = [];
   const ignored: string[] = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths, ignored, patterns);
+  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns);
+  return { files: files.sort(), ignored };
+}
+
+function sourceFileDiff(workspaceRoot: string, filename: string): LocalDiffFile {
+  const content = readFileSync(join(workspaceRoot, filename), 'utf8');
+  const lines = content.split(/\r?\n/);
+  return { filename, status: 'audit', additions: lines.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}` };
+}
+
+function readAuditEntries(workspaceRoot: string, sortedPaths: string[], maxFiles: number, maxLines: number, ignored: string[]): AuditCollection {
   const files: LocalDiffFile[] = [];
   const skippedLarge: string[] = [];
   const skippedUnreadable: string[] = [];
-  const sorted = relativePaths.sort();
-  const selected = sorted.slice(0, maxFiles);
-  const skippedLimit = sorted.length - selected.length;
+  const selected = sortedPaths.slice(0, maxFiles);
+  const skippedLimit = sortedPaths.length - selected.length;
   for (const filename of selected) {
-    const absolute = join(workspaceRoot, filename);
-    let content: string;
+    let entry: LocalDiffFile;
     try {
-      content = readFileSync(absolute, 'utf8');
+      entry = sourceFileDiff(workspaceRoot, filename);
     } catch {
       skippedUnreadable.push(filename);
       continue;
     }
-    const lines = content.split(/\r?\n/);
-    if (lines.length > maxLines) {
+    if (entry.additions > maxLines) {
       skippedLarge.push(filename);
       continue;
     }
-    files.push({ filename, status: 'audit', additions: lines.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}` });
+    files.push(entry);
   }
   return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
+}
+
+export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 400): AuditCollection {
+  const pool = listAuditSourceFiles(workspaceRoot);
+  return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
+}
+
+export type ReviewScope = 'all' | 'active' | 'list';
+
+export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 400): AuditCollection {
+  if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
+  if (scope === 'active') {
+    const requested = activeFile?.trim();
+    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    const relativePath = relative(workspaceRoot, resolve(workspaceRoot, requested)).replaceAll('\\', '/');
+    if (relativePath.startsWith('..')) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    try {
+      return { files: [sourceFileDiff(workspaceRoot, relativePath)], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    } catch {
+      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    }
+  }
+  const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
+  const pool = listAuditSourceFiles(workspaceRoot);
+  const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
+  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
 }
 
 function projectStack(workspaceRoot: string): string[] {
