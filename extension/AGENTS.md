@@ -100,4 +100,16 @@ line-correction realpathSync). Tests: 53 in vitest.
 UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,
 no decoration). FULL VISUAL REDESIGN is scheduled for v2.0 — do not
 pre-design now.
+
+## v1.3 in progress
+1. Audit checkpoints — DONE in 1.3a: full audit writes
+   .codescout/audit-progress.json {startedAt, model, checked:[{file,
+   issues}], remaining:[...]} after every finished file (resume =
+   merge checkpoint findings + review only remaining). Abort/cancel/
+   error and rate-limit-skipped runs leave the checkpoint behind and
+   the panel shows two buttons: "▶️ Продолжить (N из M)" and
+   "🆕 Начать заново" (also at activation if a progress file exists;
+   also palette commands codescout.resumeAudit / codescout.restartAudit).
+   Resume refuses when model changed (starts fresh, clears).
+   Clean completion deletes the file. Not committed (.codescout/).
 Backlog v2.x (RAG, GitLab CI, compliance mode) — DO NOT start, scope freeze.

@@ -24,7 +24,9 @@
     "onCommand:codescout.scanFull",
     "onCommand:codescout.resetOnboarding",
     "onCommand:codescout.customReview",
-    "onCommand:codescout.openSettings"
+    "onCommand:codescout.openSettings",
+    "onCommand:codescout.resumeAudit",
+    "onCommand:codescout.restartAudit"
   ],
   "contributes": {
     "viewsContainers": {
@@ -87,8 +89,16 @@
         "title": "CodeScout: своё ревью с фокусом"
       },
       {
-        "command": "codescout.openSettings",
-        "title": "CodeScout: открыть настройки"
+        "command": "codescout.customReview",
+        "title": "CodeScout: своё ревью с фокусом"
+      },
+      {
+        "command": "codescout.resumeAudit",
+        "title": "CodeScout: продолжить прерванный аудит"
+      },
+      {
+        "command": "codescout.restartAudit",
+        "title": "CodeScout: полный аудит заново (сброс чекпоинта)"
       }
     ],
     "configuration": {

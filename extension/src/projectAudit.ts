@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
@@ -280,6 +280,73 @@ export function buildFindingsDiff(previous: FindingsHistory | undefined, issues:
   const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
   const summary = `🆕 новых: ${newOnes.length} · ✅ починено: ${fixed.length} · 🔁 осталось: ${issues.length - newOnes.length}`;
   return { summary, newKeys: newOnes.map(findingKey), fixed };
+}
+
+export interface AuditResumeView {
+  done: number;
+  total: number;
+  model: string;
+  startedAt: number;
+}
+
+export interface AuditCheckpoint {
+  startedAt: number;
+  model: string;
+  checked: Array<{ file: string; issues: ReviewIssue[] }>;
+  remaining: string[];
+}
+
+export function writeAuditProgress(workspaceRoot: string, progress: AuditCheckpoint): void {
+  const directory = join(workspaceRoot, '.codescout');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, 'audit-progress.json'), `${JSON.stringify(progress, null, 2)}\n`, 'utf8');
+}
+
+export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | undefined {
+  const path = join(workspaceRoot, '.codescout', 'audit-progress.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as AuditCheckpoint;
+    if (!parsed || typeof parsed.startedAt !== 'number' || typeof parsed.model !== 'string' || !Array.isArray(parsed.checked) || !Array.isArray(parsed.remaining)) return undefined;
+    return {
+      startedAt: parsed.startedAt,
+      model: parsed.model,
+      checked: parsed.checked.filter((entry) => entry && typeof entry.file === 'string' && Array.isArray(entry.issues)),
+      remaining: parsed.remaining.filter((file): file is string => typeof file === 'string')
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearAuditProgress(workspaceRoot: string): void {
+  const path = join(workspaceRoot, '.codescout', 'audit-progress.json');
+  if (existsSync(path)) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // файл мог уже исчезнуть
+    }
+  }
+}
+
+export function pruneAuditCheckpoint(progress: AuditCheckpoint, validFiles: string[]): AuditCheckpoint {
+  const valid = new Set(validFiles);
+  const checked = progress.checked.filter((entry) => valid.has(entry.file));
+  const done = new Set(checked.map((entry) => entry.file));
+  return { ...progress, checked, remaining: progress.remaining.filter((file) => !done.has(file)) };
+}
+
+export function mergeCheckpointIssues(progress: AuditCheckpoint): ReviewIssue[] {
+  return progress.checked.flatMap((entry) => entry.issues);
+}
+
+export function progressView(progress: AuditCheckpoint | undefined): AuditResumeView | undefined {
+  if (!progress) return undefined;
+  const done = progress.checked.length;
+  const total = done + progress.remaining.length;
+  if (total === 0) return undefined;
+  return { done, total, model: progress.model, startedAt: progress.startedAt };
 }
 
 export function resolveAuditFile(workspaceRoot: string, filename: string): string {

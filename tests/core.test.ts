@@ -13,7 +13,7 @@ import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiK
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, collectFilesForScope, isIgnoredAuditPath, loadIgnorePatterns, readFindingsHistory, readProjectContext, resolveAuditFile, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, isIgnoredAuditPath, loadIgnorePatterns, mergeCheckpointIssues, pruneAuditCheckpoint, progressView, readAuditProgress, readFindingsHistory, readProjectContext, resolveAuditFile, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
 import { readFileSync } from 'node:fs';
@@ -761,7 +761,7 @@ describe('E1.2d findings diff and scan history', () => {
   it('wires history into full audit flow and keeps it out of git', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('readFindingsHistory(workspaceRoot)');
-    expect(extension).toContain("writeFindingsHistory(workspaceRoot, result.issues, 'full-audit'");
+    expect(extension).toContain("writeFindingsHistory(workspaceRoot, mergedIssues, 'full-audit'");
     expect(extension).toContain('Первый аудит — сравнение недоступно');
     expect(extension).toContain('false, findingsDiff)');
     const gitignore = readFileSync('.gitignore', 'utf8');
@@ -944,6 +944,79 @@ describe('F1 audit fix batch', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('E1.3a audit checkpoints', () => {
+  const issue: ReviewIssue[] = [{ file: 'src/a.ts', line: 3, category: 'bug', severity: 'high', description: 'boom', confidence: 0.9 }];
+
+  it('round-trips audit-progress.json and clears it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-progress-'));
+    try {
+      expect(readAuditProgress(root)).toBeUndefined();
+      writeAuditProgress(root, { startedAt: 100, model: 'gemini-2.5-flash', checked: [{ file: 'src/a.ts', issues: issue }], remaining: ['src/b.ts'] });
+      expect(Object.keys(readAuditProgress(root) ?? {}).sort()).toEqual(['checked', 'model', 'remaining', 'startedAt']);
+      expect(readAuditProgress(root)?.checked[0].issues[0].file).toBe('src/a.ts');
+      clearAuditProgress(root);
+      expect(readAuditProgress(root)).toBeUndefined();
+      writeFileSync(join(root, '.codescout', 'audit-progress.json'), 'сломан{');
+      expect(readAuditProgress(root)).toBeUndefined();
+      writeFileSync(join(root, '.codescout', 'audit-progress.json'), JSON.stringify({ startedAt: 1, model: 'm', checked: [{ file: 'good.ts', issues: [] }, { file: 'broken.ts', issues: 'не массив' }], remaining: 'не массив' }));
+      expect(readAuditProgress(root)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('drops malformed checked entries instead of the whole checkpoint', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-progress2-'));
+    try {
+      writeAuditProgress(root, { startedAt: 5, model: 'groq', checked: [{ file: 'ok.ts', issues: [] }, { file: 'bad.ts' } as unknown as { file: string; issues: ReviewIssue[] }], remaining: ['next.ts', 42 as unknown as string] });
+      const loaded = readAuditProgress(root);
+      expect(loaded?.checked.map((entry) => entry.file)).toEqual(['ok.ts']);
+      expect(loaded?.remaining).toEqual(['next.ts']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prunes stale files and overlapping remaining, merges findings', () => {
+    const checkpoint = { startedAt: 7, model: 'groq/llama', checked: [{ file: 'src/a.ts', issues: issue }, { file: 'src/gone.ts', issues: [] }], remaining: ['src/a.ts', 'src/b.ts'] };
+    const pruned = pruneAuditCheckpoint(checkpoint, ['src/a.ts', 'src/b.ts', 'src/c.ts']);
+    expect(pruned.checked.map((entry) => entry.file)).toEqual(['src/a.ts']);
+    expect(pruned.remaining).toEqual(['src/b.ts']);
+    expect(mergeCheckpointIssues(pruned)).toHaveLength(1);
+    const view = progressView(pruned);
+    expect(view).toEqual({ done: 1, total: 2, model: 'groq/llama', startedAt: 7 });
+    expect(progressView({ startedAt: 1, model: 'm', checked: [], remaining: [] })).toBeUndefined();
+  });
+
+  it('renders resume banner with two buttons and hides it by default', () => {
+    const withResume = buildReportHtml(issue, { files: 2, seconds: 1, critical: 1, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'groq/llama', false, '', false, 'new', undefined, '', { done: 21, total: 26, model: 'groq/llama', startedAt: Date.now() });
+    expect(withResume).toContain('data-command="resumeAudit">▶️ Продолжить (21 из 26)');
+    expect(withResume).toContain('data-command="restartAudit">🆕 Начать заново');
+    expect(withResume).toContain('⏸ Аудит оборвался');
+    const plain = buildReportHtml(issue, { files: 1, seconds: 1, critical: 1, medium: 0, low: 0 });
+    expect(plain).not.toContain('resumeAudit');
+    expect(buildEmptyReportHtml('', false)).not.toContain('resumeAudit');
+    expect(buildEmptyReportHtml('', false, 'gemini', 'm', false, 'new', { done: 5, total: 9, model: 'm', startedAt: 1 })).toContain('▶️ Продолжить (5 из 9)');
+  });
+
+  it('wires resume/restart through panel, extension and manifest', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("registerCommand('codescout.resumeAudit', () => runFullAudit(context, output, panel, true))");
+    expect(extension).toContain("registerCommand('codescout.restartAudit'");
+    expect(extension).toContain('panel.setAuditResume(savedProgress)');
+    expect(extension).toContain('onFileChecked?.(file.filename, fileIssues)');
+    expect(extension).toContain('state.checked.push({ file: filename, issues: fileIssues })');
+    expect(extension).toContain('const mergedIssues = mergeCheckpointIssues(state)');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'resumeAudit'");
+    expect(panel).toContain("message.command === 'restartAudit'");
+    expect(panel).toContain('this.auditResume = undefined');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.resumeAudit');
+    expect(manifest).toContain('codescout.restartAudit');
   });
 });
 

@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, collectFilesForScope, readFindingsHistory, readProjectContext, ReviewScope, writeFindingsHistory, writeProjectContext } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -136,7 +136,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -163,6 +163,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
           fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
         }
         issues.push(...fileIssues);
+        onFileChecked?.(file.filename, fileIssues);
         completed = true;
       } catch (error) {
         lastError = error;
@@ -220,7 +221,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   }
 }
 
-async function runFullAudit(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+async function runFullAudit(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, resume = false): Promise<void> {
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -233,11 +234,15 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     if (activeAbortController === controller) activeAbortController = undefined;
     return;
   }
-  output.appendLine('CodeScout: starting full project audit...');
+  output.appendLine(resume ? 'CodeScout: resuming full project audit...' : 'CodeScout: starting full project audit...');
+  let progress: AuditCheckpoint | undefined;
+  let planFiles: string[] = [];
   try {
     const auditMaxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
+    const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
+    planFiles = audit.files.map((file) => file.filename);
     output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
     output.appendLine(`Игнорируется: ${audit.ignored.length} файлов (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
@@ -248,19 +253,56 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     else output.appendLine('ℹ️ Правил нет — дефолт');
     const docLinksCount = (vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []).filter((link) => link.trim()).length;
     if (docLinksCount > 0) output.appendLine(`🔗 Документация проекта: ${docLinksCount} ссылок добавлено в промт (без fetch)`);
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
-    const auditSelection = await resolveExtensionSelection(context);
+    let initial: AuditCheckpoint = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
+    if (resume) {
+      const saved = readAuditProgress(workspaceRoot);
+      if (!saved) output.appendLine('ℹ️ Прогресса не найдено — запускаю с нуля');
+      else if (saved.model !== auditSelection.model) {
+        output.appendLine(`ℹ️ Модель сменилась (${saved.model} → ${auditSelection.model}) — чекпоинт не подходит, начинаю заново`);
+        clearAuditProgress(workspaceRoot);
+      } else {
+        initial = pruneAuditCheckpoint(saved, planFiles);
+        output.appendLine(`▶️ Продолжаю аудит: проверено ${initial.checked.length} файлов, осталось ${planFiles.length - initial.checked.length}`);
+      }
+    } else {
+      clearAuditProgress(workspaceRoot);
+    }
+    progress = initial;
+    const state = initial;
+    const doneNames = new Set(state.checked.map((entry) => entry.file));
+    const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
+    const persist = (): void => {
+      state.remaining = planFiles.filter((file) => !doneNames.has(file));
+      writeAuditProgress(workspaceRoot, state);
+    };
+    persist();
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
+      doneNames.add(filename);
+      state.checked.push({ file: filename, issues: fileIssues });
+      persist();
+    });
+    const mergedIssues = mergeCheckpointIssues(state);
+    const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, auditMeta);
-    writeFindingsHistory(workspaceRoot, result.issues, 'full-audit', auditMeta);
-    const findingsDiff = buildFindingsDiff(previousHistory, result.issues);
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
+    writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
+    writeFindingsHistory(workspaceRoot, mergedIssues, 'full-audit', auditMeta);
+    if (result.skippedFiles > 0) {
+      persist();
+      output.appendLine(`ℹ️ Скипнуто ${result.skippedFiles} файлов (rate-limit/ошибки) — чекпоинт сохранён, можно догнать кнопкой «▶️ Продолжить»`);
+    } else {
+      clearAuditProgress(workspaceRoot);
+    }
+    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues);
+    panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
+    if (result.skippedFiles > 0) panel.setAuditResume(progressView(state));
     await vscode.commands.executeCommand('codescout.panel.focus');
-    output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${mergedIssues.length} findings)`);
     output.appendLine(findingsDiff ? `Динамика относительно прошлого аудита: ${findingsDiff.summary}` : 'ℹ️ Первый аудит — сравнение недоступно, история заведена');
-    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
-    dumpFindings(output, result.issues, `Итог аудита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
+    output.appendLine(`Аудит завершён: проверено ${filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
+    dumpFindings(output, mergedIssues, `Итог аудита: ${mergedIssues.length} находок, проверено файлов: ${filesAnalyzed}`);
   } catch (error) {
+    const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : undefined;
+    if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
@@ -531,6 +573,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
     vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
+    vscode.commands.registerCommand('codescout.resumeAudit', () => runFullAudit(context, output, panel, true)),
+    vscode.commands.registerCommand('codescout.restartAudit', () => {
+      const root = getWorkspaceRoot();
+      if (root) clearAuditProgress(root);
+      return runFullAudit(context, output, panel);
+    }),
     vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runCustomReview(context, output, panel, focus, scope, globs)),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
@@ -597,6 +645,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) === 'true';
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    const savedProgress = progressView(readAuditProgress(workspaceRoot));
+    if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');
     else if (stale) panel.setWelcomeBanner(true, 'stale');

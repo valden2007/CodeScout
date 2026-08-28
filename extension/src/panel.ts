@@ -4,7 +4,7 @@ import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
 import { resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
-import type { FindingsDiffView } from './projectAudit';
+import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
   command?: string;
@@ -41,6 +41,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private welcomeReason: 'new' | 'stale' = 'new';
   private findingsDiff?: FindingsDiffView;
   private customFocus = '';
+  private auditResume?: AuditResumeView;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -64,6 +65,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         this.onWelcomeDismiss?.();
         this.welcomeBanner = false;
         this.render();
+      } else if (message.command === 'resumeAudit') {
+        void vscode.commands.executeCommand('codescout.resumeAudit');
+      } else if (message.command === 'restartAudit') {
+        void vscode.commands.executeCommand('codescout.restartAudit');
       } else if (message.command === 'setApiKey') {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'openSettings') {
@@ -123,6 +128,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  setAuditResume(resume: AuditResumeView | undefined): void {
+    this.auditResume = resume;
+    this.render();
+  }
+
   setKey(key: string | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
     this.keyConfigured = Boolean(key?.trim());
     this.keyMask = key ? maskApiKey(key) : '';
@@ -139,6 +149,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.statusKind = 'retry';
       this.findingsDiff = undefined;
       this.customFocus = '';
+      this.auditResume = undefined;
     }
     this.render();
   }
@@ -208,6 +219,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.testMode = testMode;
     this.findingsDiff = findingsDiff;
     this.customFocus = customFocus;
+    this.auditResume = undefined;
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
@@ -217,7 +229,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
   }
 }

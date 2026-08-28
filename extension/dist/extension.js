@@ -511,7 +511,7 @@ function issueCard(issue, isNew = false) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = /* @__PURE__ */ new Map();
@@ -601,6 +601,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .custom-scope select { width: auto; }
 .custom-actions { margin-top: 8px; }
 .custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
+.audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--vscode-editorWarning-foreground); border-radius: 4px; background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -610,6 +611,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettings">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
+    ${auditResume ? `<div class="audit-resume"><strong>\u23F8 \u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${auditResume.done} \u0438\u0437 ${auditResume.total} \u0444\u0430\u0439\u043B\u043E\u0432 (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C (${auditResume.done} \u0438\u0437 ${auditResume.total})</button><button type="button" data-command="restartAudit">\u{1F195} \u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E</button></div></div>` : ""}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
@@ -751,8 +753,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new") {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume);
 }
 
 // src/panel.ts
@@ -780,6 +782,7 @@ var CodeScoutPanel = class {
   welcomeReason = "new";
   findingsDiff;
   customFocus = "";
+  auditResume;
   onWelcomeStart;
   onWelcomeDismiss;
   resolveWebviewView(webviewView) {
@@ -802,6 +805,10 @@ var CodeScoutPanel = class {
         this.onWelcomeDismiss?.();
         this.welcomeBanner = false;
         this.render();
+      } else if (message.command === "resumeAudit") {
+        void vscode.commands.executeCommand("codescout.resumeAudit");
+      } else if (message.command === "restartAudit") {
+        void vscode.commands.executeCommand("codescout.restartAudit");
       } else if (message.command === "setApiKey") {
         void vscode.commands.executeCommand("codescout.setApiKey");
       } else if (message.command === "openSettings") {
@@ -857,6 +864,10 @@ var CodeScoutPanel = class {
     this.welcomeReason = reason;
     this.render();
   }
+  setAuditResume(resume) {
+    this.auditResume = resume;
+    this.render();
+  }
   setKey(key, provider = "gemini", model = "gemini-2.5-flash") {
     this.keyConfigured = Boolean(key?.trim());
     this.keyMask = key ? maskApiKey(key) : "";
@@ -872,6 +883,7 @@ var CodeScoutPanel = class {
       this.statusKind = "retry";
       this.findingsDiff = void 0;
       this.customFocus = "";
+      this.auditResume = void 0;
     }
     this.render();
   }
@@ -934,6 +946,7 @@ var CodeScoutPanel = class {
     this.testMode = testMode;
     this.findingsDiff = findingsDiff;
     this.customFocus = customFocus;
+    this.auditResume = void 0;
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
@@ -941,7 +954,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
   }
 };
 
@@ -1202,6 +1215,53 @@ function buildFindingsDiff(previous, issues) {
   const summary = `\u{1F195} \u043D\u043E\u0432\u044B\u0445: ${newOnes.length} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: ${fixed.length} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: ${issues.length - newOnes.length}`;
   return { summary, newKeys: newOnes.map(findingKey), fixed };
 }
+function writeAuditProgress(workspaceRoot, progress) {
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "audit-progress.json"), `${JSON.stringify(progress, null, 2)}
+`, "utf8");
+}
+function readAuditProgress(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "audit-progress.json");
+  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  try {
+    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+    if (!parsed || typeof parsed.startedAt !== "number" || typeof parsed.model !== "string" || !Array.isArray(parsed.checked) || !Array.isArray(parsed.remaining)) return void 0;
+    return {
+      startedAt: parsed.startedAt,
+      model: parsed.model,
+      checked: parsed.checked.filter((entry) => entry && typeof entry.file === "string" && Array.isArray(entry.issues)),
+      remaining: parsed.remaining.filter((file) => typeof file === "string")
+    };
+  } catch {
+    return void 0;
+  }
+}
+function clearAuditProgress(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "audit-progress.json");
+  if ((0, import_node_fs3.existsSync)(path)) {
+    try {
+      (0, import_node_fs3.unlinkSync)(path);
+    } catch {
+    }
+  }
+}
+function pruneAuditCheckpoint(progress, validFiles) {
+  const valid = new Set(validFiles);
+  const checked = progress.checked.filter((entry) => valid.has(entry.file));
+  const done = new Set(checked.map((entry) => entry.file));
+  return { ...progress, checked, remaining: progress.remaining.filter((file) => !done.has(file)) };
+}
+function mergeCheckpointIssues(progress) {
+  return progress.checked.flatMap((entry) => entry.issues);
+}
+function progressView(progress) {
+  if (!progress) return void 0;
+  const done = progress.checked.length;
+  const total = done + progress.remaining.length;
+  if (total === 0) return void 0;
+  return { done, total, model: progress.model, startedAt: progress.startedAt };
+}
 
 // src/settingsHtml.ts
 var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
@@ -1450,7 +1510,7 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -1476,6 +1536,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
           fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
         }
         issues.push(...fileIssues);
+        onFileChecked?.(file.filename, fileIssues);
         completed = true;
       } catch (error) {
         lastError = error;
@@ -1531,7 +1592,7 @@ async function runSampleReview(context, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
-async function runFullAudit(context, output, panel) {
+async function runFullAudit(context, output, panel, resume = false) {
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -1544,11 +1605,15 @@ async function runFullAudit(context, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
     return;
   }
-  output.appendLine("CodeScout: starting full project audit...");
+  output.appendLine(resume ? "CodeScout: resuming full project audit..." : "CodeScout: starting full project audit...");
+  let progress;
+  let planFiles = [];
   try {
     const auditMaxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
+    const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
+    planFiles = audit.files.map((file) => file.filename);
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     output.appendLine(`\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F: ${audit.ignored.length} \u0444\u0430\u0439\u043B\u043E\u0432 (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
@@ -1559,22 +1624,59 @@ async function runFullAudit(context, output, panel) {
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
     const docLinksCount = (vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? []).filter((link) => link.trim()).length;
     if (docLinksCount > 0) output.appendLine(`\u{1F517} \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: ${docLinksCount} \u0441\u0441\u044B\u043B\u043E\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u043F\u0440\u043E\u043C\u0442 (\u0431\u0435\u0437 fetch)`);
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
+    let initial = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
+    if (resume) {
+      const saved = readAuditProgress(workspaceRoot);
+      if (!saved) output.appendLine("\u2139\uFE0F \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u2014 \u0437\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441 \u043D\u0443\u043B\u044F");
+      else if (saved.model !== auditSelection.model) {
+        output.appendLine(`\u2139\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C (${saved.model} \u2192 ${auditSelection.model}) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u043D\u0435 \u043F\u043E\u0434\u0445\u043E\u0434\u0438\u0442, \u043D\u0430\u0447\u0438\u043D\u0430\u044E \u0437\u0430\u043D\u043E\u0432\u043E`);
+        clearAuditProgress(workspaceRoot);
+      } else {
+        initial = pruneAuditCheckpoint(saved, planFiles);
+        output.appendLine(`\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E \u0430\u0443\u0434\u0438\u0442: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${initial.checked.length} \u0444\u0430\u0439\u043B\u043E\u0432, \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${planFiles.length - initial.checked.length}`);
+      }
+    } else {
+      clearAuditProgress(workspaceRoot);
+    }
+    progress = initial;
+    const state = initial;
+    const doneNames = new Set(state.checked.map((entry) => entry.file));
+    const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
+    const persist = () => {
+      state.remaining = planFiles.filter((file) => !doneNames.has(file));
+      writeAuditProgress(workspaceRoot, state);
+    };
+    persist();
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
-    const auditSelection = await resolveExtensionSelection(context);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), (filename, fileIssues) => {
+      doneNames.add(filename);
+      state.checked.push({ file: filename, issues: fileIssues });
+      persist();
+    });
+    const mergedIssues = mergeCheckpointIssues(state);
+    const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, auditMeta);
-    writeFindingsHistory(workspaceRoot, result.issues, "full-audit", auditMeta);
-    const findingsDiff = buildFindingsDiff(previousHistory, result.issues);
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
+    writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
+    writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
+    if (result.skippedFiles > 0) {
+      persist();
+      output.appendLine(`\u2139\uFE0F \u0421\u043A\u0438\u043F\u043D\u0443\u0442\u043E ${result.skippedFiles} \u0444\u0430\u0439\u043B\u043E\u0432 (rate-limit/\u043E\u0448\u0438\u0431\u043A\u0438) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D, \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u0433\u043D\u0430\u0442\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB`);
+    } else {
+      clearAuditProgress(workspaceRoot);
+    }
+    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues);
+    panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
+    if (result.skippedFiles > 0) panel.setAuditResume(progressView(state));
     await vscode2.commands.executeCommand("codescout.panel.focus");
-    output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)`);
     output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
-    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
-    dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
+    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
+    dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
   } catch (error) {
+    const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : void 0;
+    if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) {
       panel.setCancelled();
       return;
@@ -1841,6 +1943,12 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
     vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
+    vscode2.commands.registerCommand("codescout.resumeAudit", () => runFullAudit(context, output, panel, true)),
+    vscode2.commands.registerCommand("codescout.restartAudit", () => {
+      const root = getWorkspaceRoot();
+      if (root) clearAuditProgress(root);
+      return runFullAudit(context, output, panel);
+    }),
     vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runCustomReview(context, output, panel, focus, scope, globs)),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
@@ -1907,6 +2015,8 @@ function activate(context) {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) === "true";
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    const savedProgress = progressView(readAuditProgress(workspaceRoot));
+    if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
     else if (stale) panel.setWelcomeBanner(true, "stale");
