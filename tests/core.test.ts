@@ -13,7 +13,7 @@ import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiK
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
-import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeProjectContext } from '../extension/src/projectAudit';
+import { buildProjectSystemPrompt, collectAuditFiles, isIgnoredAuditPath, loadIgnorePatterns, readProjectContext, writeProjectContext } from '../extension/src/projectAudit';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -106,6 +106,8 @@ describe('E9.8 rules and W1.0 project context', () => {
     writeFileSync(join(root, 'dist', 'generated.ts'), 'export const generated = true;\n');
     const audit = collectAuditFiles(root);
     expect(audit.files.length).toBeLessThanOrEqual(100);
+    expect(audit.skippedLimit).toBe(5);
+    expect(audit.ignored).toEqual([]);
     expect(audit.files.every((file) => !file.filename.startsWith('dist/'))).toBe(true);
     const html = buildEmptyReportHtml();
     expect(html).toContain('🔬 Полный аудит проекта');
@@ -630,6 +632,54 @@ describe('E1.2b incremental panel render', () => {
     expect(welcome).not.toContain('codescoutWelcomeBound');
     expect((welcome.match(/addEventListener\('keydown'/g) ?? []).length).toBe(2);
     expect((welcome.match(/postMessage\(\{ command: 'dismissWelcome' \}\)/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('E1.2c audit ignore lists', () => {
+  it('parses .gitignore and .codescout/ignore with simple globs and no negations', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-ignore-'));
+    try {
+      mkdirSync(join(root, 'vendor'));
+      mkdirSync(join(root, 'js'));
+      mkdirSync(join(root, 'assets'));
+      mkdirSync(join(root, '.codescout'), { recursive: true });
+      writeFileSync(join(root, '.gitignore'), '# deps\nvendor/\n!not-excluded.ts\n');
+      writeFileSync(join(root, '.codescout', 'ignore'), 'js/data.js\n*.min.js\n');
+      writeFileSync(join(root, 'a.ts'), 'export const a = 1;\n');
+      writeFileSync(join(root, 'not-excluded.ts'), 'export const n = 1;\n');
+      writeFileSync(join(root, 'vendor', 'lib.ts'), 'export const v = 1;\n');
+      writeFileSync(join(root, 'js', 'data.js'), 'const data = 1;\n');
+      writeFileSync(join(root, 'assets', 'bundle.min.js'), 'void 0;\n');
+      expect(loadIgnorePatterns(root)).toEqual(['vendor/', 'js/data.js', '*.min.js']);
+      const audit = collectAuditFiles(root);
+      expect(audit.files.map((file) => file.filename)).toEqual(['a.ts', 'not-excluded.ts']);
+      expect([...audit.ignored].sort()).toEqual(['assets/bundle.min.js', 'js/data.js', 'vendor/lib.ts']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('matches dir, path and glob patterns plus built-in and hidden rules', () => {
+    expect(isIgnoredAuditPath('vendor/lib.ts', ['vendor/'])).toBe(true);
+    expect(isIgnoredAuditPath('src/vendor/lib.ts', ['vendor/'])).toBe(true);
+    expect(isIgnoredAuditPath('js/data.js', ['js/data.js'])).toBe(true);
+    expect(isIgnoredAuditPath('assets/a.min.js', ['*.min.js'])).toBe(true);
+    expect(isIgnoredAuditPath('src/app.ts', ['*.min.js', 'app?.ts'])).toBe(false);
+    expect(isIgnoredAuditPath('src/app.tsx', ['app.tsx'])).toBe(true);
+    expect(isIgnoredAuditPath('node_modules/pkg/index.js')).toBe(true);
+    expect(isIgnoredAuditPath('.cache/blob.ts')).toBe(true);
+    expect(isIgnoredAuditPath('src/plain.ts')).toBe(false);
+  });
+
+  it('reports ignore stats and maxFiles limit to Output', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("get<number>('maxFiles', 100)");
+    expect(extension).toContain('Игнорируется: ${audit.ignored.length} файлов');
+    expect(extension).toContain('файлов по лимиту (codescout.maxFiles=${auditMaxFiles})');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.maxFiles');
+    const auditSource = readFileSync('extension/src/projectAudit.ts', 'utf8');
+    expect(auditSource).not.toContain('function isIgnoredAuditPath(path: string): boolean');
   });
 });
 

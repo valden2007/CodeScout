@@ -9,7 +9,7 @@ CodeScout — AI code reviewer with THREE interfaces:
 ## Stack
 - TypeScript, Node 20+, no runtime deps in core (fetch only)
 - esbuild for extension bundle (extension/esbuild.js)
-- Tests: vitest in tests/core.test.ts (50 tests), run: npm test
+- Tests: vitest in tests/core.test.ts, run: npm test
 
 ## Structure
 - src/ — shared core: llm-client, providers, diff, parser, line-correction
@@ -65,7 +65,16 @@ line-correction realpathSync). Tests: 53 in vitest.
    new report, error/cancel, key/model, welcome banner). The
    dataset.codescoutWelcomeBound hack is gone — one Escape + one
    tab-trap keydown listener per document, clicks fully delegated.
-3. Ignore-lists for full audit (.gitignore-aware, custom globs)
+3. Ignore-lists for full audit — DONE in 1.2c: audit skips files
+   matched by root .gitignore + .codescout/ignore (simple parser:
+   line-per-pattern, comments, dir patterns "vendor/", slash-less
+   globs "*.min.js" match any segment, root-relative "js/data.js";
+   negations "!" are skipped by design, zero new deps).
+   isIgnoredAuditPath is now live (built-in dirs + hidden + patterns)
+   and used by the walk; silent alphabetical cut replaced by
+   codescout.maxFiles setting (default 100) with Output line
+   "⚠️ Пропущено N файлов по лимиту" and start summary
+   "Игнорируется: X файлов".
 4. Diff of findings between audits (new/fixed since last run)
 UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,
 no decoration). FULL VISUAL REDESIGN is scheduled for v2.0 — do not

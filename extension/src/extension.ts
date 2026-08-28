@@ -235,8 +235,11 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
   }
   output.appendLine('CodeScout: starting full project audit...');
   try {
-    const audit = collectAuditFiles(workspaceRoot);
+    const auditMaxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
     output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
+    output.appendLine(`Игнорируется: ${audit.ignored.length} файлов (.gitignore + .codescout/ignore)`);
+    if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
@@ -248,7 +251,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
-    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles}`);
+    output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, result.issues, `Итог аудита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }

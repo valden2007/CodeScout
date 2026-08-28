@@ -117,6 +117,12 @@
           "default": "",
           "description": "Optional OpenAI-compatible base URL. Set this for Ollama, LM Studio, or another proxy."
         },
+        "codescout.maxFiles": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "description": "Лимит файлов на один полный аудит. Всё, что не влезло, выводится в Output отдельной строкой."
+        },
         "codescout.reportLanguage": {
           "type": "string",
           "enum": [

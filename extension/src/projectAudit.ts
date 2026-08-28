@@ -10,6 +10,8 @@ export interface AuditCollection {
   files: LocalDiffFile[];
   skippedLarge: string[];
   skippedUnreadable: string[];
+  ignored: string[];
+  skippedLimit: number;
 }
 
 export interface AuditMeta {
@@ -54,22 +56,78 @@ export function buildProjectSystemPrompt(basePrompt: string, workspaceRoot: stri
   return { prompt, rulesLoaded: Boolean(rules), contextLoaded: Boolean(context) };
 }
 
-function walkSourceFiles(root: string, current: string, result: string[]): void {
+export function loadIgnorePatterns(workspaceRoot: string): string[] {
+  const patterns: string[] = [];
+  for (const source of [join(workspaceRoot, '.gitignore'), join(workspaceRoot, '.codescout', 'ignore')]) {
+    if (!existsSync(source)) continue;
+    try {
+      for (const rawLine of readFileSync(source, 'utf8').split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#') || line.startsWith('!')) continue;
+        patterns.push(line);
+      }
+    } catch {
+      // нечитаемый ignore-файл просто пропускаем
+    }
+  }
+  return patterns;
+}
+
+function globToRegExp(glob: string): RegExp {
+  let source = '';
+  for (const char of glob) {
+    if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else if ('.+^$(){}|[]\\'.includes(char)) source += `\\${char}`;
+    else source += char;
+  }
+  return new RegExp(`^${source}$`);
+}
+
+export function isIgnoredAuditPath(path: string, patterns: string[] = []): boolean {
+  if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part) || part.startsWith('.'))) return true;
+  const normalized = path.replaceAll('\\', '/');
+  const segments = normalized.split('/').filter((segment) => segment.length > 0);
+  for (const pattern of patterns) {
+    if (pattern.endsWith('/')) {
+      if (segments.includes(pattern.slice(0, -1))) return true;
+      continue;
+    }
+    if (pattern.includes('/')) {
+      if (segments.join('/') === pattern || normalized.endsWith('/' + pattern)) return true;
+      continue;
+    }
+    const matcher = globToRegExp(pattern);
+    if (segments.some((segment) => segment === pattern || matcher.test(segment))) return true;
+  }
+  return false;
+}
+
+function walkSourceFiles(root: string, current: string, result: string[], ignored: string[], patterns: string[]): void {
   for (const entry of readdirSync(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
     const path = join(current, entry.name);
-    if (entry.isDirectory()) walkSourceFiles(root, path, result);
-    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase())) result.push(relative(root, path).replaceAll('\\', '/'));
+    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
+    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase())) {
+      const relativePath = relative(root, path).replaceAll('\\', '/');
+      if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
+      else result.push(relativePath);
+    }
   }
 }
 
 export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 400): AuditCollection {
+  const patterns = loadIgnorePatterns(workspaceRoot);
   const relativePaths: string[] = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths);
+  const ignored: string[] = [];
+  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths, ignored, patterns);
   const files: LocalDiffFile[] = [];
   const skippedLarge: string[] = [];
   const skippedUnreadable: string[] = [];
-  for (const filename of relativePaths.sort().slice(0, maxFiles)) {
+  const sorted = relativePaths.sort();
+  const selected = sorted.slice(0, maxFiles);
+  const skippedLimit = sorted.length - selected.length;
+  for (const filename of selected) {
     const absolute = join(workspaceRoot, filename);
     let content: string;
     try {
@@ -85,7 +143,7 @@ export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLine
     }
     files.push({ filename, status: 'audit', additions: lines.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}` });
   }
-  return { files, skippedLarge, skippedUnreadable };
+  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
 }
 
 function projectStack(workspaceRoot: string): string[] {
@@ -127,10 +185,6 @@ export function fileLineCount(workspaceRoot: string, filename: string): number {
 
 export function isAuditSource(path: string): boolean {
   return SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase());
-}
-
-export function isIgnoredAuditPath(path: string): boolean {
-  return path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part));
 }
 
 export function auditFileExists(workspaceRoot: string, filename: string): boolean {

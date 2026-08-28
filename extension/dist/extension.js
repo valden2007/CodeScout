@@ -919,21 +919,73 @@ ${rules}`;
   }
   return { prompt, rulesLoaded: Boolean(rules), contextLoaded: Boolean(context) };
 }
-function walkSourceFiles(root, current, result) {
+function loadIgnorePatterns(workspaceRoot) {
+  const patterns = [];
+  for (const source of [(0, import_node_path3.join)(workspaceRoot, ".gitignore"), (0, import_node_path3.join)(workspaceRoot, ".codescout", "ignore")]) {
+    if (!(0, import_node_fs3.existsSync)(source)) continue;
+    try {
+      for (const rawLine of (0, import_node_fs3.readFileSync)(source, "utf8").split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("#") || line.startsWith("!")) continue;
+        patterns.push(line);
+      }
+    } catch {
+    }
+  }
+  return patterns;
+}
+function globToRegExp(glob) {
+  let source = "";
+  for (const char of glob) {
+    if (char === "*") source += "[^/]*";
+    else if (char === "?") source += "[^/]";
+    else if (".+^$(){}|[]\\".includes(char)) source += `\\${char}`;
+    else source += char;
+  }
+  return new RegExp(`^${source}$`);
+}
+function isIgnoredAuditPath(path, patterns = []) {
+  if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part) || part.startsWith("."))) return true;
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  for (const pattern of patterns) {
+    if (pattern.endsWith("/")) {
+      if (segments.includes(pattern.slice(0, -1))) return true;
+      continue;
+    }
+    if (pattern.includes("/")) {
+      if (segments.join("/") === pattern || normalized.endsWith("/" + pattern)) return true;
+      continue;
+    }
+    const matcher = globToRegExp(pattern);
+    if (segments.some((segment) => segment === pattern || matcher.test(segment))) return true;
+  }
+  return false;
+}
+function walkSourceFiles(root, current, result, ignored, patterns) {
   for (const entry of (0, import_node_fs3.readdirSync)(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
     const path = (0, import_node_path3.join)(current, entry.name);
-    if (entry.isDirectory()) walkSourceFiles(root, path, result);
-    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) result.push((0, import_node_path3.relative)(root, path).replaceAll("\\", "/"));
+    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
+    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) {
+      const relativePath = (0, import_node_path3.relative)(root, path).replaceAll("\\", "/");
+      if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
+      else result.push(relativePath);
+    }
   }
 }
 function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
+  const patterns = loadIgnorePatterns(workspaceRoot);
   const relativePaths = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths);
+  const ignored = [];
+  walkSourceFiles(workspaceRoot, workspaceRoot, relativePaths, ignored, patterns);
   const files = [];
   const skippedLarge = [];
   const skippedUnreadable = [];
-  for (const filename of relativePaths.sort().slice(0, maxFiles)) {
+  const sorted = relativePaths.sort();
+  const selected = sorted.slice(0, maxFiles);
+  const skippedLimit = sorted.length - selected.length;
+  for (const filename of selected) {
     const absolute = (0, import_node_path3.join)(workspaceRoot, filename);
     let content;
     try {
@@ -952,7 +1004,7 @@ function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
 @@ -0,0 +1,${lines.length} @@
 ${lines.map((line) => `+${line}`).join("\n")}` });
   }
-  return { files, skippedLarge, skippedUnreadable };
+  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
 }
 function projectStack(workspaceRoot) {
   const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
@@ -1300,8 +1352,11 @@ async function runFullAudit(context, output, panel) {
   }
   output.appendLine("CodeScout: starting full project audit...");
   try {
-    const audit = collectAuditFiles(workspaceRoot);
+    const auditMaxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
+    output.appendLine(`\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F: ${audit.ignored.length} \u0444\u0430\u0439\u043B\u043E\u0432 (.gitignore + .codescout/ignore)`);
+    if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0439 \u0444\u0430\u0439\u043B: ${filename}`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
@@ -1316,7 +1371,7 @@ async function runFullAudit(context, output, panel) {
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
-    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles}`);
+    output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
   } catch (error) {
     if (isAbortError(error)) {
