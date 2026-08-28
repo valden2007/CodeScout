@@ -82,6 +82,21 @@ line-correction realpathSync). Tests: 53 in vitest.
    🆕 badge on new findings, collapsed <details> "Починено с прошлого
    скана" list. First scan: no diff strip, no errors. history.json is
    git-ignored (.codescout/ in .gitignore) and lives per-workspace.
+5. Custom review — DONE in 1.2e: "🎯 Своё ревью" button in the panel
+   opens an inline webview form (textarea + scope select all/active/
+   list of glob patterns, comma separated). Focus text goes into the
+   prompt as FOCUS INSTRUCTIONS fences (control chars stripped, user
+   instruction label, JSON format locked). Report header shows
+   "🎯 Кастомное ревью: <текст>". NOT written to history.json —
+   only full audits are. Reuses collectFilesForScope + glob matcher;
+   glob engine learned "**".
+6. Settings "Проект" section (1.2e): "📜 Открыть rules.md" creates
+   .codescout/rules.md from a template if missing and opens it;
+   doc links textarea (one per line) saves to codescout.docLinks
+   (array setting, Global scope) and full audit appends
+   "Документация проекта: <links>" to the prompt — no fetch, RAG is
+   v1.3. All save buttons in settings are dirty-gated with
+   ✅/❌ status feedback.
 UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,
 no decoration). FULL VISUAL REDESIGN is scheduled for v2.0 — do not
 pre-design now.

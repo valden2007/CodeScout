@@ -66,11 +66,13 @@ export function readProjectContext(workspaceRoot: string): ProjectContext | unde
   }
 }
 
-export function buildProjectSystemPrompt(basePrompt: string, workspaceRoot: string): { prompt: string; rulesLoaded: boolean; contextLoaded: boolean } {
+export function buildProjectSystemPrompt(basePrompt: string, workspaceRoot: string, docLinks: string[] = []): { prompt: string; rulesLoaded: boolean; contextLoaded: boolean } {
   const rules = loadProjectRules(workspaceRoot);
   const context = readProjectContext(workspaceRoot);
   let prompt = basePrompt;
   if (rules) prompt += `\n\n## PROJECT SPECIFIC RULES\n${rules}`;
+  const links = docLinks.map((link) => link.trim()).filter(Boolean);
+  if (links.length) prompt += `\n\nДокументация проекта: ${links.join(', ')}`;
   if (context && context.topFindings.length > 0) {
     const zones = context.topFindings.map((finding) => `${finding.file} (${finding.severity}/${finding.category})`).join(', ');
     prompt += `\n\nИзвестные проблемные зоны проекта: ${zones}`;

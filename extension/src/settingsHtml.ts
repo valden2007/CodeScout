@@ -6,6 +6,7 @@ export interface SettingsState {
   baseUrl: string;
   reportLanguage: 'ru' | 'en';
   showAuditBanner: boolean;
+  docLinks: string[];
 }
 
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
@@ -38,6 +39,7 @@ section { margin-top: 16px; padding: 12px; border: 1px solid var(--vscode-panel-
 h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--vscode-textLink-foreground); }
 label { display: block; margin: 10px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
+textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; resize: vertical; }
 button { padding: 6px 12px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; }
 button:hover { background: var(--vscode-button-hoverBackground); }
 button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
@@ -90,6 +92,16 @@ button:disabled:hover { background: var(--vscode-button-background); }
     <button id="saveAppearance" type="button" disabled>💾 Сохранить</button>
   </div>
 </section>
+<section>
+  <h2>📁 Проект</h2>
+  <label for="docLinks">Ссылки на документацию (одна в строке)</label>
+  <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml(state.docLinks.join('\n'))}</textarea>
+  <div class="row">
+    <button id="saveProject" type="button" disabled>💾 Сохранить</button>
+    <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
+  </div>
+  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки добавляются строкой «Документация проекта: …» только в полный аудит — без fetch, RAG по ним будет в v1.3.</p>
+</section>
 </main>
 <script>
 const vscode = acquireVsCodeApi();
@@ -99,18 +111,22 @@ const baseUrlInput = document.getElementById('baseUrl');
 const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
+const docLinksInput = document.getElementById('docLinks');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked };
+const saveProjectBtn = document.getElementById('saveProject');
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value };
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
+  saveProjectBtn.disabled = !projectDirty();
 }
-document.querySelectorAll('input, select').forEach((el) => {
+document.querySelectorAll('input, select, textarea').forEach((el) => {
   el.addEventListener('input', refreshDirty);
   el.addEventListener('change', refreshDirty);
 });
@@ -136,6 +152,12 @@ saveAppearanceBtn.addEventListener('click', () => {
     showAuditBanner: bannerBox.checked
   });
 });
+saveProjectBtn.addEventListener('click', () => {
+  saveProjectBtn.disabled = true;
+  saveProjectBtn.textContent = '⏳ Сохраняю…';
+  vscode.postMessage({ command: 'saveDocLinks', linksText: docLinksInput.value });
+});
+document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 toggleBaseUrl();
 refreshDirty();
 </script>

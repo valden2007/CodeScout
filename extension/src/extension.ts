@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createProvider, RetryEvent } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
@@ -243,9 +243,11 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
-    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
+    const docLinksCount = (vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []).filter((link) => link.trim()).length;
+    if (docLinksCount > 0) output.appendLine(`🔗 Документация проекта: ${docLinksCount} ссылок добавлено в промт (без fetch)`);
     const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
     const auditSelection = await resolveExtensionSelection(context);
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -378,6 +380,22 @@ interface SettingsMessage {
   baseUrl?: string;
   reportLanguage?: string;
   showAuditBanner?: boolean;
+  linksText?: string;
+}
+
+const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
+
+async function openOrCreateRules(workspaceRoot: string | undefined): Promise<string> {
+  if (!workspaceRoot) throw new Error('Открой папку workspace в VS Code');
+  const directory = join(workspaceRoot, '.codescout');
+  const rulesPath = join(directory, 'rules.md');
+  if (!existsSync(rulesPath)) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(rulesPath, RULES_TEMPLATE, 'utf8');
+  }
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(rulesPath));
+  await vscode.window.showTextDocument(document, { preview: false });
+  return rulesPath;
 }
 
 function currentReportLanguage(): 'ru' | 'en' {
@@ -400,7 +418,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     model: selection.model,
     baseUrl: vscode.workspace.getConfiguration('codescout').get<string>('baseUrl')?.trim() || '',
     reportLanguage: currentReportLanguage(),
-    showAuditBanner: auditBannerEnabled()
+    showAuditBanner: auditBannerEnabled(),
+    docLinks: vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []
   };
 }
 
@@ -484,10 +503,21 @@ export function activate(context: vscode.ExtensionContext): void {
             } else if (message.command === 'clearApiKey') {
               await vscode.commands.executeCommand('codescout.clearApiKey');
               await render('✅ Ключ удалён из SecretStorage');
-            } else if (message.command === 'chooseModel') {
-              await vscode.commands.executeCommand('codescout.chooseModel');
-              await render('✅ Модель обновлена из живого списка');
+          } else if (message.command === 'chooseModel') {
+            await vscode.commands.executeCommand('codescout.chooseModel');
+            await render('✅ Модель обновлена из живого списка');
+          } else if (message.command === 'saveDocLinks') {
+            const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
+            await vscode.workspace.getConfiguration('codescout').update('docLinks', links, vscode.ConfigurationTarget.Global);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок — пойдут в следующий полный аудит`);
+          } else if (message.command === 'openRules') {
+            try {
+              await openOrCreateRules(getWorkspaceRoot());
+              await render('✅ Открыт .codescout/rules.md — правки подхватываются следующим ревью');
+            } catch (error) {
+              await render(`❌ Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
             }
+          }
           })().catch((error: unknown) => {
             void render(`❌ Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
           });

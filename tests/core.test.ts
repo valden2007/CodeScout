@@ -519,7 +519,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [] };
   it('renders both settings sections in the existing panel style', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('Ключ и провайдер');
@@ -816,6 +816,42 @@ describe('E1.2e custom review focus', () => {
     expect(panel).toContain("message.command === 'customReview'");
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.customReview');
+  });
+});
+
+describe('E1.2e rules and doc links via settings', () => {
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [] };
+
+  it('appends project doc links to the audit system prompt', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
+    try {
+      expect(buildProjectSystemPrompt('BASE', root).prompt).toBe('BASE');
+      const withLinks = buildProjectSystemPrompt('BASE', root, ['https://docs.example.com/api', '  ', 'https://wiki/internal']);
+      expect(withLinks.prompt).toContain('Документация проекта: https://docs.example.com/api, https://wiki/internal');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('settings page renders the project section with dirty-aware save', () => {
+    const html = buildSettingsHtml({ ...state, docLinks: ['https://docs.example.com/api'] });
+    expect(html).toContain('📁 Проект');
+    expect(html).toContain('id="docLinks"');
+    expect(html).toContain('https://docs.example.com/api');
+    expect(html).toContain('📜 Открыть rules.md');
+    expect(html).toContain("command: 'saveDocLinks'");
+    expect(html).toContain("command: 'openRules'");
+    expect(html).toContain('function projectDirty');
+  });
+
+  it('persists doc links globally and creates rules.md from a template', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("update('docLinks', links, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain("get<string[]>('docLinks')");
+    expect(extension).toContain('writeFileSync(rulesPath, RULES_TEMPLATE');
+    expect(extension).toContain("# Правила проекта CodeScout");
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.docLinks');
   });
 });
 

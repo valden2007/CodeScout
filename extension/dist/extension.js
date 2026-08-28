@@ -974,7 +974,7 @@ function readProjectContext(workspaceRoot) {
     return void 0;
   }
 }
-function buildProjectSystemPrompt(basePrompt, workspaceRoot) {
+function buildProjectSystemPrompt(basePrompt, workspaceRoot, docLinks = []) {
   const rules = loadProjectRules(workspaceRoot);
   const context = readProjectContext(workspaceRoot);
   let prompt = basePrompt;
@@ -982,6 +982,10 @@ function buildProjectSystemPrompt(basePrompt, workspaceRoot) {
 
 ## PROJECT SPECIFIC RULES
 ${rules}`;
+  const links = docLinks.map((link) => link.trim()).filter(Boolean);
+  if (links.length) prompt += `
+
+\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: ${links.join(", ")}`;
   if (context && context.topFindings.length > 0) {
     const zones = context.topFindings.map((finding) => `${finding.file} (${finding.severity}/${finding.category})`).join(", ");
     prompt += `
@@ -1191,6 +1195,7 @@ section { margin-top: 16px; padding: 12px; border: 1px solid var(--vscode-panel-
 h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--vscode-textLink-foreground); }
 label { display: block; margin: 10px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
+textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; resize: vertical; }
 button { padding: 6px 12px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; }
 button:hover { background: var(--vscode-button-hoverBackground); }
 button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
@@ -1243,6 +1248,16 @@ button:disabled:hover { background: var(--vscode-button-background); }
     <button id="saveAppearance" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
   </div>
 </section>
+<section>
+  <h2>\u{1F4C1} \u041F\u0440\u043E\u0435\u043A\u0442</h2>
+  <label for="docLinks">\u0421\u0441\u044B\u043B\u043A\u0438 \u043D\u0430 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044E (\u043E\u0434\u043D\u0430 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435)</label>
+  <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml2(state.docLinks.join("\n"))}</textarea>
+  <div class="row">
+    <button id="saveProject" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+    <button id="openRules" type="button" class="secondary">\u{1F4DC} \u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</button>
+  </div>
+  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0434\u043E\u0431\u0430\u0432\u043B\u044F\u044E\u0442\u0441\u044F \u0441\u0442\u0440\u043E\u043A\u043E\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u2026\xBB \u0442\u043E\u043B\u044C\u043A\u043E \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0431\u0435\u0437 fetch, RAG \u043F\u043E \u043D\u0438\u043C \u0431\u0443\u0434\u0435\u0442 \u0432 v1.3.</p>
+</section>
 </main>
 <script>
 const vscode = acquireVsCodeApi();
@@ -1252,18 +1267,22 @@ const baseUrlInput = document.getElementById('baseUrl');
 const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
+const docLinksInput = document.getElementById('docLinks');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked };
+const saveProjectBtn = document.getElementById('saveProject');
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value };
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
+  saveProjectBtn.disabled = !projectDirty();
 }
-document.querySelectorAll('input, select').forEach((el) => {
+document.querySelectorAll('input, select, textarea').forEach((el) => {
   el.addEventListener('input', refreshDirty);
   el.addEventListener('change', refreshDirty);
 });
@@ -1289,6 +1308,12 @@ saveAppearanceBtn.addEventListener('click', () => {
     showAuditBanner: bannerBox.checked
   });
 });
+saveProjectBtn.addEventListener('click', () => {
+  saveProjectBtn.disabled = true;
+  saveProjectBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
+  vscode.postMessage({ command: 'saveDocLinks', linksText: docLinksInput.value });
+});
+document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 toggleBaseUrl();
 refreshDirty();
 </script>
@@ -1499,9 +1524,11 @@ async function runFullAudit(context, output, panel) {
     if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0439 \u0444\u0430\u0439\u043B: ${filename}`);
-    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? []);
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
+    const docLinksCount = (vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? []).filter((link) => link.trim()).length;
+    if (docLinksCount > 0) output.appendLine(`\u{1F517} \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: ${docLinksCount} \u0441\u0441\u044B\u043B\u043E\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u043F\u0440\u043E\u043C\u0442 (\u0431\u0435\u0437 fetch)`);
     const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
@@ -1637,6 +1664,19 @@ async function runReview(context, lastCommit, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
+var RULES_TEMPLATE = "# \u041F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 CodeScout\n\n\u041C\u043E\u0434\u0435\u043B\u044C \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442 \u044D\u0442\u043E\u0442 \u0444\u0430\u0439\u043B \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E.\n\n## \u041F\u0440\u0438\u043C\u0435\u0440\u044B\n- \u041D\u0435 \u0444\u043B\u0430\u0433\u0430\u0442\u044C tenant-scoped \u0447\u0442\u0435\u043D\u0438\u044F \u0447\u0435\u0440\u0435\u0437 Prisma.\n- \u0412\u0441\u0435 \u0432\u043D\u0435\u0448\u043D\u0438\u0435 HTTP-\u0432\u044B\u0437\u043E\u0432\u044B \u2014 \u0441 \u0442\u0430\u0439\u043C\u0430\u0443\u0442\u043E\u043C \u0438 \u0440\u0435\u0442\u0440\u0430\u044F\u043C\u0438.\n- \u041C\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u0411\u0414 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0435\u0440\u0435\u0437 \u043F\u0430\u043F\u043A\u0443 prisma/migrations.\n";
+async function openOrCreateRules(workspaceRoot) {
+  if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0432 VS Code");
+  const directory = (0, import_node_path4.join)(workspaceRoot, ".codescout");
+  const rulesPath = (0, import_node_path4.join)(directory, "rules.md");
+  if (!(0, import_node_fs4.existsSync)(rulesPath)) {
+    (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+    (0, import_node_fs4.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
+  }
+  const document = await vscode2.workspace.openTextDocument(vscode2.Uri.file(rulesPath));
+  await vscode2.window.showTextDocument(document, { preview: false });
+  return rulesPath;
+}
 function currentReportLanguage() {
   return vscode2.workspace.getConfiguration("codescout").get("reportLanguage") === "en" ? "en" : "ru";
 }
@@ -1654,7 +1694,8 @@ async function readSettingsState(context) {
     model: selection.model,
     baseUrl: vscode2.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
     reportLanguage: currentReportLanguage(),
-    showAuditBanner: auditBannerEnabled()
+    showAuditBanner: auditBannerEnabled(),
+    docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? []
   };
 }
 async function saveKeyProvider(context, message) {
@@ -1739,6 +1780,17 @@ function activate(context) {
             } else if (message.command === "chooseModel") {
               await vscode2.commands.executeCommand("codescout.chooseModel");
               await render("\u2705 \u041C\u043E\u0434\u0435\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0438\u0437 \u0436\u0438\u0432\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430");
+            } else if (message.command === "saveDocLinks") {
+              const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
+              await vscode2.workspace.getConfiguration("codescout").update("docLinks", links, vscode2.ConfigurationTarget.Global);
+              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A \u2014 \u043F\u043E\u0439\u0434\u0443\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
+            } else if (message.command === "openRules") {
+              try {
+                await openOrCreateRules(getWorkspaceRoot());
+                await render("\u2705 \u041E\u0442\u043A\u0440\u044B\u0442 .codescout/rules.md \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u043F\u043E\u0434\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0440\u0435\u0432\u044C\u044E");
+              } catch (error) {
+                await render(`\u274C \u041E\u0448\u0438\u0431\u043A\u0430: ${error instanceof Error ? error.message : String(error)}`, "error");
+              }
             }
           })().catch((error) => {
             void render(`\u274C \u041E\u0448\u0438\u0431\u043A\u0430: ${error instanceof Error ? error.message : String(error)}`, "error");
