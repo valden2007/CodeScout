@@ -368,7 +368,7 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `✅ ${notes.length ? `${notes.join(', ')} · ` : ''}${provider} · ${model}`;
+  return `✅ Сохранено · ${provider} · ${model}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -390,31 +390,35 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.openSettings', async () => {
-      const render = async (status = ''): Promise<void> => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status);
+      const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind);
       };
       if (!settingsPanel) {
         settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true });
         settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
-        settingsPanel.webview.onDidReceiveMessage(async (message: SettingsMessage) => {
-          if (message.command === 'saveKeyProvider') {
-            const status = await saveKeyProvider(context, message);
-            await syncKeyStatus();
-            await render(status);
-          } else if (message.command === 'saveAppearance') {
-            const config = vscode.workspace.getConfiguration('codescout');
-            const language = message.reportLanguage === 'en' ? 'en' : 'ru';
-            const banner = message.showAuditBanner !== false;
-            await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
-            await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
-            await render(`✅ Язык отчётов: ${language.toUpperCase()}, баннер аудита ${banner ? 'включён' : 'выключен'}`);
-          } else if (message.command === 'clearApiKey') {
-            await vscode.commands.executeCommand('codescout.clearApiKey');
-            await render('⌫ Ключ удалён из SecretStorage');
-          } else if (message.command === 'chooseModel') {
-            await vscode.commands.executeCommand('codescout.chooseModel');
-            await render('✅ Модель обновлена из живого списка');
-          }
+        settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage) => {
+          void (async () => {
+            if (message.command === 'saveKeyProvider') {
+              const status = await saveKeyProvider(context, message);
+              await syncKeyStatus();
+              await render(status);
+            } else if (message.command === 'saveAppearance') {
+              const config = vscode.workspace.getConfiguration('codescout');
+              const language = message.reportLanguage === 'en' ? 'en' : 'ru';
+              const banner = message.showAuditBanner !== false;
+              await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
+              await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
+              await render(`✅ Сохранено · Язык отчётов: ${language.toUpperCase()} (применится к следующему ревью) · баннер аудита ${banner ? 'включён' : 'выключен'}`);
+            } else if (message.command === 'clearApiKey') {
+              await vscode.commands.executeCommand('codescout.clearApiKey');
+              await render('✅ Ключ удалён из SecretStorage');
+            } else if (message.command === 'chooseModel') {
+              await vscode.commands.executeCommand('codescout.chooseModel');
+              await render('✅ Модель обновлена из живого списка');
+            }
+          })().catch((error: unknown) => {
+            void render(`❌ Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
+          });
         });
       } else {
         settingsPanel.reveal(vscode.ViewColumn.One);

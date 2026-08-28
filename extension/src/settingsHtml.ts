@@ -19,7 +19,7 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = ''): string {
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok'): string {
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
     .join('');
@@ -42,18 +42,21 @@ button { padding: 6px 12px; border: 1px solid transparent; border-radius: 2px; c
 button:hover { background: var(--vscode-button-hoverBackground); }
 button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
 button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button:disabled { opacity: 0.55; cursor: default; }
+button:disabled:hover { background: var(--vscode-button-background); }
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .checkbox { display: flex; align-items: center; gap: 8px; }
 .checkbox input { width: auto; }
 .hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
 .hidden { display: none; }
 .status { margin-top: 14px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? '' : 'display: none;'} }
+.status.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
 <div class="brand"><span class="brand-mark">🕵️</span> CodeScout: Настройки</div>
-<div class="status" id="status">${escapeHtml(statusMessage)}</div>
+<div class="status${statusKind === 'error' ? ' error' : ''}" id="status">${escapeHtml(statusMessage)}</div>
 <main>
 <section>
   <h2>🔑 Ключ и провайдер</h2>
@@ -69,7 +72,7 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
   </div>
   <div class="current-key">сейчас: ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : 'ключ не настроен'}</div>
   <div class="row">
-    <button id="saveKey" type="button">💾 Сохранить</button>
+    <button id="saveKey" type="button" disabled>💾 Сохранить</button>
     <button id="chooseModel" type="button" class="secondary">🧲 Живые модели…</button>
     <button id="clearKey" type="button" class="secondary">⌫ Забыть ключ</button>
   </div>
@@ -84,7 +87,7 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
   </select>
   <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
   <div class="row">
-    <button id="saveAppearance" type="button">💾 Сохранить</button>
+    <button id="saveAppearance" type="button" disabled>💾 Сохранить</button>
   </div>
 </section>
 </main>
@@ -92,27 +95,49 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 const vscode = acquireVsCodeApi();
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
+const baseUrlInput = document.getElementById('baseUrl');
+const keyInput = document.getElementById('apiKey');
+const langSelect = document.getElementById('reportLanguage');
+const bannerBox = document.getElementById('showBanner');
+const saveKeyBtn = document.getElementById('saveKey');
+const saveAppearanceBtn = document.getElementById('saveAppearance');
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked };
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
-document.getElementById('revealKey').addEventListener('change', (event) => {
-  document.getElementById('apiKey').type = event.target.checked ? 'text' : 'password';
+function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
+function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
+function refreshDirty() {
+  saveKeyBtn.disabled = !keyDirty();
+  saveAppearanceBtn.disabled = !appearanceDirty();
+}
+document.querySelectorAll('input, select').forEach((el) => {
+  el.addEventListener('input', refreshDirty);
+  el.addEventListener('change', refreshDirty);
 });
-document.getElementById('saveKey').addEventListener('click', () => {
-  const payload = { command: 'saveKeyProvider', providerKey: providerSelect.value, baseUrl: document.getElementById('baseUrl').value.trim() };
-  const key = document.getElementById('apiKey').value.trim();
+document.getElementById('revealKey').addEventListener('change', (event) => {
+  keyInput.type = event.target.checked ? 'text' : 'password';
+});
+saveKeyBtn.addEventListener('click', () => {
+  saveKeyBtn.disabled = true;
+  saveKeyBtn.textContent = '⏳ Сохраняю…';
+  const payload = { command: 'saveKeyProvider', providerKey: providerSelect.value, baseUrl: baseUrlInput.value.trim() };
+  const key = keyInput.value.trim();
   if (key) payload.apiKey = key;
   vscode.postMessage(payload);
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
-document.getElementById('saveAppearance').addEventListener('click', () => {
+saveAppearanceBtn.addEventListener('click', () => {
+  saveAppearanceBtn.disabled = true;
+  saveAppearanceBtn.textContent = '⏳ Сохраняю…';
   vscode.postMessage({
     command: 'saveAppearance',
-    reportLanguage: document.getElementById('reportLanguage').value,
-    showAuditBanner: document.getElementById('showBanner').checked
+    reportLanguage: langSelect.value,
+    showAuditBanner: bannerBox.checked
   });
 });
 toggleBaseUrl();
+refreshDirty();
 </script>
 </body>
 </html>`;

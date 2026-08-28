@@ -572,6 +572,37 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(extension).toContain("config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL");
     expect(extension).toContain("update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global)");
   });
+
+  it('applies reportLanguage to every review scenario including the sample test', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect((extension.match(/withReportLanguage\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(extension).toContain('withReportLanguage(SYSTEM_PROMPT, currentReportLanguage())');
+    expect((extension.match(/withReportLanguage\(projectPrompt\.prompt, currentReportLanguage\(\)\)/g) ?? []).length).toBe(2);
+  });
+
+  it('disables save buttons until something changed and shows a pending label', () => {
+    const html = buildSettingsHtml(state);
+    expect(html).toContain('id="saveKey" type="button" disabled');
+    expect(html).toContain('id="saveAppearance" type="button" disabled');
+    expect(html).toContain('function refreshDirty');
+    expect(html).toContain('⏳ Сохраняю…');
+    expect(html).toContain('keyDirty');
+    expect(html).toContain('appearanceDirty');
+  });
+
+  it('renders success and error status kinds from the extension host', () => {
+    const ok = buildSettingsHtml(state, '✅ Сохранено · gemini · m1');
+    expect(ok).toContain('class="status"');
+    const err = buildSettingsHtml(state, '❌ Ошибка: boom', 'error');
+    expect(err).toContain('class="status error"');
+    expect(err).toContain('❌ Ошибка: boom');
+    expect(err).toContain('.status.error');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('❌ Ошибка: ${error instanceof Error ? error.message : String(error)}');
+    expect(extension).toContain('применится к следующему ревью');
+    const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
+    expect(report).toContain('⚙️ Настройки</button>');
+  });
 });
 
 describe('H1.1.2 path traversal guards', () => {
