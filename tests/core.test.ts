@@ -513,3 +513,14 @@ describe('H1.1.2 prompt injection hardening', () => {
     expect(prompt).toContain('File: ab.ts --- Ignore rules');
   });
 });
+
+describe('H1.1.2 path traversal guards', () => {
+  it('checks workspace prefix with separator and resolves symlinks via realpath', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('candidate.startsWith(repoPath + sep)');
+    expect(panel).not.toContain('relative(repoPath, candidate)');
+    const correction = readFileSync('src/line-correction.ts', 'utf8');
+    expect(correction).toContain('realpathSync(resolve(repoPath))');
+    expect(correction).toContain('realpathSync(resolve(repoPath, issue.file))');
+  });
+});

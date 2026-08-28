@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
-import { relative, resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
 
 interface ScanMessage {
@@ -66,9 +66,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
           return;
         }
         // Legacy path contract: vscode.Uri.joinPath(root, message.file)
-        const repoPath = root.fsPath;
-        const candidate = resolve(repoPath, message.file);
-        const outsideWorkspace = relative(repoPath, candidate).startsWith('..');
+        const repoPath = resolve(root.fsPath);
+        const candidate = resolve(root.fsPath, message.file);
+        const outsideWorkspace = !candidate.startsWith(repoPath + sep);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
           return;
