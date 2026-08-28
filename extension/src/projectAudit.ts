@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, isAbsolute } from 'node:path';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
 
@@ -60,7 +60,9 @@ export function readProjectContext(workspaceRoot: string): ProjectContext | unde
   const path = join(workspaceRoot, '.codescout', 'context.json');
   if (!existsSync(path)) return undefined;
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as ProjectContext;
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as ProjectContext;
+    if (!parsed || !Array.isArray(parsed.topFindings)) return undefined;
+    return parsed;
   } catch {
     return undefined;
   }
@@ -120,7 +122,11 @@ export function isIgnoredAuditPath(path: string, patterns: string[] = []): boole
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
   for (const pattern of patterns) {
     if (pattern.endsWith('/')) {
-      if (segments.includes(pattern.slice(0, -1))) return true;
+      const dir = pattern.slice(0, -1);
+      if (dir.includes('/')) {
+        const joined = segments.join('/');
+        if (joined === dir || joined.startsWith(dir + '/')) return true;
+      } else if (segments.includes(dir)) return true;
       continue;
     }
     if (pattern.includes('/')) {
@@ -277,7 +283,12 @@ export function buildFindingsDiff(previous: FindingsHistory | undefined, issues:
 }
 
 export function resolveAuditFile(workspaceRoot: string, filename: string): string {
-  return resolve(workspaceRoot, filename);
+  const absolute = resolve(workspaceRoot, filename);
+  const relativePath = relative(workspaceRoot, absolute);
+  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error(`Файл вне папки аудита: ${filename}`);
+  }
+  return absolute;
 }
 
 export function fileLineCount(workspaceRoot: string, filename: string): number {
