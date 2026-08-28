@@ -485,3 +485,17 @@ describe('response parser', () => {
     expect(() => parseReviewResponse('not json', 'src/app.ts')).toThrow('malformed JSON');
   });
 });
+
+describe('H1.1.2 per-commit review comments', () => {
+  it('stamps the commit that introduced the file changes and uses it as commit_id', () => {
+    const types = readFileSync('src/types.ts', 'utf8');
+    expect(types).toContain('commitId?: string;');
+    const client = readFileSync('src/github-client.ts', 'utf8');
+    expect(client).toContain('issue.commitId ?? this.context.headSha');
+    expect(client).toContain('stampCommitIds');
+    expect(client).toContain('pulls.listCommits');
+    expect(client).toContain('repos.listCommits');
+    const action = readFileSync('src/action.ts', 'utf8');
+    expect(action).toContain('await client.stampCommitIds(issues)');
+  });
+});

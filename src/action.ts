@@ -31,6 +31,7 @@ export async function run(): Promise<void> {
       }
     }
     const durationMs = Date.now() - startedAt;
+    await client.stampCommitIds(issues);
     const posted = await postIssues(client, issues, files.length, durationMs);
     const summary = `CodeScout analyzed ${files.length} file(s) and found ${issues.length} actionable issue(s).`;
     core.setOutput('summary', summary);

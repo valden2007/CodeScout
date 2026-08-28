@@ -25,6 +25,7 @@ export interface ReviewIssue {
   suggestion?: string;
   code?: string;
   confidence: number;
+  commitId?: string;
 }
 
 export interface ReviewResult {
