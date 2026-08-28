@@ -621,7 +621,10 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(extension).toContain('❌ Ошибка: ${error instanceof Error ? error.message : String(error)}');
     expect(extension).toContain('применится к следующему ревью');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
-    expect(report).toContain('⚙️ Настройки</button>');
+    expect(report).toContain('🔑 Ключ и модель</button>');
+    expect(report).not.toContain('⚙️ Настройки</button>');
+    expect(report).not.toContain("'Изменить'");
+    expect(report).not.toContain('⚙️ Модель:');
   });
 });
 
@@ -779,16 +782,33 @@ describe('E1.2e custom review focus', () => {
     expect(withFocusInstructions('BASE', '   ')).toBe('BASE');
   });
 
-  it('renders the focus form in the panel and hides it while scanning', () => {
+  it('renders the focus form hidden by default and wires it through delegation', () => {
     const html = buildReportHtml([], stats);
+    expect(html).toContain('id="toggleCustomForm"');
     expect(html).toContain('🎯 Своё ревью');
+    expect(html).toContain('class="custom-form hidden"');
     expect(html).toContain('id="customForm"');
     expect(html).toContain('<textarea id="customFocusText"');
     expect(html).toContain('<option value="active">');
     expect(html).toContain('<option value="list">');
     expect(html).toContain("command: 'customReview'");
+    expect(html).toContain("closest('#toggleCustomForm')");
+    expect(html).toContain("closest('#startCustomReview')");
+    expect(html).toContain("closest('#customScope')");
     const scanning = buildReportHtml([], stats, true);
-    expect(scanning).toContain('class="custom-form hidden"');
+    expect(scanning).toContain('id="toggleCustomForm" disabled');
+  });
+
+  it('keeps a clean key row with one button to settings', () => {
+    const issues: ReviewIssue[] = [{ file: 'src/a.ts', line: 1, category: 'bug', severity: 'low', description: 'd', confidence: 0.5 }];
+    const configured = buildReportHtml(issues, stats, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
+    expect(configured).toContain('🟢 gemini · gemini-2.5-flash · AIza•••123 (защищённо)');
+    expect(configured).toContain('<button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
+    expect(configured).not.toContain('>Изменить<');
+    expect(configured).not.toContain('>Настроить<');
+    expect(configured).not.toContain('>Очистить<');
+    const missing = buildReportHtml(issues, stats, false, false, '', 'retry', '', false);
+    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
   });
 
   it('prints the custom review header above the report', () => {

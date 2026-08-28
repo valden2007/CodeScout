@@ -157,15 +157,16 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? '⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : '🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === 'stale' ? '🔄 Обновить' : '🚀 Запустить аудит'}</button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="setApiKey">${keyConfigured ? 'Изменить' : 'Настроить'}</button><button type="button" data-command="openSettings" title="Настройки CodeScout">⚙️ Настройки</button>${keyConfigured ? `<button type="button" data-command="chooseModel">⚙️ Модель: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">Очистить</button>` : ''}</div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettings">🔑 Ключ и модель</button></div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Проверить последний коммит</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '📝'} Проверить изменения до коммита</button>
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
+      <button type="button" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>🎯 Своё ревью</button>
     </div>
-    <div class="custom-form${isScanning ? ' hidden' : ''}" id="customForm">
+    <div class="custom-form hidden" id="customForm">
       <label for="customFocusText">Что проверить?</label>
       <textarea id="customFocusText" rows="3" placeholder="например: все ли обращения к БД внутри транзакций?"></textarea>
       <div class="custom-scope">
@@ -257,13 +258,32 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     }, 1000);
     document.addEventListener('click', (event) => {
       const origin = event.target instanceof Element ? event.target : null;
-      const anchor = origin ? origin.closest('a[data-file]') : null;
+      if (!origin) return;
+      const toggle = origin.closest('#toggleCustomForm');
+      if (toggle) {
+        const form = document.getElementById('customForm');
+        if (form) {
+          form.classList.toggle('hidden');
+          toggle.textContent = form.classList.contains('hidden') ? '🎯 Своё ревью' : '✖ Свернуть';
+        }
+        return;
+      }
+      if (origin.closest('#startCustomReview')) {
+        const focusEl = document.getElementById('customFocusText');
+        const scopeEl = document.getElementById('customScope');
+        const globsEl = document.getElementById('customGlobs');
+        const focus = focusEl ? focusEl.value.trim() : '';
+        if (!focus) { if (focusEl) focusEl.focus(); return; }
+        vscode.postMessage({ command: 'customReview', focus, scope: scopeEl ? scopeEl.value : 'all', globs: globsEl ? globsEl.value.trim() : '' });
+        return;
+      }
+      const anchor = origin.closest('a[data-file]');
       if (anchor) {
         event.preventDefault();
         vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
         return;
       }
-      const element = origin ? origin.closest('[data-command]') : null;
+      const element = origin.closest('[data-command]');
       if (!element) return;
       if (element.classList.contains('welcome-overlay') && event.target !== element) {
         return;
@@ -271,25 +291,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       event.preventDefault();
       vscode.postMessage({ command: element.dataset.command });
     });
-    const customToggle = document.getElementById('toggleCustomForm');
-    const customForm = document.getElementById('customForm');
-    if (customToggle && customForm) {
-      const customScope = document.getElementById('customScope');
-      const customGlobs = document.getElementById('customGlobs');
-      const customFocusText = document.getElementById('customFocusText');
-      customToggle.addEventListener('click', () => {
-        customForm.classList.toggle('hidden');
-        customToggle.textContent = customForm.classList.contains('hidden') ? '🎯 Своё ревью' : '✖ Свернуть';
-      });
-      customScope.addEventListener('change', () => {
-        customGlobs.classList.toggle('hidden', customScope.value !== 'list');
-      });
-      document.getElementById('startCustomReview').addEventListener('click', () => {
-        const focus = customFocusText.value.trim();
-        if (!focus) { customFocusText.focus(); return; }
-        vscode.postMessage({ command: 'customReview', focus, scope: customScope.value, globs: customGlobs.value.trim() });
-      });
-    }
+    document.addEventListener('change', (event) => {
+      const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
+      if (!scope) return;
+      const globsEl = document.getElementById('customGlobs');
+      if (globsEl) globsEl.classList.toggle('hidden', scope.value !== 'list');
+    });
   </script>
 </body>
 </html>`;

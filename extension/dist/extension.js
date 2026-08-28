@@ -607,15 +607,16 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === "stale" ? "\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?" : "\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?"}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === "stale" ? "\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C" : "\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442"}</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div></div></div>` : ""}
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button><button type="button" data-command="openSettings" title="\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettings">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
       <button type="button" data-command="scanFull" ${isScanning ? "disabled" : ""}>\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430</button>
+      <button type="button" id="toggleCustomForm" ${isScanning ? "disabled" : ""}>\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E</button>
     </div>
-    <div class="custom-form${isScanning ? " hidden" : ""}" id="customForm">
+    <div class="custom-form hidden" id="customForm">
       <label for="customFocusText">\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C?</label>
       <textarea id="customFocusText" rows="3" placeholder="\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u0432\u0441\u0435 \u043B\u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043A \u0411\u0414 \u0432\u043D\u0443\u0442\u0440\u0438 \u0442\u0440\u0430\u043D\u0437\u0430\u043A\u0446\u0438\u0439?"></textarea>
       <div class="custom-scope">
@@ -707,13 +708,32 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     }, 1000);
     document.addEventListener('click', (event) => {
       const origin = event.target instanceof Element ? event.target : null;
-      const anchor = origin ? origin.closest('a[data-file]') : null;
+      if (!origin) return;
+      const toggle = origin.closest('#toggleCustomForm');
+      if (toggle) {
+        const form = document.getElementById('customForm');
+        if (form) {
+          form.classList.toggle('hidden');
+          toggle.textContent = form.classList.contains('hidden') ? '\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E' : '\u2716 \u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C';
+        }
+        return;
+      }
+      if (origin.closest('#startCustomReview')) {
+        const focusEl = document.getElementById('customFocusText');
+        const scopeEl = document.getElementById('customScope');
+        const globsEl = document.getElementById('customGlobs');
+        const focus = focusEl ? focusEl.value.trim() : '';
+        if (!focus) { if (focusEl) focusEl.focus(); return; }
+        vscode.postMessage({ command: 'customReview', focus, scope: scopeEl ? scopeEl.value : 'all', globs: globsEl ? globsEl.value.trim() : '' });
+        return;
+      }
+      const anchor = origin.closest('a[data-file]');
       if (anchor) {
         event.preventDefault();
         vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
         return;
       }
-      const element = origin ? origin.closest('[data-command]') : null;
+      const element = origin.closest('[data-command]');
       if (!element) return;
       if (element.classList.contains('welcome-overlay') && event.target !== element) {
         return;
@@ -721,25 +741,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       event.preventDefault();
       vscode.postMessage({ command: element.dataset.command });
     });
-    const customToggle = document.getElementById('toggleCustomForm');
-    const customForm = document.getElementById('customForm');
-    if (customToggle && customForm) {
-      const customScope = document.getElementById('customScope');
-      const customGlobs = document.getElementById('customGlobs');
-      const customFocusText = document.getElementById('customFocusText');
-      customToggle.addEventListener('click', () => {
-        customForm.classList.toggle('hidden');
-        customToggle.textContent = customForm.classList.contains('hidden') ? '\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E' : '\u2716 \u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C';
-      });
-      customScope.addEventListener('change', () => {
-        customGlobs.classList.toggle('hidden', customScope.value !== 'list');
-      });
-      document.getElementById('startCustomReview').addEventListener('click', () => {
-        const focus = customFocusText.value.trim();
-        if (!focus) { customFocusText.focus(); return; }
-        vscode.postMessage({ command: 'customReview', focus, scope: customScope.value, globs: customGlobs.value.trim() });
-      });
-    }
+    document.addEventListener('change', (event) => {
+      const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
+      if (!scope) return;
+      const globsEl = document.getElementById('customGlobs');
+      if (globsEl) globsEl.classList.toggle('hidden', scope.value !== 'list');
+    });
   </script>
 </body>
 </html>`;
