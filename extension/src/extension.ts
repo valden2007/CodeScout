@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeProjectContext } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, readFindingsHistory, readProjectContext, writeFindingsHistory, writeProjectContext } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -236,6 +236,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
   output.appendLine('CodeScout: starting full project audit...');
   try {
     const auditMaxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
+    const previousHistory = readFindingsHistory(workspaceRoot);
     const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
     output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
     output.appendLine(`Игнорируется: ${audit.ignored.length} файлов (.gitignore + .codescout/ignore)`);
@@ -247,10 +248,14 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     else output.appendLine('ℹ️ Правил нет — дефолт');
     const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
     const auditSelection = await resolveExtensionSelection(context);
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
+    const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, auditMeta);
+    writeFindingsHistory(workspaceRoot, result.issues, 'full-audit', auditMeta);
+    const findingsDiff = buildFindingsDiff(previousHistory, result.issues);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(findingsDiff ? `Динамика относительно прошлого аудита: ${findingsDiff.summary}` : 'ℹ️ Первый аудит — сравнение недоступно, история заведена');
     output.appendLine(`Аудит завершён: проверено ${result.filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, result.issues, `Итог аудита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
   } catch (error) {

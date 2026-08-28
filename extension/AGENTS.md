@@ -75,7 +75,13 @@ line-correction realpathSync). Tests: 53 in vitest.
    codescout.maxFiles setting (default 100) with Output line
    "⚠️ Пропущено N файлов по лимиту" and start summary
    "Игнорируется: X файлов".
-4. Diff of findings between audits (new/fixed since last run)
+4. Diff of findings between audits — DONE in 1.2d: full audit writes
+   .codescout/history.json (key = file:line:category, stores scanType,
+   savedAt, provider/model) and compares with the previous run:
+   "🆕 новых · ✅ починено · 🔁 осталось" strip on top of the report,
+   🆕 badge on new findings, collapsed <details> "Починено с прошлого
+   скана" list. First scan: no diff strip, no errors. history.json is
+   git-ignored (.codescout/ in .gitignore) and lives per-workspace.
 UI style rule: new screens reuse reportHtml.ts style (CSS vars, compact,
 no decoration). FULL VISUAL REDESIGN is scheduled for v2.0 — do not
 pre-design now.

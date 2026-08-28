@@ -1,4 +1,5 @@
 import { ReviewIssue } from '../../src/types';
+import type { FindingsDiffView } from './projectAudit';
 
 export interface ReportStats {
   files: number;
@@ -39,12 +40,12 @@ function severityClass(severity: ReviewIssue['severity']): string {
   return severity;
 }
 
-function issueCard(issue: ReviewIssue): string {
+function issueCard(issue: ReviewIssue, isNew = false): string {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : '';
   const suggestion = issue.suggestion ? `<div class="suggestion"><span>→</span> ${escapeHtml(issue.suggestion)}</div>` : '';
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span><span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
+  <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? '<span class="badge new">🆕 новая</span>' : ''}<span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
@@ -52,11 +53,16 @@ function issueCard(issue: ReviewIssue): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new'): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
+  const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
-  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join('')}</section>`).join('');
+  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join('')}</section>`).join('');
+  const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : '';
+  const fixedBlock = findingsDiff && findingsDiff.fixed.length
+    ? `<details class="fixed-block"><summary>✅ Починено с прошлого скана (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
+    : '';
   const body = sections || (emptyState && !keyConfigured
     ? '<div class="onboarding"><div class="empty-icon">👋</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получите API-ключ провайдера в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action" type="button" data-command="setApiKey">🔑 Вставить ключ — провайдер определится сам</button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>'
     : emptyState
@@ -129,6 +135,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .empty { padding: 48px 10px; color: var(--vscode-descriptionForeground); text-align: center; }
 .empty-icon { margin-bottom: 8px; color: var(--vscode-testing-iconPassed); font-size: 24px; }
 .empty small { display: block; margin-top: 5px; }
+.diff-summary { margin-top: 12px; padding: 7px 9px; border: 1px solid var(--vscode-panel-border); border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent); font-size: 12px; }
+.badge.new { color: var(--vscode-textLink-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 15%, transparent); }
+.fixed-block { margin-top: 18px; }
+.fixed-block summary { cursor: pointer; color: var(--vscode-testing-iconPassed); font-size: 12px; font-weight: 600; }
+.fixed-block ul { margin: 8px 0; padding-left: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; }
+.fixed-block li { margin: 4px 0; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -148,7 +160,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">🔴 ${stats.critical}</span><span class="pill medium">🟡 ${stats.medium}</span><span class="pill low">🟢 ${stats.low}</span></div>
   </header>
-  <main>${body}</main>
+  <main>${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
     const overlay = document.querySelector('.welcome-overlay');

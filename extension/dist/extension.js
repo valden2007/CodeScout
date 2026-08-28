@@ -481,23 +481,26 @@ function severityClass(severity) {
   if (severity === "critical" || severity === "high") return "critical";
   return severity;
 }
-function issueCard(issue) {
+function issueCard(issue, isNew = false) {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : "";
   const suggestion = issue.suggestion ? `<div class="suggestion"><span>\u2192</span> ${escapeHtml(issue.suggestion)}</div>` : "";
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span><span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
+  <div class="issue-top"><span class="badge ${severity}">${severityEmoji(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? '<span class="badge new">\u{1F195} \u043D\u043E\u0432\u0430\u044F</span>' : ""}<span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
+  const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = /* @__PURE__ */ new Map();
   for (const issue of sorted) grouped.set(issue.file, [...grouped.get(issue.file) ?? [], issue]);
-  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map(issueCard).join("")}</section>`).join("");
+  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join("")}</section>`).join("");
+  const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : "";
+  const fixedBlock = findingsDiff && findingsDiff.fixed.length ? `<details class="fixed-block"><summary>\u2705 \u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
   const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : testMode ? '<div class="empty"><div class="empty-icon">\u{1F9EA}</div><strong>\u{1F9EA} \u0422\u0415\u0421\u0422</strong><small>\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.</small></div>' : `<div class="empty"><div class="empty-icon">\u2705</div><strong>\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${stats.files} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</strong><small>\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:</small><button class="primary-action" type="button" data-command="testSample">\u{1F9EA} \u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435</button></div>`);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -564,6 +567,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .empty { padding: 48px 10px; color: var(--vscode-descriptionForeground); text-align: center; }
 .empty-icon { margin-bottom: 8px; color: var(--vscode-testing-iconPassed); font-size: 24px; }
 .empty small { display: block; margin-top: 5px; }
+.diff-summary { margin-top: 12px; padding: 7px 9px; border: 1px solid var(--vscode-panel-border); border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent); font-size: 12px; }
+.badge.new { color: var(--vscode-textLink-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 15%, transparent); }
+.fixed-block { margin-top: 18px; }
+.fixed-block summary { cursor: pointer; color: var(--vscode-testing-iconPassed); font-size: 12px; font-weight: 600; }
+.fixed-block ul { margin: 8px 0; padding-left: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; }
+.fixed-block li { margin: 4px 0; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -583,7 +592,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
-  <main>${body}</main>
+  <main>${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
     const overlay = document.querySelector('.welcome-overlay');
@@ -694,6 +703,7 @@ var CodeScoutPanel = class {
   model = "gemini-2.5-flash";
   welcomeBanner = false;
   welcomeReason = "new";
+  findingsDiff;
   onWelcomeStart;
   onWelcomeDismiss;
   resolveWebviewView(webviewView) {
@@ -779,6 +789,7 @@ var CodeScoutPanel = class {
       this.statusMessage = "";
       this.progressMessage = "";
       this.statusKind = "retry";
+      this.findingsDiff = void 0;
     }
     this.render();
   }
@@ -833,12 +844,13 @@ var CodeScoutPanel = class {
     this.statusMessage = message;
     this.render();
   }
-  update(issues, stats, testMode = false, testMessage = "", testWarning = false) {
+  update(issues, stats, testMode = false, testMessage = "", testWarning = false, findingsDiff) {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
+    this.findingsDiff = findingsDiff;
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
@@ -846,7 +858,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 };
 
@@ -1028,6 +1040,41 @@ function writeProjectContext(workspaceRoot, filesCount, issues, auditMeta) {
   (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
 `, "utf8");
   return context;
+}
+function findingKey(entry) {
+  return `${entry.file}:${entry.line}:${entry.category}`;
+}
+function writeFindingsHistory(workspaceRoot, issues, scanType, auditMeta) {
+  const history = {
+    savedAt: auditMeta?.timestamp ?? Date.now(),
+    scanType,
+    ...auditMeta ? { provider: auditMeta.provider, model: auditMeta.model } : {},
+    findings: issues.map((issue) => ({ file: issue.file, line: issue.line, category: issue.category, severity: issue.severity, description: issue.description }))
+  };
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "history.json"), `${JSON.stringify(history, null, 2)}
+`, "utf8");
+  return history;
+}
+function readFindingsHistory(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "history.json");
+  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  try {
+    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+    return Array.isArray(parsed.findings) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function buildFindingsDiff(previous, issues) {
+  if (!previous) return void 0;
+  const currentKeys = new Set(issues.map(findingKey));
+  const previousKeys = new Set(previous.findings.map(findingKey));
+  const newOnes = issues.filter((issue) => !previousKeys.has(findingKey(issue)));
+  const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
+  const summary = `\u{1F195} \u043D\u043E\u0432\u044B\u0445: ${newOnes.length} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: ${fixed.length} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: ${issues.length - newOnes.length}`;
+  return { summary, newKeys: newOnes.map(findingKey), fixed };
 }
 
 // src/settingsHtml.ts
@@ -1353,6 +1400,7 @@ async function runFullAudit(context, output, panel) {
   output.appendLine("CodeScout: starting full project audit...");
   try {
     const auditMaxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
+    const previousHistory = readFindingsHistory(workspaceRoot);
     const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     output.appendLine(`\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F: ${audit.ignored.length} \u0444\u0430\u0439\u043B\u043E\u0432 (.gitignore + .codescout/ignore)`);
@@ -1367,10 +1415,14 @@ async function runFullAudit(context, output, panel) {
       output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
     }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
     const auditSelection = await resolveExtensionSelection(context);
-    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
+    const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
+    writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, auditMeta);
+    writeFindingsHistory(workspaceRoot, result.issues, "full-audit", auditMeta);
+    const findingsDiff = buildFindingsDiff(previousHistory, result.issues);
+    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${result.issues.length} findings)`);
+    output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
     output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${result.filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
   } catch (error) {

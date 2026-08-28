@@ -27,6 +27,28 @@ export interface ProjectContext {
   auditMeta?: AuditMeta;
 }
 
+export interface FindingsHistoryEntry {
+  file: string;
+  line: number;
+  category: string;
+  severity: string;
+  description: string;
+}
+
+export interface FindingsHistory {
+  savedAt: number;
+  scanType: string;
+  provider?: string;
+  model?: string;
+  findings: FindingsHistoryEntry[];
+}
+
+export interface FindingsDiffView {
+  summary: string;
+  newKeys: string[];
+  fixed: FindingsHistoryEntry[];
+}
+
 export function loadProjectRules(workspaceRoot: string): string | undefined {
   const path = join(workspaceRoot, '.codescout', 'rules.md');
   if (!existsSync(path)) return undefined;
@@ -173,6 +195,44 @@ export function writeProjectContext(workspaceRoot: string, filesCount: number, i
 export function projectContextSummary(context: ProjectContext | undefined): string {
   if (!context || context.topFindings.length === 0) return '';
   return context.topFindings.map((finding) => `${finding.file} (${finding.severity}/${finding.category})`).join(', ');
+}
+
+function findingKey(entry: { file: string; line: number | string; category: string }): string {
+  return `${entry.file}:${entry.line}:${entry.category}`;
+}
+
+export function writeFindingsHistory(workspaceRoot: string, issues: ReviewIssue[], scanType: string, auditMeta?: AuditMeta): FindingsHistory {
+  const history: FindingsHistory = {
+    savedAt: auditMeta?.timestamp ?? Date.now(),
+    scanType,
+    ...(auditMeta ? { provider: auditMeta.provider, model: auditMeta.model } : {}),
+    findings: issues.map((issue) => ({ file: issue.file, line: issue.line, category: issue.category, severity: issue.severity, description: issue.description }))
+  };
+  const directory = join(workspaceRoot, '.codescout');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, 'history.json'), `${JSON.stringify(history, null, 2)}\n`, 'utf8');
+  return history;
+}
+
+export function readFindingsHistory(workspaceRoot: string): FindingsHistory | undefined {
+  const path = join(workspaceRoot, '.codescout', 'history.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as FindingsHistory;
+    return Array.isArray(parsed.findings) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildFindingsDiff(previous: FindingsHistory | undefined, issues: ReviewIssue[]): FindingsDiffView | undefined {
+  if (!previous) return undefined;
+  const currentKeys = new Set(issues.map(findingKey));
+  const previousKeys = new Set(previous.findings.map(findingKey));
+  const newOnes = issues.filter((issue) => !previousKeys.has(findingKey(issue)));
+  const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
+  const summary = `🆕 новых: ${newOnes.length} · ✅ починено: ${fixed.length} · 🔁 осталось: ${issues.length - newOnes.length}`;
+  return { summary, newKeys: newOnes.map(findingKey), fixed };
 }
 
 export function resolveAuditFile(workspaceRoot: string, filename: string): string {

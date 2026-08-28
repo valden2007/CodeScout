@@ -13,7 +13,8 @@ import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiK
 import { reviewStatus } from '../src/tui/App';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
-import { buildProjectSystemPrompt, collectAuditFiles, isIgnoredAuditPath, loadIgnorePatterns, readProjectContext, writeProjectContext } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, collectAuditFiles, isIgnoredAuditPath, loadIgnorePatterns, readFindingsHistory, readProjectContext, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
+import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -680,6 +681,68 @@ describe('E1.2c audit ignore lists', () => {
     expect(manifest).toContain('codescout.maxFiles');
     const auditSource = readFileSync('extension/src/projectAudit.ts', 'utf8');
     expect(auditSource).not.toContain('function isIgnoredAuditPath(path: string): boolean');
+  });
+});
+
+describe('E1.2d findings diff and scan history', () => {
+  const stats = { files: 2, seconds: 3, critical: 1, medium: 1, low: 0 };
+  const previous = { savedAt: 1, scanType: 'full-audit', findings: [{ file: 'src/a.ts', line: 5, category: 'bug', severity: 'high', description: 'boom' }] };
+  const issues: ReviewIssue[] = [
+    { file: 'src/a.ts', line: 5, category: 'bug', severity: 'high', description: 'boom', confidence: 0.9 },
+    { file: 'src/b.ts', line: 8, category: 'security', severity: 'critical', description: 'sql', confidence: 0.95 }
+  ];
+
+  it('diffs issues against previous history keys and counts three buckets', () => {
+    const diff = buildFindingsDiff(previous, issues);
+    expect(diff?.summary).toBe('🆕 новых: 1 · ✅ починено: 0 · 🔁 осталось: 1');
+    expect(diff?.newKeys).toEqual(['src/b.ts:8:security']);
+    expect(diff?.fixed).toEqual([]);
+    const resolved = buildFindingsDiff(previous, []);
+    expect(resolved?.summary).toBe('🆕 новых: 0 · ✅ починено: 1 · 🔁 осталось: 0');
+    expect(resolved?.fixed[0].file).toBe('src/a.ts');
+    expect(buildFindingsDiff(undefined, issues)).toBeUndefined();
+  });
+
+  it('renders diff summary line, new badges and a collapsed fixed block', () => {
+    const diff = buildFindingsDiff(previous, issues);
+    const html = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', diff);
+    expect(html).toContain('class="diff-summary"');
+    expect(html).toContain('🆕 новых: 1 · ✅ починено: 0 · 🔁 осталось: 1');
+    expect(html).toContain('class="badge new">🆕 новая<');
+    expect(html).not.toContain('<details');
+    const resolvedHtml = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff(previous, []));
+    expect(resolvedHtml).toContain('<details class="fixed-block"');
+    expect(resolvedHtml).toContain('✅ Починено с прошлого скана (1)');
+    expect(resolvedHtml).toContain('src/a.ts:5');
+    const plain = buildReportHtml(issues, stats);
+    expect(plain).not.toContain('<div class="diff-summary">');
+    expect(plain).not.toContain('class="badge new">🆕 новая<');
+  });
+
+  it('round-trips history.json and tolerates missing or broken files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-history-'));
+    try {
+      expect(readFindingsHistory(root)).toBeUndefined();
+      writeFindingsHistory(root, issues, 'full-audit', { provider: 'gemini', model: 'gemini-2.5-flash', timestamp: 111 });
+      const history = readFindingsHistory(root);
+      expect(history?.scanType).toBe('full-audit');
+      expect(history?.savedAt).toBe(111);
+      expect(history?.findings[1]).toMatchObject({ file: 'src/b.ts', line: 8, category: 'security' });
+      writeFileSync(join(root, '.codescout', 'history.json'), 'not-json{');
+      expect(readFindingsHistory(root)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('wires history into full audit flow and keeps it out of git', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('readFindingsHistory(workspaceRoot)');
+    expect(extension).toContain("writeFindingsHistory(workspaceRoot, result.issues, 'full-audit'");
+    expect(extension).toContain('Первый аудит — сравнение недоступно');
+    expect(extension).toContain('false, findingsDiff)');
+    const gitignore = readFileSync('.gitignore', 'utf8');
+    expect(gitignore).toContain('.codescout/');
   });
 });
 

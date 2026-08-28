@@ -4,6 +4,7 @@ import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
 import { resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
+import type { FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
   command?: string;
@@ -27,6 +28,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private model = 'gemini-2.5-flash';
   private welcomeBanner = false;
   private welcomeReason: 'new' | 'stale' = 'new';
+  private findingsDiff?: FindingsDiffView;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -118,6 +120,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.statusMessage = '';
       this.progressMessage = '';
       this.statusKind = 'retry';
+      this.findingsDiff = undefined;
     }
     this.render();
   }
@@ -179,12 +182,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  update(issues: ReviewIssue[], stats: ReportStats, testMode = false, testMessage = '', testWarning = false): void {
+  update(issues: ReviewIssue[], stats: ReportStats, testMode = false, testMessage = '', testWarning = false, findingsDiff?: FindingsDiffView): void {
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
     this.scanning = false;
     this.testMode = testMode;
+    this.findingsDiff = findingsDiff;
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
@@ -194,7 +198,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason);
   }
 }
