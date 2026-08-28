@@ -15,6 +15,14 @@ interface ScanMessage {
   globs?: string;
 }
 
+function safePost(webview: vscode.Webview, message: Record<string, unknown>): void {
+  try {
+    void Promise.resolve(webview.postMessage(message)).then(undefined, () => undefined);
+  } catch {
+    // webview уже утилизирован: состояние живёт в полях панели, следующий render()/resolve догонит
+  }
+}
+
 export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private issues: ReviewIssue[] = [];
@@ -38,6 +46,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
+    webviewView.onDidDispose(() => {
+      if (this.view === webviewView) this.view = undefined;
+    });
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
       if (message.command === 'scanLastCommit') {
@@ -141,7 +152,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.progressMessage = `${label} ${index}/${total}: ${filename}... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
     const webview = this.liveWebview();
     if (webview) {
-      void webview.postMessage({ type: 'progress', text: this.progressMessage, elapsedMs });
+      safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs });
       return;
     }
     this.render();
@@ -152,7 +163,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.progressMessage = `🤖 Модель думает... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
     const webview = this.liveWebview();
     if (webview) {
-      void webview.postMessage({ type: 'progress', text: this.progressMessage, elapsedMs });
+      safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs });
       return;
     }
     this.render();
@@ -164,7 +175,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.statusMessage = `⏳ Rate limit у ${model}, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
     const webview = this.liveWebview();
     if (webview) {
-      void webview.postMessage({ type: 'status', message: this.statusMessage, kind: 'retry' });
+      safePost(webview, { type: 'status', message: this.statusMessage, kind: 'retry' });
       return;
     }
     this.render();

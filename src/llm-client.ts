@@ -78,9 +78,15 @@ export class OpenAICompatibleProvider implements LLMProvider {
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
           signal: this.signal
         });
-        const data = (await response.json()) as GroqResponse;
+        const text = await response.text();
+        let data: GroqResponse = {};
+        try {
+          data = JSON.parse(text) as GroqResponse;
+        } catch {
+          // не-JSON (HTML-страница ошибки прокси/гейта) — разберёмся ниже по статусу
+        }
         if (!response.ok) {
-          const details = data.error?.message ?? `LLM request failed with ${response.status}`;
+          const details = data.error?.message || (text.trim().slice(0, 300) || `LLM request failed with ${response.status}`);
           if (response.status === 429) {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
