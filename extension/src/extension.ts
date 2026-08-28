@@ -6,13 +6,15 @@ import { buildReviewPrompt, SYSTEM_PROMPT } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, detectProvider, fetchLiveModels, keyUrl, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
+import { defaultModel, detectProvider, fetchLiveModels, keyUrl, maskApiKey, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildProjectSystemPrompt, collectAuditFiles, readProjectContext, writeProjectContext } from './projectAudit';
+import { buildSettingsHtml, SettingsState } from './settingsHtml';
+import { withReportLanguage } from '../../src/prompt-builder';
 
 const SECRET_KEY = 'codescout.apiKey';
 const SECRET_PROVIDER = 'codescout.provider';
@@ -198,7 +200,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(SYSTEM_PROMPT, currentReportLanguage()));
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -240,7 +242,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
-    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
+    const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
     const auditSelection = await resolveExtensionSelection(context);
     writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
@@ -271,7 +273,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -297,6 +299,73 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
   }
 }
 
+interface SettingsMessage {
+  command: string;
+  apiKey?: string;
+  providerKey?: string;
+  reportLanguage?: string;
+  showAuditBanner?: boolean;
+}
+
+function currentReportLanguage(): 'ru' | 'en' {
+  return vscode.workspace.getConfiguration('codescout').get<string>('reportLanguage') === 'en' ? 'en' : 'ru';
+}
+
+function auditBannerEnabled(): boolean {
+  return vscode.workspace.getConfiguration('codescout').get<boolean>('showAuditBanner', true);
+}
+
+let settingsPanel: vscode.WebviewPanel | undefined;
+
+async function readSettingsState(context: vscode.ExtensionContext): Promise<SettingsState> {
+  const selection = await resolveExtensionSelection(context);
+  const key = await context.secrets.get(SECRET_KEY);
+  return {
+    keyMask: key ? maskApiKey(key) : '',
+    keyConfigured: Boolean(key?.trim()),
+    provider: selection.provider,
+    model: selection.model,
+    reportLanguage: currentReportLanguage(),
+    showAuditBanner: auditBannerEnabled()
+  };
+}
+
+async function saveKeyProvider(context: vscode.ExtensionContext, message: SettingsMessage): Promise<string> {
+  const selection = await resolveExtensionSelection(context);
+  const key = message.apiKey?.trim();
+  const notes: string[] = [];
+  let provider: ProviderName = selection.provider;
+  let model = selection.model;
+  if (key) {
+    await context.secrets.store(SECRET_KEY, key);
+    notes.push('ключ сохранён');
+  }
+  if (message.providerKey && message.providerKey !== 'auto') {
+    provider = message.providerKey as ProviderName;
+    if (provider !== selection.provider || key) {
+      model = defaultModel(provider);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
+    }
+  } else if (key) {
+    const detected = detectProvider(key);
+    if (detected) {
+      provider = detected.provider;
+      if (!selection.userChosenModel) model = detected.model;
+      notes.push(`провайдер определён автоматически: ${provider}`);
+    } else {
+      notes.push('префикс ключа не распознан — выбери провайдера вручную');
+    }
+  }
+  await context.secrets.store(SECRET_PROVIDER, provider);
+  const storedKey = key || (await context.secrets.get(SECRET_KEY));
+  if (storedKey) {
+    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: selection.baseUrl }, true);
+    model = validated.model;
+  }
+  await context.secrets.store(SECRET_MODEL, model);
+  return `✅ ${notes.length ? `${notes.join(', ')} · ` : ''}${provider} · ${model}`;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeScout');
   const panel = new CodeScoutPanel();
@@ -315,6 +384,38 @@ export function activate(context: vscode.ExtensionContext): void {
   void syncKeyStatus();
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
+    vscode.commands.registerCommand('codescout.openSettings', async () => {
+      const render = async (status = ''): Promise<void> => {
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status);
+      };
+      if (!settingsPanel) {
+        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true });
+        settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
+        settingsPanel.webview.onDidReceiveMessage(async (message: SettingsMessage) => {
+          if (message.command === 'saveKeyProvider') {
+            const status = await saveKeyProvider(context, message);
+            await syncKeyStatus();
+            await render(status);
+          } else if (message.command === 'saveAppearance') {
+            const config = vscode.workspace.getConfiguration('codescout');
+            const language = message.reportLanguage === 'en' ? 'en' : 'ru';
+            const banner = message.showAuditBanner !== false;
+            await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
+            await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
+            await render(`✅ Язык отчётов: ${language.toUpperCase()}, баннер аудита ${banner ? 'включён' : 'выключен'}`);
+          } else if (message.command === 'clearApiKey') {
+            await vscode.commands.executeCommand('codescout.clearApiKey');
+            await render('⌫ Ключ удалён из SecretStorage');
+          } else if (message.command === 'chooseModel') {
+            await vscode.commands.executeCommand('codescout.chooseModel');
+            await render('✅ Модель обновлена из живого списка');
+          }
+        });
+      } else {
+        settingsPanel.reveal(vscode.ViewColumn.One);
+      }
+      await render();
+    }),
     vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
     vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
@@ -384,6 +485,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) === 'true';
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');
     else if (stale) panel.setWelcomeBanner(true, 'stale');
   })();

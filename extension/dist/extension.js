@@ -288,6 +288,13 @@ function oneLine(value) {
 }
 var PATCH_FENCE = "<<<CODESCOUT_PATCH_BEGIN>>>";
 var PATCH_END_FENCE = "<<<CODESCOUT_PATCH_END>>>";
+function withReportLanguage(prompt, language) {
+  return language === "en" ? `${prompt}
+
+Write the human-readable fields (description, suggestion, summary) in English. Do not translate code.` : `${prompt}
+
+\u041F\u0438\u0448\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0435 \u043F\u043E\u043B\u044F (description, suggestion, summary) \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438. \u041A\u043E\u0434 \u043D\u0435 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438.`;
+}
 function buildReviewPrompt(file, patch) {
   return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.
 
@@ -563,7 +570,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === "stale" ? "\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?" : "\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?"}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === "stale" ? "\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C" : "\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442"}</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div></div></div>` : ""}
     <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="setApiKey">${keyConfigured ? "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C" : "\u041D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C"}</button><button type="button" data-command="openSettings" title="\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F</button>${keyConfigured ? `<button type="button" data-command="chooseModel">\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C: ${escapeHtml(model)}</button><button type="button" data-command="clearApiKey">\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C</button>` : ""}</div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     ${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}
     <div class="actions">
@@ -672,6 +679,8 @@ var CodeScoutPanel = class {
         this.render();
       } else if (message.command === "setApiKey") {
         void vscode.commands.executeCommand("codescout.setApiKey");
+      } else if (message.command === "openSettings") {
+        void vscode.commands.executeCommand("codescout.openSettings");
       } else if (message.command === "clearApiKey") {
         void vscode.commands.executeCommand("codescout.clearApiKey");
       } else if (message.command === "chooseModel") {
@@ -915,6 +924,97 @@ function writeProjectContext(workspaceRoot, filesCount, issues, auditMeta) {
   return context;
 }
 
+// src/settingsHtml.ts
+var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
+function escapeHtml2(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function buildSettingsHtml(state, statusMessage = "") {
+  const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443" : value}</option>`).join("");
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+.brand-mark { color: var(--vscode-textLink-foreground); }
+section { margin-top: 16px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
+h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--vscode-textLink-foreground); }
+label { display: block; margin: 10px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
+button { padding: 6px 12px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.checkbox { display: flex; align-items: center; gap: 8px; }
+.checkbox input { width: auto; }
+.hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
+.status { margin-top: 14px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? "" : "display: none;"} }
+.current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</div>
+<div class="status" id="status">${escapeHtml2(statusMessage)}</div>
+<main>
+<section>
+  <h2>\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440</h2>
+  <label for="provider">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440</label>
+  <select id="provider">${providerOptions}</select>
+  <label for="apiKey">API-\u043A\u043B\u044E\u0447 ( SecretStorage )</label>
+  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447" : "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C"}">
+  <label class="checkbox"><input id="revealKey" type="checkbox"> \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447</label>
+  <div class="current-key">\u0441\u0435\u0439\u0447\u0430\u0441: ${state.keyConfigured ? `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(state.model)}` : "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"}</div>
+  <div class="row">
+    <button id="saveKey" type="button">\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+    <button id="chooseModel" type="button" class="secondary">\u{1F9F2} \u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026</button>
+    <button id="clearKey" type="button" class="secondary">\u232B \u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447</button>
+  </div>
+  <p class="hint">auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.</p>
+</section>
+<section>
+  <h2>\u{1F3A8} \u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</h2>
+  <label for="reportLanguage">\u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432</label>
+  <select id="reportLanguage">
+    <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438</option>
+    <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>EN \u2014 English</option>
+  </select>
+  <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
+  <div class="row">
+    <button id="saveAppearance" type="button">\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+  </div>
+</section>
+</main>
+<script>
+const vscode = acquireVsCodeApi();
+document.getElementById('revealKey').addEventListener('change', (event) => {
+  document.getElementById('apiKey').type = event.target.checked ? 'text' : 'password';
+});
+document.getElementById('saveKey').addEventListener('click', () => {
+  const payload = { command: 'saveKeyProvider', providerKey: document.getElementById('provider').value };
+  const key = document.getElementById('apiKey').value.trim();
+  if (key) payload.apiKey = key;
+  vscode.postMessage(payload);
+});
+document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
+document.getElementById('saveAppearance').addEventListener('click', () => {
+  vscode.postMessage({
+    command: 'saveAppearance',
+    reportLanguage: document.getElementById('reportLanguage').value,
+    showAuditBanner: document.getElementById('showBanner').checked
+  });
+});
+</script>
+</body>
+</html>`;
+}
+
 // src/extension.ts
 var SECRET_KEY = "codescout.apiKey";
 var SECRET_PROVIDER = "codescout.provider";
@@ -1076,7 +1176,7 @@ async function runSampleReview(context, output, panel) {
     const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(SYSTEM_PROMPT, currentReportLanguage()));
     const summary = sampleTestSummary(result.issues.length);
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
@@ -1120,7 +1220,7 @@ async function runFullAudit(context, output, panel) {
     const result = await reviewFiles(context, audit.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt, true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`));
     const auditSelection = await resolveExtensionSelection(context);
     writeProjectContext(workspaceRoot, result.filesAnalyzed, result.issues, { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() });
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs));
@@ -1156,7 +1256,7 @@ async function runReview(context, lastCommit, output, panel) {
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, projectPrompt.prompt);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -1181,6 +1281,60 @@ async function runReview(context, lastCommit, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
+function currentReportLanguage() {
+  return vscode2.workspace.getConfiguration("codescout").get("reportLanguage") === "en" ? "en" : "ru";
+}
+function auditBannerEnabled() {
+  return vscode2.workspace.getConfiguration("codescout").get("showAuditBanner", true);
+}
+var settingsPanel;
+async function readSettingsState(context) {
+  const selection = await resolveExtensionSelection(context);
+  const key = await context.secrets.get(SECRET_KEY);
+  return {
+    keyMask: key ? maskApiKey(key) : "",
+    keyConfigured: Boolean(key?.trim()),
+    provider: selection.provider,
+    model: selection.model,
+    reportLanguage: currentReportLanguage(),
+    showAuditBanner: auditBannerEnabled()
+  };
+}
+async function saveKeyProvider(context, message) {
+  const selection = await resolveExtensionSelection(context);
+  const key = message.apiKey?.trim();
+  const notes = [];
+  let provider = selection.provider;
+  let model = selection.model;
+  if (key) {
+    await context.secrets.store(SECRET_KEY, key);
+    notes.push("\u043A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D");
+  }
+  if (message.providerKey && message.providerKey !== "auto") {
+    provider = message.providerKey;
+    if (provider !== selection.provider || key) {
+      model = defaultModel(provider);
+      await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
+    }
+  } else if (key) {
+    const detected = detectProvider(key);
+    if (detected) {
+      provider = detected.provider;
+      if (!selection.userChosenModel) model = detected.model;
+      notes.push(`\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0451\u043D \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438: ${provider}`);
+    } else {
+      notes.push("\u043F\u0440\u0435\u0444\u0438\u043A\u0441 \u043A\u043B\u044E\u0447\u0430 \u043D\u0435 \u0440\u0430\u0441\u043F\u043E\u0437\u043D\u0430\u043D \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432\u0440\u0443\u0447\u043D\u0443\u044E");
+    }
+  }
+  await context.secrets.store(SECRET_PROVIDER, provider);
+  const storedKey = key || await context.secrets.get(SECRET_KEY);
+  if (storedKey) {
+    const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: selection.baseUrl }, true);
+    model = validated.model;
+  }
+  await context.secrets.store(SECRET_MODEL, model);
+  return `\u2705 ${notes.length ? `${notes.join(", ")} \xB7 ` : ""}${provider} \xB7 ${model}`;
+}
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
   const panel = new CodeScoutPanel();
@@ -1197,6 +1351,40 @@ function activate(context) {
   void syncKeyStatus();
   context.subscriptions.push(
     vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
+    vscode2.commands.registerCommand("codescout.openSettings", async () => {
+      const render = async (status = "") => {
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status);
+      };
+      if (!settingsPanel) {
+        settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438", vscode2.ViewColumn.One, { enableScripts: true });
+        settingsPanel.onDidDispose(() => {
+          settingsPanel = void 0;
+        });
+        settingsPanel.webview.onDidReceiveMessage(async (message) => {
+          if (message.command === "saveKeyProvider") {
+            const status = await saveKeyProvider(context, message);
+            await syncKeyStatus();
+            await render(status);
+          } else if (message.command === "saveAppearance") {
+            const config = vscode2.workspace.getConfiguration("codescout");
+            const language = message.reportLanguage === "en" ? "en" : "ru";
+            const banner = message.showAuditBanner !== false;
+            await config.update("reportLanguage", language, vscode2.ConfigurationTarget.Global);
+            await config.update("showAuditBanner", banner, vscode2.ConfigurationTarget.Global);
+            await render(`\u2705 \u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432: ${language.toUpperCase()}, \u0431\u0430\u043D\u043D\u0435\u0440 \u0430\u0443\u0434\u0438\u0442\u0430 ${banner ? "\u0432\u043A\u043B\u044E\u0447\u0451\u043D" : "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D"}`);
+          } else if (message.command === "clearApiKey") {
+            await vscode2.commands.executeCommand("codescout.clearApiKey");
+            await render("\u232B \u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 SecretStorage");
+          } else if (message.command === "chooseModel") {
+            await vscode2.commands.executeCommand("codescout.chooseModel");
+            await render("\u2705 \u041C\u043E\u0434\u0435\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0438\u0437 \u0436\u0438\u0432\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430");
+          }
+        });
+      } else {
+        settingsPanel.reveal(vscode2.ViewColumn.One);
+      }
+      await render();
+    }),
     vscode2.commands.registerCommand("codescout.scanUncommitted", () => {
       lastScanWasLastCommit = false;
       return runReview(context, false, output, panel);
@@ -1272,6 +1460,7 @@ function activate(context) {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) === "true";
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
+    if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
     else if (stale) panel.setWelcomeBanner(true, "stale");
   })();
