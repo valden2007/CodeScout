@@ -19,11 +19,23 @@ export class RateLimitError extends Error {
   }
 }
 
+export function abortError(): Error {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
-  if (signal?.aborted) { reject(new DOMException('The operation was aborted', 'AbortError')); return; }
-  const timer = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('The operation was aborted', 'AbortError')); }, { once: true });
+  if (signal?.aborted) { reject(abortError()); return; }
+  const onAbort = (): void => { clearTimeout(timer); reject(abortError()); };
+  const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+  signal?.addEventListener('abort', onAbort, { once: true });
 });
+export { sleep };
 const RETRY_DELAYS_SECONDS = [15, 30, 60];
 
 function parseRetryAfterSeconds(response: Response, message: string): number | undefined {
@@ -31,6 +43,8 @@ function parseRetryAfterSeconds(response: Response, message: string): number | u
   if (header) {
     const seconds = Number.parseFloat(header);
     if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+    const date = new Date(header);
+    if (!Number.isNaN(date.getTime())) return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 1000));
   }
   const match = message.match(/try\s+again\s+in\s+(\d+(?:\.\d+)?)\s*s?/i);
   if (match) return Math.ceil(Number.parseFloat(match[1]));
@@ -69,7 +83,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     let lastRateLimit: { waitSeconds?: number; details: string } | undefined;
 
     while (true) {
-      if (this.signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+      if (this.signal?.aborted) throw abortError();
       this.lastRequestAt = Date.now();
       try {
         const response = await this.fetcher(this.endpoint, {
@@ -98,7 +112,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         if (!content) throw new Error('LLM returned an empty response');
         return content;
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
         let parsed: { waitSeconds?: number; details?: string } = {};
         try { parsed = JSON.parse(error.message) as typeof parsed; } catch { /* final public error */ }
@@ -107,7 +121,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
-        const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
+        const waitSeconds = (lastRateLimit.waitSeconds ?? 0) > 0 ? (lastRateLimit.waitSeconds as number) : RETRY_DELAYS_SECONDS[retryCount - 1];
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1000, this.signal);
       }

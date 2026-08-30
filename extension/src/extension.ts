@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createProvider, RetryEvent } from '../../src/llm-client';
+import { abortError, createProvider, isAbortError, RetryEvent } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -165,7 +165,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
       try {
         const importsLine = importsResolver?.(file.filename) ?? '';
         for (const chunk of splitPatch(file.patch, 45_000)) {
-          if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+          if (signal?.aborted) throw abortError();
           const elapsedMs = Date.now() - startedAt;
           onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
           onThinking?.(elapsedMs);
@@ -178,7 +178,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
         completed = true;
       } catch (error) {
         lastError = error;
-        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        if (isAbortError(error)) throw error;
       }
     }
     if (!completed) {
@@ -193,15 +193,11 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
 async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
-  if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+  if (signal?.aborted) throw abortError();
   return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, undefined, undefined, (filename) => importsContextLine(workspaceRoot, filename));
 }
 
 let activeAbortController: AbortController | undefined;
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
 
 async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
   const controller = new AbortController();
