@@ -134,5 +134,17 @@ pre-design now.
    section → advisory Output "🔴 плотный контекст… для сильных
    моделей" (never drops). Defaults also enforced in the manifest
    (minimum/maximum). Tests: 102.
+4. Fix-batch 2 (security/crash) — DONE: optional chaining on
+   findingsDiff.fixed + readFindingsHistory normalizes corrupt
+   entries; imports line → CODESCOUT_UNTRUSTED_IMPORTS fence with
+   neutralizeFences; TUI stripAnsi for code/category/suggestion/
+   filename, high severity in TUI type (🟠), stats.seconds null →
+   'N/A'; panel openFile uses getWorkspaceFolder (multi-root) +
+   realpath-before-containment (deleted-parent safe); maskApiKey
+   for ≤3 chars → '•••'; resolveBaseUrl forbids http except
+   localhost/127.0.0.1; GitHub report escapeHtml + backtick-safe
+   inlineCode; audit walker skips symlinks (isSymbolicLink);
+   response-parser clear RU errors for null/array/scalar JSON.
+   Tests: 109.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.
