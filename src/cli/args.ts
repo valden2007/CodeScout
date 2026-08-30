@@ -1,5 +1,4 @@
 import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
 import { defaultModel, ProviderName } from '../providers';
 
 export interface CliArgs {
@@ -42,7 +41,7 @@ export function validateFlags(argv: string[]): void {
 
 export function parseArgs(argv: string[]): CliArgs {
   validateFlags(argv);
-  const parsed = yargs(hideBin(['node', 'codescout', ...argv]))
+  const parsed = yargs(argv)
     .command('$0 [command]', 'Run a CodeScout scan', (builder) => builder.positional('command', { type: 'string', default: 'scan' }))
     .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
     .option('provider', { type: 'string', choices: ['gemini', 'groq', 'openrouter', 'github', 'custom'] as const, default: 'gemini', describe: 'LLM provider' })

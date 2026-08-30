@@ -11,10 +11,10 @@ export function correctIssueLine(issue: ReviewIssue, repoPath: string): ReviewIs
     const content = readFileSync(abs, 'utf8');
     const haystack = content.replace(/\r\n/g, '\n');
     const snippet = issue.code.trim().replace(/\r\n/g, '\n');
-    const positions: number[] = [];
-    for (let from = haystack.indexOf(snippet); from >= 0; from = haystack.indexOf(snippet, from + snippet.length)) positions.push(from);
-    if (positions.length !== 1) return issue;
-    const line = 1 + (haystack.slice(0, positions[0]).match(/\n/g)?.length ?? 0);
+    const first = haystack.indexOf(snippet);
+    if (first < 0) return issue;
+    if (haystack.indexOf(snippet, first + snippet.length) >= 0) return issue;
+    const line = 1 + (haystack.slice(0, first).match(/\n/g)?.length ?? 0);
     return { ...issue, line };
   } catch {
     return issue;

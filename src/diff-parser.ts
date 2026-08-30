@@ -1,9 +1,16 @@
 import { DiffFile } from './types';
 
-const IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build|\.next)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
+const IGNORED_DIRS = new Set(['node_modules', 'vendor', 'dist', 'build', '.next']);
+const IGNORED_BASENAMES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']);
+const IGNORED_EXTENSIONS = /\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
 
 export function shouldReviewFile(filename: string): boolean {
-  return !IGNORED_FILE.test(filename);
+  const segments = filename.split(/[/\\]/);
+  const basename = segments[segments.length - 1] ?? '';
+  if (segments.some((segment) => IGNORED_DIRS.has(segment))) return false;
+  if (IGNORED_BASENAMES.has(basename)) return false;
+  if (IGNORED_EXTENSIONS.test(basename)) return false;
+  return true;
 }
 
 export function parseUnifiedDiff(diff: string): DiffFile[] {
@@ -14,10 +21,23 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
     if (!header) continue;
     const filename = header[2];
     if (!shouldReviewFile(filename)) continue;
-    if (!section.match(/^(?:\+\+\+ b\/.+|\+\+\+ \/dev\/null)$/m)) continue;
     const lines = section.split('\n');
-    const additions = lines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
-    const deletions = lines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+    let inHunk = false;
+    let additions = 0;
+    let deletions = 0;
+    let hasNewSide = false;
+    for (const line of lines) {
+      if (/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/.test(line)) { inHunk = true; continue; }
+      if (!inHunk && (line.startsWith('+++ ') || line.startsWith('--- ') || line.startsWith('diff --git '))) {
+        if (line.startsWith('+++ ')) hasNewSide = true;
+        if (line.startsWith('diff --git ')) inHunk = false;
+        continue;
+      }
+      if (!inHunk) continue;
+      if (line.startsWith('+')) additions += 1;
+      else if (line.startsWith('-')) deletions += 1;
+    }
+    if (!hasNewSide && !section.includes('+++ /dev/null')) continue;
     files.push({ filename, status: section.includes('new file mode') ? 'added' : section.includes('deleted file mode') ? 'removed' : 'modified', additions, deletions, patch: section.trim() });
   }
   return files;

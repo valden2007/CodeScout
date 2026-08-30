@@ -178,5 +178,21 @@ pre-design now.
    extractJson balanced-brace scanner (string/escape aware)
    replaces lastIndexOf('}'). WON'T FIX by owner decision:
    maskApiKey tail, key reveal toggle. Tests: 128.
+7. Fix-batch 5 (performance + robustness) — DONE: src/async-pool.ts
+   (12-line concurrency limiter, no deps, concurrency 4) powers
+   action.ts file review (Promise-based pool + core.warning per
+   failed file — one bad file no longer kills the run),
+   comment-poster dedupe via Set key + parallel posting, and
+   stampCommitIds fan-out; RateLimitError now has typed
+   waitSeconds/details fields (no JSON-in-message); correctIssueLine
+   early-exits on 2nd hit (O(N)); hideBin gone — yargs(argv) with
+   user args directly; DiffReader: unborn-branch clear error,
+   single-commit lastCommit falls back to `git show --format= HEAD`;
+   App.tsx: primitive useEffect deps + onExit prop (no
+   process.exitCode in component); parseUnifiedDiff: hunk-state
+   counting (in-hunk +++i;/--j; counted as +/-, headers only
+   outside hunk) and segment-based ignore (my_vendor_lib safe);
+   TUI confidenceLabel rounds/clamps percent; sample summary has a
+   1-of-3 message. Tests: 140.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.
