@@ -43,7 +43,7 @@ function toDiffFile(file: LocalDiffFile): DiffFile {
 }
 
 function toTuiIssue(issue: ReviewIssue): Issue {
-  const severity = issue.severity === 'critical' ? 'critical' : issue.severity === 'low' ? 'low' : 'medium';
+  const severity: Issue['severity'] = issue.severity === 'critical' ? 'critical' : issue.severity === 'high' ? 'high' : issue.severity === 'low' ? 'low' : 'medium';
   return {
     severity,
     category: issue.category,
@@ -118,17 +118,19 @@ export function App({ args }: Props) {
 
   const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
   const issueByFile = new Map<string, Issue[]>();
-  for (const issue of review.issues) {
-    const current = issueByFile.get(issue.file) ?? [];
-    current.push(toTuiIssue(issue));
-    issueByFile.set(issue.file, current);
+  const tuiIssues = review.issues.map(toTuiIssue);
+  for (const [index, tuiIssue] of tuiIssues.entries()) {
+    const current = issueByFile.get(review.issues[index].file) ?? [];
+    current.push(tuiIssue);
+    issueByFile.set(review.issues[index].file, current);
   }
   const stats = {
     issues: review.issues.length,
     files: result.files.length,
     seconds: review.durationMs / 1000,
     critical: review.issues.filter((issue) => issue.severity === 'critical').length,
-    medium: review.issues.filter((issue) => issue.severity === 'medium').length,
+    high: review.issues.filter((issue) => issue.severity === 'high').length,
+    medium: review.issues.filter((issue) => issue.severity !== 'critical' && issue.severity !== 'high' && issue.severity !== 'low').length,
     low: review.issues.filter((issue) => issue.severity === 'low').length
   };
   const retryText = reviewStatus(args.model, review.retry);
