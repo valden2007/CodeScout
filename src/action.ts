@@ -7,6 +7,7 @@ import { createProvider } from './llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT } from './prompt-builder';
 import { postIssues } from './comment-poster';
 import { parseReviewResponse } from './response-parser';
+import { asyncPool } from './async-pool';
 import { DiffFile, ReviewIssue } from './types';
 
 export async function run(): Promise<void> {
@@ -22,14 +23,20 @@ export async function run(): Promise<void> {
     const provider = createProvider(core.getInput('provider') || 'gemini', apiKey, core.getInput('model') || 'gemini-2.5-flash');
     const allFiles = await client.getPullRequestFiles();
     const files = allFiles.filter((file) => shouldReviewFile(file.filename) && file.patch);
-    const issues: ReviewIssue[] = [];
-    for (const file of files) {
-      const patches = splitPatch(file.patch);
-      for (const patch of patches) {
-        const result = parseReviewResponse(await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, patch)), file.filename);
-        issues.push(...result.issues);
+    const perFile = await asyncPool(4, files, async (file) => {
+      try {
+        const found: ReviewIssue[] = [];
+        for (const patch of splitPatch(file.patch)) {
+          const result = parseReviewResponse(await provider.review(SYSTEM_PROMPT, buildReviewPrompt(file, patch)), file.filename);
+          found.push(...result.issues);
+        }
+        return found;
+      } catch (error) {
+        core.warning(`CodeScout: файл ${file.filename} пропущен — ${error instanceof Error ? error.message : String(error)}`);
+        return [] as ReviewIssue[];
       }
-    }
+    });
+    const issues: ReviewIssue[] = perFile.flat();
     const durationMs = Date.now() - startedAt;
     await client.stampCommitIds(issues);
     const posted = await postIssues(client, issues, files.length, durationMs);

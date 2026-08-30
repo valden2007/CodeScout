@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { DiffFile, GitHubPullRequestContext, ReviewIssue } from './types';
 import { SUMMARY_MARKER } from './report-formatter';
+import { asyncPool } from './async-pool';
 
 export class GitHubClient {
   constructor(private readonly octokit: Octokit, private readonly context: GitHubPullRequestContext) {}
@@ -29,7 +30,7 @@ export class GitHubClient {
     if (!targets.length) return;
     const prCommits = await this.octokit.paginate(this.octokit.rest.pulls.listCommits, { owner: this.context.owner, repo: this.context.repo, pull_number: this.context.pullNumber, per_page: 100 });
     const prShas = new Set(prCommits.map((commit) => commit.sha));
-    for (const target of targets) {
+    await asyncPool(4, targets, async (target) => {
       try {
         const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, { owner: this.context.owner, repo: this.context.repo, path: target, sha: this.context.headSha, per_page: 100 });
         const stamp = commits.find((commit) => prShas.has(commit.sha))?.sha;
@@ -37,7 +38,7 @@ export class GitHubClient {
       } catch (error) {
         console.warn(`CodeScout: не удалось проставить commit_id для ${target}: ${error instanceof Error ? error.message : String(error)} — fallback на headSha`);
       }
-    }
+    });
   }
 
   async upsertSummaryComment(body: string): Promise<void> {

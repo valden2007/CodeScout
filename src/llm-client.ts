@@ -13,9 +13,14 @@ export interface RetryEvent {
 }
 
 export class RateLimitError extends Error {
-  constructor(message: string) {
+  readonly waitSeconds?: number;
+  readonly details: string;
+
+  constructor(message: string, waitSeconds?: number, details = '') {
     super(message);
     this.name = 'RateLimitError';
+    this.waitSeconds = waitSeconds;
+    this.details = details;
   }
 }
 
@@ -103,7 +108,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           const details = data.error?.message || (text.trim().slice(0, 300) || `LLM request failed with ${response.status}`);
           if (response.status === 429) {
             const waitSeconds = parseRetryAfterSeconds(response, details);
-            throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
+            throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
           if (response.status === 404) throw new Error(notFoundMessage(this.model));
           throw new Error(details);
@@ -114,9 +119,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       } catch (error) {
         if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
-        let parsed: { waitSeconds?: number; details?: string } = {};
-        try { parsed = JSON.parse(error.message) as typeof parsed; } catch { /* final public error */ }
-        lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? '' };
+        lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }

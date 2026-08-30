@@ -13,7 +13,7 @@ import { completionUrl, detectProvider, maskApiKey, normalizeProvider, parseLive
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
-import { SAMPLE_DIFF, SAMPLE_FILE } from '../extension/src/sampleReview';
+import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isIgnoredAuditPath, listAuditSourceFiles, loadIgnorePatterns, mergeCheckpointIssues, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
 import { buildReviewPrompt } from '../src/prompt-builder';
 import { ReviewIssue } from '../src/types';
@@ -59,7 +59,8 @@ describe('UX and audit regression fixes', () => {
     expect(correction).toContain('if (!abs.startsWith(root + sep)) return issue;');
     const args = readFileSync('src/cli/args.ts', 'utf8');
     expect(args).toContain('Неизвестный провайдер');
-    expect(args).toContain('hideBin');
+    expect(args).toContain('yargs(argv)');
+    expect(args).not.toContain('hideBin');
   });
 });
 
@@ -1551,7 +1552,7 @@ describe('G4 fix batch regressions and security layer', () => {
     await expect(client.postIssue(issue(3))).rejects.toThrow('Validation Failed');
     expect(attempts).toEqual([2, 3]);
     const poster = readFileSync('src/comment-poster.ts', 'utf8');
-    expect(poster).toContain('if (await client.postIssue(issue)) posted += 1');
+    expect(poster).toContain('asyncPool(4, unique, (issue) => client.postIssue(issue))');
   });
 
   it('rejects hostile base refs before git sees them', () => {
@@ -1581,6 +1582,135 @@ describe('G4 fix batch regressions and security layer', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, 'x', 'success', 'k', true, 'groq', 'm');
     expect(html).toContain("/^(retry|error|test|success)$/.test(String(kind))");
     expect(html).toContain("const safeKind = /^(retry|error|test|success)$/.test(String(kind)) ? String(kind) : 'retry'");
+  });
+});
+
+describe('G5 fix batch performance and robustness', () => {
+  it('asyncPool caps concurrency and preserves order', async () => {
+    const { asyncPool } = await import('../src/async-pool');
+    let active = 0;
+    let peak = 0;
+    const output = await asyncPool(3, [1, 2, 3, 4, 5, 6, 7], async (n) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return n * 2;
+    });
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(output).toEqual([2, 4, 6, 8, 10, 12, 14]);
+    expect(await asyncPool(2, [], async (n) => n)).toEqual([]);
+  });
+
+  it('action reviews files in parallel and survives a single-file failure', () => {
+    const action = readFileSync('src/action.ts', 'utf8');
+    expect(action).toContain('asyncPool(4, files');
+    expect(action).toContain('core.warning');
+    expect(action).toContain('пропущен —');
+    expect(action).toContain('perFile.flat()');
+  });
+
+  it('stampCommitIds fans out through the pool', () => {
+    const client = readFileSync('src/github-client.ts', 'utf8');
+    expect(client).toContain('asyncPool(4, targets');
+  });
+
+  it('postIssues dedupes in O(N) and posts with concurrency 4', async () => {
+    const { postIssues } = await import('../src/comment-poster');
+    const issue = (line: number) => ({ file: 'a.ts', line, category: 'bug' as const, severity: 'low' as const, description: 'same', confidence: 0.5 });
+    const postedLines: number[] = [];
+    const client = { upsertSummaryComment: async () => undefined, postIssue: async (i: { line: number }) => { postedLines.push(i.line); return true; } };
+    const count = await postIssues(client as never, [issue(1), issue(1), issue(2)], 1, 0);
+    expect(count).toBe(2);
+    expect(postedLines.sort()).toEqual([1, 2]);
+  });
+
+  it('line correction stops after the second hit', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'codescout-twohit-'));
+    try {
+      writeFileSync(join(directory, 't.ts'), 'const dup = 1;\nconst other = 2;\nconst dup = 3;\n');
+      const issue = { file: 't.ts', line: 99, category: 'bug' as const, severity: 'low' as const, description: 'd', code: 'const dup', confidence: 0.9 };
+      expect(correctIssueLine(issue, directory).line).toBe(99);
+      expect(correctIssueLine({ ...issue, code: 'const other' }, directory).line).toBe(2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('RateLimitError carries typed fields, not JSON in the message', async () => {
+    const { RateLimitError } = await import('../src/llm-client');
+    const error = new RateLimitError('Rate limited by model: slow down', 42, 'slow down');
+    expect(error.message).toBe('Rate limited by model: slow down');
+    expect(error.waitSeconds).toBe(42);
+    expect(error.details).toBe('slow down');
+    const llm = readFileSync('src/llm-client.ts', 'utf8');
+    expect(llm).not.toContain('JSON.stringify({ waitSeconds');
+    expect(llm).toContain('error.waitSeconds');
+  });
+
+  it('cli passes user argv straight to yargs', () => {
+    const args = readFileSync('src/cli/args.ts', 'utf8');
+    expect(args).toContain('yargs(argv)');
+    expect(args).not.toContain('hideBin');
+    const cli = readFileSync('src/cli.ts', 'utf8');
+    expect(cli).toContain('process.argv.slice(2)');
+    expect(parseArgs(['--dry-run', '--path', '.']).dryRun).toBe(true);
+  });
+
+  it('single-commit repo reviews via show fallback, unborn branch gives a clear error', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-unborn-'));
+    try {
+      const git = (...a: string[]) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      git('init', '-b', 'main');
+      git('config', 'user.email', 't@t');
+      git('config', 'user.name', 't');
+      expect(() => readGitDiff(root)).toThrow('ни одного коммита');
+      writeFileSync(join(root, 'a.ts'), 'const a = 1;\n');
+      git('add', '.');
+      git('commit', '-m', 'only');
+      const last = readGitDiff(root, { lastCommit: true });
+      expect(last).toHaveLength(1);
+      expect(last[0]).toMatchObject({ filename: 'a.ts', status: 'added', additions: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('App uses primitive deps and the onExit callback', () => {
+    const app = readFileSync('src/tui/App.tsx', 'utf8');
+    expect(app).toContain('args.path, args.provider, args.model');
+    expect(app).toContain('onExit?.(1)');
+    expect(app).not.toContain('process.exitCode');
+    expect(app).not.toContain('[apiKey, args, result.error');
+    const cli = readFileSync('src/cli.ts', 'utf8');
+    expect(cli).toContain('onExit: (code: number) => { process.exitCode = code; }');
+  });
+
+  it('diff parser counts in-hunk +++/--- lines and matches path segments only', () => {
+    const tricky = 'diff --git a/x.ts b/x.ts\nindex 1..2\n--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,4 @@\n ctx\n+++i;\n--j;\n+const k = 1;';
+    const files = parseUnifiedDiff(tricky);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({ additions: 2, deletions: 1 });
+    expect(shouldReviewFile('my_vendor_lib/index.ts')).toBe(true);
+    expect(shouldReviewFile('src/dist.ts')).toBe(true);
+    expect(shouldReviewFile('vendor/x.js')).toBe(false);
+    expect(shouldReviewFile('src/build/x.js')).toBe(false);
+    expect(shouldReviewFile('a/b/pnpm-lock.yaml')).toBe(false);
+    expect(shouldReviewFile('src/app.map')).toBe(false);
+  });
+
+  it('confidence label rounds and clamps', () => {
+    const components = readFileSync('src/tui/components.tsx', 'utf8');
+    expect(components).toContain('confidenceLabel(issue.confidence)');
+    expect(components).toContain('function confidenceLabel(confidence: number): string');
+    expect(components).toContain('Math.min(100, Math.max(0, value))');
+  });
+
+  it('sample summary has a dedicated message for one found bug', () => {
+    expect(sampleTestSummary(0)).toContain('слишком слабая');
+    expect(sampleTestSummary(1)).toContain('только 1 из 3');
+    expect(sampleTestSummary(1)).not.toContain('Ревьюер жив');
+    expect(sampleTestSummary(3)).toContain('Ревьюер жив');
   });
 });
 
