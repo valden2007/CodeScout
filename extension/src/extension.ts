@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, defaultDocFetcher, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -136,7 +136,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -153,12 +153,13 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
     for (let attempt = 0; attempt < 2 && !completed; attempt++) {
       const fileIssues: ReviewIssue[] = [];
       try {
+        const importsLine = importsResolver?.(file.filename) ?? '';
         for (const chunk of splitPatch(file.patch, 45_000)) {
           if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
           const elapsedMs = Date.now() - startedAt;
           onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
           onThinking?.(elapsedMs);
-          const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk));
+          const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine));
           const parsed = parseReviewResponse(raw, file.filename);
           fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
         }
@@ -183,7 +184,7 @@ async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boo
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
   if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, undefined, undefined, (filename) => importsContextLine(workspaceRoot, filename));
 }
 
 let activeAbortController: AbortController | undefined;
@@ -248,11 +249,22 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
-    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []);
+    const docLinks = vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? [];
+    let docs: DocsResult = { section: '', fetched: 0, fromCache: 0, failed: 0 };
+    if (docLinks.some((link) => link.trim())) {
+      try {
+        docs = await fetchDocsForPrompt(workspaceRoot, docLinks, defaultDocFetcher, (message) => output.appendLine(message));
+      } catch (error) {
+        docs = { section: '', fetched: 0, fromCache: 0, failed: 0 };
+        output.appendLine(`⚠️ Docs fetch не выполнен: ${error instanceof Error ? error.message : String(error)} — аудит продолжается без текстов документации`);
+      }
+      const used = docs.fetched + docs.fromCache;
+      if (used > 0) output.appendLine(`🔗 Документация проекта: ${used} док(ов) в промте (свежих: ${docs.fetched}, из кэша: ${docs.fromCache})`);
+      else output.appendLine('🔗 Документация проекта: ни один док не подтянулся — в промте только ссылки');
+    }
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, docLinks, docs.section);
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
-    const docLinksCount = (vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []).filter((link) => link.trim()).length;
-    if (docLinksCount > 0) output.appendLine(`🔗 Документация проекта: ${docLinksCount} ссылок добавлено в промт (без fetch)`);
     let initial: AuditCheckpoint = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
     if (resume) {
       const saved = readAuditProgress(workspaceRoot);
@@ -280,7 +292,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
       doneNames.add(filename);
       state.checked.push({ file: filename, issues: fileIssues });
       persist();
-    });
+    }, (filename) => importsContextLine(workspaceRoot, filename));
     const mergedIssues = mergeCheckpointIssues(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -361,7 +373,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
-    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🎯 Своё ревью: файл', elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`));
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🎯 Своё ревью: файл', elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename));
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);

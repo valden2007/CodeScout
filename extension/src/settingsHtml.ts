@@ -100,7 +100,7 @@ button:disabled:hover { background: var(--vscode-button-background); }
     <button id="saveProject" type="button" disabled>💾 Сохранить</button>
     <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки добавляются строкой «Документация проекта: …» только в полный аудит — без fetch, RAG по ним будет в v1.3.</p>
+  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (≤5 ссылок, таймаут 5с, ≤20KB), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта».</p>
 </section>
 </main>
 <script>

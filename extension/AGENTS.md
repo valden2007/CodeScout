@@ -112,4 +112,16 @@ pre-design now.
    also palette commands codescout.resumeAudit / codescout.restartAudit).
    Resume refuses when model changed (starts fresh, clears).
    Clean completion deletes the file. Not committed (.codescout/).
-Backlog v2.x (RAG, GitLab CI, compliance mode) — DO NOT start, scope freeze.
+2. RAG v1 — DONE in 1.3b: full audit fetches codescout.docLinks
+   (http(s) only, ≤5 links, AbortSignal.timeout 5s, ≤20KB each),
+   strips tags/scripts/entities, sanitizes C0/bidi + neutralizes
+   patch fences, and injects a "Документация проекта" section wrapped
+   in CODESCOUT_DOCS fences labeled as untrusted web text. Cache
+   .codescout/docs-cache.json (url → {fetchedAt,text}, TTL 24h);
+   fetch failure falls back to stale cache, otherwise Output warning
+   only — audit never breaks. Cross-file context: every reviewed
+   file gets "Файл импортирует: ..." (relative ES imports/exports/
+   requires resolved to workspace-relative paths, cap 10) in its
+   review prompt via buildReviewPrompt importsLine. Tests: 98.
+Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
+RAG v1.3b is done — the old "RAG" backlog mention is superseded.
