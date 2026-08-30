@@ -162,5 +162,21 @@ pre-design now.
    panel: message subscription disposed on re-resolve/dispose,
    update() status kind 'success' (green banner) instead of
    'retry'. Tests: 121.
+6. Fix-batch 4 (regressions + security layer) — DONE: clampInt
+   clamps both ends (1.3b-settings regression); report-formatter
+   no escapeCell-before-escapeHtml double escaping (pipes stay
+   raw in HTML, escaped once); neutralizeFences replaces only
+   complete <<<CODESCOUT_*>>> markers via regex (substring
+   corruption fixed); numberPatch isNaN guard on hunk parse;
+   auditResume.model escapeHtml (already present — verified);
+   webview applyStatus kind whitelist regex; DiffReader base ref
+   validated (no leading dash, SAFE_BASE_REF allowlist) —
+   argument injection closed; panel containment via
+   path.relative ('..' / absolute / empty) instead of startsWith;
+   GitHubClient.postIssue catches 422 → console.warn + continue
+   (returns boolean, comment-poster counts real posted);
+   extractJson balanced-brace scanner (string/escape aware)
+   replaces lastIndexOf('}'). WON'T FIX by owner decision:
+   maskApiKey tail, key reveal toggle. Tests: 128.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.
