@@ -14,6 +14,7 @@ import { FilePanel, Header, Issue, SummaryBar } from './components';
 
 interface Props {
   args: CliArgs;
+  onExit?: (code: number) => void;
 }
 
 interface ScanState {
@@ -89,7 +90,7 @@ export function filesWithIssues(files: LocalDiffFile[], issueByFile: Map<string,
   return files.filter((file) => (issueByFile.get(file.filename)?.length ?? 0) > 0);
 }
 
-export function App({ args }: Props) {
+export function App({ args, onExit }: Props) {
   const [result] = useState(() => scan(args.path, args));
   const [review, setReview] = useState<ReviewState>({ issues: [], durationMs: 0, complete: false });
   const reviewStarted = useRef(false);
@@ -109,12 +110,12 @@ export function App({ args }: Props) {
       if (active) setReview(next);
     });
     return () => { active = false; };
-  }, [apiKey, args, result.error, result.files]);
+  }, [apiKey, args.path, args.provider, args.model, args.baseUrl, args.dryRun, args.apiKey, args.lastCommit, args.base, args.command, result.error, result.files]);
 
   const noKey = !apiKey && !args.dryRun && !result.error && result.files.length > 0;
   useEffect(() => {
-    if (noKey || review.error) process.exitCode = 1;
-  }, [noKey, review.error]);
+    if (noKey || review.error) onExit?.(1);
+  }, [noKey, review.error, onExit]);
 
   const showHeader = Boolean(result.error || result.files.length === 0 || noKey || review.complete);
   const issueByFile = new Map<string, Issue[]>();

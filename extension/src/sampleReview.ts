@@ -33,5 +33,5 @@ export const SAMPLE_FILE: DiffFile = {
 export const SAMPLE_EXPECTED_BUGS = 3;
 
 export function sampleTestSummary(found: number): string {
-  return `Пример: ожидалось 2-3 бага, найдено ${found}. ${found === 0 ? '⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️' : 'Ревьюер жив!'}`;
+  return `Пример: ожидалось 2-3 бага, найдено ${found}. ${found === 0 ? '⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️' : found === 1 ? 'Нашёл только 1 из 3 — ревьюер слабый, подумай сменить модель' : 'Ревьюер жив!'}`;
 }

@@ -142,9 +142,13 @@ function maskApiKey(key) {
 
 // ../src/llm-client.ts
 var RateLimitError = class extends Error {
-  constructor(message) {
+  waitSeconds;
+  details;
+  constructor(message, waitSeconds, details = "") {
     super(message);
     this.name = "RateLimitError";
+    this.waitSeconds = waitSeconds;
+    this.details = details;
   }
 };
 function abortError() {
@@ -229,7 +233,7 @@ var OpenAICompatibleProvider = class {
           const details = data.error?.message || (text.trim().slice(0, 300) || `LLM request failed with ${response.status}`);
           if (response.status === 429) {
             const waitSeconds = parseRetryAfterSeconds(response, details);
-            throw new RateLimitError(JSON.stringify({ waitSeconds, details }));
+            throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
           if (response.status === 404) throw new Error(notFoundMessage(this.model));
           throw new Error(details);
@@ -240,12 +244,7 @@ var OpenAICompatibleProvider = class {
       } catch (error) {
         if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
-        let parsed = {};
-        try {
-          parsed = JSON.parse(error.message);
-        } catch {
-        }
-        lastRateLimit = { waitSeconds: parsed.waitSeconds, details: parsed.details ?? "" };
+        lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
@@ -449,10 +448,10 @@ function correctIssueLine(issue, repoPath) {
     const content = (0, import_node_fs.readFileSync)(abs, "utf8");
     const haystack = content.replace(/\r\n/g, "\n");
     const snippet = issue.code.trim().replace(/\r\n/g, "\n");
-    const positions = [];
-    for (let from = haystack.indexOf(snippet); from >= 0; from = haystack.indexOf(snippet, from + snippet.length)) positions.push(from);
-    if (positions.length !== 1) return issue;
-    const line = 1 + (haystack.slice(0, positions[0]).match(/\n/g)?.length ?? 0);
+    const first = haystack.indexOf(snippet);
+    if (first < 0) return issue;
+    if (haystack.indexOf(snippet, first + snippet.length) >= 0) return issue;
+    const line = 1 + (haystack.slice(0, first).match(/\n/g)?.length ?? 0);
     return { ...issue, line };
   } catch {
     return issue;
@@ -460,9 +459,16 @@ function correctIssueLine(issue, repoPath) {
 }
 
 // ../src/diff-parser.ts
-var IGNORED_FILE = /(^|\/)(node_modules|vendor|dist|build|\.next)(\/|$)|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
+var IGNORED_DIRS = /* @__PURE__ */ new Set(["node_modules", "vendor", "dist", "build", ".next"]);
+var IGNORED_BASENAMES = /* @__PURE__ */ new Set(["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]);
+var IGNORED_EXTENSIONS = /\.(min\.(js|css)|map|png|jpe?g|gif|webp|ico|pdf|zip|woff2?)$/i;
 function shouldReviewFile(filename) {
-  return !IGNORED_FILE.test(filename);
+  const segments = filename.split(/[/\\]/);
+  const basename = segments[segments.length - 1] ?? "";
+  if (segments.some((segment) => IGNORED_DIRS.has(segment))) return false;
+  if (IGNORED_BASENAMES.has(basename)) return false;
+  if (IGNORED_EXTENSIONS.test(basename)) return false;
+  return true;
 }
 function parseUnifiedDiff(diff) {
   const files = [];
@@ -472,10 +478,26 @@ function parseUnifiedDiff(diff) {
     if (!header) continue;
     const filename = header[2];
     if (!shouldReviewFile(filename)) continue;
-    if (!section.match(/^(?:\+\+\+ b\/.+|\+\+\+ \/dev\/null)$/m)) continue;
     const lines = section.split("\n");
-    const additions = lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
-    const deletions = lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
+    let inHunk = false;
+    let additions = 0;
+    let deletions = 0;
+    let hasNewSide = false;
+    for (const line of lines) {
+      if (/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/.test(line)) {
+        inHunk = true;
+        continue;
+      }
+      if (!inHunk && (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff --git "))) {
+        if (line.startsWith("+++ ")) hasNewSide = true;
+        if (line.startsWith("diff --git ")) inHunk = false;
+        continue;
+      }
+      if (!inHunk) continue;
+      if (line.startsWith("+")) additions += 1;
+      else if (line.startsWith("-")) deletions += 1;
+    }
+    if (!hasNewSide && !section.includes("+++ /dev/null")) continue;
     files.push({ filename, status: section.includes("new file mode") ? "added" : section.includes("deleted file mode") ? "removed" : "modified", additions, deletions, patch: section.trim() });
   }
   return files;
@@ -516,6 +538,13 @@ function runGit(args, cwd) {
     throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least one commit.`);
   }
 }
+function tryRunGit(args, cwd) {
+  try {
+    return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 });
+  } catch {
+    return void 0;
+  }
+}
 function parseGitDiff(diff) {
   return parseUnifiedDiff(diff);
 }
@@ -523,14 +552,21 @@ var SAFE_BASE_REF = /^[A-Za-z0-9._/@~-]+$/;
 function readGitDiff(repoPath, options = {}) {
   const validationError = validateGitPath(repoPath);
   if (validationError) throw new Error(validationError);
-  runGit(["rev-parse", "--is-inside-work-tree"], repoPath);
+  if (tryRunGit(["rev-parse", "--verify", "HEAD"], repoPath) === void 0) {
+    throw new Error("\u0412 \u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0438 \u0435\u0449\u0451 \u043D\u0435\u0442 \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430 (unborn branch). \u0421\u0434\u0435\u043B\u0430\u0439 \u043F\u0435\u0440\u0432\u044B\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438.");
+  }
   const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath);
   if (options.base) {
     const base = options.base.trim();
     if (!base || base.startsWith("-") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / @ ~ \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432 \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
     return parseGitDiff(git("diff", `${base}...HEAD`));
   }
-  if (options.lastCommit) return parseGitDiff(git("diff", "HEAD~1", "HEAD"));
+  if (options.lastCommit) {
+    if (tryRunGit(["rev-parse", "--verify", "--quiet", "HEAD~1"], repoPath) === void 0) {
+      return parseGitDiff(git("show", "--format=", "HEAD"));
+    }
+    return parseGitDiff(git("diff", "HEAD~1", "HEAD"));
+  }
   return parseGitDiff(git("diff", "HEAD"));
 }
 
@@ -1073,7 +1109,7 @@ var SAMPLE_FILE = {
   patch: SAMPLE_DIFF
 };
 function sampleTestSummary(found) {
-  return `\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${found}. ${found === 0 ? "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F" : "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!"}`;
+  return `\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${found}. ${found === 0 ? "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F" : found === 1 ? "\u041D\u0430\u0448\u0451\u043B \u0442\u043E\u043B\u044C\u043A\u043E 1 \u0438\u0437 3 \u2014 \u0440\u0435\u0432\u044C\u044E\u0435\u0440 \u0441\u043B\u0430\u0431\u044B\u0439, \u043F\u043E\u0434\u0443\u043C\u0430\u0439 \u0441\u043C\u0435\u043D\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C" : "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!"}`;
 }
 
 // src/projectAudit.ts
@@ -1085,7 +1121,7 @@ function controlSafe2(value) {
 function neutralizeFences2(value) {
   return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
 }
-var IGNORED_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
+var IGNORED_DIRS2 = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
 var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
 function loadProjectRules(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "rules.md");
@@ -1284,7 +1320,7 @@ function globToRegExp(glob) {
   return new RegExp(`^${source}$`);
 }
 function isIgnoredAuditPath(path, patterns = []) {
-  if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part) || part.startsWith("."))) return true;
+  if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS2.has(part) || part.startsWith("."))) return true;
   const normalized = path.replaceAll("\\", "/");
   const segments = normalized.split("/").filter((segment) => segment.length > 0);
   for (const pattern of patterns) {
@@ -1307,7 +1343,7 @@ function isIgnoredAuditPath(path, patterns = []) {
 }
 function walkSourceFiles(root, current, result, ignored, patterns) {
   for (const entry of (0, import_node_fs4.readdirSync)(current, { withFileTypes: true })) {
-    if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+    if (IGNORED_DIRS2.has(entry.name) || entry.name.startsWith(".")) continue;
     if (entry.isSymbolicLink()) continue;
     const path = (0, import_node_path3.join)(current, entry.name);
     if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);

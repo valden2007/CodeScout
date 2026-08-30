@@ -37,6 +37,11 @@ export function stripAnsi(value: string): string {
   return value.replace(ANSI_PATTERN, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 }
 
+function confidenceLabel(confidence: number): string {
+  const value = Number.isFinite(confidence) ? Math.round(confidence <= 1 ? confidence * 100 : confidence) : 0;
+  return `${Math.min(100, Math.max(0, value))}%`;
+}
+
 export function Header({ path, filesAnalyzed = 0 }: { path: string; filesAnalyzed?: number }) {
   return (
     <Box borderStyle="round" borderColor="cyan" padding={1}>
@@ -53,7 +58,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
   const meta = severityMeta[issue.severity] ?? severityMeta.medium;
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={meta.color} bold>{meta.emoji} {stripAnsi(issue.severity).toUpperCase()} · {stripAnsi(issue.category)} · {issue.confidence}%</Text>
+      <Text color={meta.color} bold>{meta.emoji} {stripAnsi(issue.severity).toUpperCase()} · {stripAnsi(issue.category)} · {confidenceLabel(issue.confidence)}</Text>
       <Text dimColor>line {issue.line} │ {stripAnsi(issue.code)}</Text>
       <Text color="green">→ {stripAnsi(issue.suggestion)}</Text>
     </Box>

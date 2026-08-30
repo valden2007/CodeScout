@@ -9,7 +9,7 @@ import { App } from './tui/App';
 async function main(): Promise<void> {
   loadDotenv();
   const args = parseArgs(process.argv.slice(2));
-  const instance = render(React.createElement(App, { args }));
+  const instance = render(React.createElement(App, { args, onExit: (code: number) => { process.exitCode = code; } }));
   await instance.waitUntilExit();
 }
 
