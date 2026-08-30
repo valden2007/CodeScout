@@ -126,8 +126,8 @@ const saveProjectBtn = document.getElementById('saveProject');
 const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
-  if (!Number.isFinite(n) || n < min) return String(fallback);
-  return String(Math.min(max, n));
+  if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
+  return String(Math.min(max, Math.max(min, n)));
 }
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);

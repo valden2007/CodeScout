@@ -10,9 +10,7 @@ function controlSafe(value: string): string {
 }
 
 function neutralizeFences(value: string): string {
-  return value
-    .replaceAll('CODESCOUT_PATCH_BEGIN', 'CODESCOUT_PATCH_BEGIN_ESCAPED')
-    .replaceAll('CODESCOUT_PATCH_END', 'CODESCOUT_PATCH_END_ESCAPED');
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
 }
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage', '.codescout']);

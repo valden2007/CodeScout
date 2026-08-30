@@ -51,9 +51,7 @@ export function withFocusInstructions(prompt: string, focus: string): string {
 }
 
 function neutralizeFences(value: string): string {
-  return value
-    .replaceAll('CODESCOUT_PATCH_BEGIN', 'CODESCOUT_PATCH_BEGIN_ESCAPED')
-    .replaceAll('CODESCOUT_PATCH_END', 'CODESCOUT_PATCH_END_ESCAPED');
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
 }
 
 export function buildReviewPrompt(file: DiffFile, patch: string, importsLine = ''): string {

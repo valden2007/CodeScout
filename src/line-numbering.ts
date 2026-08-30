@@ -6,7 +6,9 @@ export function numberPatch(patch: string): string {
   return patch.split('\n').map((line) => {
     const hunk = line.match(HUNK_HEADER);
     if (hunk) {
-      newLine = Number(hunk[1]);
+      const parsed = Number(hunk[1]);
+      if (Number.isNaN(parsed)) return line;
+      newLine = parsed;
       inHunk = true;
       return line;
     }
