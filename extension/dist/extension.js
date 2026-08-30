@@ -81,7 +81,7 @@ var PROVIDERS = {
 };
 function detectProvider(key) {
   const value = key.trim();
-  if (value.startsWith("gsk_")) return { provider: "groq", model: "openai/gpt-oss-20b" };
+  if (value.startsWith("gsk_")) return { provider: "groq", model: "llama-3.3-70b-versatile" };
   if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-2.5-flash" };
   if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
   if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
@@ -90,7 +90,7 @@ function detectProvider(key) {
 function normalizeProvider(provider) {
   const value = provider?.trim().toLowerCase() || "gemini";
   if (value === "custom") return "custom";
-  if (value in PROVIDERS) return value;
+  if (Object.hasOwn(PROVIDERS, value)) return value;
   throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github \u0438\u043B\u0438 custom.`);
 }
 function resolveApiKey(provider, explicitKey, env2 = process.env) {
@@ -147,16 +147,28 @@ var RateLimitError = class extends Error {
     this.name = "RateLimitError";
   }
 };
+function abortError() {
+  const error = new Error("The operation was aborted");
+  error.name = "AbortError";
+  return error;
+}
+function isAbortError(error) {
+  return error instanceof Error && error.name === "AbortError";
+}
 var sleep = (ms, signal) => new Promise((resolve4, reject) => {
   if (signal?.aborted) {
-    reject(new DOMException("The operation was aborted", "AbortError"));
+    reject(abortError());
     return;
   }
-  const timer = setTimeout(resolve4, ms);
-  signal?.addEventListener("abort", () => {
+  const onAbort = () => {
     clearTimeout(timer);
-    reject(new DOMException("The operation was aborted", "AbortError"));
-  }, { once: true });
+    reject(abortError());
+  };
+  const timer = setTimeout(() => {
+    signal?.removeEventListener("abort", onAbort);
+    resolve4();
+  }, ms);
+  signal?.addEventListener("abort", onAbort, { once: true });
 });
 var RETRY_DELAYS_SECONDS = [15, 30, 60];
 function parseRetryAfterSeconds(response, message) {
@@ -164,6 +176,8 @@ function parseRetryAfterSeconds(response, message) {
   if (header) {
     const seconds = Number.parseFloat(header);
     if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+    const date = new Date(header);
+    if (!Number.isNaN(date.getTime())) return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 1e3));
   }
   const match = message.match(/try\s+again\s+in\s+(\d+(?:\.\d+)?)\s*s?/i);
   if (match) return Math.ceil(Number.parseFloat(match[1]));
@@ -196,7 +210,7 @@ var OpenAICompatibleProvider = class {
     let retryCount = 0;
     let lastRateLimit;
     while (true) {
-      if (this.signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+      if (this.signal?.aborted) throw abortError();
       this.lastRequestAt = Date.now();
       try {
         const response = await this.fetcher(this.endpoint, {
@@ -224,7 +238,7 @@ var OpenAICompatibleProvider = class {
         if (!content) throw new Error("LLM returned an empty response");
         return content;
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
         let parsed = {};
         try {
@@ -236,7 +250,7 @@ var OpenAICompatibleProvider = class {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
-        const waitSeconds = lastRateLimit.waitSeconds ?? RETRY_DELAYS_SECONDS[retryCount - 1];
+        const waitSeconds = (lastRateLimit.waitSeconds ?? 0) > 0 ? lastRateLimit.waitSeconds : RETRY_DELAYS_SECONDS[retryCount - 1];
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1e3, this.signal);
       }
@@ -253,14 +267,20 @@ function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
 var HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 function numberPatch(patch) {
   let newLine = 0;
+  let inHunk = false;
   return patch.split("\n").map((line) => {
     const hunk = line.match(HUNK_HEADER);
     if (hunk) {
       newLine = Number(hunk[1]);
+      inHunk = true;
       return line;
     }
-    if (newLine === 0 || line.startsWith("\\")) return line;
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("diff --git ")) {
+      inHunk = false;
+      return line;
+    }
+    if (!inHunk || newLine === 0 || line.startsWith("\\")) return line;
+    if (line.startsWith("+")) {
       const numbered = `${newLine} | ${line}`;
       newLine += 1;
       return numbered;
@@ -270,7 +290,7 @@ function numberPatch(patch) {
       newLine += 1;
       return numbered;
     }
-    if (line.startsWith("-") && !line.startsWith("---")) return line;
+    if (line.startsWith("-")) return line;
     return line;
   }).join("\n");
 }
@@ -404,9 +424,13 @@ function correctIssueLine(issue, repoPath) {
     const abs = (0, import_node_fs.realpathSync)((0, import_node_path.resolve)(repoPath, issue.file));
     if (!abs.startsWith(root + import_node_path.sep)) return issue;
     const content = (0, import_node_fs.readFileSync)(abs, "utf8");
-    const snippet = issue.code.trim();
-    const matches = content.split("\n").flatMap((line, index) => line.includes(snippet) ? [index + 1] : []);
-    return matches.length === 1 ? { ...issue, line: matches[0] } : issue;
+    const haystack = content.replace(/\r\n/g, "\n");
+    const snippet = issue.code.trim().replace(/\r\n/g, "\n");
+    const positions = [];
+    for (let from = haystack.indexOf(snippet); from >= 0; from = haystack.indexOf(snippet, from + snippet.length)) positions.push(from);
+    if (positions.length !== 1) return issue;
+    const line = 1 + (haystack.slice(0, positions[0]).match(/\n/g)?.length ?? 0);
+    return { ...issue, line };
   } catch {
     return issue;
   }
@@ -425,7 +449,7 @@ function parseUnifiedDiff(diff) {
     if (!header) continue;
     const filename = header[2];
     if (!shouldReviewFile(filename)) continue;
-    if (!section.match(/^\+\+\+ b\/.+$/m)) continue;
+    if (!section.match(/^(?:\+\+\+ b\/.+|\+\+\+ \/dev\/null)$/m)) continue;
     const lines = section.split("\n");
     const additions = lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
     const deletions = lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
@@ -464,7 +488,7 @@ function validateGitPath(repoPath) {
 }
 function runGit(args, cwd) {
   try {
-    return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 });
   } catch {
     throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least one commit.`);
   }
@@ -472,34 +496,14 @@ function runGit(args, cwd) {
 function parseGitDiff(diff) {
   return parseUnifiedDiff(diff);
 }
-function mergeFiles(files) {
-  const merged = /* @__PURE__ */ new Map();
-  for (const file of files) {
-    const previous = merged.get(file.filename);
-    if (!previous) {
-      merged.set(file.filename, file);
-      continue;
-    }
-    merged.set(file.filename, {
-      ...file,
-      additions: previous.additions + file.additions,
-      deletions: previous.deletions + file.deletions,
-      patch: `${previous.patch}
-${file.patch}`
-    });
-  }
-  return [...merged.values()];
-}
 function readGitDiff(repoPath, options = {}) {
   const validationError = validateGitPath(repoPath);
   if (validationError) throw new Error(validationError);
   runGit(["rev-parse", "--is-inside-work-tree"], repoPath);
   const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath);
   if (options.base) return parseGitDiff(git("diff", `${options.base}...HEAD`));
-  if (options.lastCommit) return parseGitDiff(git("diff", "HEAD~1"));
-  const unstaged = parseGitDiff(git("diff"));
-  const staged = parseGitDiff(git("diff", "--cached"));
-  return mergeFiles([...unstaged, ...staged]);
+  if (options.lastCommit) return parseGitDiff(git("diff", "HEAD~1", "HEAD"));
+  return parseGitDiff(git("diff", "HEAD"));
 }
 
 // src/panel.ts
@@ -590,6 +594,7 @@ button:disabled { opacity: 0.65; cursor: default; }
 .status-banner { margin-top: 10px; padding: 7px 8px; border-left: 3px solid var(--vscode-editorWarning-foreground); border-radius: 3px; color: var(--vscode-editorWarning-foreground); background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent); font-size: 12px; }
 .status-banner.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
 .status-banner.test { border-left-color: var(--vscode-testing-iconPassed); color: var(--vscode-testing-iconPassed); background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, transparent); }
+.status-banner.success { border-left-color: var(--vscode-testing-iconPassed); color: var(--vscode-testing-iconPassed); background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, transparent); }
 .test-badge { display: inline-block; margin-left: 8px; color: var(--vscode-testing-iconPassed); font-size: 11px; font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
@@ -729,7 +734,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         live.tick = true;
         applyProgressText(live.text);
       } else if (data.type === 'status') {
-        applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : 'retry');
+        applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : data.kind === 'test' ? 'test' : data.kind === 'success' ? 'success' : 'retry');
       }
     });
     setInterval(() => {
@@ -829,13 +834,17 @@ var CodeScoutPanel = class {
   auditResume;
   onWelcomeStart;
   onWelcomeDismiss;
+  messageSubscription;
   resolveWebviewView(webviewView) {
+    this.messageSubscription?.dispose();
     this.view = webviewView;
     webviewView.onDidDispose(() => {
+      this.messageSubscription?.dispose();
+      this.messageSubscription = void 0;
       if (this.view === webviewView) this.view = void 0;
     });
     webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.onDidReceiveMessage((message) => {
+    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message) => {
       if (message.command === "scanLastCommit") {
         void vscode.commands.executeCommand("codescout.scanLastCommit");
       } else if (message.command === "scanUncommitted") {
@@ -995,7 +1004,7 @@ var CodeScoutPanel = class {
     this.auditResume = void 0;
     this.progressMessage = "";
     this.statusMessage = testMessage;
-    this.statusKind = testWarning ? "error" : testMode ? "test" : "retry";
+    this.statusKind = testWarning ? "error" : testMode ? "test" : "success";
     this.render();
   }
   render() {
@@ -1784,7 +1793,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
       try {
         const importsLine = importsResolver?.(file.filename) ?? "";
         for (const chunk of splitPatch(file.patch, 45e3)) {
-          if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+          if (signal?.aborted) throw abortError();
           const elapsedMs = Date.now() - startedAt;
           onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
           onThinking?.(elapsedMs);
@@ -1797,7 +1806,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
         completed = true;
       } catch (error) {
         lastError = error;
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        if (isAbortError(error)) throw error;
       }
     }
     if (!completed) {
@@ -1811,13 +1820,10 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
 async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.");
-  if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+  if (signal?.aborted) throw abortError();
   return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, void 0, void 0, (filename) => importsContextLine(workspaceRoot, filename));
 }
 var activeAbortController;
-function isAbortError(error) {
-  return error instanceof DOMException && error.name === "AbortError";
-}
 async function runSampleReview(context, output, panel) {
   const controller = new AbortController();
   activeAbortController?.abort();

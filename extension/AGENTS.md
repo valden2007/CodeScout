@@ -146,5 +146,21 @@ pre-design now.
    inlineCode; audit walker skips symlinks (isSymbolicLink);
    response-parser clear RU errors for null/array/scalar JSON.
    Tests: 109.
+5. Fix-batch 3 (core) — DONE: parseUnifiedDiff accepts
+   `+++ /dev/null` (deleted files); stampCommitIds uses
+   octokit.paginate(repos.listCommits) + console.warn instead of
+   empty catch; correctIssueLine matches multi-line snippets
+   (whole-content indexOf + newline count); numberPatch uses an
+   inHunk state so added `+++i;` lines are numbered and file
+   headers are not; normalizeProvider via Object.hasOwn; groq
+   detect model → llama-3.3-70b-versatile; validateFlags stops at
+   `--`; DiffReader: `git diff HEAD` (no staged/unstaged merge),
+   `git diff HEAD~1 HEAD` for lastCommit, maxBuffer 10MB;
+   llm-client: abortError()/isAbortError plain-Error pair, sleep
+   removes its abort listener on resolve, retry-after RFC1123
+   date support, retry-after 0 falls back to the backoff ladder;
+   panel: message subscription disposed on re-resolve/dispose,
+   update() status kind 'success' (green banner) instead of
+   'retry'. Tests: 121.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.

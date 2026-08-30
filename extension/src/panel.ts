@@ -46,7 +46,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private hasRun = false;
   private scanning = false;
   private statusMessage = '';
-  private   statusKind: 'retry' | 'error' | 'test' = 'retry';
+  private statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry';
   private testMode = false;
   private progressMessage = '';
   private keyMask = '';
@@ -61,13 +61,18 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
+  private messageSubscription?: vscode.Disposable;
+
   resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.messageSubscription?.dispose();
     this.view = webviewView;
     webviewView.onDidDispose(() => {
+      this.messageSubscription?.dispose();
+      this.messageSubscription = undefined;
       if (this.view === webviewView) this.view = undefined;
     });
     webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
+    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
       if (message.command === 'scanLastCommit') {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
       } else if (message.command === 'scanUncommitted') {
@@ -240,7 +245,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditResume = undefined;
     this.progressMessage = '';
     this.statusMessage = testMessage;
-    this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'retry';
+    this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'success';
     this.render();
   }
 
