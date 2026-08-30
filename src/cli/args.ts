@@ -33,6 +33,7 @@ export function unknownFlagError(flag: string): Error {
 
 export function validateFlags(argv: string[]): void {
   for (const token of argv) {
+    if (token === '--') break;
     if (!token.startsWith('--')) continue;
     const flag = token.split('=', 1)[0];
     if (!KNOWN_FLAGS.has(flag)) throw unknownFlagError(flag);
