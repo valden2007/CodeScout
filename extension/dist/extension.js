@@ -35,7 +35,7 @@ __export(extension_exports, {
 });
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
-var import_node_fs4 = require("node:fs");
+var import_node_fs5 = require("node:fs");
 var import_node_path4 = require("node:path");
 
 // ../src/providers.ts
@@ -103,7 +103,20 @@ function resolveApiKeyPriority(secretKey, provider, legacySetting, env2 = proces
   return secretKey?.trim() || resolveApiKey(provider, void 0, env2) || legacySetting?.trim() || void 0;
 }
 function resolveBaseUrl(provider, customBaseUrl) {
-  if (customBaseUrl?.trim()) return customBaseUrl.trim().replace(/\/+$/, "");
+  if (customBaseUrl?.trim()) {
+    const url = customBaseUrl.trim().replace(/\/+$/, "");
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 baseUrl: ${customBaseUrl}. \u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F https://\u2026 (\u0438\u043B\u0438 http:// \u0434\u043B\u044F localhost/127.0.0.1).`);
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error(`baseUrl \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C http(s)://, \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u043E ${parsed.protocol} (${url})`);
+    if (parsed.protocol === "http:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+      throw new Error(`http:// \u0440\u0430\u0437\u0440\u0435\u0448\u0451\u043D \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F localhost/127.0.0.1 \u2014 \u043A\u043B\u044E\u0447 \u0443\u0442\u0435\u0447\u0451\u0442 \u0432 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u043C \u043A\u0430\u043D\u0430\u043B\u0435 (${url}). \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 https://`);
+    }
+    return url;
+  }
   const normalized = normalizeProvider(provider);
   if (normalized === "custom") throw new Error("\u0414\u043B\u044F provider custom \u0443\u043A\u0430\u0436\u0438 --base-url \u0438\u043B\u0438 CODESCOUT_BASE_URL.");
   return PROVIDERS[normalized].baseUrl;
@@ -122,7 +135,7 @@ function completionUrl(baseUrl) {
 function maskApiKey(key) {
   const trimmed = key.trim();
   if (!trimmed) return "";
-  if (trimmed.length <= 3) return `\u2022\u2022\u2022${trimmed}`;
+  if (trimmed.length <= 3) return "\u2022\u2022\u2022";
   const prefix = trimmed.length >= 7 ? trimmed.slice(0, 4) : "";
   return `${prefix}\u2022\u2022\u2022${trimmed.slice(-3)}`;
 }
@@ -293,6 +306,7 @@ function oneLine(value) {
 }
 var PATCH_FENCE = "<<<CODESCOUT_PATCH_BEGIN>>>";
 var PATCH_END_FENCE = "<<<CODESCOUT_PATCH_END>>>";
+var UNTRUSTED_IMPORTS_FENCE = "<<<CODESCOUT_UNTRUSTED_IMPORTS>>>";
 function withReportLanguage(prompt, language) {
   return language === "en" ? `${prompt}
 
@@ -314,9 +328,12 @@ function neutralizeFences(value) {
   return value.replaceAll("CODESCOUT_PATCH_BEGIN", "CODESCOUT_PATCH_BEGIN_ESCAPED").replaceAll("CODESCOUT_PATCH_END", "CODESCOUT_PATCH_END_ESCAPED");
 }
 function buildReviewPrompt(file, patch, importsLine = "") {
-  const imports = controlSafe(importsLine).replace(/\s+/g, " ").trim();
-  const importsSection = imports ? `
-${imports} (\u044D\u0442\u0438 \u0444\u0430\u0439\u043B\u044B \u043D\u0435 \u0432 \u043F\u0430\u0442\u0447\u0435 \u2014 \u0443\u0447\u0438\u0442\u044B\u0432\u0430\u0439 \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u0430\u043A \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u0432\u0438\u0441\u0438\u043C\u043E\u0441\u0442\u0435\u0439, \u043D\u0435 \u0440\u0435\u0432\u044C\u044E\u0439 \u0438\u0445)` : "";
+  const rawImports = controlSafe(importsLine).replace(/\s+/g, " ").trim();
+  const importsSection = rawImports ? `
+${UNTRUSTED_IMPORTS_FENCE}
+${neutralizeFences(rawImports)}
+${UNTRUSTED_IMPORTS_FENCE}
+(\u044D\u0442\u0438 \u0444\u0430\u0439\u043B\u044B \u043D\u0435 \u0432 \u043F\u0430\u0442\u0447\u0435 \u2014 \u0443\u0447\u0438\u0442\u044B\u0432\u0430\u0439 \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u0430\u043A \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u0432\u0438\u0441\u0438\u043C\u043E\u0441\u0442\u0435\u0439, \u043D\u0435 \u0440\u0435\u0432\u044C\u044E\u0439 \u0438\u0445; \u0442\u0435\u043A\u0441\u0442 \u043C\u0435\u0436\u0434\u0443 \u043C\u0435\u0442\u043A\u0430\u043C\u0438 \u043D\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C)` : "";
   return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.
 
 File: ${neutralizeFences(oneLine(file.filename))}
@@ -336,11 +353,17 @@ var categories = /* @__PURE__ */ new Set(["bug", "security", "performance", "mai
 var severities = /* @__PURE__ */ new Set(["low", "medium", "high", "critical"]);
 function extractJson(raw) {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenced) return fenced[1];
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start >= 0 && end > start) return raw.slice(start, end + 1);
-  return raw;
+  const body = fenced ? fenced[1] : raw;
+  const trimmed = body.trimStart();
+  if (trimmed.startsWith("[") || trimmed.startsWith('"') || trimmed.startsWith("-") || /^[0-9]/.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("{")) {
+    const end2 = trimmed.lastIndexOf("}");
+    return end2 > 0 ? trimmed.slice(0, end2 + 1) : trimmed;
+  }
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  if (start >= 0 && end > start) return body.slice(start, end + 1);
+  return body;
 }
 function parseReviewResponse(raw, filename) {
   let parsed;
@@ -349,6 +372,9 @@ function parseReviewResponse(raw, filename) {
   } catch {
     throw new Error(`LLM returned malformed JSON for ${filename}`);
   }
+  if (parsed === null) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON null \u0432\u043C\u0435\u0441\u0442\u043E \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u0440\u0435\u0432\u044C\u044E`);
+  if (Array.isArray(parsed)) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON-\u043C\u0430\u0441\u0441\u0438\u0432, \u043E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F \u043E\u0431\u044A\u0435\u043A\u0442 \u0441 \u043F\u043E\u043B\u0435\u043C "issues"`);
+  if (typeof parsed !== "object") throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 \u043D\u0435 JSON-\u043E\u0431\u044A\u0435\u043A\u0442 (\u043F\u043E\u043B\u0443\u0447\u0435\u043D ${typeof parsed})`);
   const object = parsed;
   const rawIssues = Array.isArray(object.issues) ? object.issues : [];
   const issues = rawIssues.flatMap((item) => {
@@ -478,6 +504,7 @@ function readGitDiff(repoPath, options = {}) {
 
 // src/panel.ts
 var vscode = __toESM(require("vscode"));
+var import_node_fs3 = require("node:fs");
 var import_node_path2 = require("node:path");
 
 // src/reportHtml.ts
@@ -522,7 +549,7 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join("")}</section>`).join("");
   const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : "";
   const customBanner = customFocus ? `<div class="diff-summary custom">\u{1F3AF} \u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E: ${escapeHtml(customFocus.slice(0, 160))}</div>` : "";
-  const fixedBlock = findingsDiff && findingsDiff.fixed.length ? `<details class="fixed-block"><summary>\u2705 \u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
+  const fixedBlock = findingsDiff?.fixed?.length ? `<details class="fixed-block"><summary>\u2705 \u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
   const body = sections || (emptyState && !keyConfigured ? '<div class="onboarding"><div class="empty-icon">\u{1F44B}</div><h1>\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout</h1><p><strong>\u0428\u0430\u0433 1.</strong> \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio</a>.</p><p><strong>\u0428\u0430\u0433 2.</strong> \u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.</p><button class="primary-action" type="button" data-command="setApiKey">\u{1F511} \u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C</button><p><strong>\u0428\u0430\u0433 3.</strong> \u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.</p></div>' : emptyState ? '<div class="empty"><div class="empty-icon">\u{1F575}\uFE0F</div><strong>CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435</strong><small>\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.</small></div>' : testMode ? '<div class="empty"><div class="empty-icon">\u{1F9EA}</div><strong>\u{1F9EA} \u0422\u0415\u0421\u0422</strong><small>\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.</small></div>' : `<div class="empty"><div class="empty-icon">\u2705</div><strong>\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${stats.files} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</strong><small>\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:</small><button class="primary-action" type="button" data-command="testSample">\u{1F9EA} \u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435</button></div>`);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -767,6 +794,20 @@ function safePost(webview, message) {
   } catch {
   }
 }
+function realExistingPath(path) {
+  let current = (0, import_node_path2.resolve)(path);
+  const missing = [];
+  for (; ; ) {
+    try {
+      return missing.length ? (0, import_node_path2.resolve)((0, import_node_fs3.realpathSync)(current), ...missing) : (0, import_node_fs3.realpathSync)(current);
+    } catch {
+      const parent = (0, import_node_path2.dirname)(current);
+      if (parent === current) return (0, import_node_path2.resolve)(path);
+      missing.unshift(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
+}
 var CodeScoutPanel = class {
   view;
   issues = [];
@@ -829,19 +870,21 @@ var CodeScoutPanel = class {
       } else if (message.command === "cancelScan") {
         void vscode.commands.executeCommand("codescout.cancelScan");
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const requestedUri = vscode.Uri.file((0, import_node_path2.resolve)(message.file));
+        const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
         if (!root) {
           void vscode.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.");
           return;
         }
-        const repoPath = (0, import_node_path2.resolve)(root.fsPath);
-        const candidate = (0, import_node_path2.resolve)(root.fsPath, message.file);
-        const outsideWorkspace = !candidate.startsWith(repoPath + import_node_path2.sep);
+        const candidate = (0, import_node_path2.resolve)(root.uri.fsPath, message.file);
+        const realRoot = realExistingPath(root.uri.fsPath);
+        const realCandidate = realExistingPath(candidate);
+        const outsideWorkspace = realCandidate !== realRoot && !realCandidate.startsWith(realRoot + import_node_path2.sep);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: ${message.file}`);
           return;
         }
-        const fileUri = vscode.Uri.file(candidate);
+        const fileUri = vscode.Uri.file(realCandidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
           const rawLine = Number(message.line);
           const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
@@ -995,7 +1038,7 @@ function sampleTestSummary(found) {
 }
 
 // src/projectAudit.ts
-var import_node_fs3 = require("node:fs");
+var import_node_fs4 = require("node:fs");
 var import_node_path3 = require("node:path");
 function controlSafe2(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
@@ -1007,15 +1050,15 @@ var IGNORED_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "bui
 var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
 function loadProjectRules(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "rules.md");
-  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
-  const rules = (0, import_node_fs3.readFileSync)(path, "utf8").trim();
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
+  const rules = (0, import_node_fs4.readFileSync)(path, "utf8").trim();
   return rules || void 0;
 }
 function readProjectContext(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "context.json");
-  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
   try {
-    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
     if (!parsed || !Array.isArray(parsed.topFindings)) return void 0;
     return parsed;
   } catch {
@@ -1034,8 +1077,8 @@ function docCachePath(workspaceRoot) {
 function readDocCache(workspaceRoot) {
   try {
     const path = docCachePath(workspaceRoot);
-    if (!(0, import_node_fs3.existsSync)(path)) return {};
-    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+    if (!(0, import_node_fs4.existsSync)(path)) return {};
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const cache = {};
     for (const [url, entry] of Object.entries(parsed)) {
@@ -1052,8 +1095,8 @@ function readDocCache(workspaceRoot) {
 function writeDocCache(workspaceRoot, cache) {
   try {
     const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
-    (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
-    (0, import_node_fs3.writeFileSync)(docCachePath(workspaceRoot), `${JSON.stringify(cache, null, 2)}
+    (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+    (0, import_node_fs4.writeFileSync)(docCachePath(workspaceRoot), `${JSON.stringify(cache, null, 2)}
 `, "utf8");
   } catch {
   }
@@ -1173,9 +1216,9 @@ ${docsSection}`;
 function loadIgnorePatterns(workspaceRoot) {
   const patterns = [];
   for (const source of [(0, import_node_path3.join)(workspaceRoot, ".gitignore"), (0, import_node_path3.join)(workspaceRoot, ".codescout", "ignore")]) {
-    if (!(0, import_node_fs3.existsSync)(source)) continue;
+    if (!(0, import_node_fs4.existsSync)(source)) continue;
     try {
-      for (const rawLine of (0, import_node_fs3.readFileSync)(source, "utf8").split(/\r?\n/)) {
+      for (const rawLine of (0, import_node_fs4.readFileSync)(source, "utf8").split(/\r?\n/)) {
         const line = rawLine.trim();
         if (!line || line.startsWith("#") || line.startsWith("!")) continue;
         patterns.push(line);
@@ -1224,11 +1267,12 @@ function isIgnoredAuditPath(path, patterns = []) {
   return false;
 }
 function walkSourceFiles(root, current, result, ignored, patterns) {
-  for (const entry of (0, import_node_fs3.readdirSync)(current, { withFileTypes: true })) {
+  for (const entry of (0, import_node_fs4.readdirSync)(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+    if (entry.isSymbolicLink()) continue;
     const path = (0, import_node_path3.join)(current, entry.name);
     if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
-    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) {
+    else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) {
       const relativePath = (0, import_node_path3.relative)(root, path).replaceAll("\\", "/");
       if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
       else result.push(relativePath);
@@ -1243,7 +1287,7 @@ function listAuditSourceFiles(workspaceRoot) {
   return { files: files.sort(), ignored };
 }
 function sourceFileDiff(workspaceRoot, filename) {
-  const content = (0, import_node_fs3.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8");
+  const content = (0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8");
   const lines = content.split(/\r?\n/);
   return { filename, status: "audit", additions: lines.length, deletions: 0, patch: `--- /dev/null
 +++ b/${filename}
@@ -1296,9 +1340,9 @@ function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxF
 }
 function projectStack(workspaceRoot) {
   const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
-  if (!(0, import_node_fs3.existsSync)(packagePath)) return [];
+  if (!(0, import_node_fs4.existsSync)(packagePath)) return [];
   try {
-    const pkg = JSON.parse((0, import_node_fs3.readFileSync)(packagePath, "utf8"));
+    const pkg = JSON.parse((0, import_node_fs4.readFileSync)(packagePath, "utf8"));
     return [.../* @__PURE__ */ new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})])].sort();
   } catch {
     return [];
@@ -1312,8 +1356,8 @@ function writeProjectContext(workspaceRoot, filesCount, issues, auditMeta) {
     ...auditMeta ? { auditMeta } : {}
   };
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
-  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
-  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs4.writeFileSync)((0, import_node_path3.join)(directory, "context.json"), `${JSON.stringify(context, null, 2)}
 `, "utf8");
   return context;
 }
@@ -1328,17 +1372,25 @@ function writeFindingsHistory(workspaceRoot, issues, scanType, auditMeta) {
     findings: issues.map((issue) => ({ file: issue.file, line: issue.line, category: issue.category, severity: issue.severity, description: issue.description }))
   };
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
-  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
-  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "history.json"), `${JSON.stringify(history, null, 2)}
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs4.writeFileSync)((0, import_node_path3.join)(directory, "history.json"), `${JSON.stringify(history, null, 2)}
 `, "utf8");
   return history;
 }
 function readFindingsHistory(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "history.json");
-  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
   try {
-    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
-    return Array.isArray(parsed.findings) ? parsed : void 0;
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
+    if (!Array.isArray(parsed.findings)) return void 0;
+    const findings = parsed.findings.filter((entry) => entry && typeof entry === "object").map((entry) => ({
+      file: typeof entry.file === "string" ? entry.file : "",
+      line: Number.isFinite(Number(entry.line)) ? Number(entry.line) : 1,
+      category: typeof entry.category === "string" ? entry.category : "bug",
+      severity: typeof entry.severity === "string" ? entry.severity : "medium",
+      description: typeof entry.description === "string" ? entry.description : ""
+    }));
+    return { ...parsed, findings };
   } catch {
     return void 0;
   }
@@ -1354,15 +1406,15 @@ function buildFindingsDiff(previous, issues) {
 }
 function writeAuditProgress(workspaceRoot, progress) {
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
-  (0, import_node_fs3.mkdirSync)(directory, { recursive: true });
-  (0, import_node_fs3.writeFileSync)((0, import_node_path3.join)(directory, "audit-progress.json"), `${JSON.stringify(progress, null, 2)}
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  (0, import_node_fs4.writeFileSync)((0, import_node_path3.join)(directory, "audit-progress.json"), `${JSON.stringify(progress, null, 2)}
 `, "utf8");
 }
 function readAuditProgress(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "audit-progress.json");
-  if (!(0, import_node_fs3.existsSync)(path)) return void 0;
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
   try {
-    const parsed = JSON.parse((0, import_node_fs3.readFileSync)(path, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
     if (!parsed || typeof parsed.startedAt !== "number" || typeof parsed.model !== "string" || !Array.isArray(parsed.checked) || !Array.isArray(parsed.remaining)) return void 0;
     return {
       startedAt: parsed.startedAt,
@@ -1376,9 +1428,9 @@ function readAuditProgress(workspaceRoot) {
 }
 function clearAuditProgress(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", "audit-progress.json");
-  if ((0, import_node_fs3.existsSync)(path)) {
+  if ((0, import_node_fs4.existsSync)(path)) {
     try {
-      (0, import_node_fs3.unlinkSync)(path);
+      (0, import_node_fs4.unlinkSync)(path);
     } catch {
     }
   }
@@ -1426,7 +1478,7 @@ function extractRelativeImports(content) {
 }
 function importsContextLine(workspaceRoot, filename, maxImports = 10) {
   try {
-    const specifiers = extractRelativeImports((0, import_node_fs3.readFileSync)(resolveAuditFile(workspaceRoot, filename), "utf8"));
+    const specifiers = extractRelativeImports((0, import_node_fs4.readFileSync)(resolveAuditFile(workspaceRoot, filename), "utf8"));
     if (!specifiers.length) return "";
     const base = (0, import_node_path3.dirname)(resolveAuditFile(workspaceRoot, filename));
     const resolved = /* @__PURE__ */ new Set();
@@ -2020,9 +2072,9 @@ async function openOrCreateRules(workspaceRoot) {
   if (!workspaceRoot) throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0432 VS Code");
   const directory = (0, import_node_path4.join)(workspaceRoot, ".codescout");
   const rulesPath = (0, import_node_path4.join)(directory, "rules.md");
-  if (!(0, import_node_fs4.existsSync)(rulesPath)) {
-    (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
-    (0, import_node_fs4.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
+  if (!(0, import_node_fs5.existsSync)(rulesPath)) {
+    (0, import_node_fs5.mkdirSync)(directory, { recursive: true });
+    (0, import_node_fs5.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
   }
   const document = await vscode2.workspace.openTextDocument(vscode2.Uri.file(rulesPath));
   await vscode2.window.showTextDocument(document, { preview: false });
@@ -2179,9 +2231,9 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();
-      if (workspaceRoot && (0, import_node_fs4.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
+      if (workspaceRoot && (0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
         const answer = await vscode2.window.showWarningMessage("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430?", { modal: true }, "\u0423\u0434\u0430\u043B\u0438\u0442\u044C");
-        if (answer === "\u0423\u0434\u0430\u043B\u0438\u0442\u044C") (0, import_node_fs4.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
+        if (answer === "\u0423\u0434\u0430\u043B\u0438\u0442\u044C") (0, import_node_fs5.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
       }
       if (workspaceRoot) panel.setWelcomeBanner(true, "new");
       void vscode2.window.showInformationMessage("\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D");

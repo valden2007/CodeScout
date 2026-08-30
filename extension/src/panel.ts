@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
+import { realpathSync } from 'node:fs';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
-import { resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
@@ -20,6 +21,21 @@ function safePost(webview: vscode.Webview, message: Record<string, unknown>): vo
     void Promise.resolve(webview.postMessage(message)).then(undefined, () => undefined);
   } catch {
     // webview уже утилизирован: состояние живёт в полях панели, следующий render()/resolve догонит
+  }
+}
+
+function realExistingPath(path: string): string {
+  let current = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return missing.length ? resolve(realpathSync(current), ...missing) : realpathSync(current);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return resolve(path);
+      missing.unshift(current.slice(parent.length + 1));
+      current = parent;
+    }
   }
 }
 
@@ -86,20 +102,22 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'cancelScan') {
         void vscode.commands.executeCommand('codescout.cancelScan');
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const requestedUri = vscode.Uri.file(resolve(message.file));
+        const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
         if (!root) {
           void vscode.window.showErrorMessage('Открой папку workspace, чтобы перейти к файлу.');
           return;
         }
-        // Legacy path contract: vscode.Uri.joinPath(root, message.file)
-        const repoPath = resolve(root.fsPath);
-        const candidate = resolve(root.fsPath, message.file);
-        const outsideWorkspace = !candidate.startsWith(repoPath + sep);
+        // Fallback joinPath-контракт: vscode.Uri.joinPath(root.uri, message.file) даёт тот же candidate для относительных путей
+        const candidate = resolve(root.uri.fsPath, message.file);
+        const realRoot = realExistingPath(root.uri.fsPath);
+        const realCandidate = realExistingPath(candidate);
+        const outsideWorkspace = realCandidate !== realRoot && !realCandidate.startsWith(realRoot + sep);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
           return;
         }
-        const fileUri = vscode.Uri.file(candidate);
+        const fileUri = vscode.Uri.file(realCandidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
           const rawLine = Number(message.line);
           const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
