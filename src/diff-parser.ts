@@ -14,7 +14,7 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
     if (!header) continue;
     const filename = header[2];
     if (!shouldReviewFile(filename)) continue;
-    if (!section.match(/^\+\+\+ b\/.+$/m)) continue;
+    if (!section.match(/^(?:\+\+\+ b\/.+|\+\+\+ \/dev\/null)$/m)) continue;
     const lines = section.split('\n');
     const additions = lines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
     const deletions = lines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;

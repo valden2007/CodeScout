@@ -59,7 +59,7 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
 
 export function detectProvider(key: string): DetectedProvider | null {
   const value = key.trim();
-  if (value.startsWith('gsk_')) return { provider: 'groq', model: 'openai/gpt-oss-20b' };
+  if (value.startsWith('gsk_')) return { provider: 'groq', model: 'llama-3.3-70b-versatile' };
   if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-2.5-flash' };
   if (value.startsWith('sk-or-')) return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
   if (value.startsWith('ghp_') || value.startsWith('github_pat_')) return { provider: 'github', model: 'gpt-4o-mini' };
@@ -69,7 +69,7 @@ export function detectProvider(key: string): DetectedProvider | null {
 export function normalizeProvider(provider?: string): ProviderName {
   const value = provider?.trim().toLowerCase() || 'gemini';
   if (value === 'custom') return 'custom';
-  if (value in PROVIDERS) return value as Exclude<ProviderName, 'custom'>;
+  if (Object.hasOwn(PROVIDERS, value)) return value as Exclude<ProviderName, 'custom'>;
   throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
 }
 

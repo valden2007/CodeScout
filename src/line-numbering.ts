@@ -2,14 +2,20 @@ const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
 export function numberPatch(patch: string): string {
   let newLine = 0;
+  let inHunk = false;
   return patch.split('\n').map((line) => {
     const hunk = line.match(HUNK_HEADER);
     if (hunk) {
       newLine = Number(hunk[1]);
+      inHunk = true;
       return line;
     }
-    if (newLine === 0 || line.startsWith('\\')) return line;
-    if (line.startsWith('+') && !line.startsWith('+++')) {
+    if (line.startsWith('--- ') || line.startsWith('+++ ') || line.startsWith('diff --git ')) {
+      inHunk = false;
+      return line;
+    }
+    if (!inHunk || newLine === 0 || line.startsWith('\\')) return line;
+    if (line.startsWith('+')) {
       const numbered = `${newLine} | ${line}`;
       newLine += 1;
       return numbered;
@@ -19,7 +25,7 @@ export function numberPatch(patch: string): string {
       newLine += 1;
       return numbered;
     }
-    if (line.startsWith('-') && !line.startsWith('---')) return line;
+    if (line.startsWith('-')) return line;
     return line;
   }).join('\n');
 }

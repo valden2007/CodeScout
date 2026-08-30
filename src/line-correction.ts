@@ -9,9 +9,13 @@ export function correctIssueLine(issue: ReviewIssue, repoPath: string): ReviewIs
     const abs = realpathSync(resolve(repoPath, issue.file));
     if (!abs.startsWith(root + sep)) return issue;
     const content = readFileSync(abs, 'utf8');
-    const snippet = issue.code.trim();
-    const matches = content.split('\n').flatMap((line, index) => line.includes(snippet) ? [index + 1] : []);
-    return matches.length === 1 ? { ...issue, line: matches[0] } : issue;
+    const haystack = content.replace(/\r\n/g, '\n');
+    const snippet = issue.code.trim().replace(/\r\n/g, '\n');
+    const positions: number[] = [];
+    for (let from = haystack.indexOf(snippet); from >= 0; from = haystack.indexOf(snippet, from + snippet.length)) positions.push(from);
+    if (positions.length !== 1) return issue;
+    const line = 1 + (haystack.slice(0, positions[0]).match(/\n/g)?.length ?? 0);
+    return { ...issue, line };
   } catch {
     return issue;
   }

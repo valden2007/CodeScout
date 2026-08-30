@@ -21,11 +21,11 @@ export class GitHubClient {
     const prShas = new Set(prCommits.map((commit) => commit.sha));
     for (const target of targets) {
       try {
-        const commits = await this.octokit.rest.repos.listCommits({ owner: this.context.owner, repo: this.context.repo, path: target, sha: this.context.headSha, per_page: 100 });
-        const stamp = commits.data.find((commit) => prShas.has(commit.sha))?.sha;
+        const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, { owner: this.context.owner, repo: this.context.repo, path: target, sha: this.context.headSha, per_page: 100 });
+        const stamp = commits.find((commit) => prShas.has(commit.sha))?.sha;
         if (stamp) for (const issue of issues) if (issue.file === target) issue.commitId = stamp;
-      } catch {
-        // fallback остаётся headSha
+      } catch (error) {
+        console.warn(`CodeScout: не удалось проставить commit_id для ${target}: ${error instanceof Error ? error.message : String(error)} — fallback на headSha`);
       }
     }
   }

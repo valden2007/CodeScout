@@ -4,11 +4,11 @@ import { parseReviewResponse } from '../src/response-parser';
 import { buildSummaryComment } from '../src/report-formatter';
 import { numberPatch } from '../src/line-numbering';
 import { correctIssueLine } from '../src/line-correction';
-import { validateGitPath } from '../src/tui/DiffReader';
+import { readGitDiff, validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
-import { parseArgs } from '../src/cli/args';
-import { GroqProvider, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, maskApiKey, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { parseArgs, validateFlags } from '../src/cli/args';
+import { abortError, GroqProvider, isAbortError, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
+import { completionUrl, detectProvider, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -19,6 +19,7 @@ import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -158,7 +159,7 @@ describe('E9.5 scan cancellation', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(receivedSignal).toBe(controller.signal);
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('if (signal?.aborted) throw new DOMException');
+    expect(extension).toContain('if (signal?.aborted) throw abortError()');
   });
 });
 
@@ -257,7 +258,7 @@ describe('E5.7 live model picker', () => {
 
 describe('E5.6 provider auto-detection', () => {
   it('detects all supported API-key prefixes and their models', () => {
-    expect(detectProvider('gsk_test')).toEqual({ provider: 'groq', model: 'openai/gpt-oss-20b' });
+    expect(detectProvider('gsk_test')).toEqual({ provider: 'groq', model: 'llama-3.3-70b-versatile' });
     expect(detectProvider('AIza-test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
     expect(detectProvider('AQ.test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
     expect(detectProvider('sk-or-test')).toEqual({ provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' });
@@ -1334,6 +1335,165 @@ describe('E1.3b-settings configurable RAG limits', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('G3 fix batch core', () => {
+  it('accepts deleted files with +++ /dev/null', () => {
+    const deleted = 'diff --git a/gone.ts b/gone.ts\ndeleted file mode 100644\n--- a/gone.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-const a = 1;\n-const b = 2;';
+    const files = parseUnifiedDiff(deleted);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({ filename: 'gone.ts', status: 'removed', additions: 0, deletions: 2 });
+  });
+
+  it('paginates repo commits and logs stamp failures instead of silent catch', () => {
+    const client = readFileSync('src/github-client.ts', 'utf8');
+    expect(client).toContain('this.octokit.paginate(this.octokit.rest.repos.listCommits');
+    expect(client).not.toContain('const commits = await this.octokit.rest.repos.listCommits');
+    expect(client).toContain('console.warn');
+    expect(client).toContain('fallback на headSha');
+  });
+
+  it('corrects lines for multi-line snippets via whole-content indexOf', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'codescout-multiline-'));
+    try {
+      writeFileSync(join(directory, 'm.ts'), 'const a = 1;\nconst block = {\n  x: 1,\n  y: 2\n};\nconst z = 3;\n');
+      const issue = { file: 'm.ts', line: 99, category: 'bug' as const, severity: 'low' as const, description: 'd', code: 'const block = {\n  x: 1,\n  y: 2\n};', confidence: 0.9 };
+      expect(correctIssueLine(issue, directory).line).toBe(2);
+      expect(correctIssueLine({ ...issue, code: 'x: 1,\n  y: 2' }, directory).line).toBe(3);
+      expect(correctIssueLine({ ...issue, code: 'const a = 1;' }, directory).line).toBe(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('numbers added ++i; lines inside a hunk and stops at the next file header', () => {
+    const patch = `--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,4 @@\n const a = 1;\n+++i;\n+counter++;\n--- b/x.ts\n+++ a/x.ts`;
+    const numbered = numberPatch(patch);
+    expect(numbered).toContain('2 | +++i;');
+    expect(numbered).toContain('3 | +counter++;');
+    expect(numbered).toContain('+++ b/x.ts');
+    expect(numbered).not.toContain(' | +++ b/x.ts');
+    expect(numbered).not.toContain(' | --- b/x.ts');
+  });
+
+  it('uses own-property check for provider names', () => {
+    expect(() => normalizeProvider('constructor')).toThrow('Неизвестный provider');
+    expect(() => normalizeProvider('__proto__')).toThrow('Неизвестный provider');
+    expect(() => normalizeProvider('toString')).toThrow('Неизвестный provider');
+    expect(normalizeProvider('groq')).toBe('groq');
+  });
+
+  it('stops flag validation at the -- separator', () => {
+    expect(() => validateFlags(['--', '--totally-unknown'])).not.toThrow();
+    expect(() => validateFlags(['--path', 'x', '--', 'file with --spaces'])).not.toThrow();
+    expect(() => validateFlags(['--nope'])).toThrow('Неизвестный флаг');
+  });
+
+  it('reads working diff from HEAD and last commit between HEAD~1 and HEAD with a big buffer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-gitdiff-'));
+    try {
+      const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      git('init', '-b', 'main');
+      git('config', 'user.email', 'test@test');
+      git('config', 'user.name', 'test');
+      writeFileSync(join(root, 'a.ts'), 'const a = 1;\n');
+      git('add', '.');
+      git('commit', '-m', 'init');
+      writeFileSync(join(root, 'a.ts'), 'const a = 2;\n');
+      git('add', 'a.ts');
+      writeFileSync(join(root, 'b.ts'), 'const b = 1;\n');
+      git('add', 'b.ts');
+      const working = readGitDiff(root);
+      expect(working.map((file) => file.filename).sort()).toEqual(['a.ts', 'b.ts']);
+      git('commit', '-m', 'second');
+      writeFileSync(join(root, 'a.ts'), 'const a = 3;\n');
+      const last = readGitDiff(root, { lastCommit: true });
+      expect(last.map((file) => file.filename).sort()).toEqual(['a.ts', 'b.ts']);
+      const unstagedOnly = readGitDiff(root);
+      expect(unstagedOnly.map((file) => file.filename)).toEqual(['a.ts']);
+      const reader = readFileSync('src/tui/DiffReader.ts', 'utf8');
+      expect(reader).toContain('maxBuffer: 10 * 1024 * 1024');
+      expect(reader).toContain("'diff', 'HEAD~1', 'HEAD'");
+      expect(reader).toContain("'diff', 'HEAD'");
+      expect(reader).not.toContain('mergeFiles');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('G3 fix batch llm', () => {
+  it('throws plain Error with AbortError name and removes the sleep listener on resolve', async () => {
+    const { sleep } = await import('../src/llm-client');
+    const error = abortError();
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('AbortError');
+    expect(isAbortError(error)).toBe(true);
+    const controller = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const signal = new Proxy(controller.signal, {
+      get(target, prop) {
+        if (prop === 'addEventListener') return (...args: unknown[]) => { added += 1; return (target.addEventListener as (...a: unknown[]) => void)(...args); };
+        if (prop === 'removeEventListener') return (...args: unknown[]) => { removed += 1; return (target.removeEventListener as (...a: unknown[]) => void)(...args); };
+        const value = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+    });
+    await sleep(5, signal);
+    expect(added).toBe(1);
+    expect(removed).toBe(1);
+    controller.abort();
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(sleep(1000, aborted.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    const mid = new AbortController();
+    const pending = sleep(5000, mid.signal);
+    mid.abort();
+    await expect(pending).rejects.toBeInstanceOf(Error);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('parses retry-after as seconds and as RFC1123 date', async () => {
+    const future = new Date(Date.now() + 45_000).toUTCString();
+    const responses = [
+      new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429, headers: { 'retry-after': future } }),
+      new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200 })
+    ];
+    const events: RetryEvent[] = [];
+    const waits: number[] = [];
+    const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async (ms) => { waits.push(ms); }, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events[0].waitSeconds).toBeGreaterThanOrEqual(44);
+    expect(events[0].waitSeconds).toBeLessThanOrEqual(45);
+  });
+
+  it('retry-after: 0 falls back to the backoff ladder instead of hammering', async () => {
+    const responses = [
+      new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429, headers: { 'retry-after': '0' } }),
+      new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200 })
+    ];
+    const events: RetryEvent[] = [];
+    const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events[0].waitSeconds).toBe(15);
+  });
+});
+
+describe('G3 fix batch panel', () => {
+  it('disposes the message subscription on re-resolve and dispose', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('this.messageSubscription?.dispose()');
+    expect(panel).toContain('this.messageSubscription = webviewView.webview.onDidReceiveMessage');
+  });
+
+  it('uses success status kind after a clean update', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("testWarning ? 'error' : testMode ? 'test' : 'success'");
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, 'готово', 'success', 'k', true, 'groq', 'm');
+    expect(html).toContain('status-banner success');
+    expect(html).toContain('.status-banner.success');
   });
 });
 
