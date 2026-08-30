@@ -1024,8 +1024,10 @@ function readProjectContext(workspaceRoot) {
 }
 var DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
 var DOC_FETCH_TIMEOUT_MS = 5e3;
-var DOC_MAX_BYTES = 20 * 1024;
-var DOC_MAX_LINKS = 5;
+var DOC_MAX_BYTES_DEFAULT = 50 * 1024;
+var DOC_MAX_LINKS_DEFAULT = 5;
+var DOC_DENSE_TOTAL_BYTES = 100 * 1024;
+var DEFAULT_DOC_LIMITS = { maxBytes: DOC_MAX_BYTES_DEFAULT, maxLinks: DOC_MAX_LINKS_DEFAULT, timeoutMs: DOC_FETCH_TIMEOUT_MS };
 function docCachePath(workspaceRoot) {
   return (0, import_node_path3.join)(workspaceRoot, ".codescout", "docs-cache.json");
 }
@@ -1070,25 +1072,34 @@ function htmlToText(html) {
 }
 var DOCS_FENCE = "<<<CODESCOUT_DOCS_BEGIN>>>";
 var DOCS_FENCE_END = "<<<CODESCOUT_DOCS_END>>>";
-function sanitizeDocText(raw, maxBytes = DOC_MAX_BYTES) {
+function utf8Slice(text, maxBytes) {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = low + high >> 1;
+    if (Buffer.byteLength(text.slice(0, middle), "utf8") > maxBytes) high = middle;
+    else low = middle + 1;
+  }
+  return text.slice(0, Math.max(0, low - 1));
+}
+function sanitizeDocText(raw, maxBytes = DOC_MAX_BYTES_DEFAULT) {
   const plain = raw.trimStart().startsWith("<") ? htmlToText(raw) : raw;
   const safe = neutralizeFences2(controlSafe2(plain)).replace(/\s+/g, " ").trim();
-  return Buffer.byteLength(safe, "utf8") <= maxBytes ? safe : safe.slice(0, maxBytes);
+  return utf8Slice(safe, maxBytes);
 }
-async function defaultDocFetcher(url, timeoutMs, maxBytes) {
+async function defaultDocFetcher(url, settings = DEFAULT_DOC_LIMITS) {
   const response = await fetch(url, {
     redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(settings.timeoutMs),
     headers: { "user-agent": "CodeScout-RAG/1.3", accept: "text/html,text/plain,text/markdown,*/*" }
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > maxBytes) throw new Error(`\u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442 \u0431\u043E\u043B\u044C\u0448\u0435 \u043B\u0438\u043C\u0438\u0442\u0430 ${Math.floor(maxBytes / 1024)}KB`);
-  return text;
+  return await response.text();
 }
 async function fetchDocsForPrompt(workspaceRoot, docLinks, fetcher = defaultDocFetcher, onWarn = () => {
-}) {
-  const links = [...new Set(docLinks.map((link) => link.trim().split(/\s+/)[0]).filter((link) => /^https?:\/\//i.test(link)))].slice(0, DOC_MAX_LINKS);
+}, limits = DEFAULT_DOC_LIMITS) {
+  const links = [...new Set(docLinks.map((link) => link.trim().split(/\s+/)[0]).filter((link) => /^https?:\/\//i.test(link)))].slice(0, limits.maxLinks);
   const cache = readDocCache(workspaceRoot);
   const now = Date.now();
   let cacheDirty = false;
@@ -1106,7 +1117,9 @@ ${cached.text}`);
       continue;
     }
     try {
-      const text = sanitizeDocText(await fetcher(link, DOC_FETCH_TIMEOUT_MS, DOC_MAX_BYTES));
+      const raw = await fetcher(link, { maxBytes: limits.maxBytes, timeoutMs: limits.timeoutMs });
+      const text = sanitizeDocText(raw, limits.maxBytes);
+      if (Buffer.byteLength(raw, "utf8") > limits.maxBytes) onWarn(`\u26A0\uFE0F \u0414\u043E\u043A ${link} \u0443\u0441\u0435\u0447\u0451\u043D \u0434\u043E ${Math.floor(limits.maxBytes / 1024)}KB \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E`);
       cache[link] = { fetchedAt: now, text };
       cacheDirty = true;
       if (text) parts.push(`${link}
@@ -1128,6 +1141,9 @@ ${cached.text}`);
   const section = parts.length ? `${DOCS_FENCE}
 ${parts.join("\n\n")}
 ${DOCS_FENCE_END}` : "";
+  if (parts.length && Buffer.byteLength(section, "utf8") > DOC_DENSE_TOTAL_BYTES) {
+    onWarn(`\u{1F534} \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u0438 \u2014 ${(Buffer.byteLength(section, "utf8") / 1024).toFixed(0)}KB \u0441\u0443\u043C\u043C\u0430\u0440\u043D\u043E; \u0434\u043B\u044F \u0441\u0438\u043B\u044C\u043D\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439`);
+  }
   return { section, fetched, fromCache, failed };
 }
 function buildProjectSystemPrompt(basePrompt, workspaceRoot, docLinks = [], docsSection = "") {
@@ -1506,11 +1522,15 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <h2>\u{1F4C1} \u041F\u0440\u043E\u0435\u043A\u0442</h2>
   <label for="docLinks">\u0421\u0441\u044B\u043B\u043A\u0438 \u043D\u0430 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044E (\u043E\u0434\u043D\u0430 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435)</label>
   <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml2(state.docLinks.join("\n"))}</textarea>
+  <label for="docMaxKb">\u041C\u0430\u043A\u0441. \u0440\u0430\u0437\u043C\u0435\u0440 \u0434\u043E\u043A\u0430 \u0432 \u043F\u0440\u043E\u043C\u0442 (KB)</label>
+  <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
+  <label for="docMaxLinks">\u041C\u0430\u043A\u0441. \u0447\u0438\u0441\u043B\u043E \u0441\u0441\u044B\u043B\u043E\u043A \u043D\u0430 \u0430\u0443\u0434\u0438\u0442</label>
+  <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
   <div class="row">
     <button id="saveProject" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
     <button id="openRules" type="button" class="secondary">\u{1F4DC} \u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u22645 \u0441\u0441\u044B\u043B\u043E\u043A, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, \u226420KB), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB.</p>
+  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u043B\u0438\u043C\u0438\u0442\u044B \u0432\u044B\u0448\u0435, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441; oversized-\u0434\u043E\u043A \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0434\u043E \u043B\u0438\u043C\u0438\u0442\u0430, \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB. \u0421\u0443\u043C\u043C\u0430\u0440\u043D\u043E \u0431\u043E\u043B\u044C\u0448\u0435 100KB \u2014 \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0440\u043E \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442.</p>
 </section>
 </main>
 <script>
@@ -1522,15 +1542,22 @@ const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
 const docLinksInput = document.getElementById('docLinks');
+const docMaxKbInput = document.getElementById('docMaxKb');
+const docMaxLinksInput = document.getElementById('docMaxLinks');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
+function clampInt(value, min, max, fallback) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < min) return String(fallback);
+  return String(Math.min(max, n));
+}
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -1565,7 +1592,12 @@ saveAppearanceBtn.addEventListener('click', () => {
 saveProjectBtn.addEventListener('click', () => {
   saveProjectBtn.disabled = true;
   saveProjectBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
-  vscode.postMessage({ command: 'saveDocLinks', linksText: docLinksInput.value });
+  vscode.postMessage({
+    command: 'saveDocLinks',
+    linksText: docLinksInput.value,
+    docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
+    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5'))
+  });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 toggleBaseUrl();
@@ -1603,6 +1635,14 @@ function dumpFindings(output, issues, summary) {
   }
   output.appendLine(summary);
   output.show(true);
+}
+function docLimitsFromKb(kb, fallback = 50) {
+  const rounded = Math.round(Number.isFinite(kb) && kb > 0 ? kb : fallback);
+  return Math.min(2048, Math.max(1, rounded)) * 1024;
+}
+function docLimitsFromCount(count, fallback = 5) {
+  const rounded = Math.round(Number.isFinite(count) && count > 0 ? count : fallback);
+  return Math.min(50, Math.max(1, rounded));
 }
 function getWorkspaceRoot() {
   return vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -1784,11 +1824,14 @@ async function runFullAudit(context, output, panel, resume = false) {
     if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0439 \u0444\u0430\u0439\u043B: ${filename}`);
-    const docLinks = vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? [];
+    const docsConfig = vscode2.workspace.getConfiguration("codescout");
+    const docMaxBytes = docLimitsFromKb(docsConfig.get("docMaxKb"));
+    const docMaxLinks = docLimitsFromCount(docsConfig.get("docMaxLinks"));
+    const docLinks = docsConfig.get("docLinks") ?? [];
     let docs = { section: "", fetched: 0, fromCache: 0, failed: 0 };
     if (docLinks.some((link) => link.trim())) {
       try {
-        docs = await fetchDocsForPrompt(workspaceRoot, docLinks, defaultDocFetcher, (message) => output.appendLine(message));
+        docs = await fetchDocsForPrompt(workspaceRoot, docLinks, defaultDocFetcher, (message) => output.appendLine(message), { maxBytes: docMaxBytes, maxLinks: docMaxLinks, timeoutMs: DOC_FETCH_TIMEOUT_MS });
       } catch (error) {
         docs = { section: "", fetched: 0, fromCache: 0, failed: 0 };
         output.appendLine(`\u26A0\uFE0F Docs fetch \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D: ${error instanceof Error ? error.message : String(error)} \u2014 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u0435\u0442\u0441\u044F \u0431\u0435\u0437 \u0442\u0435\u043A\u0441\u0442\u043E\u0432 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u0438`);
@@ -2003,7 +2046,9 @@ async function readSettingsState(context) {
     baseUrl: vscode2.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled(),
-    docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? []
+    docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? [],
+    docMaxKb: docLimitsFromKb(vscode2.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
+    docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks"))
   };
 }
 async function saveKeyProvider(context, message) {
@@ -2090,8 +2135,13 @@ function activate(context) {
               await render("\u2705 \u041C\u043E\u0434\u0435\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0438\u0437 \u0436\u0438\u0432\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430");
             } else if (message.command === "saveDocLinks") {
               const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
-              await vscode2.workspace.getConfiguration("codescout").update("docLinks", links, vscode2.ConfigurationTarget.Global);
-              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A \u2014 \u043F\u043E\u0439\u0434\u0443\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
+              const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
+              const maxLinks = docLimitsFromCount(message.docMaxLinks);
+              const config = vscode2.workspace.getConfiguration("codescout");
+              await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
+              await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
+              await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
+              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \u2014 \u043F\u043E\u0439\u0434\u0443\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
             } else if (message.command === "openRules") {
               try {
                 await openOrCreateRules(getWorkspaceRoot());

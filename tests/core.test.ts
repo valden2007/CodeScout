@@ -536,7 +536,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [] };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 };
   it('renders both settings sections in the existing panel style', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('Ключ и провайдер');
@@ -860,7 +860,7 @@ describe('E1.2e custom review focus', () => {
 });
 
 describe('E1.2e rules and doc links via settings', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [] };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 };
 
   it('appends project doc links to the audit system prompt', () => {
     const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
@@ -1149,17 +1149,91 @@ describe('E1.3b RAG docs with cache and import context', () => {
 
   it('wires timeout, cache path and warnings into the extension', () => {
     const audit = readFileSync('extension/src/projectAudit.ts', 'utf8');
-    expect(audit).toContain('AbortSignal.timeout(timeoutMs)');
+    expect(audit).toContain('AbortSignal.timeout(settings.timeoutMs)');
     expect(audit).toContain('docs-cache.json');
     expect(audit).toContain('DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1000');
     expect(audit).toContain('DOC_FETCH_TIMEOUT_MS = 5000');
-    expect(audit).toContain('DOC_MAX_BYTES = 20 * 1024');
-    expect(audit).toContain('DOC_MAX_LINKS = 5');
+    expect(audit).toContain('DOC_MAX_BYTES_DEFAULT = 50 * 1024');
+    expect(audit).toContain('DOC_MAX_LINKS_DEFAULT = 5');
+    expect(audit).toContain('DOC_DENSE_TOTAL_BYTES = 100 * 1024');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('fetchDocsForPrompt');
     expect(extension).toContain('importsContextLine(workspaceRoot, filename)');
     expect(extension).toContain('buildReviewPrompt(file, chunk, importsLine)');
     expect(extension).toContain('аудит продолжается без текстов документации');
+  });
+});
+
+describe('E1.3b-settings configurable RAG limits', () => {
+  const limits = { maxBytes: 4096, maxLinks: 2, timeoutMs: 5000 };
+
+  it('reads docMaxKb and docMaxLinks from settings instead of hardcode', () => {
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.docMaxKb');
+    expect(manifest).toContain('codescout.docMaxLinks');
+    expect(manifest).toContain('"default": 50');
+    expect(manifest).toContain('"default": 5');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("get<number>('docMaxKb')");
+    expect(extension).toContain("get<number>('docMaxLinks')");
+    expect(extension).toContain("update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain("update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain('docLimitsFromKb');
+    expect(extension).toContain('docLimitsFromCount');
+    expect(extension).toContain('maxLinks: docMaxLinks');
+  });
+
+  it('renders numeric limit fields in the project section with dirty save', () => {
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 });
+    expect(html).toContain('id="docMaxKb"');
+    expect(html).toContain('id="docMaxLinks"');
+    expect(html).toContain('Макс. размер дока');
+    expect(html).toContain('value="50"');
+    expect(html).toContain('value="5"');
+    expect(html).toContain('docMaxKbInput.value !== initial.docMaxKb');
+    expect(html).toContain("docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50'))");
+  });
+
+  it('truncates oversized docs to the limit keeping the head, and honors maxLinks', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-rag-limits-'));
+    try {
+      const warnings: string[] = [];
+      let calls = 0;
+      const big = 'Правила запуска npm i start ' + 'x'.repeat(6000);
+      const result = await fetchDocsForPrompt(root, ['https://a.example', 'https://b.example', 'https://c.example'], async () => {
+        calls++;
+        return big;
+      }, (m) => warnings.push(m), limits);
+      expect(calls).toBe(2);
+      expect(result.section).toContain('Правила запуска');
+      expect(Buffer.byteLength(result.section, 'utf8')).toBeLessThan(2 * limits.maxBytes + 1024);
+      expect(warnings.filter((m) => m.includes('усечён до 4KB'))).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('warns about dense context over 100KB but does not drop it, keeps head on utf8 slice', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-rag-dense-'));
+    try {
+      const bigLimits = { maxBytes: 30 * 1024, maxLinks: 5, timeoutMs: 5000 };
+      const warnings: string[] = [];
+      const single = await fetchDocsForPrompt(root, ['https://dense.example'], async () => 'а'.repeat(40_000), (m) => warnings.push(m), bigLimits);
+      expect(single.section).toContain('ааа');
+      expect(warnings.some((m) => m.includes('усечён'))).toBe(true);
+      expect(warnings.some((m) => m.includes('плотный контекст'))).toBe(false);
+      rmSync(join(root, '.codescout', 'docs-cache.json'), { force: true });
+      const dense: string[] = [];
+      const denseLinks = Array.from({ length: 5 }, (_, i) => `https://dense${i}.example`);
+      const denseResult = await fetchDocsForPrompt(root, denseLinks, async () => 'b'.repeat(25_000), (m) => dense.push(m), bigLimits);
+      expect(denseResult.section).not.toBe('');
+      expect(dense.some((m) => m.includes('🔴') && m.includes('плотный контекст'))).toBe(true);
+      const utf8 = sanitizeDocText('Привет мир '.repeat(200), 20);
+      expect(Buffer.byteLength(utf8, 'utf8')).toBeLessThanOrEqual(20);
+      expect(utf8).toBe('Привет мир ');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

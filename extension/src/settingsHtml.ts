@@ -7,6 +7,8 @@ export interface SettingsState {
   reportLanguage: 'ru' | 'en';
   showAuditBanner: boolean;
   docLinks: string[];
+  docMaxKb: number;
+  docMaxLinks: number;
 }
 
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
@@ -96,11 +98,15 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <h2>📁 Проект</h2>
   <label for="docLinks">Ссылки на документацию (одна в строке)</label>
   <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml(state.docLinks.join('\n'))}</textarea>
+  <label for="docMaxKb">Макс. размер дока в промт (KB)</label>
+  <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
+  <label for="docMaxLinks">Макс. число ссылок на аудит</label>
+  <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
   <div class="row">
     <button id="saveProject" type="button" disabled>💾 Сохранить</button>
     <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (≤5 ссылок, таймаут 5с, ≤20KB), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта».</p>
+  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (лимиты выше, таймаут 5с; oversized-док усекается до лимита, начало сохраняется), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта». Суммарно больше 100KB — предупреждение про плотный контекст.</p>
 </section>
 </main>
 <script>
@@ -112,15 +118,22 @@ const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
 const docLinksInput = document.getElementById('docLinks');
+const docMaxKbInput = document.getElementById('docMaxKb');
+const docMaxLinksInput = document.getElementById('docMaxLinks');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
+function clampInt(value, min, max, fallback) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < min) return String(fallback);
+  return String(Math.min(max, n));
+}
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -155,7 +168,12 @@ saveAppearanceBtn.addEventListener('click', () => {
 saveProjectBtn.addEventListener('click', () => {
   saveProjectBtn.disabled = true;
   saveProjectBtn.textContent = '⏳ Сохраняю…';
-  vscode.postMessage({ command: 'saveDocLinks', linksText: docLinksInput.value });
+  vscode.postMessage({
+    command: 'saveDocLinks',
+    linksText: docLinksInput.value,
+    docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
+    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5'))
+  });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 toggleBaseUrl();

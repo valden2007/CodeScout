@@ -87,14 +87,27 @@ export interface DocsResult {
   failed: number;
 }
 
+export interface DocFetcherSettings {
+  maxBytes: number;
+  timeoutMs: number;
+}
+
 export interface DocFetcher {
-  (url: string, timeoutMs: number, maxBytes: number): Promise<string>;
+  (url: string, settings: DocFetcherSettings): Promise<string>;
+}
+
+export interface DocLimits {
+  maxBytes: number;
+  maxLinks: number;
+  timeoutMs: number;
 }
 
 export const DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const DOC_FETCH_TIMEOUT_MS = 5000;
-export const DOC_MAX_BYTES = 20 * 1024;
-export const DOC_MAX_LINKS = 5;
+export const DOC_MAX_BYTES_DEFAULT = 50 * 1024;
+export const DOC_MAX_LINKS_DEFAULT = 5;
+export const DOC_DENSE_TOTAL_BYTES = 100 * 1024;
+export const DEFAULT_DOC_LIMITS: DocLimits = { maxBytes: DOC_MAX_BYTES_DEFAULT, maxLinks: DOC_MAX_LINKS_DEFAULT, timeoutMs: DOC_FETCH_TIMEOUT_MS };
 
 interface DocCacheEntry {
   fetchedAt: number;
@@ -163,26 +176,36 @@ export function htmlToText(html: string): string {
 const DOCS_FENCE = '<<<CODESCOUT_DOCS_BEGIN>>>';
 const DOCS_FENCE_END = '<<<CODESCOUT_DOCS_END>>>';
 
-export function sanitizeDocText(raw: string, maxBytes = DOC_MAX_BYTES): string {
-  const plain = raw.trimStart().startsWith('<') ? htmlToText(raw) : raw;
-  const safe = neutralizeFences(controlSafe(plain)).replace(/\s+/g, ' ').trim();
-  return Buffer.byteLength(safe, 'utf8') <= maxBytes ? safe : safe.slice(0, maxBytes);
+function utf8Slice(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (Buffer.byteLength(text.slice(0, middle), 'utf8') > maxBytes) high = middle;
+    else low = middle + 1;
+  }
+  return text.slice(0, Math.max(0, low - 1));
 }
 
-export async function defaultDocFetcher(url: string, timeoutMs: number, maxBytes: number): Promise<string> {
+export function sanitizeDocText(raw: string, maxBytes = DOC_MAX_BYTES_DEFAULT): string {
+  const plain = raw.trimStart().startsWith('<') ? htmlToText(raw) : raw;
+  const safe = neutralizeFences(controlSafe(plain)).replace(/\s+/g, ' ').trim();
+  return utf8Slice(safe, maxBytes);
+}
+
+export async function defaultDocFetcher(url: string, settings: DocFetcherSettings = DEFAULT_DOC_LIMITS): Promise<string> {
   const response = await fetch(url, {
     redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(settings.timeoutMs),
     headers: { 'user-agent': 'CodeScout-RAG/1.3', accept: 'text/html,text/plain,text/markdown,*/*' }
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const text = await response.text();
-  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error(`документ больше лимита ${Math.floor(maxBytes / 1024)}KB`);
-  return text;
+  return await response.text();
 }
 
-export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string[], fetcher: DocFetcher = defaultDocFetcher, onWarn: (message: string) => void = () => {}): Promise<DocsResult> {
-  const links = [...new Set(docLinks.map((link) => link.trim().split(/\s+/)[0]).filter((link) => /^https?:\/\//i.test(link)))].slice(0, DOC_MAX_LINKS);
+export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string[], fetcher: DocFetcher = defaultDocFetcher, onWarn: (message: string) => void = () => {}, limits: DocLimits = DEFAULT_DOC_LIMITS): Promise<DocsResult> {
+  const links = [...new Set(docLinks.map((link) => link.trim().split(/\s+/)[0]).filter((link) => /^https?:\/\//i.test(link)))].slice(0, limits.maxLinks);
   const cache = readDocCache(workspaceRoot);
   const now = Date.now();
   let cacheDirty = false;
@@ -199,7 +222,9 @@ export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string
       continue;
     }
     try {
-      const text = sanitizeDocText(await fetcher(link, DOC_FETCH_TIMEOUT_MS, DOC_MAX_BYTES));
+      const raw = await fetcher(link, { maxBytes: limits.maxBytes, timeoutMs: limits.timeoutMs });
+      const text = sanitizeDocText(raw, limits.maxBytes);
+      if (Buffer.byteLength(raw, 'utf8') > limits.maxBytes) onWarn(`⚠️ Док ${link} усечён до ${Math.floor(limits.maxBytes / 1024)}KB — начало сохранено`);
       cache[link] = { fetchedAt: now, text };
       cacheDirty = true;
       if (text) parts.push(`${link}\n${text}`);
@@ -217,6 +242,9 @@ export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string
   }
   if (cacheDirty) writeDocCache(workspaceRoot, cache);
   const section = parts.length ? `${DOCS_FENCE}\n${parts.join('\n\n')}\n${DOCS_FENCE_END}` : '';
+  if (parts.length && Buffer.byteLength(section, 'utf8') > DOC_DENSE_TOTAL_BYTES) {
+    onWarn(`🔴 плотный контекст документации — ${(Buffer.byteLength(section, 'utf8') / 1024).toFixed(0)}KB суммарно; для сильных моделей`);
+  }
   return { section, fetched, fromCache, failed };
 }
 

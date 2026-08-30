@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, defaultDocFetcher, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, defaultDocFetcher, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -57,6 +57,16 @@ function dumpFindings(output: vscode.OutputChannel, issues: ReviewIssue[], summa
   }
   output.appendLine(summary);
   output.show(true);
+}
+
+function docLimitsFromKb(kb: number | undefined, fallback = 50): number {
+  const rounded = Math.round(Number.isFinite(kb) && (kb as number) > 0 ? (kb as number) : fallback);
+  return Math.min(2048, Math.max(1, rounded)) * 1024;
+}
+
+function docLimitsFromCount(count: number | undefined, fallback = 5): number {
+  const rounded = Math.round(Number.isFinite(count) && (count as number) > 0 ? (count as number) : fallback);
+  return Math.min(50, Math.max(1, rounded));
 }
 
 function getWorkspaceRoot(): string | undefined {
@@ -249,11 +259,14 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
-    const docLinks = vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? [];
+    const docsConfig = vscode.workspace.getConfiguration('codescout');
+    const docMaxBytes = docLimitsFromKb(docsConfig.get<number>('docMaxKb'));
+    const docMaxLinks = docLimitsFromCount(docsConfig.get<number>('docMaxLinks'));
+    const docLinks = docsConfig.get<string[]>('docLinks') ?? [];
     let docs: DocsResult = { section: '', fetched: 0, fromCache: 0, failed: 0 };
     if (docLinks.some((link) => link.trim())) {
       try {
-        docs = await fetchDocsForPrompt(workspaceRoot, docLinks, defaultDocFetcher, (message) => output.appendLine(message));
+        docs = await fetchDocsForPrompt(workspaceRoot, docLinks, defaultDocFetcher, (message) => output.appendLine(message), { maxBytes: docMaxBytes, maxLinks: docMaxLinks, timeoutMs: DOC_FETCH_TIMEOUT_MS });
       } catch (error) {
         docs = { section: '', fetched: 0, fromCache: 0, failed: 0 };
         output.appendLine(`⚠️ Docs fetch не выполнен: ${error instanceof Error ? error.message : String(error)} — аудит продолжается без текстов документации`);
@@ -435,6 +448,8 @@ interface SettingsMessage {
   reportLanguage?: string;
   showAuditBanner?: boolean;
   linksText?: string;
+  docMaxKb?: number;
+  docMaxLinks?: number;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -473,7 +488,9 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     baseUrl: vscode.workspace.getConfiguration('codescout').get<string>('baseUrl')?.trim() || '',
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled(),
-    docLinks: vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? []
+    docLinks: vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? [],
+    docMaxKb: docLimitsFromKb(vscode.workspace.getConfiguration('codescout').get<number>('docMaxKb')) / 1024,
+    docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks'))
   };
 }
 
@@ -562,8 +579,13 @@ export function activate(context: vscode.ExtensionContext): void {
             await render('✅ Модель обновлена из живого списка');
           } else if (message.command === 'saveDocLinks') {
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
-            await vscode.workspace.getConfiguration('codescout').update('docLinks', links, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок — пойдут в следующий полный аудит`);
+            const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
+            const maxLinks = docLimitsFromCount(message.docMaxLinks);
+            const config = vscode.workspace.getConfiguration('codescout');
+            await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
+            await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
+            await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} — пойдут в следующий полный аудит`);
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());

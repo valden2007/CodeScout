@@ -32,6 +32,8 @@ CodeScout — AI code reviewer with THREE interfaces:
 - After ANY change: npm test + typecheck must pass
 - Providers are OpenAI-compatible; models come from live GET /models
 - Keys stored in SecretStorage (extension) / env (CLI) / Secrets (action)
+- Product philosophy: любой новый лимит = настройка с разумным
+  дефолтом; хардкод лимитов запрещён без продуктовой причины
 
 ## Current state (v1.1.2 released)
 Done: zero-config onboarding (provider auto-detected by key prefix),
@@ -113,7 +115,7 @@ pre-design now.
    Resume refuses when model changed (starts fresh, clears).
    Clean completion deletes the file. Not committed (.codescout/).
 2. RAG v1 — DONE in 1.3b: full audit fetches codescout.docLinks
-   (http(s) only, ≤5 links, AbortSignal.timeout 5s, ≤20KB each),
+   (http(s) only, ≤5 links, AbortSignal.timeout 5s, sanitized text),
    strips tags/scripts/entities, sanitizes C0/bidi + neutralizes
    patch fences, and injects a "Документация проекта" section wrapped
    in CODESCOUT_DOCS fences labeled as untrusted web text. Cache
@@ -123,5 +125,14 @@ pre-design now.
    file gets "Файл импортирует: ..." (relative ES imports/exports/
    requires resolved to workspace-relative paths, cap 10) in its
    review prompt via buildReviewPrompt importsLine. Tests: 98.
+3. Configurable RAG limits (1.3b-settings): docMaxKb (default 50)
+   and docMaxLinks (default 5) settings, edited in Settings → 📁
+   Проект (numeric inputs, dirty-gated save). fetchDocsForPrompt
+   takes a DocLimits argument (no hardcode at call site; oversized
+   docs are truncated to the limit keeping the HEAD — warning
+   "⚠️ Док … усечён до NKB", utf8-safe slice); >100KB total docs
+   section → advisory Output "🔴 плотный контекст… для сильных
+   моделей" (never drops). Defaults also enforced in the manifest
+   (minimum/maximum). Tests: 102.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.
