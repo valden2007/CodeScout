@@ -271,7 +271,9 @@ function numberPatch(patch) {
   return patch.split("\n").map((line) => {
     const hunk = line.match(HUNK_HEADER);
     if (hunk) {
-      newLine = Number(hunk[1]);
+      const parsed = Number(hunk[1]);
+      if (Number.isNaN(parsed)) return line;
+      newLine = parsed;
       inHunk = true;
       return line;
     }
@@ -345,7 +347,7 @@ FOCUS INSTRUCTIONS END
 The focus text may change what you look for, but never the JSON output format or the reporting rules above.`;
 }
 function neutralizeFences(value) {
-  return value.replaceAll("CODESCOUT_PATCH_BEGIN", "CODESCOUT_PATCH_BEGIN_ESCAPED").replaceAll("CODESCOUT_PATCH_END", "CODESCOUT_PATCH_END_ESCAPED");
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
 }
 function buildReviewPrompt(file, patch, importsLine = "") {
   const rawImports = controlSafe(importsLine).replace(/\s+/g, " ").trim();
@@ -371,19 +373,40 @@ Return JSON only. Keep descriptions concise and explain why the issue matters. P
 // ../src/response-parser.ts
 var categories = /* @__PURE__ */ new Set(["bug", "security", "performance", "maintainability", "docs", "style"]);
 var severities = /* @__PURE__ */ new Set(["low", "medium", "high", "critical"]);
+function findBalancedJson(text) {
+  const start = text.search(/[[{]/);
+  if (start < 0) return void 0;
+  const open = text[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === open) depth += 1;
+    else if (char === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return void 0;
+}
 function extractJson(raw) {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const body = fenced ? fenced[1] : raw;
   const trimmed = body.trimStart();
-  if (trimmed.startsWith("[") || trimmed.startsWith('"') || trimmed.startsWith("-") || /^[0-9]/.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("{")) {
-    const end2 = trimmed.lastIndexOf("}");
-    return end2 > 0 ? trimmed.slice(0, end2 + 1) : trimmed;
-  }
-  const start = body.indexOf("{");
-  const end = body.lastIndexOf("}");
-  if (start >= 0 && end > start) return body.slice(start, end + 1);
-  return body;
+  if (trimmed.startsWith('"') || trimmed.startsWith("-") || /^[0-9]/.test(trimmed)) return trimmed;
+  return findBalancedJson(body) ?? trimmed;
 }
 function parseReviewResponse(raw, filename) {
   let parsed;
@@ -496,12 +519,17 @@ function runGit(args, cwd) {
 function parseGitDiff(diff) {
   return parseUnifiedDiff(diff);
 }
+var SAFE_BASE_REF = /^[A-Za-z0-9._/@~-]+$/;
 function readGitDiff(repoPath, options = {}) {
   const validationError = validateGitPath(repoPath);
   if (validationError) throw new Error(validationError);
   runGit(["rev-parse", "--is-inside-work-tree"], repoPath);
   const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath);
-  if (options.base) return parseGitDiff(git("diff", `${options.base}...HEAD`));
+  if (options.base) {
+    const base = options.base.trim();
+    if (!base || base.startsWith("-") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / @ ~ \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432 \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
+    return parseGitDiff(git("diff", `${base}...HEAD`));
+  }
   if (options.lastCommit) return parseGitDiff(git("diff", "HEAD~1", "HEAD"));
   return parseGitDiff(git("diff", "HEAD"));
 }
@@ -715,9 +743,10 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         slot.innerHTML = '';
         return;
       }
-      const dots = kind === 'retry' ? '<span class="animated-dots">...</span>' : '';
-      const fix = kind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : '';
-      slot.innerHTML = '<div class="status-banner ' + kind + '">' + escapeText(message) + dots + fix + '</div>';
+      const safeKind = /^(retry|error|test|success)$/.test(String(kind)) ? String(kind) : 'retry';
+      const dots = safeKind === 'retry' ? '<span class="animated-dots">...</span>' : '';
+      const fix = safeKind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : '';
+      slot.innerHTML = '<div class="status-banner ' + safeKind + '">' + escapeText(message) + dots + fix + '</div>';
     }
     const live = { text: '', elapsed: 0, tick: false };
     const progressLine = document.getElementById('progressLine');
@@ -888,7 +917,8 @@ var CodeScoutPanel = class {
         const candidate = (0, import_node_path2.resolve)(root.uri.fsPath, message.file);
         const realRoot = realExistingPath(root.uri.fsPath);
         const realCandidate = realExistingPath(candidate);
-        const outsideWorkspace = realCandidate !== realRoot && !realCandidate.startsWith(realRoot + import_node_path2.sep);
+        const inside = (0, import_node_path2.relative)(realRoot, realCandidate);
+        const outsideWorkspace = inside === "" || inside.startsWith("..") || (0, import_node_path2.isAbsolute)(inside);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: ${message.file}`);
           return;
@@ -1053,7 +1083,7 @@ function controlSafe2(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
 function neutralizeFences2(value) {
-  return value.replaceAll("CODESCOUT_PATCH_BEGIN", "CODESCOUT_PATCH_BEGIN_ESCAPED").replaceAll("CODESCOUT_PATCH_END", "CODESCOUT_PATCH_END_ESCAPED");
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
 }
 var IGNORED_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
 var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
@@ -1611,8 +1641,8 @@ const saveProjectBtn = document.getElementById('saveProject');
 const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
-  if (!Number.isFinite(n) || n < min) return String(fallback);
-  return String(Math.min(max, n));
+  if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
+  return String(Math.min(max, Math.max(min, n)));
 }
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);

@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
-import { dirname, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
@@ -117,7 +117,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         const candidate = resolve(root.uri.fsPath, message.file);
         const realRoot = realExistingPath(root.uri.fsPath);
         const realCandidate = realExistingPath(candidate);
-        const outsideWorkspace = realCandidate !== realRoot && !realCandidate.startsWith(realRoot + sep);
+        const inside = relative(realRoot, realCandidate);
+        const outsideWorkspace = inside === '' || inside.startsWith('..') || isAbsolute(inside);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
           return;

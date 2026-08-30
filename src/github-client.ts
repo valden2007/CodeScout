@@ -10,8 +10,18 @@ export class GitHubClient {
     return files.map((file) => ({ filename: file.filename, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.patch ?? '' }));
   }
 
-  async postIssue(issue: ReviewIssue): Promise<void> {
-    await this.octokit.rest.pulls.createReviewComment({ owner: this.context.owner, repo: this.context.repo, pull_number: this.context.pullNumber, body: formatIssue(issue), commit_id: issue.commitId ?? this.context.headSha, path: issue.file, line: issue.line, side: 'RIGHT' });
+  async postIssue(issue: ReviewIssue): Promise<boolean> {
+    try {
+      await this.octokit.rest.pulls.createReviewComment({ owner: this.context.owner, repo: this.context.repo, pull_number: this.context.pullNumber, body: formatIssue(issue), commit_id: issue.commitId ?? this.context.headSha, path: issue.file, line: issue.line, side: 'RIGHT' });
+      return true;
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 422) {
+        console.warn(`CodeScout: пропуск комментария для ${issue.file}:${issue.line} — 422 (строка вне diff или устаревший commit), продолжаем остальные`);
+        return false;
+      }
+      throw error;
+    }
   }
 
   async stampCommitIds(issues: ReviewIssue[]): Promise<void> {

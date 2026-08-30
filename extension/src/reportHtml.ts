@@ -231,9 +231,10 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         slot.innerHTML = '';
         return;
       }
-      const dots = kind === 'retry' ? '<span class="animated-dots">...</span>' : '';
-      const fix = kind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : '';
-      slot.innerHTML = '<div class="status-banner ' + kind + '">' + escapeText(message) + dots + fix + '</div>';
+      const safeKind = /^(retry|error|test|success)$/.test(String(kind)) ? String(kind) : 'retry';
+      const dots = safeKind === 'retry' ? '<span class="animated-dots">...</span>' : '';
+      const fix = safeKind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : '';
+      slot.innerHTML = '<div class="status-banner ' + safeKind + '">' + escapeText(message) + dots + fix + '</div>';
     }
     const live = { text: '', elapsed: 0, tick: false };
     const progressLine = document.getElementById('progressLine');

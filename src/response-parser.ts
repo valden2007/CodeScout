@@ -3,19 +3,38 @@ import { ReviewIssue, ReviewResult, ReviewCategory, ReviewSeverity } from './typ
 const categories = new Set<ReviewCategory>(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
 const severities = new Set<ReviewSeverity>(['low', 'medium', 'high', 'critical']);
 
+function findBalancedJson(text: string): string | undefined {
+  const start = text.search(/[[{]/);
+  if (start < 0) return undefined;
+  const open = text[start];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') { inString = true; continue; }
+    if (char === open) depth += 1;
+    else if (char === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return undefined;
+}
+
 function extractJson(raw: string): string {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const body = fenced ? fenced[1] : raw;
   const trimmed = body.trimStart();
-  if (trimmed.startsWith('[') || trimmed.startsWith('"') || trimmed.startsWith('-') || /^[0-9]/.test(trimmed)) return trimmed;
-  if (trimmed.startsWith('{')) {
-    const end = trimmed.lastIndexOf('}');
-    return end > 0 ? trimmed.slice(0, end + 1) : trimmed;
-  }
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start >= 0 && end > start) return body.slice(start, end + 1);
-  return body;
+  if (trimmed.startsWith('"') || trimmed.startsWith('-') || /^[0-9]/.test(trimmed)) return trimmed;
+  return findBalancedJson(body) ?? trimmed;
 }
 
 export function parseReviewResponse(raw: string, filename: string): ReviewResult {

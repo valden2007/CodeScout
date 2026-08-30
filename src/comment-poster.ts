@@ -9,8 +9,11 @@ function uniqueIssues(issues: ReviewIssue[]): ReviewIssue[] {
 export async function postIssues(client: GitHubClient, issues: ReviewIssue[], filesAnalyzed: number, durationMs: number): Promise<number> {
   const unique = uniqueIssues(issues).slice(0, 100);
   await client.upsertSummaryComment(buildSummaryComment(unique, filesAnalyzed, durationMs));
-  for (const issue of unique) await client.postIssue(issue);
-  return unique.length;
+  let posted = 0;
+  for (const issue of unique) {
+    if (await client.postIssue(issue)) posted += 1;
+  }
+  return posted;
 }
 
 export function formatSummary(issues: ReviewIssue[], filesAnalyzed: number, durationMs = 0): string {
