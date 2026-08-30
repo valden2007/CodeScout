@@ -85,7 +85,20 @@ export function resolveApiKeyPriority(secretKey: string | undefined, provider: s
 }
 
 export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {
-  if (customBaseUrl?.trim()) return customBaseUrl.trim().replace(/\/+$/, '');
+  if (customBaseUrl?.trim()) {
+    const url = customBaseUrl.trim().replace(/\/+$/, '');
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Некорректный baseUrl: ${customBaseUrl}. Ожидается https://… (или http:// для localhost/127.0.0.1).`);
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`baseUrl должен быть http(s)://, получено ${parsed.protocol} (${url})`);
+    if (parsed.protocol === 'http:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+      throw new Error(`http:// разрешён только для localhost/127.0.0.1 — ключ утечёт в открытом канале (${url}). Используй https://`);
+    }
+    return url;
+  }
   const normalized = normalizeProvider(provider);
   if (normalized === 'custom') throw new Error('Для provider custom укажи --base-url или CODESCOUT_BASE_URL.');
   return PROVIDERS[normalized].baseUrl;
@@ -108,7 +121,7 @@ export function completionUrl(baseUrl: string): string {
 export function maskApiKey(key: string): string {
   const trimmed = key.trim();
   if (!trimmed) return '';
-  if (trimmed.length <= 3) return `•••${trimmed}`;
+  if (trimmed.length <= 3) return '•••';
   const prefix = trimmed.length >= 7 ? trimmed.slice(0, 4) : '';
   return `${prefix}•••${trimmed.slice(-3)}`;
 }

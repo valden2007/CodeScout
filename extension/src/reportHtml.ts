@@ -61,7 +61,7 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join('')}</section>`).join('');
   const diffSummary = findingsDiff ? `<div class="diff-summary">${escapeHtml(findingsDiff.summary)}</div>` : '';
   const customBanner = customFocus ? `<div class="diff-summary custom">🎯 Кастомное ревью: ${escapeHtml(customFocus.slice(0, 160))}</div>` : '';
-  const fixedBlock = findingsDiff && findingsDiff.fixed.length
+  const fixedBlock = findingsDiff?.fixed?.length
     ? `<details class="fixed-block"><summary>✅ Починено с прошлого скана (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
     : '';
   const body = sections || (emptyState && !keyConfigured

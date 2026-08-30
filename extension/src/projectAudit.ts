@@ -323,9 +323,10 @@ export function isIgnoredAuditPath(path: string, patterns: string[] = []): boole
 function walkSourceFiles(root: string, current: string, result: string[], ignored: string[], patterns: string[]): void {
   for (const entry of readdirSync(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+    if (entry.isSymbolicLink()) continue;
     const path = join(current, entry.name);
     if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
-    else if (SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase())) {
+    else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase())) {
       const relativePath = relative(root, path).replaceAll('\\', '/');
       if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
       else result.push(relativePath);
@@ -447,7 +448,17 @@ export function readFindingsHistory(workspaceRoot: string): FindingsHistory | un
   if (!existsSync(path)) return undefined;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as FindingsHistory;
-    return Array.isArray(parsed.findings) ? parsed : undefined;
+    if (!Array.isArray(parsed.findings)) return undefined;
+    const findings = parsed.findings
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => ({
+        file: typeof entry.file === 'string' ? entry.file : '',
+        line: Number.isFinite(Number(entry.line)) ? Number(entry.line) : 1,
+        category: typeof entry.category === 'string' ? entry.category : 'bug',
+        severity: typeof entry.severity === 'string' ? entry.severity : 'medium',
+        description: typeof entry.description === 'string' ? entry.description : ''
+      }));
+    return { ...parsed, findings };
   } catch {
     return undefined;
   }
