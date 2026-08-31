@@ -31,8 +31,9 @@
     "codescout": "./dist/cli.js"
   },
   "scripts": {
-    "build": "ncc build src/action.ts -o dist && ncc build src/cli.ts -o dist-cli && cp dist-cli/index.js dist/cli.js && rm -rf dist-cli",
-    "build:cli": "ncc build src/cli.ts -o dist-cli && cp dist-cli/index.js dist/cli.js && rm -rf dist-cli",
+    "build": "ncc build src/action.ts -o dist && ncc build src/cli.ts -o dist-cli && node -e \"require('fs').copyFileSync('dist-cli/index.js','dist/cli.js');require('fs').rmSync('dist-cli',{recursive:true,force:true})\"",
+    "compile": "npm run typecheck && npm run build",
+    "package": "npm --prefix extension run package",
     "cli": "tsx src/cli.ts",
     "cli:scan": "tsx src/cli.ts scan",
     "test": "vitest run",
