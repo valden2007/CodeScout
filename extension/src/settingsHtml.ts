@@ -9,6 +9,7 @@ export interface SettingsState {
   docLinks: string[];
   docMaxKb: number;
   docMaxLinks: number;
+  maxLines: number;
 }
 
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
@@ -102,11 +103,13 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
   <label for="docMaxLinks">Макс. число ссылок на аудит</label>
   <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
+  <label for="maxLines">Макс. строк на файл (0 = без лимита)</label>
+  <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
   <div class="row">
     <button id="saveProject" type="button" disabled>💾 Сохранить</button>
     <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (лимиты выше, таймаут 5с; oversized-док усекается до лимита, начало сохраняется), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта». Суммарно больше 100KB — предупреждение про плотный контекст.</p>
+  <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (лимиты выше, таймаут 5с; oversized-док усекается до лимита, начало сохраняется), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта». Суммарно больше 100KB — предупреждение про плотный контекст. maxLines = 0: лимита нет, файлы &gt;800 строк режутся чанками с перекрытием 50 строк; maxLines = N: файлы длиннее N скипаются (для слабых моделей).</p>
 </section>
 </main>
 <script>
@@ -120,10 +123,11 @@ const bannerBox = document.getElementById('showBanner');
 const docLinksInput = document.getElementById('docLinks');
 const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
+const maxLinesInput = document.getElementById('maxLines');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -133,7 +137,7 @@ function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -172,7 +176,8 @@ saveProjectBtn.addEventListener('click', () => {
     command: 'saveDocLinks',
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
-    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5'))
+    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5')),
+    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0'))
   });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));

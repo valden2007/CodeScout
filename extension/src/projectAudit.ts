@@ -22,6 +22,7 @@ export interface AuditCollection {
   skippedUnreadable: string[];
   ignored: string[];
   skippedLimit: number;
+  chunked: Array<{ file: string; chunks: number }>;
 }
 
 export interface AuditMeta {
@@ -340,53 +341,90 @@ export function listAuditSourceFiles(workspaceRoot: string): { files: string[]; 
   return { files: files.sort(), ignored };
 }
 
+export const AUDIT_CHUNK_LINES = 800;
+export const AUDIT_CHUNK_OVERLAP = 50;
+
+function auditDiff(filename: string, lines: string[], start: number, count: number): LocalDiffFile {
+  const slice = lines.slice(start, start + count);
+  return { filename, status: 'audit', additions: slice.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +${start + 1},${slice.length} @@\n${slice.map((line) => `+${line}`).join('\n')}` };
+}
+
+function buildFileEntries(filename: string, lines: string[]): LocalDiffFile[] {
+  if (lines.length <= AUDIT_CHUNK_LINES) return [auditDiff(filename, lines, 0, lines.length)];
+  const step = Math.max(1, AUDIT_CHUNK_LINES - AUDIT_CHUNK_OVERLAP);
+  const entries: LocalDiffFile[] = [];
+  for (let start = 0; start < lines.length; start += step) {
+    entries.push(auditDiff(filename, lines, start, AUDIT_CHUNK_LINES));
+    if (start + AUDIT_CHUNK_LINES >= lines.length) break;
+  }
+  return entries;
+}
+
 function sourceFileDiff(workspaceRoot: string, filename: string): LocalDiffFile {
   const content = readFileSync(join(workspaceRoot, filename), 'utf8');
   const lines = content.split(/\r?\n/);
-  return { filename, status: 'audit', additions: lines.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}` };
+  return auditDiff(filename, lines, 0, lines.length);
 }
 
 function readAuditEntries(workspaceRoot: string, sortedPaths: string[], maxFiles: number, maxLines: number, ignored: string[]): AuditCollection {
   const files: LocalDiffFile[] = [];
   const skippedLarge: string[] = [];
   const skippedUnreadable: string[] = [];
+  const chunked: Array<{ file: string; chunks: number }> = [];
   const selected = sortedPaths.slice(0, maxFiles);
   const skippedLimit = sortedPaths.length - selected.length;
   for (const filename of selected) {
-    let entry: LocalDiffFile;
+    let lines: string[];
     try {
-      entry = sourceFileDiff(workspaceRoot, filename);
+      lines = readFileSync(join(workspaceRoot, filename), 'utf8').split(/\r?\n/);
     } catch {
       skippedUnreadable.push(filename);
       continue;
     }
-    if (entry.additions > maxLines) {
+    if (maxLines > 0 && lines.length > maxLines) {
       skippedLarge.push(filename);
       continue;
     }
-    files.push(entry);
+    const entries = buildFileEntries(filename, lines);
+    if (entries.length > 1) chunked.push({ file: filename, chunks: entries.length });
+    files.push(...entries);
   }
-  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
+  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit, chunked };
 }
 
-export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 400): AuditCollection {
+export function dedupeIssues(issues: ReviewIssue[]): ReviewIssue[] {
+  const seen = new Set<string>();
+  const result: ReviewIssue[] = [];
+  for (const issue of issues) {
+    const key = `${issue.file}\u0000${issue.line}\u0000${issue.description}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(issue);
+  }
+  return result;
+}
+
+export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0): AuditCollection {
   const pool = listAuditSourceFiles(workspaceRoot);
   return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
 }
 
 export type ReviewScope = 'all' | 'active' | 'list';
 
-export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 400): AuditCollection {
+export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0): AuditCollection {
   if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
   if (scope === 'active') {
     const requested = activeFile?.trim();
-    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
     const relativePath = relative(workspaceRoot, resolve(workspaceRoot, requested)).replaceAll('\\', '/');
-    if (relativePath.startsWith('..')) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    if (relativePath.startsWith('..')) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
     try {
-      return { files: [sourceFileDiff(workspaceRoot, relativePath)], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+      const lines = readFileSync(join(workspaceRoot, relativePath), 'utf8').split(/\r?\n/);
+      if (maxLines > 0 && lines.length > maxLines) return { files: [], skippedLarge: [relativePath], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
+      const entries = buildFileEntries(relativePath, lines);
+      return { files: entries, skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: entries.length > 1 ? [{ file: relativePath, chunks: entries.length }] : [] };
     } catch {
-      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
     }
   }
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);

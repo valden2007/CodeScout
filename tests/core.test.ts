@@ -14,7 +14,7 @@ import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isIgnoredAuditPath, listAuditSourceFiles, loadIgnorePatterns, mergeCheckpointIssues, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isIgnoredAuditPath, listAuditSourceFiles, loadIgnorePatterns, mergeCheckpointIssues, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
 import { buildReviewPrompt } from '../src/prompt-builder';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
@@ -545,7 +545,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0 };
   it('renders both settings sections in the existing panel style', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('Ключ и провайдер');
@@ -635,7 +635,7 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(extension).toContain('применится к следующему ревью');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
     expect(report).toContain('🔑 Ключ и модель</button>');
-    expect(report).not.toContain('⚙️ Настройки</button>');
+    expect(report).toContain('⚙️ Настройки</button>');
     expect(report).not.toContain("'Изменить'");
     expect(report).not.toContain('⚙️ Модель:');
   });
@@ -873,7 +873,7 @@ describe('E1.2e custom review focus', () => {
 });
 
 describe('E1.2e rules and doc links via settings', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0 };
 
   it('appends project doc links to the audit system prompt', () => {
     const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
@@ -1021,8 +1021,8 @@ describe('E1.3a audit checkpoints', () => {
     expect(extension).toContain("registerCommand('codescout.restartAudit'");
     expect(extension).toContain('panel.setAuditResume(savedProgress)');
     expect(extension).toContain('onFileChecked?.(file.filename, fileIssues)');
-    expect(extension).toContain('state.checked.push({ file: filename, issues: fileIssues })');
-    expect(extension).toContain('const mergedIssues = mergeCheckpointIssues(state)');
+    expect(extension).toContain('state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) })');
+    expect(extension).toContain('const mergedIssues = dedupeIssues(mergeCheckpointIssues(state))');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'resumeAudit'");
     expect(panel).toContain("message.command === 'restartAudit'");
@@ -1177,6 +1177,74 @@ describe('E1.3b RAG docs with cache and import context', () => {
   });
 });
 
+describe('E1.3f maxLines setting and chunking', () => {
+  it('chunks files over 800 lines with 50-line overlap and absolute numbering', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-chunks-'));
+    try {
+      writeFileSync(join(root, 'big.ts'), Array.from({ length: 900 }, (_, i) => `const v${i} = ${i};`).join('\n'));
+      writeFileSync(join(root, 'small.ts'), 'const s = 1;\n');
+      const audit = collectAuditFiles(root);
+      expect(audit.skippedLarge).toEqual([]);
+      expect(audit.chunked).toEqual([{ file: 'big.ts', chunks: 2 }]);
+      const chunks = audit.files.filter((file) => file.filename === 'big.ts');
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0].patch).toContain('@@ -0,0 +1,800 @@');
+      expect(chunks[1].patch).toContain('@@ -0,0 +751,150 @@');
+      expect(numberPatch(chunks[1].patch)).toContain('751 | +const v750 = 750;');
+      expect(numberPatch(chunks[1].patch)).toContain('900 | +const v899 = 899;');
+      const limited = collectAuditFiles(root, 100, 500);
+      expect(limited.skippedLarge).toEqual(['big.ts']);
+      expect(limited.files.map((file) => file.filename)).toEqual(['small.ts']);
+      const active = collectFilesForScope(root, 'active', [], join(root, 'big.ts'));
+      expect(active.chunked).toEqual([{ file: 'big.ts', chunks: 2 }]);
+      const activeLimited = collectFilesForScope(root, 'active', [], join(root, 'big.ts'), 100, 500);
+      expect(activeLimited.skippedLarge).toEqual(['big.ts']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('dedupes chunk findings by file:line:description', () => {
+    const issue = (line: number, description: string): ReviewIssue => ({ file: 'a.ts', line, category: 'bug', severity: 'low', description, confidence: 0.8 });
+    const merged = dedupeIssues([issue(10, 'dup'), issue(11, 'other'), issue(10, 'dup'), issue(10, 'same-line-different-text')]);
+    expect(merged).toHaveLength(3);
+    expect(merged.map((entry) => `${entry.line}:${entry.description}`)).toEqual(['10:dup', '11:other', '10:same-line-different-text']);
+  });
+
+  it('reads maxLines from settings, reports chunks and drops the 400 hardcode', () => {
+    const auditSource = readFileSync('extension/src/projectAudit.ts', 'utf8');
+    expect(auditSource).not.toContain('maxLines = 400');
+    expect(auditSource).toContain('maxLines = 0');
+    expect(auditSource).toContain('AUDIT_CHUNK_LINES = 800');
+    expect(auditSource).toContain('AUDIT_CHUNK_OVERLAP = 50');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("get<number>('maxLines', 0)");
+    expect(extension).toContain('чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)');
+    expect(extension).toContain('dedupeIssues(mergeCheckpointIssues(state))');
+    expect(extension).toContain('>${auditMaxLines} строк, codescout.maxLines)');
+    expect(extension).toContain("update('maxLines', maxLines, vscode.ConfigurationTarget.Global)");
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.maxLines');
+    expect(manifest).toContain('"default": 0');
+  });
+
+  it('settings page renders the maxLines field wired to save', () => {
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0 });
+    expect(html).toContain('id="maxLines"');
+    expect(html).toContain('Макс. строк на файл (0 = без лимита)');
+    expect(html).toContain('value="0"');
+    expect(html).toContain("maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0'))");
+    expect(html).toContain('maxLinesInput.value !== initial.maxLines');
+  });
+  it('panel header has a settings button next to the brand and keeps the quick key button', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
+    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettings"');
+    expect(html).toContain('⚙️ Настройки');
+    expect(html).toContain('<div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button');
+    expect(html).toContain('<button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
+  });
+});
+
 describe('G2 fix batch security and crashes', () => {
   it('rejects null/array/scalar JSON with a clear russian error', () => {
     expect(() => parseReviewResponse('null', 'a.ts')).toThrow('null вместо объекта');
@@ -1289,7 +1357,7 @@ describe('E1.3b-settings configurable RAG limits', () => {
   });
 
   it('renders numeric limit fields in the project section with dirty save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0 });
     expect(html).toContain('id="docMaxKb"');
     expect(html).toContain('id="docMaxLinks"');
     expect(html).toContain('Макс. размер дока');
@@ -1505,7 +1573,7 @@ describe('G3 fix batch panel', () => {
 
 describe('G4 fix batch regressions and security layer', () => {
   it('clampInt clamps both directions and repairs a bad fallback', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0 });
     const source = html.slice(html.indexOf('function clampInt'), html.indexOf('}', html.indexOf('Math.min(max, Math.max(min, Number(fallback)))')) + 1);
     const clampInt = new Function(`return (${source.replace('function clampInt', 'function')})`)() as (v: unknown, min: number, max: number, f: string) => string;
     expect(clampInt('99999', 1, 2048, '50')).toBe('2048');

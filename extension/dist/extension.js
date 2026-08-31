@@ -630,6 +630,8 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
 body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
 .header { position: sticky; top: -16px; z-index: 2; margin: -16px -14px 0; padding: 14px 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+.brand-settings { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px 9px; font-size: 11px; font-weight: 400; text-align: center; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.brand-settings:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .brand-mark { color: var(--vscode-textLink-foreground); }
 .key-status { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 7px; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .key-status button { width: auto; padding: 2px 5px; font-size: 10px; }
@@ -706,7 +708,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === "stale" ? "\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?" : "\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?"}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === "stale" ? "\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C" : "\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442"}</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div></div></div>` : ""}
-    <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout</div>
+    <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettings">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
@@ -1361,51 +1363,79 @@ function listAuditSourceFiles(workspaceRoot) {
   walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns);
   return { files: files.sort(), ignored };
 }
-function sourceFileDiff(workspaceRoot, filename) {
-  const content = (0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8");
-  const lines = content.split(/\r?\n/);
-  return { filename, status: "audit", additions: lines.length, deletions: 0, patch: `--- /dev/null
+var AUDIT_CHUNK_LINES = 800;
+var AUDIT_CHUNK_OVERLAP = 50;
+function auditDiff(filename, lines, start, count) {
+  const slice = lines.slice(start, start + count);
+  return { filename, status: "audit", additions: slice.length, deletions: 0, patch: `--- /dev/null
 +++ b/${filename}
-@@ -0,0 +1,${lines.length} @@
-${lines.map((line) => `+${line}`).join("\n")}` };
+@@ -0,0 +${start + 1},${slice.length} @@
+${slice.map((line) => `+${line}`).join("\n")}` };
+}
+function buildFileEntries(filename, lines) {
+  if (lines.length <= AUDIT_CHUNK_LINES) return [auditDiff(filename, lines, 0, lines.length)];
+  const step = Math.max(1, AUDIT_CHUNK_LINES - AUDIT_CHUNK_OVERLAP);
+  const entries = [];
+  for (let start = 0; start < lines.length; start += step) {
+    entries.push(auditDiff(filename, lines, start, AUDIT_CHUNK_LINES));
+    if (start + AUDIT_CHUNK_LINES >= lines.length) break;
+  }
+  return entries;
 }
 function readAuditEntries(workspaceRoot, sortedPaths, maxFiles, maxLines, ignored) {
   const files = [];
   const skippedLarge = [];
   const skippedUnreadable = [];
+  const chunked = [];
   const selected = sortedPaths.slice(0, maxFiles);
   const skippedLimit = sortedPaths.length - selected.length;
   for (const filename of selected) {
-    let entry;
+    let lines;
     try {
-      entry = sourceFileDiff(workspaceRoot, filename);
+      lines = (0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8").split(/\r?\n/);
     } catch {
       skippedUnreadable.push(filename);
       continue;
     }
-    if (entry.additions > maxLines) {
+    if (maxLines > 0 && lines.length > maxLines) {
       skippedLarge.push(filename);
       continue;
     }
-    files.push(entry);
+    const entries = buildFileEntries(filename, lines);
+    if (entries.length > 1) chunked.push({ file: filename, chunks: entries.length });
+    files.push(...entries);
   }
-  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit };
+  return { files, skippedLarge, skippedUnreadable, ignored, skippedLimit, chunked };
 }
-function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 400) {
+function dedupeIssues(issues) {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const issue of issues) {
+    const key = `${issue.file}\0${issue.line}\0${issue.description}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(issue);
+  }
+  return result;
+}
+function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0) {
   const pool = listAuditSourceFiles(workspaceRoot);
   return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
 }
-function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 400) {
+function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 0) {
   if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
   if (scope === "active") {
     const requested = activeFile?.trim();
-    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+    if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
     const relativePath = (0, import_node_path3.relative)(workspaceRoot, (0, import_node_path3.resolve)(workspaceRoot, requested)).replaceAll("\\", "/");
-    if (relativePath.startsWith("..")) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+    if (relativePath.startsWith("..")) return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
     try {
-      return { files: [sourceFileDiff(workspaceRoot, relativePath)], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0 };
+      const lines = (0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, relativePath), "utf8").split(/\r?\n/);
+      if (maxLines > 0 && lines.length > maxLines) return { files: [], skippedLarge: [relativePath], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
+      const entries = buildFileEntries(relativePath, lines);
+      return { files: entries, skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: entries.length > 1 ? [{ file: relativePath, chunks: entries.length }] : [] };
     } catch {
-      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0 };
+      return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
     }
   }
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
@@ -1653,11 +1683,13 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
   <label for="docMaxLinks">\u041C\u0430\u043A\u0441. \u0447\u0438\u0441\u043B\u043E \u0441\u0441\u044B\u043B\u043E\u043A \u043D\u0430 \u0430\u0443\u0434\u0438\u0442</label>
   <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
+  <label for="maxLines">\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
+  <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
   <div class="row">
     <button id="saveProject" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
     <button id="openRules" type="button" class="secondary">\u{1F4DC} \u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u043B\u0438\u043C\u0438\u0442\u044B \u0432\u044B\u0448\u0435, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441; oversized-\u0434\u043E\u043A \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0434\u043E \u043B\u0438\u043C\u0438\u0442\u0430, \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB. \u0421\u0443\u043C\u043C\u0430\u0440\u043D\u043E \u0431\u043E\u043B\u044C\u0448\u0435 100KB \u2014 \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0440\u043E \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442.</p>
+  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u043B\u0438\u043C\u0438\u0442\u044B \u0432\u044B\u0448\u0435, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441; oversized-\u0434\u043E\u043A \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0434\u043E \u043B\u0438\u043C\u0438\u0442\u0430, \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB. \u0421\u0443\u043C\u043C\u0430\u0440\u043D\u043E \u0431\u043E\u043B\u044C\u0448\u0435 100KB \u2014 \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0440\u043E \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442. maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B &gt;800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; maxLines = N: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F (\u0434\u043B\u044F \u0441\u043B\u0430\u0431\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439).</p>
 </section>
 </main>
 <script>
@@ -1671,10 +1703,11 @@ const bannerBox = document.getElementById('showBanner');
 const docLinksInput = document.getElementById('docLinks');
 const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
+const maxLinesInput = document.getElementById('maxLines');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -1684,7 +1717,7 @@ function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -1723,7 +1756,8 @@ saveProjectBtn.addEventListener('click', () => {
     command: 'saveDocLinks',
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
-    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5'))
+    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5')),
+    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0'))
   });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
@@ -1938,20 +1972,22 @@ async function runFullAudit(context, output, panel, resume = false) {
   let progress;
   let planFiles = [];
   try {
-    const auditMaxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
+    const auditConfig = vscode2.workspace.getConfiguration("codescout");
+    const auditMaxFiles = auditConfig.get("maxFiles", 100);
+    const auditMaxLines = auditConfig.get("maxLines", 0);
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
-    planFiles = audit.files.map((file) => file.filename);
-    output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${audit.files.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines);
+    planFiles = [...new Set(audit.files.map((file) => file.filename))];
+    output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${planFiles.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     output.appendLine(`\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F: ${audit.ignored.length} \u0444\u0430\u0439\u043B\u043E\u0432 (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
-    for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>400 \u0441\u0442\u0440\u043E\u043A): ${filename}`);
+    for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>${auditMaxLines} \u0441\u0442\u0440\u043E\u043A, codescout.maxLines): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0439 \u0444\u0430\u0439\u043B: ${filename}`);
-    const docsConfig = vscode2.workspace.getConfiguration("codescout");
-    const docMaxBytes = docLimitsFromKb(docsConfig.get("docMaxKb"));
-    const docMaxLinks = docLimitsFromCount(docsConfig.get("docMaxLinks"));
-    const docLinks = docsConfig.get("docLinks") ?? [];
+    for (const entry of audit.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
+    const docMaxBytes = docLimitsFromKb(auditConfig.get("docMaxKb"));
+    const docMaxLinks = docLimitsFromCount(auditConfig.get("docMaxLinks"));
+    const docLinks = auditConfig.get("docLinks") ?? [];
     let docs = { section: "", fetched: 0, fromCache: 0, failed: 0 };
     if (docLinks.some((link) => link.trim())) {
       try {
@@ -1985,6 +2021,9 @@ async function runFullAudit(context, output, panel, resume = false) {
     const state = initial;
     const doneNames = new Set(state.checked.map((entry) => entry.file));
     const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
+    const chunkTotals = /* @__PURE__ */ new Map();
+    for (const file of audit.files) chunkTotals.set(file.filename, (chunkTotals.get(file.filename) ?? 0) + 1);
+    const chunkProgress = /* @__PURE__ */ new Map();
     const persist = () => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
@@ -1994,11 +2033,17 @@ async function runFullAudit(context, output, panel, resume = false) {
       panel.setProgress(index, total, filename, "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
     }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), (filename, fileIssues) => {
-      doneNames.add(filename);
-      state.checked.push({ file: filename, issues: fileIssues });
-      persist();
+      const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] };
+      acc.done += 1;
+      acc.issues.push(...fileIssues);
+      chunkProgress.set(filename, acc);
+      if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
+        doneNames.add(filename);
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
+        persist();
+      }
     }, (filename) => importsContextLine(workspaceRoot, filename));
-    const mergedIssues = mergeCheckpointIssues(state);
+    const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
@@ -2068,8 +2113,11 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
   output.appendLine(`\u{1F3AF} \u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E: ${focus}`);
   panel.setScanning(true);
   try {
-    const maxFiles = vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100);
-    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles);
+    const reviewConfig = vscode2.workspace.getConfiguration("codescout");
+    const maxFiles = reviewConfig.get("maxFiles", 100);
+    const maxLines = reviewConfig.get("maxLines", 0);
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles, maxLines);
+    for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
       panel.setError(scope === "list" ? `\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "${globs.join(", ")}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).` : "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.");
       output.appendLine("\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u043D\u0435 \u0437\u0430\u043F\u0443\u0449\u0435\u043D\u043E: \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.");
@@ -2082,7 +2130,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       panel.setProgress(index, total, filename, "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
     }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename));
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
+    panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     void vscode2.window.showInformationMessage(`CodeScout: \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u043E, \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${result.issues.length}`);
@@ -2172,7 +2220,8 @@ async function readSettingsState(context) {
     showAuditBanner: auditBannerEnabled(),
     docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? [],
     docMaxKb: docLimitsFromKb(vscode2.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
-    docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks"))
+    docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks")),
+    maxLines: Math.max(0, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxLines", 0) || 0))
   };
 }
 async function saveKeyProvider(context, message) {
@@ -2261,11 +2310,14 @@ function activate(context) {
               const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
               const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
               const maxLinks = docLimitsFromCount(message.docMaxLinks);
+              const maxLinesRaw = Math.round(Number(message.maxLines));
+              const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(1e5, maxLinesRaw) : 0;
               const config = vscode2.workspace.getConfiguration("codescout");
               await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
               await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
               await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
-              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \u2014 \u043F\u043E\u0439\u0434\u0443\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
+              await config.update("maxLines", maxLines, vscode2.ConfigurationTarget.Global);
+              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \xB7 maxLines: ${maxLines === 0 ? "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)" : `${maxLines} \u0441\u0442\u0440\u043E\u043A`} \u2014 \u043F\u043E\u0439\u0434\u0451\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
             } else if (message.command === "openRules") {
               try {
                 await openOrCreateRules(getWorkspaceRoot());

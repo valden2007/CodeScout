@@ -194,5 +194,17 @@ pre-design now.
    outside hunk) and segment-based ignore (my_vendor_lib safe);
    TUI confidenceLabel rounds/clamps percent; sample summary has a
    1-of-3 message. Tests: 140.
+8. maxLines + chunking (1.3f): codescout.maxLines setting
+   (default 0 = no limit, edited in Settings → 📁 Проект next to
+   the RAG limits). 400-line hardcode is gone — collectAuditFiles/
+   collectFilesForScope take maxLines from settings; 0 means every
+   file is reviewed and files >800 lines are auto-chunked with a
+   50-line overlap (absolute line numbers preserved, Output line
+   "📄 файл X: N чанков"), findings merged with dedupeIssues
+   (file:line:description) both per-file in the checkpoint and in
+   the final report; N > 0 keeps the old skip-with-warning
+   behavior for weak models. Panel header got a "⚙️ Настройки"
+   button (data-command openSettings) beside the brand; the quick
+   "🔑 Ключ и модель" button stays. Tests: 145.
 Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
 RAG v1.3b is done — the old "RAG" backlog mention is superseded.

@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, defaultDocFetcher, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -245,20 +245,22 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
   let progress: AuditCheckpoint | undefined;
   let planFiles: string[] = [];
   try {
-    const auditMaxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
+    const auditConfig = vscode.workspace.getConfiguration('codescout');
+    const auditMaxFiles = auditConfig.get<number>('maxFiles', 100);
+    const auditMaxLines = auditConfig.get<number>('maxLines', 0);
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles);
-    planFiles = audit.files.map((file) => file.filename);
-    output.appendLine(`🔬 Полный аудит: найдено ${audit.files.length} файлов.`);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines);
+    planFiles = [...new Set(audit.files.map((file) => file.filename))];
+    output.appendLine(`🔬 Полный аудит: найдено ${planFiles.length} файлов.`);
     output.appendLine(`Игнорируется: ${audit.ignored.length} файлов (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
-    for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>400 строк): ${filename}`);
+    for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>${auditMaxLines} строк, codescout.maxLines): ${filename}`);
     for (const filename of audit.skippedUnreadable) output.appendLine(`⚠️ Пропущен нечитаемый файл: ${filename}`);
-    const docsConfig = vscode.workspace.getConfiguration('codescout');
-    const docMaxBytes = docLimitsFromKb(docsConfig.get<number>('docMaxKb'));
-    const docMaxLinks = docLimitsFromCount(docsConfig.get<number>('docMaxLinks'));
-    const docLinks = docsConfig.get<string[]>('docLinks') ?? [];
+    for (const entry of audit.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
+    const docMaxBytes = docLimitsFromKb(auditConfig.get<number>('docMaxKb'));
+    const docMaxLinks = docLimitsFromCount(auditConfig.get<number>('docMaxLinks'));
+    const docLinks = auditConfig.get<string[]>('docLinks') ?? [];
     let docs: DocsResult = { section: '', fetched: 0, fromCache: 0, failed: 0 };
     if (docLinks.some((link) => link.trim())) {
       try {
@@ -292,17 +294,26 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const state = initial;
     const doneNames = new Set(state.checked.map((entry) => entry.file));
     const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
+    const chunkTotals = new Map<string, number>();
+    for (const file of audit.files) chunkTotals.set(file.filename, (chunkTotals.get(file.filename) ?? 0) + 1);
+    const chunkProgress = new Map<string, { done: number; issues: ReviewIssue[] }>();
     const persist = (): void => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
     };
     persist();
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
-      doneNames.add(filename);
-      state.checked.push({ file: filename, issues: fileIssues });
-      persist();
+      const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
+      acc.done += 1;
+      acc.issues.push(...fileIssues);
+      chunkProgress.set(filename, acc);
+      if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
+        doneNames.add(filename);
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
+        persist();
+      }
     }, (filename) => importsContextLine(workspaceRoot, filename));
-    const mergedIssues = mergeCheckpointIssues(state);
+    const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
@@ -372,8 +383,11 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine(`🎯 Кастомное ревью: ${focus}`);
   panel.setScanning(true);
   try {
-    const maxFiles = vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100);
-    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles);
+    const reviewConfig = vscode.workspace.getConfiguration('codescout');
+    const maxFiles = reviewConfig.get<number>('maxFiles', 100);
+    const maxLines = reviewConfig.get<number>('maxLines', 0);
+    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines);
+    for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
     if (collection.files.length === 0) {
       panel.setError(scope === 'list' ? `По глобам "${globs.join(', ')}" не подошло ни одного файла (проверь игнор-листы).` : 'Нет доступных файлов для ревью.');
       output.appendLine('Своё ревью не запущено: файлов для проверки не найдено.');
@@ -383,7 +397,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🎯 Своё ревью: файл', elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename));
-    panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
+    panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
     void vscode.window.showInformationMessage(`CodeScout: своё ревью завершено, найдено ${result.issues.length}`);
@@ -446,6 +460,7 @@ interface SettingsMessage {
   linksText?: string;
   docMaxKb?: number;
   docMaxLinks?: number;
+  maxLines?: number;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -486,7 +501,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     showAuditBanner: auditBannerEnabled(),
     docLinks: vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? [],
     docMaxKb: docLimitsFromKb(vscode.workspace.getConfiguration('codescout').get<number>('docMaxKb')) / 1024,
-    docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks'))
+    docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks')),
+    maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0))
   };
 }
 
@@ -577,11 +593,14 @@ export function activate(context: vscode.ExtensionContext): void {
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
             const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
             const maxLinks = docLimitsFromCount(message.docMaxLinks);
+            const maxLinesRaw = Math.round(Number(message.maxLines));
+            const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(100000, maxLinesRaw) : 0;
             const config = vscode.workspace.getConfiguration('codescout');
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
             await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} — пойдут в следующий полный аудит`);
+            await config.update('maxLines', maxLines, vscode.ConfigurationTarget.Global);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} — пойдёт в следующий полный аудит`);
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());
