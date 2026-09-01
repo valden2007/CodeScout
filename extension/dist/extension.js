@@ -707,6 +707,9 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .custom-actions { margin-top: 8px; }
 .custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--vscode-editorWarning-foreground); border-radius: 4px; background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent); font-size: 12px; }
+.auto-line { margin-top: 7px; color: var(--vscode-textLink-foreground); font-size: 12px; font-weight: 600; }
+.search-line { margin-top: 10px; }
+.search-line input { width: 100%; padding: 5px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
 </style>
 </head>
 <body>
