@@ -294,9 +294,12 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const auditMaxLines = auditConfig.get<number>('maxLines', 0);
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines);
+    const auditScopeText = auditConfig.get<string>('auditScope') ?? '';
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText);
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`🔬 Полный аудит: найдено ${planFiles.length} файлов.`);
+    const scopeGlobs = parseScopeGlobs(auditScopeText);
+    if (scopeGlobs.length) output.appendLine(`🎯 Scope аудита: ${scopeGlobs.join(', ')} — подходит ${planFiles.length} файлов (codescout.auditScope)`);
     output.appendLine(`Игнорируется: ${audit.ignored.length} файлов (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${audit.skippedLimit} файлов по лимиту (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`⚠️ Пропущен большой файл (>${auditMaxLines} строк, codescout.maxLines): ${filename}`);
@@ -457,6 +460,34 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
+}
+
+async function runSelectionReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, uri?: vscode.Uri): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    void vscode.window.showErrorMessage('Открой папку workspace, чтобы проверить файл/папку.');
+    return;
+  }
+  if (!uri) {
+    void vscode.window.showErrorMessage('CodeScout: проверять можно через контекстное меню проводника (ПКМ по файлу или папке).');
+    return;
+  }
+  const target = uri.fsPath;
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(target).isDirectory();
+  } catch {
+    void vscode.window.showErrorMessage(`CodeScout: не удалось прочитать выбранный путь: ${target}`);
+    return;
+  }
+  const rel = relative(workspaceRoot, resolve(target)).replaceAll('\\', '/');
+  if (!rel || rel.startsWith('..')) {
+    void vscode.window.showErrorMessage('CodeScout: выбранный путь вне workspace — проверяю только файлы проекта.');
+    return;
+  }
+  const globs = isDirectory ? `${rel}/**` : rel;
+  // разовая проверка выбора: codescout.auditScope здесь сознательно игнорируется
+  await runCustomReview(context, output, panel, `Проверка выбора в проводнике: ${rel}`, 'list', globs);
 }
 
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
@@ -684,6 +715,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return runFullAudit(context, output, panel);
     }),
     vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runCustomReview(context, output, panel, focus, scope, globs)),
+    vscode.commands.registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri)),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();

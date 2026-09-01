@@ -99,8 +99,21 @@
       {
         "command": "codescout.restartAudit",
         "title": "CodeScout: полный аудит заново (сброс чекпоинта)"
+      },
+      {
+        "command": "codescout.reviewSelection",
+        "title": "CodeScout: проверить"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "codescout.reviewSelection",
+          "when": "resourceScheme == file",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "CodeScout",
       "properties": {

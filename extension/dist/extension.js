@@ -2106,9 +2106,12 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const auditMaxLines = auditConfig.get("maxLines", 0);
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines);
+    const auditScopeText = auditConfig.get("auditScope") ?? "";
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText);
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${planFiles.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
+    const scopeGlobs = parseScopeGlobs(auditScopeText);
+    if (scopeGlobs.length) output.appendLine(`\u{1F3AF} Scope \u0430\u0443\u0434\u0438\u0442\u0430: ${scopeGlobs.join(", ")} \u2014 \u043F\u043E\u0434\u0445\u043E\u0434\u0438\u0442 ${planFiles.length} \u0444\u0430\u0439\u043B\u043E\u0432 (codescout.auditScope)`);
     output.appendLine(`\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F: ${audit.ignored.length} \u0444\u0430\u0439\u043B\u043E\u0432 (.gitignore + .codescout/ignore)`);
     if (audit.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${auditMaxFiles})`);
     for (const filename of audit.skippedLarge) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0444\u0430\u0439\u043B (>${auditMaxLines} \u0441\u0442\u0440\u043E\u043A, codescout.maxLines): ${filename}`);
@@ -2278,6 +2281,32 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
+}
+async function runSelectionReview(context, output, panel, uri) {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    void vscode2.window.showErrorMessage("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0444\u0430\u0439\u043B/\u043F\u0430\u043F\u043A\u0443.");
+    return;
+  }
+  if (!uri) {
+    void vscode2.window.showErrorMessage("CodeScout: \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0442\u044C \u043C\u043E\u0436\u043D\u043E \u0447\u0435\u0440\u0435\u0437 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u043E\u0435 \u043C\u0435\u043D\u044E \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0430 (\u041F\u041A\u041C \u043F\u043E \u0444\u0430\u0439\u043B\u0443 \u0438\u043B\u0438 \u043F\u0430\u043F\u043A\u0435).");
+    return;
+  }
+  const target = uri.fsPath;
+  let isDirectory = false;
+  try {
+    isDirectory = (0, import_node_fs5.statSync)(target).isDirectory();
+  } catch {
+    void vscode2.window.showErrorMessage(`CodeScout: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C: ${target}`);
+    return;
+  }
+  const rel = (0, import_node_path4.relative)(workspaceRoot, (0, import_node_path4.resolve)(target)).replaceAll("\\", "/");
+  if (!rel || rel.startsWith("..")) {
+    void vscode2.window.showErrorMessage("CodeScout: \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C \u0432\u043D\u0435 workspace \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0442\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430.");
+    return;
+  }
+  const globs = isDirectory ? `${rel}/**` : rel;
+  await runCustomReview(context, output, panel, `\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0432\u044B\u0431\u043E\u0440\u0430 \u0432 \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0435: ${rel}`, "list", globs);
 }
 async function runReview(context, lastCommit, output, panel) {
   const controller = new AbortController();
@@ -2490,6 +2519,7 @@ function activate(context) {
       return runFullAudit(context, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runCustomReview(context, output, panel, focus, scope, globs)),
+    vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runSelectionReview(context, output, panel, uri)),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();
