@@ -1,6 +1,14 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
+export interface AutoResumeIndicator {
+  done: number;
+  total: number;
+  secondsLeft: number;
+  attempt: number;
+  maxAttempts: number;
+}
+
 export interface ReportStats {
   files: number;
   seconds: number;
@@ -53,7 +61,12 @@ function issueCard(issue: ReviewIssue, isNew = false): string {
 </article>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView): string {
+function autoLineHtml(autoResume?: AutoResumeIndicator): string {
+  if (!autoResume) return '<div class="auto-line hidden" id="autoLine"></div>';
+  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">🤖 авто-догон: ${autoResume.done}/${autoResume.total}, попытка ${autoResume.attempt}/${autoResume.maxAttempts} через ${autoResume.secondsLeft}с</div>`;
+}
+
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
@@ -187,10 +200,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       </div>
     </div>
     ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || 'Запускаю проверку…')}</div>` : ''}
+    ${autoLineHtml(autoResume)}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">⛔ Остановить</button>' : ''}
     <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">🔴 ${stats.critical}</span><span class="pill medium">🟡 ${stats.medium}</span><span class="pill low">🟢 ${stats.low}</span></div>
   </header>
+  ${sections ? '<div class="search-line"><input id="fileSearch" type="search" placeholder="🔍 поиск файла…" autocomplete="off" spellcheck="false"></div>' : ''}
   <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
@@ -245,6 +260,31 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       live.elapsed = Number((live.text.match(/⏱\\s*(\\d+)с/) || [])[1] || 0);
       live.tick = progressLine.dataset.live === 'true' && /⏱\\s*\\d+с/.test(live.text);
     }
+    const auto = { on: false, done: 0, total: 0, attempt: 0, max: 0, seconds: 0 };
+    const autoLine = document.getElementById('autoLine');
+    function renderAuto() {
+      if (!autoLine) return;
+      if (!auto.on) { autoLine.classList.add('hidden'); return; }
+      autoLine.classList.remove('hidden');
+      autoLine.textContent = '🤖 авто-догон: ' + auto.done + '/' + auto.total + ', попытка ' + auto.attempt + '/' + auto.max + (auto.seconds > 0 ? ' через ' + auto.seconds + 'с' : ' — пробую снова…');
+    }
+    if (autoLine && !autoLine.classList.contains('hidden')) {
+      auto.on = true;
+      auto.done = Number(autoLine.dataset.done || 0);
+      auto.total = Number(autoLine.dataset.total || 0);
+      auto.attempt = Number(autoLine.dataset.attempt || 0);
+      auto.max = Number(autoLine.dataset.max || 0);
+      auto.seconds = Number(autoLine.dataset.seconds || 0);
+    }
+    const fileSearch = document.getElementById('fileSearch');
+    if (fileSearch) fileSearch.addEventListener('input', () => {
+      const q = fileSearch.value.trim().toLowerCase();
+      document.querySelectorAll('main section.file-section').forEach((sec) => {
+        const h2 = sec.querySelector('h2');
+        const name = h2 ? (h2.textContent || '').toLowerCase() : '';
+        sec.classList.toggle('hidden', q !== '' && !name.includes(q));
+      });
+    });
     window.addEventListener('message', (event) => {
       const data = event.data || {};
       if (data.type === 'progress') {
@@ -254,6 +294,17 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         applyProgressText(live.text);
       } else if (data.type === 'status') {
         applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : data.kind === 'test' ? 'test' : data.kind === 'success' ? 'success' : 'retry');
+      } else if (data.type === 'auto') {
+        if (data.off) auto.on = false;
+        else {
+          auto.on = true;
+          auto.done = Number(data.done || 0);
+          auto.total = Number(data.total || 0);
+          auto.attempt = Number(data.attempt || 0);
+          auto.max = Number(data.maxAttempts || 0);
+          auto.seconds = Number(data.secondsLeft || 0);
+        }
+        renderAuto();
       }
     });
     setInterval(() => {
@@ -261,6 +312,11 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       live.elapsed += 1;
       live.text = live.text.replace(/⏱\\s*\\d+с/, '⏱ ' + live.elapsed + 'с');
       applyProgressText(live.text);
+    }, 1000);
+    setInterval(() => {
+      if (!auto.on || auto.seconds <= 0) return;
+      auto.seconds -= 1;
+      renderAuto();
     }, 1000);
     document.addEventListener('click', (event) => {
       const origin = event.target instanceof Element ? event.target : null;

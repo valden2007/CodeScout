@@ -404,9 +404,31 @@ export function dedupeIssues(issues: ReviewIssue[]): ReviewIssue[] {
   return result;
 }
 
-export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0): AuditCollection {
+export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = ''): AuditCollection {
   const pool = listAuditSourceFiles(workspaceRoot);
-  return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
+  const patterns = parseScopeGlobs(scopeGlobsText);
+  const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
+  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
+}
+
+export function parseScopeGlobs(text: string): string[] {
+  return [...new Set((text ?? '').split(',').map((glob) => glob.trim()).filter(Boolean))];
+}
+
+export const AUTO_RESUME_LADDER_SECONDS = [30, 60, 120, 300];
+export const AUTO_RESUME_MAX_ATTEMPTS_DEFAULT = 20;
+export const AUTO_RESUME_MAX_MINUTES_DEFAULT = 180;
+
+export interface AutoResumeDecision {
+  attempt: number;
+  waitSeconds: number;
+}
+
+export function autoResumeDecision(attempt: number, startedAt: number, now: number, maxAttempts = AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, maxMinutes = AUTO_RESUME_MAX_MINUTES_DEFAULT): AutoResumeDecision | undefined {
+  if (!Number.isInteger(attempt) || attempt < 1 || attempt > maxAttempts) return undefined;
+  if (now - startedAt > maxMinutes * 60_000) return undefined;
+  const waitSeconds = AUTO_RESUME_LADDER_SECONDS[Math.min(attempt, AUTO_RESUME_LADDER_SECONDS.length) - 1];
+  return { attempt, waitSeconds };
 }
 
 export type ReviewScope = 'all' | 'active' | 'list';

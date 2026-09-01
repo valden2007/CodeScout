@@ -159,7 +159,7 @@ function abortError() {
 function isAbortError(error) {
   return error instanceof Error && error.name === "AbortError";
 }
-var sleep = (ms, signal) => new Promise((resolve4, reject) => {
+var sleep = (ms, signal) => new Promise((resolve5, reject) => {
   if (signal?.aborted) {
     reject(abortError());
     return;
@@ -170,7 +170,7 @@ var sleep = (ms, signal) => new Promise((resolve4, reject) => {
   };
   const timer = setTimeout(() => {
     signal?.removeEventListener("abort", onAbort);
-    resolve4();
+    resolve5();
   }, ms);
   signal?.addEventListener("abort", onAbort, { once: true });
 });
@@ -609,7 +609,11 @@ function issueCard(issue, isNew = false) {
   ${suggestion}
 </article>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume) {
+function autoLineHtml(autoResume) {
+  if (!autoResume) return '<div class="auto-line hidden" id="autoLine"></div>';
+  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: ${autoResume.done}/${autoResume.total}, \u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${autoResume.attempt}/${autoResume.maxAttempts} \u0447\u0435\u0440\u0435\u0437 ${autoResume.secondsLeft}\u0441</div>`;
+}
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume) {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = /* @__PURE__ */ new Map();
@@ -735,10 +739,12 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       </div>
     </div>
     ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026")}</div>` : ""}
+    ${autoLineHtml(autoResume)}
     ${isScanning ? '<button class="cancel-action" type="button" data-command="cancelScan">\u26D4 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>' : ""}
     <div class="stats"><strong>${issues.length} issues</strong> \xB7 ${stats.files} files \xB7 ${stats.seconds.toFixed(1)}s</div>
     <div class="pills"><span class="pill critical">\u{1F534} ${stats.critical}</span><span class="pill medium">\u{1F7E1} ${stats.medium}</span><span class="pill low">\u{1F7E2} ${stats.low}</span></div>
   </header>
+  ${sections ? '<div class="search-line"><input id="fileSearch" type="search" placeholder="\u{1F50D} \u043F\u043E\u0438\u0441\u043A \u0444\u0430\u0439\u043B\u0430\u2026" autocomplete="off" spellcheck="false"></div>' : ""}
   <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script>
     const vscode = acquireVsCodeApi();
@@ -793,6 +799,31 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       live.elapsed = Number((live.text.match(/\u23F1\\s*(\\d+)\u0441/) || [])[1] || 0);
       live.tick = progressLine.dataset.live === 'true' && /\u23F1\\s*\\d+\u0441/.test(live.text);
     }
+    const auto = { on: false, done: 0, total: 0, attempt: 0, max: 0, seconds: 0 };
+    const autoLine = document.getElementById('autoLine');
+    function renderAuto() {
+      if (!autoLine) return;
+      if (!auto.on) { autoLine.classList.add('hidden'); return; }
+      autoLine.classList.remove('hidden');
+      autoLine.textContent = '\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: ' + auto.done + '/' + auto.total + ', \u043F\u043E\u043F\u044B\u0442\u043A\u0430 ' + auto.attempt + '/' + auto.max + (auto.seconds > 0 ? ' \u0447\u0435\u0440\u0435\u0437 ' + auto.seconds + '\u0441' : ' \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026');
+    }
+    if (autoLine && !autoLine.classList.contains('hidden')) {
+      auto.on = true;
+      auto.done = Number(autoLine.dataset.done || 0);
+      auto.total = Number(autoLine.dataset.total || 0);
+      auto.attempt = Number(autoLine.dataset.attempt || 0);
+      auto.max = Number(autoLine.dataset.max || 0);
+      auto.seconds = Number(autoLine.dataset.seconds || 0);
+    }
+    const fileSearch = document.getElementById('fileSearch');
+    if (fileSearch) fileSearch.addEventListener('input', () => {
+      const q = fileSearch.value.trim().toLowerCase();
+      document.querySelectorAll('main section.file-section').forEach((sec) => {
+        const h2 = sec.querySelector('h2');
+        const name = h2 ? (h2.textContent || '').toLowerCase() : '';
+        sec.classList.toggle('hidden', q !== '' && !name.includes(q));
+      });
+    });
     window.addEventListener('message', (event) => {
       const data = event.data || {};
       if (data.type === 'progress') {
@@ -802,6 +833,17 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         applyProgressText(live.text);
       } else if (data.type === 'status') {
         applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : data.kind === 'test' ? 'test' : data.kind === 'success' ? 'success' : 'retry');
+      } else if (data.type === 'auto') {
+        if (data.off) auto.on = false;
+        else {
+          auto.on = true;
+          auto.done = Number(data.done || 0);
+          auto.total = Number(data.total || 0);
+          auto.attempt = Number(data.attempt || 0);
+          auto.max = Number(data.maxAttempts || 0);
+          auto.seconds = Number(data.secondsLeft || 0);
+        }
+        renderAuto();
       }
     });
     setInterval(() => {
@@ -809,6 +851,11 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       live.elapsed += 1;
       live.text = live.text.replace(/\u23F1\\s*\\d+\u0441/, '\u23F1 ' + live.elapsed + '\u0441');
       applyProgressText(live.text);
+    }, 1000);
+    setInterval(() => {
+      if (!auto.on || auto.seconds <= 0) return;
+      auto.seconds -= 1;
+      renderAuto();
     }, 1000);
     document.addEventListener('click', (event) => {
       const origin = event.target instanceof Element ? event.target : null;
@@ -899,6 +946,7 @@ var CodeScoutPanel = class {
   findingsDiff;
   customFocus = "";
   auditResume;
+  autoResumeView;
   onWelcomeStart;
   onWelcomeDismiss;
   messageSubscription;
@@ -1007,6 +1055,7 @@ var CodeScoutPanel = class {
       this.findingsDiff = void 0;
       this.customFocus = "";
       this.auditResume = void 0;
+      this.autoResumeView = void 0;
     }
     this.render();
   }
@@ -1044,10 +1093,20 @@ var CodeScoutPanel = class {
     }
     this.render();
   }
+  setAutoResume(view) {
+    this.autoResumeView = view;
+    const webview = this.view && this.scanning ? this.view.webview : void 0;
+    if (webview) {
+      safePost(webview, view ? { type: "auto", ...view } : { type: "auto", off: true });
+      return;
+    }
+    this.render();
+  }
   setCancelled() {
     this.scanning = false;
     this.hasRun = true;
     this.progressMessage = "";
+    this.autoResumeView = void 0;
     this.statusKind = "error";
     this.statusMessage = "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C";
     this.render();
@@ -1070,6 +1129,7 @@ var CodeScoutPanel = class {
     this.findingsDiff = findingsDiff;
     this.customFocus = customFocus;
     this.auditResume = void 0;
+    this.autoResumeView = void 0;
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "success";
@@ -1077,7 +1137,7 @@ var CodeScoutPanel = class {
   }
   render() {
     if (!this.view) return;
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
   }
 };
 
@@ -1418,9 +1478,23 @@ function dedupeIssues(issues) {
   }
   return result;
 }
-function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0) {
+function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0, scopeGlobsText = "") {
   const pool = listAuditSourceFiles(workspaceRoot);
-  return readAuditEntries(workspaceRoot, pool.files, maxFiles, maxLines, pool.ignored);
+  const patterns = parseScopeGlobs(scopeGlobsText);
+  const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
+  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
+}
+function parseScopeGlobs(text) {
+  return [...new Set((text ?? "").split(",").map((glob) => glob.trim()).filter(Boolean))];
+}
+var AUTO_RESUME_LADDER_SECONDS = [30, 60, 120, 300];
+var AUTO_RESUME_MAX_ATTEMPTS_DEFAULT = 20;
+var AUTO_RESUME_MAX_MINUTES_DEFAULT = 180;
+function autoResumeDecision(attempt, startedAt, now, maxAttempts = AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, maxMinutes = AUTO_RESUME_MAX_MINUTES_DEFAULT) {
+  if (!Number.isInteger(attempt) || attempt < 1 || attempt > maxAttempts) return void 0;
+  if (now - startedAt > maxMinutes * 6e4) return void 0;
+  const waitSeconds = AUTO_RESUME_LADDER_SECONDS[Math.min(attempt, AUTO_RESUME_LADDER_SECONDS.length) - 1];
+  return { attempt, waitSeconds };
 }
 function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 0) {
   if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
@@ -1685,6 +1759,9 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
   <label for="maxLines">\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
   <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
+  <label for="auditScope">Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)</label>
+  <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml2(state.auditScope)}">
+  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? " checked" : ""}> \u{1F916} \u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C (\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D)</label>
   <div class="row">
     <button id="saveProject" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
     <button id="openRules" type="button" class="secondary">\u{1F4DC} \u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</button>
@@ -1704,10 +1781,12 @@ const docLinksInput = document.getElementById('docLinks');
 const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
 const maxLinesInput = document.getElementById('maxLines');
+const auditScopeInput = document.getElementById('auditScope');
+const autoResumeBox = document.getElementById('autoResume');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, autoResume: autoResumeBox.checked };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -1717,7 +1796,7 @@ function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || autoResumeBox.checked !== initial.autoResume; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -1757,7 +1836,9 @@ saveProjectBtn.addEventListener('click', () => {
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
     docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5')),
-    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0'))
+    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0')),
+    auditScope: auditScopeInput.value.trim(),
+    autoResume: autoResumeBox.checked
   });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
@@ -1955,7 +2036,55 @@ async function runSampleReview(context, output, panel) {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
 }
+var autoResumeCancelled = false;
+function autoResumeEnabled() {
+  return vscode2.workspace.getConfiguration("codescout").get("autoResume", false);
+}
 async function runFullAudit(context, output, panel, resume = false) {
+  autoResumeCancelled = false;
+  panel.setAutoResume(void 0);
+  let isResume = resume;
+  let autonomyStartedAt = Date.now();
+  let lastAttempt = 0;
+  for (; ; ) {
+    const outcome = await runFullAuditOnce(context, output, panel, isResume);
+    if (outcome.kind === "done") {
+      panel.setAutoResume(void 0);
+      return;
+    }
+    if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view) {
+      panel.setAutoResume(void 0);
+      return;
+    }
+    const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now());
+    if (!decision) {
+      output.appendLine(`\u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT} \u043F\u043E\u043F\u044B\u0442\u043E\u043A / ${AUTO_RESUME_MAX_MINUTES_DEFAULT} \u043C\u0438\u043D) \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A: \u043A\u043D\u043E\u043F\u043A\u0438 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB \u0432 \u0431\u0430\u043D\u043D\u0435\u0440\u0435`);
+      panel.setAutoResume(void 0);
+      return;
+    }
+    lastAttempt = decision.attempt;
+    output.appendLine(`\u{1F916} rate-limit:_resume \u0447\u0435\u0440\u0435\u0437 ${decision.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${decision.attempt}/${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT})`);
+    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts: AUTO_RESUME_MAX_ATTEMPTS_DEFAULT });
+    const waitController = new AbortController();
+    activeAbortController?.abort();
+    activeAbortController = waitController;
+    try {
+      await sleep(decision.waitSeconds * 1e3, waitController.signal);
+    } catch {
+      output.appendLine("\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C");
+      panel.setAutoResume(void 0);
+      return;
+    } finally {
+      if (activeAbortController === waitController) activeAbortController = void 0;
+    }
+    if (autoResumeCancelled) {
+      panel.setAutoResume(void 0);
+      return;
+    }
+    isResume = true;
+  }
+}
+async function runFullAuditOnce(context, output, panel, resume = false) {
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -1966,7 +2095,7 @@ async function runFullAudit(context, output, panel, resume = false) {
   if (!workspaceRoot) {
     panel.setError("\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0434\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430.");
     if (activeAbortController === controller) activeAbortController = void 0;
-    return;
+    return { kind: "done" };
   }
   output.appendLine(resume ? "CodeScout: resuming full project audit..." : "CodeScout: starting full project audit...");
   let progress;
@@ -2056,23 +2185,26 @@ async function runFullAudit(context, output, panel, resume = false) {
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues);
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
-    if (result.skippedFiles > 0) panel.setAuditResume(progressView(state));
+    const resumeView = result.skippedFiles > 0 ? progressView(state) : void 0;
+    if (resumeView) panel.setAuditResume(resumeView);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)`);
     output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
     output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
+    return resumeView ? { kind: "interrupted", view: resumeView } : { kind: "done" };
   } catch (error) {
     const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : void 0;
     if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) {
       panel.setCancelled();
-      return;
+      return { kind: "done" };
     }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    return { kind: "interrupted", view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -2221,7 +2353,9 @@ async function readSettingsState(context) {
     docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? [],
     docMaxKb: docLimitsFromKb(vscode2.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
     docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks")),
-    maxLines: Math.max(0, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxLines", 0) || 0))
+    maxLines: Math.max(0, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxLines", 0) || 0)),
+    autoResume: vscode2.workspace.getConfiguration("codescout").get("autoResume", false),
+    auditScope: vscode2.workspace.getConfiguration("codescout").get("auditScope") ?? ""
   };
 }
 async function saveKeyProvider(context, message) {
@@ -2312,12 +2446,16 @@ function activate(context) {
               const maxLinks = docLimitsFromCount(message.docMaxLinks);
               const maxLinesRaw = Math.round(Number(message.maxLines));
               const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(1e5, maxLinesRaw) : 0;
+              const autoResume = message.autoResume === true;
+              const auditScope = (message.auditScope ?? "").trim();
               const config = vscode2.workspace.getConfiguration("codescout");
               await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
               await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
               await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
               await config.update("maxLines", maxLines, vscode2.ConfigurationTarget.Global);
-              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \xB7 maxLines: ${maxLines === 0 ? "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)" : `${maxLines} \u0441\u0442\u0440\u043E\u043A`} \u2014 \u043F\u043E\u0439\u0434\u0451\u0442 \u0432 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
+              await config.update("autoResume", autoResume, vscode2.ConfigurationTarget.Global);
+              await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
+              await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \xB7 maxLines: ${maxLines === 0 ? "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)" : `${maxLines} \u0441\u0442\u0440\u043E\u043A`} \xB7 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C ${autoResume ? "\u0432\u043A\u043B\u044E\u0447\u0451\u043D" : "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D"} \xB7 scope: ${auditScope || "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B"}`);
             } else if (message.command === "openRules") {
               try {
                 await openOrCreateRules(getWorkspaceRoot());
@@ -2363,6 +2501,8 @@ function activate(context) {
       void vscode2.window.showInformationMessage("\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D");
     }),
     vscode2.commands.registerCommand("codescout.cancelScan", () => {
+      autoResumeCancelled = true;
+      panel.setAutoResume(void 0);
       activeAbortController?.abort();
       panel.setCancelled();
       output.appendLine("Scan cancelled by user");

@@ -4,7 +4,7 @@ import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { maskApiKey } from '../../src/providers';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator } from './reportHtml';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
@@ -58,6 +58,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private findingsDiff?: FindingsDiffView;
   private customFocus = '';
   private auditResume?: AuditResumeView;
+  private autoResumeView?: AutoResumeIndicator;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -174,6 +175,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.findingsDiff = undefined;
       this.customFocus = '';
       this.auditResume = undefined;
+      this.autoResumeView = undefined;
     }
     this.render();
   }
@@ -216,10 +218,21 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  setAutoResume(view: AutoResumeIndicator | undefined): void {
+    this.autoResumeView = view;
+    const webview = this.view && this.scanning ? this.view.webview : undefined;
+    if (webview) {
+      safePost(webview, view ? { type: 'auto', ...view } : { type: 'auto', off: true });
+      return;
+    }
+    this.render();
+  }
+
   setCancelled(): void {
     this.scanning = false;
     this.hasRun = true;
     this.progressMessage = '';
+    this.autoResumeView = undefined;
     this.statusKind = 'error';
     this.statusMessage = '⛔ Сканирование остановлено пользователем';
     this.render();
@@ -244,6 +257,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.findingsDiff = findingsDiff;
     this.customFocus = customFocus;
     this.auditResume = undefined;
+    this.autoResumeView = undefined;
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'success';
@@ -253,7 +267,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
   }
 }

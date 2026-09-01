@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { abortError, createProvider, isAbortError, RetryEvent } from '../../src/llm-client';
+import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
+import { abortError, createProvider, isAbortError, RetryEvent, sleep } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, AUTO_RESUME_MAX_MINUTES_DEFAULT, autoResumeDecision, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -228,7 +228,51 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   }
 }
 
+type AuditOutcome = { kind: 'done' } | { kind: 'interrupted'; view?: AuditResumeView };
+
+let autoResumeCancelled = false;
+
+function autoResumeEnabled(): boolean {
+  return vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false);
+}
+
 async function runFullAudit(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, resume = false): Promise<void> {
+  autoResumeCancelled = false;
+  panel.setAutoResume(undefined);
+  let isResume = resume;
+  let autonomyStartedAt = Date.now();
+  let lastAttempt = 0;
+  for (;;) {
+    const outcome = await runFullAuditOnce(context, output, panel, isResume);
+    if (outcome.kind === 'done') { panel.setAutoResume(undefined); return; }
+    if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view) { panel.setAutoResume(undefined); return; }
+    const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now());
+    if (!decision) {
+      output.appendLine(`🤖 автономный лимит исчерпан (${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT} попыток / ${AUTO_RESUME_MAX_MINUTES_DEFAULT} мин) — нужен человек: кнопки «▶️ Продолжить» в баннере`);
+      panel.setAutoResume(undefined);
+      return;
+    }
+    lastAttempt = decision.attempt;
+    output.appendLine(`🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}/${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT})`);
+    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts: AUTO_RESUME_MAX_ATTEMPTS_DEFAULT });
+    const waitController = new AbortController();
+    activeAbortController?.abort();
+    activeAbortController = waitController;
+    try {
+      await sleep(decision.waitSeconds * 1000, waitController.signal);
+    } catch {
+      output.appendLine('🤖 авто-догон остановлен пользователем');
+      panel.setAutoResume(undefined);
+      return;
+    } finally {
+      if (activeAbortController === waitController) activeAbortController = undefined;
+    }
+    if (autoResumeCancelled) { panel.setAutoResume(undefined); return; }
+    isResume = true;
+  }
+}
+
+async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, resume = false): Promise<AuditOutcome> {
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -239,7 +283,7 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
   if (!workspaceRoot) {
     panel.setError('Открой папку workspace для полного аудита.');
     if (activeAbortController === controller) activeAbortController = undefined;
-    return;
+    return { kind: 'done' };
   }
   output.appendLine(resume ? 'CodeScout: resuming full project audit...' : 'CodeScout: starting full project audit...');
   let progress: AuditCheckpoint | undefined;
@@ -326,20 +370,23 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues);
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
-    if (result.skippedFiles > 0) panel.setAuditResume(progressView(state));
+    const resumeView = result.skippedFiles > 0 ? progressView(state) : undefined;
+    if (resumeView) panel.setAuditResume(resumeView);
     await vscode.commands.executeCommand('codescout.panel.focus');
     output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${mergedIssues.length} findings)`);
     output.appendLine(findingsDiff ? `Динамика относительно прошлого аудита: ${findingsDiff.summary}` : 'ℹ️ Первый аудит — сравнение недоступно, история заведена');
     output.appendLine(`Аудит завершён: проверено ${filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, mergedIssues, `Итог аудита: ${mergedIssues.length} находок, проверено файлов: ${filesAnalyzed}`);
+    return resumeView ? { kind: 'interrupted', view: resumeView } : { kind: 'done' };
   } catch (error) {
     const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
-    if (isAbortError(error)) { panel.setCancelled(); return; }
+    if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
     const message = error instanceof Error ? error.message : String(error);
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    return { kind: 'interrupted', view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -461,6 +508,8 @@ interface SettingsMessage {
   docMaxKb?: number;
   docMaxLinks?: number;
   maxLines?: number;
+  autoResume?: boolean;
+  auditScope?: string;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -502,7 +551,9 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     docLinks: vscode.workspace.getConfiguration('codescout').get<string[]>('docLinks') ?? [],
     docMaxKb: docLimitsFromKb(vscode.workspace.getConfiguration('codescout').get<number>('docMaxKb')) / 1024,
     docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks')),
-    maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0))
+    maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0)),
+    autoResume: vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false),
+    auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? ''
   };
 }
 
@@ -595,12 +646,16 @@ export function activate(context: vscode.ExtensionContext): void {
             const maxLinks = docLimitsFromCount(message.docMaxLinks);
             const maxLinesRaw = Math.round(Number(message.maxLines));
             const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(100000, maxLinesRaw) : 0;
+            const autoResume = message.autoResume === true;
+            const auditScope = (message.auditScope ?? '').trim();
             const config = vscode.workspace.getConfiguration('codescout');
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
             await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
             await config.update('maxLines', maxLines, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} — пойдёт в следующий полный аудит`);
+            await config.update('autoResume', autoResume, vscode.ConfigurationTarget.Global);
+            await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · автономный режим ${autoResume ? 'включён' : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());
@@ -640,6 +695,8 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage('✅ Онбординг сброшен');
     }),
     vscode.commands.registerCommand('codescout.cancelScan', () => {
+      autoResumeCancelled = true;
+      panel.setAutoResume(undefined);
       activeAbortController?.abort();
       panel.setCancelled();
       output.appendLine('Scan cancelled by user');
