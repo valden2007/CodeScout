@@ -124,7 +124,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
-        const waitSeconds = (lastRateLimit.waitSeconds ?? 0) > 0 ? (lastRateLimit.waitSeconds as number) : RETRY_DELAYS_SECONDS[retryCount - 1];
+        const serverWait = lastRateLimit.waitSeconds ?? 0;
+        const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1000, this.signal);
       }

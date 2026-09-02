@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join, relative, resolve } from 'node:path';
 import { abortError, createProvider, isAbortError, RetryEvent, sleep } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
@@ -22,6 +23,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -661,12 +663,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
     vscode.commands.registerCommand('codescout.openSettingsPage', async () => {
       const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind);
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'));
       };
       if (!settingsPanel) {
         settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true });
         settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
         settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage) => {
+          if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
             if (message.command === 'saveKeyProvider') {
               const status = await saveKeyProvider(context, message);

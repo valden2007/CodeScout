@@ -56,7 +56,7 @@ describe('UX and audit regression fixes', () => {
     expect(audit).toContain('IGNORED_DIRS.has(part)');
     expect(audit).toContain('skippedUnreadable');
     const correction = readFileSync('src/line-correction.ts', 'utf8');
-    expect(correction).toContain('if (!abs.startsWith(root + sep)) return issue;');
+    expect(correction).toContain("if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return issue;");
     const args = readFileSync('src/cli/args.ts', 'utf8');
     expect(args).toContain('Неизвестный провайдер');
     expect(args).toContain('yargs(argv)');
@@ -1677,7 +1677,8 @@ describe('G4 fix batch regressions and security layer', () => {
     await expect(client.postIssue(issue(3))).rejects.toThrow('Validation Failed');
     expect(attempts).toEqual([2, 3]);
     const poster = readFileSync('src/comment-poster.ts', 'utf8');
-    expect(poster).toContain('asyncPool(4, unique, (issue) => client.postIssue(issue))');
+    expect(poster).toContain('return await client.postIssue(issue);');
+    expect(poster).toContain('пропускаем, продолжаем остальные');
   });
 
   it('rejects hostile base refs before git sees them', () => {

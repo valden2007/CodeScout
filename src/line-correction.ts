@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { ReviewIssue } from './types';
 
 export function correctIssueLine(issue: ReviewIssue, repoPath: string): ReviewIssue {
@@ -7,7 +7,8 @@ export function correctIssueLine(issue: ReviewIssue, repoPath: string): ReviewIs
   try {
     const root = realpathSync(resolve(repoPath));
     const abs = realpathSync(resolve(repoPath, issue.file));
-    if (!abs.startsWith(root + sep)) return issue;
+    const inside = relative(root, abs);
+    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return issue;
     const content = readFileSync(abs, 'utf8');
     const haystack = content.replace(/\r\n/g, '\n');
     const snippet = issue.code.trim().replace(/\r\n/g, '\n');

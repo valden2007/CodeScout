@@ -51,7 +51,13 @@ export function withFocusInstructions(prompt: string, focus: string): string {
 }
 
 function neutralizeFences(value: string): string {
-  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
+  let current = value;
+  for (let round = 0; round < 8; round++) {
+    const next = current.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
 }
 
 export function buildReviewPrompt(file: DiffFile, patch: string, importsLine = '', passLine = ''): string {

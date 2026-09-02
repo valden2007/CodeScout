@@ -193,7 +193,41 @@ export function sanitizeDocText(raw: string, maxBytes = DOC_MAX_BYTES_DEFAULT): 
   return utf8Slice(safe, maxBytes);
 }
 
+export function isBlockedDocHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '0.0.0.0' || host === '::' || host === '::1') return true;
+  if (host === 'metadata.google.internal' || host === 'metadata' || host === 'instance-data') return true;
+  const octets = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (octets) {
+    const [a, b] = [Number(octets[1]), Number(octets[2])];
+    if ([a, b, ...host.split('.').slice(2).map(Number)].some((n) => n > 255)) return true;
+    if (a === 127 || a === 10 || a === 0) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+  if (host.includes(':')) return true;
+  return false;
+}
+
+async function assertSafeDocUrl(url: string): Promise<void> {
+  const parsed = new URL(url);
+  if (isBlockedDocHost(parsed.hostname)) throw new Error('SSRF-блок: локальный или metadata-адрес');
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) && !isBlockedDocHost(parsed.hostname)) {
+    try {
+      const { lookup } = await import('node:dns/promises');
+      const resolved = await lookup(parsed.hostname);
+      if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-блок: домен резолвится в ${resolved.address}`);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('SSRF-блок')) throw error;
+    }
+  }
+}
+
 export async function defaultDocFetcher(url: string, settings: DocFetcherSettings = DEFAULT_DOC_LIMITS): Promise<string> {
+  await assertSafeDocUrl(url);
   const response = await fetch(url, {
     redirect: 'follow',
     signal: AbortSignal.timeout(settings.timeoutMs),
@@ -213,6 +247,17 @@ export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string
   let fromCache = 0;
   let failed = 0;
   for (const link of links) {
+    let hostname = '';
+    try {
+      hostname = new URL(link).hostname;
+    } catch {
+      hostname = '';
+    }
+    if (!hostname || isBlockedDocHost(hostname)) {
+      failed++;
+      onWarn(`⚠️ Пропускаю док ${link}: SSRF-блок (локальный или metadata-адрес)`);
+      continue;
+    }
     const cached = cache[link];
     const fresh = cached && now - cached.fetchedAt < DOC_CACHE_TTL_MS;
     if (fresh && cached.text.trim()) {

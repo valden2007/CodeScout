@@ -37,7 +37,13 @@ function safeIssueTitle(issue: ReviewIssue): string {
 function truncateSafely(value: string): string {
   if (value.length <= MAX_COMMENT_LENGTH) return value;
   const suffix = '\n\n_Отчёт сокращён до лимита GitHub комментария._';
-  return `${value.slice(0, MAX_COMMENT_LENGTH - suffix.length).trimEnd()}${suffix}`;
+  const budget = MAX_COMMENT_LENGTH - suffix.length;
+  let head = '';
+  for (const char of value) {
+    if (head.length + char.length > budget) break;
+    head += char;
+  }
+  return `${head.trimEnd()}${suffix}`;
 }
 
 export function severityEmoji(severity: ReviewSeverity): string {
@@ -55,7 +61,8 @@ export function buildSummaryComment(issues: ReviewIssue[], filesAnalyzed: number
     const title = safeIssueTitle(issue);
     const codeLine = issue.code ?? `line ${issue.line}`;
     const suggestion = issue.suggestion ? `\n→ ${escapeHtml(issue.suggestion)}` : '';
-    return `<details><summary>${emoji} <strong>${escapeHtml(title)}</strong> — ${inlineCode(`${issue.file}:${issue.line}`)}</summary>\n\n${inlineCode(codeLine)}${suggestion}\n\nConfidence: ${Math.round(issue.confidence * 100)}%\n</details>`;
+    const confidence = typeof issue.confidence === 'number' && Number.isFinite(issue.confidence) ? Math.round(issue.confidence * 100) : 0;
+    return `<details><summary>${emoji} <strong>${escapeHtml(title)}</strong> — ${inlineCode(`${issue.file}:${issue.line}`)}</summary>\n\n${inlineCode(codeLine)}${suggestion}\n\nConfidence: ${confidence}%\n</details>`;
   }).join('\n\n');
   const report = `${SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;
   return truncateSafely(report);

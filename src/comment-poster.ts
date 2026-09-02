@@ -18,7 +18,14 @@ function uniqueIssues(issues: ReviewIssue[]): ReviewIssue[] {
 export async function postIssues(client: GitHubClient, issues: ReviewIssue[], filesAnalyzed: number, durationMs: number): Promise<number> {
   const unique = uniqueIssues(issues).slice(0, 100);
   await client.upsertSummaryComment(buildSummaryComment(unique, filesAnalyzed, durationMs));
-  const posted = await asyncPool(4, unique, (issue) => client.postIssue(issue));
+  const posted = await asyncPool(4, unique, async (issue) => {
+    try {
+      return await client.postIssue(issue);
+    } catch (error) {
+      console.warn(`CodeScout: не удалось запостить комментарий для ${issue.file}:${issue.line} — ${error instanceof Error ? error.message : String(error)}; пропускаем, продолжаем остальные`);
+      return false;
+    }
+  });
   return posted.filter(Boolean).length;
 }
 

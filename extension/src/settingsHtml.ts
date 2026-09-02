@@ -26,7 +26,8 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok'): string {
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = ''): string {
+  const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
     .join('');
@@ -35,6 +36,7 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src ${scriptSrc};">
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -120,7 +122,7 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <p class="hint">rules.md (.codescout/rules.md) подмешивается в каждый промт ревью, создаётся с шаблоном. Ссылки идут в полный аудит: тексты докачиваются (лимиты выше, таймаут 5с; oversized-док усекается до лимита, начало сохраняется), кэшируются в .codescout/docs-cache.json на 24 часа и попадают в промт секцией «Документация проекта». Суммарно больше 100KB — предупреждение про плотный контекст. maxLines = 0: лимита нет, файлы &gt;800 строк режутся чанками с перекрытием 50 строк; maxLines = N: файлы длиннее N скипаются (для слабых моделей).</p>
 </section>
 </main>
-<script>
+<script${nonce ? ` nonce="${nonce}"` : ''}>
 const vscode = acquireVsCodeApi();
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
