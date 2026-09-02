@@ -658,7 +658,8 @@ export function activate(context: vscode.ExtensionContext): void {
   void syncKeyStatus();
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
-    vscode.commands.registerCommand('codescout.openSettings', async () => {
+    vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
+    vscode.commands.registerCommand('codescout.openSettingsPage', async () => {
       const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
         if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind);
       };

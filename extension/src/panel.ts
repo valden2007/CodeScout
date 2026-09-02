@@ -59,6 +59,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private customFocus = '';
   private auditResume?: AuditResumeView;
   private autoResumeView?: AutoResumeIndicator;
+  private autoResumeEnabled = false;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -73,6 +74,12 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       if (this.view === webviewView) this.view = undefined;
     });
     webviewView.webview.options = { enableScripts: true };
+    this.autoResumeEnabled = vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false);
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration('codescout.autoResume')) return;
+      this.autoResumeEnabled = vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false);
+      this.render();
+    }, undefined, []);
     this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
       if (message.command === 'scanLastCommit') {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
@@ -95,6 +102,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.setApiKey');
       } else if (message.command === 'openSettings') {
         void vscode.commands.executeCommand('codescout.openSettings');
+      } else if (message.command === 'openSettingsPage') {
+        void vscode.commands.executeCommand('codescout.openSettingsPage');
       } else if (message.command === 'customReview') {
         void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {
@@ -267,7 +276,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled);
   }
 }

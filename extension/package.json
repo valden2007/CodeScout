@@ -25,6 +25,7 @@
     "onCommand:codescout.resetOnboarding",
     "onCommand:codescout.customReview",
     "onCommand:codescout.openSettings",
+    "onCommand:codescout.openSettingsPage",
     "onCommand:codescout.resumeAudit",
     "onCommand:codescout.restartAudit"
   ],
@@ -103,6 +104,14 @@
       {
         "command": "codescout.reviewSelection",
         "title": "CodeScout: проверить"
+      },
+      {
+        "command": "codescout.openSettings",
+        "title": "CodeScout: настройки (нативные)"
+      },
+      {
+        "command": "codescout.openSettingsPage",
+        "title": "CodeScout: ключ и модель"
       }
     ],
     "menus": {

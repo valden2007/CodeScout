@@ -816,12 +816,12 @@ describe('E1.2e custom review focus', () => {
     const issues: ReviewIssue[] = [{ file: 'src/a.ts', line: 1, category: 'bug', severity: 'low', description: 'd', confidence: 0.5 }];
     const configured = buildReportHtml(issues, stats, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
     expect(configured).toContain('🟢 gemini · gemini-2.5-flash · AIza•••123 (защищённо)');
-    expect(configured).toContain('<button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
+    expect(configured).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
     expect(configured).not.toContain('>Изменить<');
     expect(configured).not.toContain('>Настроить<');
     expect(configured).not.toContain('>Очистить<');
     const missing = buildReportHtml(issues, stats, false, false, '', 'retry', '', false);
-    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
+    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
   });
 
   it('prints the custom review header above the report', () => {
@@ -1241,7 +1241,48 @@ describe('E1.3f maxLines setting and chunking', () => {
     expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettings"');
     expect(html).toContain('⚙️ Настройки');
     expect(html).toContain('<div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button');
-    expect(html).toContain('<button type="button" data-command="openSettings">🔑 Ключ и модель</button>');
+    expect(html).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+  });
+});
+
+describe('E1.3j settings button + auto-audit indicator', () => {
+  it('gear opens native settings, key button opens the custom page', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout'))");
+    expect(extension).toContain("registerCommand('codescout.openSettingsPage', async () => {");
+    expect(extension).toContain("createWebviewPanel('codescout.settings', 'CodeScout: Настройки'");
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'openSettingsPage'");
+    expect(panel).toContain("executeCommand('codescout.openSettingsPage')");
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.openSettingsPage');
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
+    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettings"');
+    expect(html).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+  });
+
+  it('panel tracks autoResume setting and re-renders on config change', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("private autoResumeEnabled = false;");
+    expect(panel).toContain("get<boolean>('autoResume', false)");
+    expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
+    expect(panel).toContain('this.autoResumeEnabled)');
+  });
+
+  it('idle banner before audit, active indicator during audit', () => {
+    const idle = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
+    expect(idle).toContain('🤖 Автономный режим включён');
+    expect(idle).toContain('class="auto-mode-banner"');
+    expect(idle).not.toContain('авто-догон активен');
+    const running = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
+    expect(running).toContain('🤖 авто-догон активен');
+    expect(running).toContain('class="auto-active"');
+    expect(running).not.toContain('Автономный режим включён');
+    const off = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false);
+    expect(off).not.toContain('Автономный режим включён');
+    expect(off).not.toContain('авто-догон активен');
+    const emptyOn = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, true);
+    expect(emptyOn).toContain('🤖 Автономный режим включён');
   });
 });
 

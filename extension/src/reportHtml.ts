@@ -66,7 +66,7 @@ function autoLineHtml(autoResume?: AutoResumeIndicator): string {
   return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">🤖 авто-догон: ${autoResume.done}/${autoResume.total}, попытка ${autoResume.attempt}/${autoResume.maxAttempts} через ${autoResume.secondsLeft}с</div>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
@@ -169,6 +169,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--vscode-editorWarning-foreground); border-radius: 4px; background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent); font-size: 12px; }
 .auto-line { margin-top: 7px; color: var(--vscode-textLink-foreground); font-size: 12px; font-weight: 600; }
+.auto-active { margin-top: 7px; color: var(--vscode-textLink-foreground); font-size: 12px; font-weight: 600; }
+.auto-mode-banner { margin-top: 8px; padding: 7px 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); font-size: 12px; }
 .search-line { margin-top: 10px; }
 .search-line input { width: 100%; padding: 5px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
 </style>
@@ -177,7 +179,9 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? '⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : '🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === 'stale' ? '🔄 Обновить' : '🚀 Запустить аудит'}</button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="Открыть настройки CodeScout">⚙️ Настройки</button></div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettings">🔑 Ключ и модель</button></div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button></div>
+    ${autoResumeEnabled && isScanning ? '<div class="auto-active">🤖 авто-догон активен</div>' : ''}
+    ${autoResumeEnabled && !isScanning ? '<div class="auto-mode-banner">🤖 Автономный режим включён</div>' : ''}
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     ${auditResume ? `<div class="audit-resume"><strong>⏸ Аудит оборвался: проверено ${auditResume.done} из ${auditResume.total} файлов (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">▶️ Продолжить (${auditResume.done} из ${auditResume.total})</button><button type="button" data-command="restartAudit">🆕 Начать заново</button></div></div>` : ''}
@@ -367,6 +371,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled);
 }
