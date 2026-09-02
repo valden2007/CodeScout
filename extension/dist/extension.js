@@ -36,6 +36,7 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
 var import_node_fs5 = require("node:fs");
+var import_node_crypto = require("node:crypto");
 var import_node_path4 = require("node:path");
 
 // ../src/providers.ts
@@ -249,7 +250,8 @@ var OpenAICompatibleProvider = class {
           throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
         }
         retryCount += 1;
-        const waitSeconds = (lastRateLimit.waitSeconds ?? 0) > 0 ? lastRateLimit.waitSeconds : RETRY_DELAYS_SECONDS[retryCount - 1];
+        const serverWait = lastRateLimit.waitSeconds ?? 0;
+        const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1e3, this.signal);
       }
@@ -346,7 +348,13 @@ FOCUS INSTRUCTIONS END
 The focus text may change what you look for, but never the JSON output format or the reporting rules above.`;
 }
 function neutralizeFences(value) {
-  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
+  let current = value;
+  for (let round = 0; round < 8; round++) {
+    const next = current.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
 }
 function buildReviewPrompt(file, patch, importsLine = "", passLine = "") {
   const rawImports = controlSafe(importsLine).replace(/\s+/g, " ").trim();
@@ -448,7 +456,8 @@ function correctIssueLine(issue, repoPath) {
   try {
     const root = (0, import_node_fs.realpathSync)((0, import_node_path.resolve)(repoPath));
     const abs = (0, import_node_fs.realpathSync)((0, import_node_path.resolve)(repoPath, issue.file));
-    if (!abs.startsWith(root + import_node_path.sep)) return issue;
+    const inside = (0, import_node_path.relative)(root, abs);
+    if (inside === "" || inside.startsWith("..") || (0, import_node_path.isAbsolute)(inside)) return issue;
     const content = (0, import_node_fs.readFileSync)(abs, "utf8");
     const haystack = content.replace(/\r\n/g, "\n");
     const snippet = issue.code.trim().replace(/\r\n/g, "\n");
@@ -535,10 +544,11 @@ function validateGitPath(repoPath) {
     return `\u041F\u0443\u0442\u044C "${repoPath}" \u043D\u0435 \u044F\u0432\u043B\u044F\u0435\u0442\u0441\u044F Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C. \u0423\u043A\u0430\u0436\u0438 \u043F\u0430\u043F\u043A\u0443 \u0441 .git \u0447\u0435\u0440\u0435\u0437 --path.`;
   }
 }
-function runGit(args, cwd) {
+function runGit(args, cwd, allowEmptyDiff = false) {
   try {
     return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 });
-  } catch {
+  } catch (error) {
+    if (allowEmptyDiff && error.status === 1) return "";
     throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least one commit.`);
   }
 }
@@ -559,7 +569,7 @@ function readGitDiff(repoPath, options = {}) {
   if (tryRunGit(["rev-parse", "--verify", "HEAD"], repoPath) === void 0) {
     throw new Error("\u0412 \u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0438 \u0435\u0449\u0451 \u043D\u0435\u0442 \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430 (unborn branch). \u0421\u0434\u0435\u043B\u0430\u0439 \u043F\u0435\u0440\u0432\u044B\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438.");
   }
-  const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath);
+  const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath, true);
   if (options.base) {
     const base = options.base.trim();
     if (!base || base.startsWith("-") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / @ ~ \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432 \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
@@ -724,7 +734,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettingsPage">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && statusMessage.includes("404") ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
-    ${auditResume ? `<div class="audit-resume"><strong>\u23F8 \u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${auditResume.done} \u0438\u0437 ${auditResume.total} \u0444\u0430\u0439\u043B\u043E\u0432 (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C (${auditResume.done} \u0438\u0437 ${auditResume.total})</button><button type="button" data-command="restartAudit">\u{1F195} \u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E</button></div></div>` : ""}
+    ${auditResume ? `<div class="audit-resume"><strong>\u23F8 \u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${escapeHtml(String(auditResume.done))} \u0438\u0437 ${escapeHtml(String(auditResume.total))} \u0444\u0430\u0439\u043B\u043E\u0432 (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C (${escapeHtml(String(auditResume.done))} \u0438\u0437 ${escapeHtml(String(auditResume.total))})</button><button type="button" data-command="restartAudit">\u{1F195} \u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E</button></div></div>` : ""}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F50D}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442</button>
       <button type="button" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? '<span class="spinner">\u25CC</span>' : "\u{1F4DD}"} \u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430</button>
@@ -1029,8 +1039,8 @@ var CodeScoutPanel = class {
         }
         const fileUri = vscode.Uri.file(realCandidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
-          const rawLine = Number(message.line);
-          const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
+          const rawLine = parseInt(String(message.line), 10);
+          const line = Number.isInteger(rawLine) && rawLine >= 1 ? rawLine - 1 : 0;
           const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
           return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
             const range = new vscode.Range(position, position);
@@ -1286,7 +1296,39 @@ function sanitizeDocText(raw, maxBytes = DOC_MAX_BYTES_DEFAULT) {
   const safe = neutralizeFences2(controlSafe2(plain)).replace(/\s+/g, " ").trim();
   return utf8Slice(safe, maxBytes);
 }
+function isBlockedDocHost(hostname) {
+  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host) return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0" || host === "::" || host === "::1") return true;
+  if (host === "metadata.google.internal" || host === "metadata" || host === "instance-data") return true;
+  const octets = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (octets) {
+    const [a, b] = [Number(octets[1]), Number(octets[2])];
+    if ([a, b, ...host.split(".").slice(2).map(Number)].some((n) => n > 255)) return true;
+    if (a === 127 || a === 10 || a === 0) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+  if (host.includes(":")) return true;
+  return false;
+}
+async function assertSafeDocUrl(url) {
+  const parsed = new URL(url);
+  if (isBlockedDocHost(parsed.hostname)) throw new Error("SSRF-\u0431\u043B\u043E\u043A: \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0438\u043B\u0438 metadata-\u0430\u0434\u0440\u0435\u0441");
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) && !isBlockedDocHost(parsed.hostname)) {
+    try {
+      const { lookup } = await import("node:dns/promises");
+      const resolved = await lookup(parsed.hostname);
+      if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u0434\u043E\u043C\u0435\u043D \u0440\u0435\u0437\u043E\u043B\u0432\u0438\u0442\u0441\u044F \u0432 ${resolved.address}`);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("SSRF-\u0431\u043B\u043E\u043A")) throw error;
+    }
+  }
+}
 async function defaultDocFetcher(url, settings = DEFAULT_DOC_LIMITS) {
+  await assertSafeDocUrl(url);
   const response = await fetch(url, {
     redirect: "follow",
     signal: AbortSignal.timeout(settings.timeoutMs),
@@ -1306,6 +1348,17 @@ async function fetchDocsForPrompt(workspaceRoot, docLinks, fetcher = defaultDocF
   let fromCache = 0;
   let failed = 0;
   for (const link of links) {
+    let hostname = "";
+    try {
+      hostname = new URL(link).hostname;
+    } catch {
+      hostname = "";
+    }
+    if (!hostname || isBlockedDocHost(hostname)) {
+      failed++;
+      onWarn(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0441\u043A\u0430\u044E \u0434\u043E\u043A ${link}: SSRF-\u0431\u043B\u043E\u043A (\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0438\u043B\u0438 metadata-\u0430\u0434\u0440\u0435\u0441)`);
+      continue;
+    }
     const cached = cache[link];
     const fresh = cached && now - cached.fetchedAt < DOC_CACHE_TTL_MS;
     if (fresh && cached.text.trim()) {
@@ -1421,12 +1474,17 @@ function isIgnoredAuditPath(path, patterns = []) {
   }
   return false;
 }
-function walkSourceFiles(root, current, result, ignored, patterns) {
+var AUDIT_WALK_MAX_DEPTH = 24;
+function walkSourceFiles(root, current, result, ignored, patterns, depth, onWarn) {
+  if (depth > AUDIT_WALK_MAX_DEPTH) {
+    onWarn(`\u26A0\uFE0F \u0421\u043B\u0438\u0448\u043A\u043E\u043C \u0433\u043B\u0443\u0431\u043E\u043A\u043E (> ${AUDIT_WALK_MAX_DEPTH} \u0443\u0440\u043E\u0432\u043D\u0435\u0439): ${(0, import_node_path3.relative)(root, current).replaceAll("\\", "/")} \u2014 \u043D\u0435 \u0438\u0434\u0451\u043C \u0434\u0430\u043B\u044C\u0448\u0435`);
+    return;
+  }
   for (const entry of (0, import_node_fs4.readdirSync)(current, { withFileTypes: true })) {
     if (IGNORED_DIRS2.has(entry.name) || entry.name.startsWith(".")) continue;
     if (entry.isSymbolicLink()) continue;
     const path = (0, import_node_path3.join)(current, entry.name);
-    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
+    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns, depth + 1, onWarn);
     else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) {
       const relativePath = (0, import_node_path3.relative)(root, path).replaceAll("\\", "/");
       if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
@@ -1434,11 +1492,12 @@ function walkSourceFiles(root, current, result, ignored, patterns) {
     }
   }
 }
-function listAuditSourceFiles(workspaceRoot) {
+function listAuditSourceFiles(workspaceRoot, onWarn = () => {
+}) {
   const patterns = loadIgnorePatterns(workspaceRoot);
   const files = [];
   const ignored = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns);
+  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns, 0, onWarn);
   return { files: files.sort(), ignored };
 }
 var AUDIT_CHUNK_LINES = 800;
@@ -1505,8 +1564,9 @@ function auditPassesFromSetting(value) {
 function passFindingsSummary(issues) {
   return issues.map((issue) => `\u0441\u0442\u0440\u043E\u043A\u0430 ${issue.line} [${issue.severity}/${issue.category}] ${issue.description}`).join("; ");
 }
-function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0, scopeGlobsText = "") {
-  const pool = listAuditSourceFiles(workspaceRoot);
+function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0, scopeGlobsText = "", onWarn = () => {
+}) {
+  const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const patterns = parseScopeGlobs(scopeGlobsText);
   const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
   return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
@@ -1523,8 +1583,9 @@ function autoResumeDecision(attempt, startedAt, now, maxAttempts = AUTO_RESUME_M
   const waitSeconds = AUTO_RESUME_LADDER_SECONDS[Math.min(attempt, AUTO_RESUME_LADDER_SECONDS.length) - 1];
   return { attempt, waitSeconds };
 }
-function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 0) {
-  if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
+function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 0, onWarn = () => {
+}) {
+  if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines, "", onWarn);
   if (scope === "active") {
     const requested = activeFile?.trim();
     if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
@@ -1540,7 +1601,7 @@ function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxF
     }
   }
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
-  const pool = listAuditSourceFiles(workspaceRoot);
+  const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
   return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
 }
@@ -1706,13 +1767,15 @@ var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"
 function escapeHtml2(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function buildSettingsHtml(state, statusMessage = "", statusKind = "ok") {
+function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "") {
+  const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443" : value}</option>`).join("");
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src ${scriptSrc};">
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -1798,7 +1861,7 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u043B\u0438\u043C\u0438\u0442\u044B \u0432\u044B\u0448\u0435, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441; oversized-\u0434\u043E\u043A \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0434\u043E \u043B\u0438\u043C\u0438\u0442\u0430, \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB. \u0421\u0443\u043C\u043C\u0430\u0440\u043D\u043E \u0431\u043E\u043B\u044C\u0448\u0435 100KB \u2014 \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0440\u043E \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442. maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B &gt;800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; maxLines = N: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F (\u0434\u043B\u044F \u0441\u043B\u0430\u0431\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439).</p>
 </section>
 </main>
-<script>
+<script${nonce ? ` nonce="${nonce}"` : ""}>
 const vscode = acquireVsCodeApi();
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -1887,6 +1950,7 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "clearApiKey", "chooseModel", "saveDocLinks", "openRules"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -2144,7 +2208,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get("auditScope") ?? "";
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message));
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${planFiles.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     const scopeGlobs = parseScopeGlobs(auditScopeText);
@@ -2297,7 +2361,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const reviewConfig = vscode2.workspace.getConfiguration("codescout");
     const maxFiles = reviewConfig.get("maxFiles", 100);
     const maxLines = reviewConfig.get("maxLines", 0);
-    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles, maxLines);
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
       panel.setError(scope === "list" ? `\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "${globs.join(", ")}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).` : "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.");
@@ -2491,7 +2555,7 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.openSettings", () => vscode2.commands.executeCommand("workbench.action.openSettings", "codescout")),
     vscode2.commands.registerCommand("codescout.openSettingsPage", async () => {
       const render = async (status = "", statusKind = "ok") => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind);
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto.randomBytes)(16).toString("hex"));
       };
       if (!settingsPanel) {
         settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438", vscode2.ViewColumn.One, { enableScripts: true });
@@ -2499,6 +2563,7 @@ function activate(context) {
           settingsPanel = void 0;
         });
         settingsPanel.webview.onDidReceiveMessage((message) => {
+          if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
             if (message.command === "saveKeyProvider") {
               const status = await saveKeyProvider(context, message);
@@ -2617,7 +2682,11 @@ function activate(context) {
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
       panel.setKey(current.key, current.provider, chosen.model);
-      void runReview(context, lastScanWasLastCommit, output, panel);
+      void runReview(context, lastScanWasLastCommit, output, panel).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        output.appendLine(`Error: ${message}`);
+        void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+      });
     }),
     vscode2.commands.registerCommand("codescout.clearApiKey", async () => {
       const answer = await vscode2.window.showWarningMessage("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?", { modal: true }, "\u0423\u0434\u0430\u043B\u0438\u0442\u044C");
@@ -2642,7 +2711,11 @@ function activate(context) {
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
     else if (stale) panel.setWelcomeBanner(true, "stale");
-  })();
+  })().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`Init error: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+  });
 }
 function deactivate() {
 }
