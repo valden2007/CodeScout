@@ -364,12 +364,18 @@ export function isIgnoredAuditPath(path: string, patterns: string[] = []): boole
   return false;
 }
 
-function walkSourceFiles(root: string, current: string, result: string[], ignored: string[], patterns: string[]): void {
+export const AUDIT_WALK_MAX_DEPTH = 24;
+
+function walkSourceFiles(root: string, current: string, result: string[], ignored: string[], patterns: string[], depth: number, onWarn: (message: string) => void): void {
+  if (depth > AUDIT_WALK_MAX_DEPTH) {
+    onWarn(`⚠️ Слишком глубоко (> ${AUDIT_WALK_MAX_DEPTH} уровней): ${relative(root, current).replaceAll('\\', '/')} — не идём дальше`);
+    return;
+  }
   for (const entry of readdirSync(current, { withFileTypes: true })) {
     if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
     if (entry.isSymbolicLink()) continue;
     const path = join(current, entry.name);
-    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns);
+    if (entry.isDirectory()) walkSourceFiles(root, path, result, ignored, patterns, depth + 1, onWarn);
     else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.slice(path.lastIndexOf('.')).toLowerCase())) {
       const relativePath = relative(root, path).replaceAll('\\', '/');
       if (isIgnoredAuditPath(relativePath, patterns)) ignored.push(relativePath);
@@ -378,11 +384,11 @@ function walkSourceFiles(root: string, current: string, result: string[], ignore
   }
 }
 
-export function listAuditSourceFiles(workspaceRoot: string): { files: string[]; ignored: string[] } {
+export function listAuditSourceFiles(workspaceRoot: string, onWarn: (message: string) => void = () => {}): { files: string[]; ignored: string[] } {
   const patterns = loadIgnorePatterns(workspaceRoot);
   const files: string[] = [];
   const ignored: string[] = [];
-  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns);
+  walkSourceFiles(workspaceRoot, workspaceRoot, files, ignored, patterns, 0, onWarn);
   return { files: files.sort(), ignored };
 }
 
@@ -461,8 +467,8 @@ export function passFindingsSummary(issues: ReviewIssue[]): string {
   return issues.map((issue) => `строка ${issue.line} [${issue.severity}/${issue.category}] ${issue.description}`).join('; ');
 }
 
-export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = ''): AuditCollection {
-  const pool = listAuditSourceFiles(workspaceRoot);
+export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = '', onWarn: (message: string) => void = () => {}): AuditCollection {
+  const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const patterns = parseScopeGlobs(scopeGlobsText);
   const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
   return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
@@ -490,8 +496,8 @@ export function autoResumeDecision(attempt: number, startedAt: number, now: numb
 
 export type ReviewScope = 'all' | 'active' | 'list';
 
-export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0): AuditCollection {
-  if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines);
+export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0, onWarn: (message: string) => void = () => {}): AuditCollection {
+  if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines, '', onWarn);
   if (scope === 'active') {
     const requested = activeFile?.trim();
     if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
@@ -507,7 +513,7 @@ export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, 
     }
   }
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
-  const pool = listAuditSourceFiles(workspaceRoot);
+  const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
   return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
 }

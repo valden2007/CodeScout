@@ -467,7 +467,7 @@ describe('line accuracy', () => {
   });
 
   it('corrects the line when the code snippet occurs exactly once', () => {
-    const directory = mkdtempSync(join(process.cwd(), 'tmp-line-test-'));
+    const directory = mkdtempSync(join(tmpdir(), 'tmp-line-test-'));
     try {
       writeFileSync(join(directory, 'src.ts'), 'const first = 1;\nconst token = input.token;\nconst last = 3;\n');
       const issue = { file: 'src.ts', line: 18, category: 'bug' as const, severity: 'medium' as const, description: 'Unsafe token use', code: 'const token = input.token;', confidence: 0.9 };
@@ -1918,7 +1918,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri))");
     expect(extension).toContain('isDirectory ? `${rel}/**` : rel');
     expect(extension).toContain("runCustomReview(context, output, panel, `Проверка выбора в проводнике: ${rel}`, 'list', globs)");
-    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines)");
+    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message))");
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {

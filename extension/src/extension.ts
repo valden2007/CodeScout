@@ -303,7 +303,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get<string>('auditScope') ?? '';
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText);
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message));
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`🔬 Полный аудит: найдено ${planFiles.length} файлов.`);
     const scopeGlobs = parseScopeGlobs(auditScopeText);
@@ -449,7 +449,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const reviewConfig = vscode.workspace.getConfiguration('codescout');
     const maxFiles = reviewConfig.get<number>('maxFiles', 100);
     const maxLines = reviewConfig.get<number>('maxLines', 0);
-    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines);
+    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
     if (collection.files.length === 0) {
       panel.setError(scope === 'list' ? `По глобам "${globs.join(', ')}" не подошло ни одного файла (проверь игнор-листы).` : 'Нет доступных файлов для ревью.');
@@ -782,7 +782,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
       panel.setKey(current.key, current.provider, chosen.model);
-      void runReview(context, lastScanWasLastCommit, output, panel);
+      void runReview(context, lastScanWasLastCommit, output, panel).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        output.appendLine(`Error: ${message}`);
+        void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+      });
     }),
     vscode.commands.registerCommand('codescout.clearApiKey', async () => {
       const answer = await vscode.window.showWarningMessage('Удалить сохранённый API-ключ CodeScout?', { modal: true }, 'Удалить');
@@ -807,7 +811,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');
     else if (stale) panel.setWelcomeBanner(true, 'stale');
-  })();
+  })().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`Init error: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+  });
 }
 
 export function deactivate(): void {}

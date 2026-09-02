@@ -135,8 +135,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         }
         const fileUri = vscode.Uri.file(realCandidate);
         void vscode.workspace.openTextDocument(fileUri).then((document) => {
-          const rawLine = Number(message.line);
-          const line = Number.isFinite(rawLine) ? Math.max(0, rawLine - 1) : 0;
+          const rawLine = parseInt(String(message.line), 10);
+          const line = Number.isInteger(rawLine) && rawLine >= 1 ? rawLine - 1 : 0;
           const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
           return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
             const range = new vscode.Range(position, position);

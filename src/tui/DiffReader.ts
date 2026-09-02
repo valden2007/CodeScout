@@ -25,10 +25,11 @@ export function validateGitPath(repoPath: string): string | undefined {
   }
 }
 
-function runGit(args: string[], cwd: string): string {
+function runGit(args: string[], cwd: string, allowEmptyDiff = false): string {
   try {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 10 * 1024 * 1024 });
-  } catch {
+  } catch (error) {
+    if (allowEmptyDiff && (error as { status?: number }).status === 1) return '';
     throw new Error(`Unable to read git diff in "${cwd}". Make sure the path is a Git repository with at least one commit.`);
   }
 }
@@ -53,7 +54,7 @@ export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): Lo
   if (tryRunGit(['rev-parse', '--verify', 'HEAD'], repoPath) === undefined) {
     throw new Error('В репозитории ещё нет ни одного коммита (unborn branch). Сделай первый коммит и повтори.');
   }
-  const git = (...args: string[]) => runGit(['-c', 'color.ui=false', ...args], repoPath);
+  const git = (...args: string[]) => runGit(['-c', 'color.ui=false', ...args], repoPath, true);
 
   if (options.base) {
     const base = options.base.trim();

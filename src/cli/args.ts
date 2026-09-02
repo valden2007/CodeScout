@@ -14,6 +14,7 @@ export interface CliArgs {
 }
 
 const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
+const STRING_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--api-key', '--base']);
 const PROVIDERS = new Set<ProviderName>(['gemini', 'groq', 'openrouter', 'github', 'custom']);
 
 function suggestedFlag(flag: string): string | undefined {
@@ -30,12 +31,26 @@ export function unknownFlagError(flag: string): Error {
   return new Error(`┌─ Ошибка CLI ─────────────────────────────────────────────┐\n│ Неизвестный флаг: ${flag}${hint}\n│ Используй codescout --help, чтобы увидеть доступные флаги.\n└───────────────────────────────────────────────────────────┘`);
 }
 
+export function missingFlagValueError(flag: string): Error {
+  return new Error(`┌─ Ошибка CLI ─────────────────────────────────────────────┐\n│ Флаг ${flag} требует значение.\n│ Пример: codescout ${flag} <значение>\n└───────────────────────────────────────────────────────────┘`);
+}
+
 export function validateFlags(argv: string[]): void {
-  for (const token of argv) {
+  for (let index = 0; index < argv.length; index++) {
+    const token = argv[index];
     if (token === '--') break;
     if (!token.startsWith('--')) continue;
     const flag = token.split('=', 1)[0];
     if (!KNOWN_FLAGS.has(flag)) throw unknownFlagError(flag);
+    if (STRING_FLAGS.has(flag)) {
+      const eq = token.indexOf('=');
+      if (eq >= 0) {
+        if (token.slice(eq + 1).length === 0) throw missingFlagValueError(flag);
+        continue;
+      }
+      const next = argv[index + 1];
+      if (next === undefined || next === '--' || next.startsWith('--')) throw missingFlagValueError(flag);
+    }
   }
 }
 
