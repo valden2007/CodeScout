@@ -169,8 +169,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 .custom-actions button { width: auto; padding: 6px 12px; text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--vscode-editorWarning-foreground); border-radius: 4px; background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent); font-size: 12px; }
 .auto-line { margin-top: 7px; color: var(--vscode-textLink-foreground); font-size: 12px; font-weight: 600; }
-.auto-active { margin-top: 7px; color: var(--vscode-textLink-foreground); font-size: 12px; font-weight: 600; }
-.auto-mode-banner { margin-top: 8px; padding: 7px 9px; border: 1px solid var(--vscode-textLink-foreground); border-radius: 4px; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent); font-size: 12px; }
+.auto-badge { margin-top: 6px; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .search-line { margin-top: 10px; }
 .search-line input { width: 100%; padding: 5px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
 </style>
@@ -180,8 +179,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? '⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : '🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === 'stale' ? '🔄 Обновить' : '🚀 Запустить аудит'}</button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="Открыть настройки CodeScout">⚙️ Настройки</button></div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button></div>
-    ${autoResumeEnabled && isScanning ? '<div class="auto-active">🤖 авто-догон активен</div>' : ''}
-    ${autoResumeEnabled && !isScanning ? '<div class="auto-mode-banner">🤖 Автономный режим включён</div>' : ''}
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     ${auditResume ? `<div class="audit-resume"><strong>⏸ Аудит оборвался: проверено ${auditResume.done} из ${auditResume.total} файлов (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">▶️ Продолжить (${auditResume.done} из ${auditResume.total})</button><button type="button" data-command="restartAudit">🆕 Начать заново</button></div></div>` : ''}
@@ -191,6 +188,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
       <button type="button" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>🎯 Своё ревью</button>
     </div>
+    ${autoResumeEnabled ? '<div class="auto-badge" title="Полный аудит сам догонит прерванное с backoff (codescout.autoResume)">🤖 Автономный режим: ВКЛ</div>' : ''}
     <div class="custom-form hidden" id="customForm">
       <label for="customFocusText">Что проверить?</label>
       <textarea id="customFocusText" rows="3" placeholder="например: все ли обращения к БД внутри транзакций?"></textarea>

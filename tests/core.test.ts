@@ -1269,20 +1269,36 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain('this.autoResumeEnabled)');
   });
 
-  it('idle banner before audit, active indicator during audit', () => {
+  it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
     const idle = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
-    expect(idle).toContain('🤖 Автономный режим включён');
-    expect(idle).toContain('class="auto-mode-banner"');
+    expect(idle).toContain('🤖 Автономный режим: ВКЛ');
+    expect(idle).toContain('class="auto-badge"');
+    expect(idle).not.toContain('Автономный режим включён');
     expect(idle).not.toContain('авто-догон активен');
     const running = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
-    expect(running).toContain('🤖 авто-догон активен');
-    expect(running).toContain('class="auto-active"');
-    expect(running).not.toContain('Автономный режим включён');
+    expect(running).toContain('🤖 Автономный режим: ВКЛ');
     const off = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false);
-    expect(off).not.toContain('Автономный режим включён');
-    expect(off).not.toContain('авто-догон активен');
+    expect(off).not.toContain('Автономный режим: ВКЛ');
+    expect(off).not.toContain('<div class="auto-badge"');
     const emptyOn = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, true);
-    expect(emptyOn).toContain('🤖 Автономный режим включён');
+    expect(emptyOn).toContain('🤖 Автономный режим: ВКЛ');
+    const emptyOff = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, false);
+    expect(emptyOff).not.toContain('Автономный режим: ВКЛ');
+    const badgeAt = idle.indexOf('<div class="auto-badge"');
+    const actionsAt = idle.indexOf('class="actions"');
+    expect(actionsAt).toBeGreaterThan(-1);
+    expect(badgeAt).toBeGreaterThan(actionsAt);
+    const css = idle.slice(idle.indexOf('.auto-badge'), idle.indexOf('.auto-badge') + 120);
+    expect(css).toContain('font-size: 11px');
+    expect(css).toContain('--vscode-descriptionForeground');
+  });
+
+  it('badge refreshes on settings save without reload', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
+    expect(panel).toContain('this.autoResumeEnabled = vscode.workspace.getConfiguration');
+    const saveBlock = panel.slice(panel.indexOf("event.affectsConfiguration('codescout.autoResume')"));
+    expect(saveBlock.slice(0, 220)).toContain('this.render()');
   });
 });
 
