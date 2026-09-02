@@ -404,6 +404,18 @@ export function dedupeIssues(issues: ReviewIssue[]): ReviewIssue[] {
   return result;
 }
 
+export const AUDIT_PASSES_MAX = 3;
+
+export function auditPassesFromSetting(value: number | undefined): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(AUDIT_PASSES_MAX, n);
+}
+
+export function passFindingsSummary(issues: ReviewIssue[]): string {
+  return issues.map((issue) => `строка ${issue.line} [${issue.severity}/${issue.category}] ${issue.description}`).join('; ');
+}
+
 export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = ''): AuditCollection {
   const pool = listAuditSourceFiles(workspaceRoot);
   const patterns = parseScopeGlobs(scopeGlobsText);

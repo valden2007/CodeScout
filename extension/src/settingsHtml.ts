@@ -12,6 +12,7 @@ export interface SettingsState {
   maxLines: number;
   autoResume: boolean;
   auditScope: string;
+  auditPasses: number;
 }
 
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
@@ -109,6 +110,8 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
   <label for="auditScope">Scope аудита (glob через запятую, пусто = все)</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml(state.auditScope)}">
+  <label for="auditPasses">Кругов проверки на файл (1-3)</label>
+  <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
   <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> 🤖 Автономный режим (авто-догон)</label>
   <div class="row">
     <button id="saveProject" type="button" disabled>💾 Сохранить</button>
@@ -130,11 +133,12 @@ const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
 const maxLinesInput = document.getElementById('maxLines');
 const auditScopeInput = document.getElementById('auditScope');
+const auditPassesInput = document.getElementById('auditPasses');
 const autoResumeBox = document.getElementById('autoResume');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, autoResume: autoResumeBox.checked };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -144,7 +148,7 @@ function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || autoResumeBox.checked !== initial.autoResume; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || auditPassesInput.value !== initial.auditPasses || autoResumeBox.checked !== initial.autoResume; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -186,6 +190,7 @@ saveProjectBtn.addEventListener('click', () => {
     docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5')),
     maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0')),
     auditScope: auditScopeInput.value.trim(),
+    auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, initial.auditPasses || '1')),
     autoResume: autoResumeBox.checked
   });
 });

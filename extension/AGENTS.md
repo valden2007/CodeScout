@@ -205,6 +205,31 @@ pre-design now.
    the final report; N > 0 keeps the old skip-with-warning
    behavior for weak models. Panel header got a "⚙️ Настройки"
    button (data-command openSettings) beside the brand; the quick
-   "🔑 Ключ и модель" button stays. Tests: 145.
-Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
-RAG v1.3b is done — the old "RAG" backlog mention is superseded.
+    "🔑 Ключ и модель" button stays. Tests: 145.
+ 9. Auto-resume + selective review (1.3g+h): codescout.autoResume
+    (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
+    wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
+    network) it auto-resumes from the checkpoint with a backoff
+    ladder 30/60/120/300s (autoResumeDecision), capped at 20 attempts
+    AND 3h, then falls back to the manual banner; panel shows a live
+    "🤖 авто-догон: X/Y, попытка N/20 через Ns" countdown; ⏹ Остановить
+    sets autoResumeCancelled and kills both request and wait; VS Code
+    startup shows the banner but never auto-starts. codescout.auditScope
+    (comma globs) filters the full audit via collectAuditFiles;
+    codescout.reviewSelection (explorer/context, "CodeScout: проверить")
+    reviews the selected file/folder once, ignoring auditScope; panel
+    header has a "🔍 поиск файла…" input filtering file sections by path
+    substring. Tests: 152.
+10. Multi-pass audit + readable logs (1.3i): codescout.auditPasses
+    (1-3, default 1, clamped by auditPassesFromSetting) + field in
+    📁 Проект. reviewFiles runs `passes` rounds per file; from pass 2
+    the prompt gets "В прошлый круг по этому файлу ты уже нашёл:
+    [passFindingsSummary]. Ищи, что ПРОПУСТИЛ, не повторяй их."
+    (sanitized + fence-neutralized); per-file findings are deduped
+    (file:line:description) across passes before onFileChecked, so the
+    checkpoint closes a file only after ALL passes. Output logs are now
+    "🔎 файл X/Y: name — старт…" / "✅ файл X/Y: name — готово за Ns"
+    (one start per file, real per-file seconds) and "🔄 круг P/T: файл X"
+    for extra passes. Tests: 156.
+ Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
+ RAG v1.3b is done — the old "RAG" backlog mention is superseded.

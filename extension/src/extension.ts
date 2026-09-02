@@ -12,7 +12,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, AUTO_RESUME_MAX_MINUTES_DEFAULT, autoResumeDecision, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, AUTO_RESUME_MAX_MINUTES_DEFAULT, autoResumeDecision, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -146,7 +146,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -164,17 +164,22 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
       const fileIssues: ReviewIssue[] = [];
       try {
         const importsLine = importsResolver?.(file.filename) ?? '';
-        for (const chunk of splitPatch(file.patch, 45_000)) {
-          if (signal?.aborted) throw abortError();
-          const elapsedMs = Date.now() - startedAt;
-          onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
-          onThinking?.(elapsedMs);
-          const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine));
-          const parsed = parseReviewResponse(raw, file.filename);
-          fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+        for (let pass = 1; pass <= passes; pass++) {
+          const passLine = pass > 1 ? passFindingsSummary(dedupeIssues(fileIssues)) : '';
+          if (pass > 1) onPass?.(file.filename, pass, passes);
+          for (const chunk of splitPatch(file.patch, 45_000)) {
+            if (signal?.aborted) throw abortError();
+            const elapsedMs = Date.now() - startedAt;
+            onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
+            onThinking?.(elapsedMs);
+            const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine));
+            const parsed = parseReviewResponse(raw, file.filename);
+            fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+          }
         }
-        issues.push(...fileIssues);
-        onFileChecked?.(file.filename, fileIssues);
+        const deduped = dedupeIssues(fileIssues);
+        issues.push(...deduped);
+        onFileChecked?.(file.filename, deduped);
         completed = true;
       } catch (error) {
         lastError = error;
@@ -292,6 +297,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const auditConfig = vscode.workspace.getConfiguration('codescout');
     const auditMaxFiles = auditConfig.get<number>('maxFiles', 100);
     const auditMaxLines = auditConfig.get<number>('maxLines', 0);
+    const auditPasses = auditPassesFromSetting(auditConfig.get<number>('auditPasses'));
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get<string>('auditScope') ?? '';
@@ -344,12 +350,15 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const chunkTotals = new Map<string, number>();
     for (const file of audit.files) chunkTotals.set(file.filename, (chunkTotals.get(file.filename) ?? 0) + 1);
     const chunkProgress = new Map<string, { done: number; issues: ReviewIssue[] }>();
+    const loggedStart = new Set<string>();
+    const fileStartedAt = new Map<string, number>();
+    if (auditPasses > 1) output.appendLine(`🔁 Мульти-пасс аудит: ${auditPasses} круга на файл (codescout.auditPasses)`);
     const persist = (): void => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
     };
     persist();
-    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); output.appendLine(`🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
@@ -358,8 +367,10 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         doneNames.add(filename);
         state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
         persist();
+        const seconds = Math.max(0, Math.round(((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) / 1000) * 10) / 10);
+        output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename));
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`));
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -541,6 +552,7 @@ interface SettingsMessage {
   maxLines?: number;
   autoResume?: boolean;
   auditScope?: string;
+  auditPasses?: number;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -584,7 +596,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks')),
     maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0)),
     autoResume: vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false),
-    auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? ''
+    auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? '',
+    auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses'))
   };
 }
 
@@ -679,6 +692,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(100000, maxLinesRaw) : 0;
             const autoResume = message.autoResume === true;
             const auditScope = (message.auditScope ?? '').trim();
+            const auditPasses = auditPassesFromSetting(message.auditPasses);
             const config = vscode.workspace.getConfiguration('codescout');
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
@@ -686,7 +700,8 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('maxLines', maxLines, vscode.ConfigurationTarget.Global);
             await config.update('autoResume', autoResume, vscode.ConfigurationTarget.Global);
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · автономный режим ${autoResume ? 'включён' : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
+            await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? 'включён' : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());
