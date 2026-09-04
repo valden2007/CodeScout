@@ -24,6 +24,12 @@ function safePost(webview: vscode.Webview, message: Record<string, unknown>): vo
   }
 }
 
+function clampSetting(value: number | undefined, max: number): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(max, n);
+}
+
 function realExistingPath(path: string): string {
   let current = resolve(path);
   const missing: string[] = [];
@@ -60,10 +66,19 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private auditResume?: AuditResumeView;
   private autoResumeView?: AutoResumeIndicator;
   private autoResumeEnabled = false;
+  private autoResumeMaxAttempts = 0;
+  private autoResumeMaxMinutes = 0;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
   private messageSubscription?: vscode.Disposable;
+
+  private refreshAutoResumeSettings(): void {
+    const config = vscode.workspace.getConfiguration('codescout');
+    this.autoResumeEnabled = config.get<boolean>('autoResume', false);
+    this.autoResumeMaxAttempts = clampSetting(config.get<number>('autoResumeMaxAttempts'), 1000);
+    this.autoResumeMaxMinutes = clampSetting(config.get<number>('autoResumeMaxMinutes'), 10000);
+  }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.messageSubscription?.dispose();
@@ -74,10 +89,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       if (this.view === webviewView) this.view = undefined;
     });
     webviewView.webview.options = { enableScripts: true };
-    this.autoResumeEnabled = vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false);
+    this.refreshAutoResumeSettings();
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event.affectsConfiguration('codescout.autoResume')) return;
-      this.autoResumeEnabled = vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false);
+      if (!event.affectsConfiguration('codescout.autoResume') && !event.affectsConfiguration('codescout.autoResumeMaxAttempts') && !event.affectsConfiguration('codescout.autoResumeMaxMinutes')) return;
+      this.refreshAutoResumeSettings();
       this.render();
     }, undefined, []);
     this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
@@ -276,7 +291,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private render(): void {
     if (!this.view) return;
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes);
   }
 }

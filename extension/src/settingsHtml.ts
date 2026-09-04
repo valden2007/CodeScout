@@ -11,6 +11,8 @@ export interface SettingsState {
   docMaxLinks: number;
   maxLines: number;
   autoResume: boolean;
+  autoResumeMaxAttempts: number;
+  autoResumeMaxMinutes: number;
   auditScope: string;
   auditPasses: number;
 }
@@ -115,6 +117,10 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <label for="auditPasses">Кругов проверки на файл (1-3)</label>
   <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
   <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> 🤖 Автономный режим (авто-догон)</label>
+  <label for="autoResumeMaxAttempts">Авто-догон: макс. попыток (0 = без лимита)</label>
+  <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
+  <label for="autoResumeMaxMinutes">Авто-догон: макс. минут (0 = без лимита)</label>
+  <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
   <div class="row">
     <button id="saveProject" type="button" disabled>💾 Сохранить</button>
     <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
@@ -137,10 +143,12 @@ const maxLinesInput = document.getElementById('maxLines');
 const auditScopeInput = document.getElementById('auditScope');
 const auditPassesInput = document.getElementById('auditPasses');
 const autoResumeBox = document.getElementById('autoResume');
+const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
+const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const saveKeyBtn = document.getElementById('saveKey');
 const saveAppearanceBtn = document.getElementById('saveAppearance');
 const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked };
+const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked, autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value };
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -150,7 +158,7 @@ function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.
 providerSelect.addEventListener('change', toggleBaseUrl);
 function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
 function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || auditPassesInput.value !== initial.auditPasses || autoResumeBox.checked !== initial.autoResume; }
+function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || auditPassesInput.value !== initial.auditPasses || autoResumeBox.checked !== initial.autoResume || autoResumeMaxAttemptsInput.value !== initial.autoResumeMaxAttempts || autoResumeMaxMinutesInput.value !== initial.autoResumeMaxMinutes; }
 function refreshDirty() {
   saveKeyBtn.disabled = !keyDirty();
   saveAppearanceBtn.disabled = !appearanceDirty();
@@ -193,7 +201,9 @@ saveProjectBtn.addEventListener('click', () => {
     maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0')),
     auditScope: auditScopeInput.value.trim(),
     auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, initial.auditPasses || '1')),
-    autoResume: autoResumeBox.checked
+    autoResume: autoResumeBox.checked,
+    autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, initial.autoResumeMaxAttempts || '0')),
+    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, initial.autoResumeMaxMinutes || '0'))
   });
 });
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));

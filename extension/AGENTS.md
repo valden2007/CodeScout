@@ -210,9 +210,14 @@ pre-design now.
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
     network) it auto-resumes from the checkpoint with a backoff
-    ladder 30/60/120/300s (autoResumeDecision), capped at 20 attempts
-    AND 3h, then falls back to the manual banner; panel shows a live
-    "🤖 авто-догон: X/Y, попытка N/20 через Ns" countdown; ⏹ Остановить
+    ladder 30/60/120/300s (autoResumeDecision); caps are settings
+    codescout.autoResumeMaxAttempts (default 0) and
+    codescout.autoResumeMaxMinutes (default 0) where 0 = unlimited
+    (big multi-pass projects can run for a day); when a cap is set
+    and hit, it falls back to the manual banner; panel shows a live
+    "🤖 авто-догон: X/Y, попытка N[/max] через Ns" countdown and an
+    idle badge "🤖 Автономный режим: ВКЛ (без лимита / макс. …)"
+    that re-renders on config change; ⏹ Остановить
     sets autoResumeCancelled and kills both request and wait; VS Code
     startup shows the banner but never auto-starts. codescout.auditScope
     (comma globs) filters the full audit via collectAuditFiles;

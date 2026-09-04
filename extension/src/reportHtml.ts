@@ -1,5 +1,6 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
+import { autoResumeBadgeText } from './projectAudit';
 
 export interface AutoResumeIndicator {
   done: number;
@@ -63,10 +64,11 @@ function issueCard(issue: ReviewIssue, isNew = false): string {
 
 function autoLineHtml(autoResume?: AutoResumeIndicator): string {
   if (!autoResume) return '<div class="auto-line hidden" id="autoLine"></div>';
-  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">🤖 авто-догон: ${autoResume.done}/${autoResume.total}, попытка ${autoResume.attempt}/${autoResume.maxAttempts} через ${autoResume.secondsLeft}с</div>`;
+  const attemptLabel = autoResume.maxAttempts > 0 ? `попытка ${autoResume.attempt}/${autoResume.maxAttempts}` : `попытка ${autoResume.attempt}`;
+  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">🤖 авто-догон: ${autoResume.done}/${autoResume.total}, ${attemptLabel} через ${autoResume.secondsLeft}с</div>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0): string {
   const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
@@ -188,7 +190,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
       <button type="button" data-command="scanFull" ${isScanning ? 'disabled' : ''}>🔬 Полный аудит проекта</button>
       <button type="button" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>🎯 Своё ревью</button>
     </div>
-    ${autoResumeEnabled ? '<div class="auto-badge" title="Полный аудит сам догонит прерванное с backoff (codescout.autoResume)">🤖 Автономный режим: ВКЛ</div>' : ''}
+    ${autoResumeEnabled ? `<div class="auto-badge" title="Полный аудит сам догонит прерванное с backoff (codescout.autoResume)">${escapeHtml(autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes))}</div>` : ''}
     <div class="custom-form hidden" id="customForm">
       <label for="customFocusText">Что проверить?</label>
       <textarea id="customFocusText" rows="3" placeholder="например: все ли обращения к БД внутри транзакций?"></textarea>
@@ -369,6 +371,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes);
 }

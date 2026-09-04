@@ -545,7 +545,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
   it('renders both settings sections in the existing panel style', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('Ключ и провайдер');
@@ -873,7 +873,7 @@ describe('E1.2e custom review focus', () => {
 });
 
 describe('E1.2e rules and doc links via settings', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
 
   it('appends project doc links to the audit system prompt', () => {
     const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
@@ -1229,7 +1229,7 @@ describe('E1.3f maxLines setting and chunking', () => {
   });
 
   it('settings page renders the maxLines field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
     expect(html).toContain('id="maxLines"');
     expect(html).toContain('Макс. строк на файл (0 = без лимита)');
     expect(html).toContain('value="0"');
@@ -1266,7 +1266,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("private autoResumeEnabled = false;");
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
-    expect(panel).toContain('this.autoResumeEnabled)');
+    expect(panel).toContain('this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -1295,10 +1295,50 @@ describe('E1.3j settings button + auto-audit indicator', () => {
 
   it('badge refreshes on settings save without reload', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
-    expect(panel).toContain('this.autoResumeEnabled = vscode.workspace.getConfiguration');
-    const saveBlock = panel.slice(panel.indexOf("event.affectsConfiguration('codescout.autoResume')"));
-    expect(saveBlock.slice(0, 220)).toContain('this.render()');
+    expect(panel).toContain('private refreshAutoResumeSettings(): void');
+    expect(panel).toContain("event.affectsConfiguration('codescout.autoResumeMaxAttempts')");
+    expect(panel).toContain("event.affectsConfiguration('codescout.autoResumeMaxMinutes')");
+    const listener = panel.slice(panel.indexOf('onDidChangeConfiguration'));
+    expect(listener.slice(0, 420)).toContain('this.refreshAutoResumeSettings()');
+    expect(listener.slice(0, 460)).toContain('this.render()');
+  });
+
+  it('badge text reflects the configured limits (0 = unlimited)', async () => {
+    const { autoResumeBadgeText } = await import('../extension/src/projectAudit');
+    expect(autoResumeBadgeText(0, 0)).toBe('🤖 Автономный режим: ВКЛ (без лимита)');
+    expect(autoResumeBadgeText(5, 0)).toBe('🤖 Автономный режим: ВКЛ (макс. 5 попыток)');
+    expect(autoResumeBadgeText(0, 90)).toBe('🤖 Автономный режим: ВКЛ (макс. 90 мин)');
+    expect(autoResumeBadgeText(5, 90)).toBe('🤖 Автономный режим: ВКЛ (макс. 5 попыток / 90 мин)');
+    const base = [] as never[];
+    const stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
+    const unlimited = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 0, 0);
+    expect(unlimited).toContain('🤖 Автономный режим: ВКЛ (без лимита)');
+    const both = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 7, 120);
+    expect(both).toContain('🤖 Автономный режим: ВКЛ (макс. 7 попыток / 120 мин)');
+    const attemptsOnly = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 3, 0);
+    expect(attemptsOnly).toContain('(макс. 3 попыток)');
+    expect(attemptsOnly).not.toContain('мин)');
+    const minutesOnly = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, true, 0, 45);
+    expect(minutesOnly).toContain('(макс. 45 мин)');
+    expect(minutesOnly).not.toContain('попытко');
+  });
+
+  it('settings page renders the two limit fields wired to save', () => {
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
+    expect(html).toContain('id="autoResumeMaxAttempts"');
+    expect(html).toContain('id="autoResumeMaxMinutes"');
+    expect(html).toContain('Авто-догон: макс. попыток (0 = без лимита)');
+    expect(html).toContain('Авто-догон: макс. минут (0 = без лимита)');
+    expect(html).toContain('clampInt(autoResumeMaxAttemptsInput.value, 0, 1000');
+    expect(html).toContain('clampInt(autoResumeMaxMinutesInput.value, 0, 10000');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.autoResumeMaxAttempts');
+    expect(manifest).toContain('codescout.autoResumeMaxMinutes');
+    expect(manifest).toContain('"maximum": 1000');
+    expect(manifest).toContain('"maximum": 10000');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("update('autoResumeMaxAttempts', autoResumeMaxAttempts, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain("update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global)");
   });
 });
 
@@ -1414,7 +1454,7 @@ describe('E1.3b-settings configurable RAG limits', () => {
   });
 
   it('renders numeric limit fields in the project section with dirty save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
     expect(html).toContain('id="docMaxKb"');
     expect(html).toContain('id="docMaxLinks"');
     expect(html).toContain('Макс. размер дока');
@@ -1630,7 +1670,7 @@ describe('G3 fix batch panel', () => {
 
 describe('G4 fix batch regressions and security layer', () => {
   it('clampInt clamps both directions and repairs a bad fallback', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
     const source = html.slice(html.indexOf('function clampInt'), html.indexOf('}', html.indexOf('Math.min(max, Math.max(min, Number(fallback)))')) + 1);
     const clampInt = new Function(`return (${source.replace('function clampInt', 'function')})`)() as (v: unknown, min: number, max: number, f: string) => string;
     expect(clampInt('99999', 1, 2048, '50')).toBe('2048');
@@ -1841,8 +1881,8 @@ describe('G5 fix batch performance and robustness', () => {
 });
 
 describe('E1.3g auto-resume and E1.3h selective review', () => {
-  it('backoff ladder 30/60/120/300 with caps on attempts and hours', async () => {
-    const { autoResumeDecision, AUTO_RESUME_LADDER_SECONDS, AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, AUTO_RESUME_MAX_MINUTES_DEFAULT } = await import('../extension/src/projectAudit');
+  it('backoff ladder 30/60/120/300; 0 limits mean unlimited, >0 caps work', async () => {
+    const { autoResumeDecision, AUTO_RESUME_LADDER_SECONDS } = await import('../extension/src/projectAudit');
     expect(AUTO_RESUME_LADDER_SECONDS).toEqual([30, 60, 120, 300]);
     const t0 = Date.now();
     expect(autoResumeDecision(1, t0, t0)?.waitSeconds).toBe(30);
@@ -1850,13 +1890,14 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(autoResumeDecision(3, t0, t0)?.waitSeconds).toBe(120);
     expect(autoResumeDecision(4, t0, t0)?.waitSeconds).toBe(300);
     expect(autoResumeDecision(5, t0, t0)?.waitSeconds).toBe(300);
-    expect(autoResumeDecision(20, t0, t0)?.waitSeconds).toBe(300);
-    expect(autoResumeDecision(21, t0, t0)).toBeUndefined();
+    expect(autoResumeDecision(100000, t0, t0)?.waitSeconds).toBe(300);
     expect(autoResumeDecision(0, t0, t0)).toBeUndefined();
-    expect(autoResumeDecision(1, t0, t0 + (AUTO_RESUME_MAX_MINUTES_DEFAULT + 1) * 60_000)).toBeUndefined();
-    expect(autoResumeDecision(1, t0, t0 + (AUTO_RESUME_MAX_MINUTES_DEFAULT - 1) * 60_000)?.attempt).toBe(1);
-    expect(AUTO_RESUME_MAX_ATTEMPTS_DEFAULT).toBe(20);
-    expect(AUTO_RESUME_MAX_MINUTES_DEFAULT).toBe(180);
+    expect(autoResumeDecision(1, t0, t0 + 10_000 * 60_000)?.attempt).toBe(1);
+    expect(autoResumeDecision(6, t0, t0, 5, 0)).toBeUndefined();
+    expect(autoResumeDecision(5, t0, t0, 5, 0)?.attempt).toBe(5);
+    expect(autoResumeDecision(1, t0, t0 + 61_000, 0, 1)).toBeUndefined();
+    expect(autoResumeDecision(1, t0, t0 + 59_000, 0, 1)?.attempt).toBe(1);
+    expect(autoResumeDecision(99, t0, t0, 0, 0)?.attempt).toBe(99);
   });
 
   it('user stop kills the request and the auto mode; startup never auto-starts', () => {
@@ -1864,8 +1905,10 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain('autoResumeCancelled = true');
     expect(extension).toContain('if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view)');
     expect(extension).toContain('await sleep(decision.waitSeconds * 1000, waitController.signal)');
-    expect(extension).toContain('🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}/${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT})');
+    expect(extension).toContain('🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : \'\'}');
     expect(extension).toContain('автономный лимит исчерпан');
+    expect(extension).toContain("get<number>('autoResumeMaxAttempts')");
+    expect(extension).toContain("get<number>('autoResumeMaxMinutes')");
     expect(extension).toContain("get<boolean>('autoResume', false)");
     const startup = extension.slice(extension.indexOf('const savedProgress = progressView'), extension.indexOf('if (!auditBannerEnabled())'));
     expect(startup).toContain('panel.setAuditResume(savedProgress)');
@@ -1922,7 +1965,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, auditScope: 'src/**', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1 });
     expect(html).toContain('id="autoResume"');
     expect(html).toContain('🤖 Автономный режим (авто-догон)');
     expect(html).toContain('checked');
@@ -2052,7 +2095,7 @@ describe('G6 fix batch security and robustness', () => {
   });
 
   it('settings webview has a nonce-only CSP and a single nonce-bearing script (smoke)', () => {
-    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, auditScope: '', auditPasses: 1 };
+    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
     const html = buildSettingsHtml(state, '', 'ok', 'abc123nonce');
     expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; script-src \'nonce-abc123nonce\';">');
     expect(html).toContain('<script nonce="abc123nonce">');

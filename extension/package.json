@@ -203,7 +203,21 @@
         "codescout.autoResume": {
           "type": "boolean",
           "default": false,
-          "description": "Автономный режим (авто-догон): при rate-limit/сети аудит сам возобновляется из чекпоинта с backoff 30с→60с→2мин→5мин, максимум 20 попыток и 3 часа. Остановка пользователем убивает и запрос, и авто-режим. При старте VS Code автостарта нет."
+          "description": "Автономный режим (авто-догон): при rate-limit/сети аудит сам возобновляется из чекпоинта с backoff 30с→60с→2мин→5мин. Остановка пользователем убивает и запрос, и авто-режим. При старте VS Code автостарта нет."
+        },
+        "codescout.autoResumeMaxAttempts": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Максимум авто-догонов за один запуск аудита. 0 = без лимита (нужно для больших проектов с мульти-пассом)."
+        },
+        "codescout.autoResumeMaxMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "Максимум минут, в течение которых авто-догон разрешён. 0 = без лимита."
         },
         "codescout.reportLanguage": {
           "type": "string",

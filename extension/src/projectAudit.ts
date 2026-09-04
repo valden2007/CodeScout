@@ -479,19 +479,33 @@ export function parseScopeGlobs(text: string): string[] {
 }
 
 export const AUTO_RESUME_LADDER_SECONDS = [30, 60, 120, 300];
-export const AUTO_RESUME_MAX_ATTEMPTS_DEFAULT = 20;
-export const AUTO_RESUME_MAX_MINUTES_DEFAULT = 180;
 
 export interface AutoResumeDecision {
   attempt: number;
   waitSeconds: number;
 }
 
-export function autoResumeDecision(attempt: number, startedAt: number, now: number, maxAttempts = AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, maxMinutes = AUTO_RESUME_MAX_MINUTES_DEFAULT): AutoResumeDecision | undefined {
-  if (!Number.isInteger(attempt) || attempt < 1 || attempt > maxAttempts) return undefined;
-  if (now - startedAt > maxMinutes * 60_000) return undefined;
+export function autoResumeDecision(attempt: number, startedAt: number, now: number, maxAttempts = 0, maxMinutes = 0): AutoResumeDecision | undefined {
+  if (!Number.isInteger(attempt) || attempt < 1) return undefined;
+  if (maxAttempts > 0 && attempt > maxAttempts) return undefined;
+  if (maxMinutes > 0 && now - startedAt > maxMinutes * 60_000) return undefined;
   const waitSeconds = AUTO_RESUME_LADDER_SECONDS[Math.min(attempt, AUTO_RESUME_LADDER_SECONDS.length) - 1];
   return { attempt, waitSeconds };
+}
+
+export function autoResumeLimitFromSetting(value: number | undefined, max: number): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(max, n);
+}
+
+export function autoResumeBadgeText(maxAttempts: number, maxMinutes: number): string {
+  const hasAttempts = maxAttempts > 0;
+  const hasMinutes = maxMinutes > 0;
+  if (hasAttempts && hasMinutes) return `🤖 Автономный режим: ВКЛ (макс. ${maxAttempts} попыток / ${maxMinutes} мин)`;
+  if (hasAttempts) return `🤖 Автономный режим: ВКЛ (макс. ${maxAttempts} попыток)`;
+  if (hasMinutes) return `🤖 Автономный режим: ВКЛ (макс. ${maxMinutes} мин)`;
+  return '🤖 Автономный режим: ВКЛ (без лимита)';
 }
 
 export type ReviewScope = 'all' | 'active' | 'list';

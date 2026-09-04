@@ -13,7 +13,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, AUTO_RESUME_MAX_ATTEMPTS_DEFAULT, AUTO_RESUME_MAX_MINUTES_DEFAULT, autoResumeDecision, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, autoResumeBadgeText, autoResumeDecision, autoResumeLimitFromSetting, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { withReportLanguage } from '../../src/prompt-builder';
 
@@ -253,15 +253,18 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const outcome = await runFullAuditOnce(context, output, panel, isResume);
     if (outcome.kind === 'done') { panel.setAutoResume(undefined); return; }
     if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view) { panel.setAutoResume(undefined); return; }
-    const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now());
+    const config = vscode.workspace.getConfiguration('codescout');
+    const maxAttempts = autoResumeLimitFromSetting(config.get<number>('autoResumeMaxAttempts'), 1000);
+    const maxMinutes = autoResumeLimitFromSetting(config.get<number>('autoResumeMaxMinutes'), 10000);
+    const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now(), maxAttempts, maxMinutes);
     if (!decision) {
-      output.appendLine(`🤖 автономный лимит исчерпан (${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT} попыток / ${AUTO_RESUME_MAX_MINUTES_DEFAULT} мин) — нужен человек: кнопки «▶️ Продолжить» в баннере`);
+      output.appendLine(`🤖 автономный лимит исчерпан (${maxAttempts > 0 ? `${maxAttempts} попыток` : ''}${maxAttempts > 0 && maxMinutes > 0 ? ' / ' : ''}${maxMinutes > 0 ? `${maxMinutes} мин` : ''}) — нужен человек: кнопки «▶️ Продолжить» в баннере`);
       panel.setAutoResume(undefined);
       return;
     }
     lastAttempt = decision.attempt;
-    output.appendLine(`🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}/${AUTO_RESUME_MAX_ATTEMPTS_DEFAULT})`);
-    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts: AUTO_RESUME_MAX_ATTEMPTS_DEFAULT });
+    output.appendLine(`🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ''})`);
+    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts });
     const waitController = new AbortController();
     activeAbortController?.abort();
     activeAbortController = waitController;
@@ -553,6 +556,8 @@ interface SettingsMessage {
   docMaxLinks?: number;
   maxLines?: number;
   autoResume?: boolean;
+  autoResumeMaxAttempts?: number;
+  autoResumeMaxMinutes?: number;
   auditScope?: string;
   auditPasses?: number;
 }
@@ -598,6 +603,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks')),
     maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0)),
     autoResume: vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false),
+    autoResumeMaxAttempts: autoResumeLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('autoResumeMaxAttempts'), 1000),
+    autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('autoResumeMaxMinutes'), 10000),
     auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? '',
     auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses'))
   };
@@ -697,15 +704,19 @@ export function activate(context: vscode.ExtensionContext): void {
             const autoResume = message.autoResume === true;
             const auditScope = (message.auditScope ?? '').trim();
             const auditPasses = auditPassesFromSetting(message.auditPasses);
+            const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1000);
+            const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 10000);
             const config = vscode.workspace.getConfiguration('codescout');
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
             await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
             await config.update('maxLines', maxLines, vscode.ConfigurationTarget.Global);
             await config.update('autoResume', autoResume, vscode.ConfigurationTarget.Global);
+            await config.update('autoResumeMaxAttempts', autoResumeMaxAttempts, vscode.ConfigurationTarget.Global);
+            await config.update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global);
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? 'включён' : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? `включён (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace('🤖 Автономный режим: ВКЛ ', '')})` : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());
