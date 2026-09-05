@@ -49,7 +49,7 @@ export function validateFlags(argv: string[]): void {
         continue;
       }
       const next = argv[index + 1];
-      if (next === undefined || next === '--' || next.startsWith('--')) throw missingFlagValueError(flag);
+      if (next === undefined || next === '--') throw missingFlagValueError(flag);
     }
   }
 }

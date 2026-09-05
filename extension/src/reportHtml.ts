@@ -182,7 +182,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     <div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="Открыть настройки CodeScout">⚙️ Настройки</button></div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button></div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
-    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && statusMessage.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
+    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404/i.test(statusMessage) ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     ${auditResume ? `<div class="audit-resume"><strong>⏸ Аудит оборвался: проверено ${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))} файлов (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">▶️ Продолжить (${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))})</button><button type="button" data-command="restartAudit">🆕 Начать заново</button></div></div>` : ''}
     <div class="actions">
       <button type="button" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? '<span class="spinner">◌</span>' : '🔍'} Проверить последний коммит</button>
@@ -239,11 +239,6 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     } else {
       document.body.classList.remove('modal');
     }
-    function escapeText(value) {
-      const div = document.createElement('div');
-      div.textContent = value;
-      return div.innerHTML;
-    }
     function applyProgressText(text) {
       const line = document.getElementById('progressLine');
       if (line) line.textContent = text;
@@ -251,14 +246,26 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
     function applyStatus(message, kind) {
       const slot = document.getElementById('statusSlot');
       if (!slot) return;
-      if (!message) {
-        slot.innerHTML = '';
-        return;
-      }
+      slot.textContent = '';
+      if (!message) return;
       const safeKind = /^(retry|error|test|success)$/.test(String(kind)) ? String(kind) : 'retry';
-      const dots = safeKind === 'retry' ? '<span class="animated-dots">...</span>' : '';
-      const fix = safeKind === 'error' && message.includes('404') ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : '';
-      slot.innerHTML = '<div class="status-banner ' + safeKind + '">' + escapeText(message) + dots + fix + '</div>';
+      const banner = document.createElement('div');
+      banner.className = 'status-banner ' + safeKind;
+      banner.textContent = message;
+      if (safeKind === 'retry') {
+        const dots = document.createElement('span');
+        dots.className = 'animated-dots';
+        dots.textContent = '...';
+        banner.appendChild(dots);
+      }
+      if (safeKind === 'error' && /404:|HTTP[^\\n]*404/i.test(message)) {
+        const fix = document.createElement('button');
+        fix.type = 'button';
+        fix.dataset.command = 'chooseModel';
+        fix.textContent = '🔄 Выбрать доступную модель';
+        banner.appendChild(fix);
+      }
+      slot.appendChild(banner);
     }
     const live = { text: '', elapsed: 0, tick: false };
     const progressLine = document.getElementById('progressLine');

@@ -42,8 +42,9 @@ export class GitHubClient {
   }
 
   async upsertSummaryComment(body: string): Promise<void> {
+    const botLogin = this.context.botLogin ?? 'github-actions[bot]';
     const comments = await this.octokit.paginate(this.octokit.rest.issues.listComments, { owner: this.context.owner, repo: this.context.repo, issue_number: this.context.pullNumber, per_page: 100 });
-    const existing = comments.find((comment) => comment.user?.type === 'Bot' && comment.body?.includes(SUMMARY_MARKER));
+    const existing = comments.find((comment) => comment.user?.login === botLogin && comment.body?.includes(SUMMARY_MARKER));
     if (existing) {
       await this.octokit.rest.issues.updateComment({ owner: this.context.owner, repo: this.context.repo, comment_id: existing.id, body });
       return;
@@ -52,8 +53,13 @@ export class GitHubClient {
   }
 }
 
+function escapeMarkdown(value: string): string {
+  return value.replace(/([\\[\]()])/g, '\\$1');
+}
+
 export function formatIssue(issue: ReviewIssue): string {
   const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'high' ? '🟠' : issue.severity === 'medium' ? '🟡' : '🟢';
-  const code = issue.code ?? `line ${issue.line}`;
-  return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${issue.suggestion ?? issue.description}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
+  const code = escapeMarkdown(issue.code ?? `line ${issue.line}`);
+  const detail = escapeMarkdown(issue.suggestion ?? issue.description);
+  return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
 }

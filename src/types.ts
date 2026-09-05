@@ -43,4 +43,5 @@ export interface GitHubPullRequestContext {
   repo: string;
   pullNumber: number;
   headSha: string;
+  botLogin?: string;
 }
