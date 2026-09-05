@@ -215,26 +215,40 @@ export function isBlockedDocHost(hostname: string): boolean {
 async function assertSafeDocUrl(url: string): Promise<void> {
   const parsed = new URL(url);
   if (isBlockedDocHost(parsed.hostname)) throw new Error('SSRF-блок: локальный или metadata-адрес');
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) && !isBlockedDocHost(parsed.hostname)) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)) {
+    let resolved: { address: string };
     try {
       const { lookup } = await import('node:dns/promises');
-      const resolved = await lookup(parsed.hostname);
-      if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-блок: домен резолвится в ${resolved.address}`);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('SSRF-блок')) throw error;
+      resolved = await lookup(parsed.hostname);
+    } catch {
+      throw new Error(`SSRF-блок: не удалось разрешить хост ${parsed.hostname} (fail-closed)`);
     }
+    if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-блок: домен резолвится в ${resolved.address}`);
   }
 }
 
+const DOC_MAX_REDIRECTS = 5;
+
 export async function defaultDocFetcher(url: string, settings: DocFetcherSettings = DEFAULT_DOC_LIMITS): Promise<string> {
-  await assertSafeDocUrl(url);
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(settings.timeoutMs),
-    headers: { 'user-agent': 'CodeScout-RAG/1.3', accept: 'text/html,text/plain,text/markdown,*/*' }
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return await response.text();
+  let current = url;
+  for (let hop = 0; hop <= DOC_MAX_REDIRECTS; hop++) {
+    await assertSafeDocUrl(current);
+    const response = await fetch(current, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(settings.timeoutMs),
+      headers: { 'user-agent': 'CodeScout-RAG/1.3', accept: 'text/html,text/plain,text/markdown,*/*' }
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new Error(`редирект ${response.status} без Location`);
+      if (hop === DOC_MAX_REDIRECTS) throw new Error(`слишком много редиректов (>${DOC_MAX_REDIRECTS})`);
+      current = new URL(location, current).toString();
+      continue;
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  }
+  throw new Error(`слишком много редиректов (>${DOC_MAX_REDIRECTS})`);
 }
 
 export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string[], fetcher: DocFetcher = defaultDocFetcher, onWarn: (message: string) => void = () => {}, limits: DocLimits = DEFAULT_DOC_LIMITS): Promise<DocsResult> {

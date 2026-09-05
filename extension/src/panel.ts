@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { realpathSync } from 'node:fs';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
-import { maskApiKey } from '../../src/providers';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator } from './reportHtml';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
@@ -72,6 +71,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private onWelcomeDismiss?: () => void;
 
   private messageSubscription?: vscode.Disposable;
+  private configSubscription?: vscode.Disposable;
 
   private refreshAutoResumeSettings(): void {
     const config = vscode.workspace.getConfiguration('codescout');
@@ -86,15 +86,17 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     webviewView.onDidDispose(() => {
       this.messageSubscription?.dispose();
       this.messageSubscription = undefined;
+      this.configSubscription?.dispose();
+      this.configSubscription = undefined;
       if (this.view === webviewView) this.view = undefined;
     });
-    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.options = { enableScripts: true, localResourceRoots: [] };
     this.refreshAutoResumeSettings();
-    vscode.workspace.onDidChangeConfiguration((event) => {
+    this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('codescout.autoResume') && !event.affectsConfiguration('codescout.autoResumeMaxAttempts') && !event.affectsConfiguration('codescout.autoResumeMaxMinutes')) return;
       this.refreshAutoResumeSettings();
       this.render();
-    }, undefined, []);
+    });
     this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
       if (message.command === 'scanLastCommit') {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
@@ -182,9 +184,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setKey(key: string | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
-    this.keyConfigured = Boolean(key?.trim());
-    this.keyMask = key ? maskApiKey(key) : '';
+  setKey(keyMaskOrStatus: string | boolean, provider = 'gemini', model = 'gemini-2.5-flash'): void {
+    if (typeof keyMaskOrStatus === 'boolean') {
+      this.keyConfigured = keyMaskOrStatus;
+      if (!keyMaskOrStatus) this.keyMask = '';
+    } else {
+      this.keyMask = keyMaskOrStatus;
+      this.keyConfigured = keyMaskOrStatus.trim().length > 0;
+    }
     this.provider = provider;
     this.model = model;
     this.render();

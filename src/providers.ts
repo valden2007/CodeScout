@@ -14,8 +14,23 @@ export function parseLiveModels(payload: unknown): string[] {
     .filter((id): id is string => Boolean(id));
 }
 
+export function assertHttpBaseUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Некорректный baseUrl: ${url}. Ожидается https://… (или http:// для localhost/127.0.0.1).`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`baseUrl должен быть http(s)://, получено ${parsed.protocol} (${url})`);
+  if (parsed.protocol === 'http:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+    throw new Error(`http:// разрешён только для localhost/127.0.0.1 — ключ утечёт в открытом канале (${url}). Используй https://`);
+  }
+  return url;
+}
+
 export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<string[]> {
-  const response = await fetcher(`${baseUrl.replace(/\/+$/, '')}/models`, {
+  const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+  const response = await fetcher(`${safeBase}/models`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` }
   });
@@ -87,16 +102,7 @@ export function resolveApiKeyPriority(secretKey: string | undefined, provider: s
 export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {
   if (customBaseUrl?.trim()) {
     const url = customBaseUrl.trim().replace(/\/+$/, '');
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new Error(`Некорректный baseUrl: ${customBaseUrl}. Ожидается https://… (или http:// для localhost/127.0.0.1).`);
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`baseUrl должен быть http(s)://, получено ${parsed.protocol} (${url})`);
-    if (parsed.protocol === 'http:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-      throw new Error(`http:// разрешён только для localhost/127.0.0.1 — ключ утечёт в открытом канале (${url}). Используй https://`);
-    }
+    assertHttpBaseUrl(url);
     return url;
   }
   const normalized = normalizeProvider(provider);

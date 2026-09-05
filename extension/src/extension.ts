@@ -506,7 +506,8 @@ async function runSelectionReview(context: vscode.ExtensionContext, output: vsco
   await runCustomReview(context, output, panel, `Проверка выбора в проводнике: ${rel}`, 'list', globs);
 }
 
-async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
+async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel, signal?: AbortSignal): Promise<void> {
+  if (autoResumeCancelled || signal?.aborted) return;
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -662,7 +663,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const validated = selection.key && !selection.userChosenModel
       ? await validateDefaultModel(context, selection, true)
       : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
-    panel.setKey(selection.key, selection.provider, validated.model);
+    panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
   };
   void syncKeyStatus();
   context.subscriptions.push(
@@ -673,9 +674,10 @@ export function activate(context: vscode.ExtensionContext): void {
         if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'));
       };
       if (!settingsPanel) {
-        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true });
+        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [] });
         settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
-        settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage) => {
+        settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage, event: unknown) => {
+          if ((event as { origin?: string })?.origin !== 'vscode-webview') return;
           if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
             if (message.command === 'saveKeyProvider') {
@@ -779,7 +781,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.store(SECRET_PROVIDER, selection.provider);
       await context.secrets.store(SECRET_MODEL, selection.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
-      panel.setKey(key.trim(), selection.provider, selection.model);
+      panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
       const source = detected ? 'определено автоматически' : 'выбрано вручную';
       void vscode.window.showInformationMessage(`✅ Ключ сохранён. Провайдер: ${selection.provider}, модель: ${selection.model} (${source})`);
     }),
@@ -792,8 +794,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const chosen = await chooseLiveModel(current, 'Выбери доступную модель');
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
-      panel.setKey(current.key, current.provider, chosen.model);
-      void runReview(context, lastScanWasLastCommit, output, panel).catch((error: unknown) => {
+      panel.setKey(maskApiKey(current.key), current.provider, chosen.model);
+      const reviewController = new AbortController();
+      void runReview(context, lastScanWasLastCommit, output, panel, reviewController.signal).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         output.appendLine(`Error: ${message}`);
         void vscode.window.showErrorMessage(`CodeScout: ${message}`);
