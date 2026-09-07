@@ -52,7 +52,9 @@ export function uiBodyAttrs(prefs: UiPrefs): string {
   return `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
 }
 
-// Базовые токены: цвета ТОЛЬКО из --vscode-* (авто-тема наследует тему VS Code).
+// Базовые токены (режим auto): цвета ТОЛЬКО из --vscode-* — наследуют тему VS Code.
+// Контролы страниц ссылаются на --cs-*, а не на --vscode-* напрямую,
+// поэтому forced-тема light/dark переопределяет токены, а не фоны.
 export const CS_BASE_TOKENS = `:root {
   --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
   --cs-radius-1: 4px; --cs-radius-2: 6px;
@@ -61,6 +63,17 @@ export const CS_BASE_TOKENS = `:root {
   --cs-desc: var(--vscode-descriptionForeground);
   --cs-border: var(--vscode-panel-border);
   --cs-input-border: var(--vscode-input-border, var(--vscode-panel-border));
+  --cs-input-bg: var(--vscode-input-background);
+  --cs-input-fg: var(--vscode-input-foreground);
+  --cs-select-bg: var(--vscode-input-background);
+  --cs-select-fg: var(--vscode-input-foreground);
+  --cs-checkbox: var(--vscode-checkbox-background, var(--vscode-input-background));
+  --cs-chip-bg: var(--vscode-badge-background);
+  --cs-chip-fg: var(--vscode-badge-foreground);
+  --cs-card-bg: var(--vscode-editor-background);
+  --cs-card-border: var(--vscode-panel-border);
+  --cs-shadow: none;
+  --cs-list-hover: var(--vscode-list-hoverBackground);
   --cs-btn-bg: var(--vscode-button-background);
   --cs-btn-fg: var(--vscode-button-foreground);
   --cs-btn-hover: var(--vscode-button-hoverBackground);
@@ -82,17 +95,23 @@ const CS_THEME_PALETTE = `
 /* cs-theme-palette:start */
 body[data-theme="dark"] {
   --cs-fg: #d7dade; --cs-desc: #9aa0a6; --cs-border: #3a3d41; --cs-input-border: #3a3d41;
+  --cs-input-bg: #3b3d41; --cs-input-fg: #e7e9ea; --cs-select-bg: #3b3d41; --cs-select-fg: #e7e9ea;
+  --cs-checkbox: #3b3d41; --cs-chip-bg: #3a3d41; --cs-chip-fg: #d7dade;
+  --cs-card-bg: #25262b; --cs-card-border: #3a3d41; --cs-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); --cs-list-hover: #2a2d2e;
   --cs-btn-bg: #0e639c; --cs-btn-fg: #ffffff; --cs-btn-hover: #1177bb;
   --cs-btn2-bg: #3a3d41; --cs-btn2-fg: #d7dade; --cs-btn2-hover: #4a4e54;
   --cs-accent: #4fa1de; --cs-error: #f14c4c; --cs-warn: #cca700; --cs-pass: #75beff;
   --cs-code-bg: #1b1d21; --cs-editor-bg: #1e1f22;
 }
 body[data-theme="light"] {
-  --cs-fg: #1f2326; --cs-desc: #5a6068; --cs-border: #d0d3d6; --cs-input-border: #c8cbce;
+  --cs-fg: #1f2326; --cs-desc: #5a6068; --cs-border: #d0d3d6; --cs-input-border: #b9bcc0;
+  --cs-input-bg: #ffffff; --cs-input-fg: #1f2326; --cs-select-bg: #ffffff; --cs-select-fg: #1f2326;
+  --cs-checkbox: #ffffff; --cs-chip-bg: #e6e8ea; --cs-chip-fg: #1f2326;
+  --cs-card-bg: #ffffff; --cs-card-border: #d0d3d6; --cs-shadow: 0 1px 3px rgba(15, 20, 25, 0.14); --cs-list-hover: #e8eaec;
   --cs-btn-bg: #0067b8; --cs-btn-fg: #ffffff; --cs-btn-hover: #0279d3;
   --cs-btn2-bg: #e4e6e9; --cs-btn2-fg: #1f2326; --cs-btn2-hover: #d4d7db;
-  --cs-accent: #0067b8; --cs-error: #c72e2e; --cs-warn: #8a6d00; --cs-pass: #0b6cba;
-  --cs-code-bg: #f2f3f4; --cs-editor-bg: #ffffff;
+  --cs-accent: #0a64b4; --cs-error: #c72e2e; --cs-warn: #8a6d00; --cs-pass: #0b6cba;
+  --cs-code-bg: #f2f3f4; --cs-editor-bg: #f5f5f5;
 }
 body[data-accent="blue"] { --cs-accent: #3b82f6; }
 body[data-accent="purple"] { --cs-accent: #8b5cf6; }

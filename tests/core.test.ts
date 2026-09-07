@@ -18,7 +18,7 @@ import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collec
 import { buildReviewPrompt } from '../src/prompt-builder';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
-import type { UiPrefs } from '../extension/src/uiPrefs';
+import { uiTokensCss, type UiPrefs } from '../extension/src/uiPrefs';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';

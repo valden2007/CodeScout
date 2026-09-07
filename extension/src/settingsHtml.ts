@@ -87,14 +87,16 @@ body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--cs-editor-b
 .layout { display: flex; align-items: flex-start; gap: 0; }
 .sidebar { position: sticky; top: 0; flex: 0 0 200px; display: flex; flex-direction: column; gap: 2px; padding: var(--cs-space-3) var(--cs-space-2); border-right: 1px solid var(--cs-border); max-height: 100vh; overflow: auto; }
 .nav-link { display: flex; align-items: center; gap: var(--cs-space-2); padding: 7px 10px; border-radius: var(--cs-radius-1); color: var(--cs-fg); text-decoration: none; font-size: var(--cs-font-2); cursor: pointer; border-left: 3px solid transparent; }
-.nav-link:hover { background: var(--vscode-list-hoverBackground); }
+.nav-link:hover { background: var(--cs-list-hover); }
 .nav-link.active { background: color-mix(in srgb, var(--cs-accent) 14%, transparent); color: var(--cs-accent); font-weight: 600; border-left-color: var(--cs-accent); }
 .content { flex: 1 1 auto; min-width: 0; padding: var(--cs-space-3) var(--cs-space-4) 72px; }
-section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-border); border-radius: var(--cs-radius-2); scroll-margin-top: var(--cs-space-2); }
+section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-2); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); scroll-margin-top: var(--cs-space-2); }
 h2 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 6px; font-size: var(--cs-font-3); font-weight: 600; color: var(--cs-accent); }
 label { display: block; margin: 10px 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-desc); }
-input, select { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
-textarea { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: var(--cs-font-2); resize: vertical; }
+input, select { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; }
+select { color: var(--cs-select-fg); background: var(--cs-select-bg); }
+input[type="checkbox"] { accent-color: var(--cs-accent); }
+textarea { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; font-size: var(--cs-font-2); resize: vertical; }
 button { display: inline-flex; align-items: center; gap: var(--cs-space-2); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
 button:hover:not(:disabled) { background: var(--cs-btn-hover); }
 button:active:not(:disabled) { transform: translateY(1px); }
@@ -116,7 +118,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 button.is-dirty .dirty-dot { display: inline-block; }
 .about-line { display: flex; align-items: center; gap: var(--cs-space-2); margin: 6px 0; font-size: var(--cs-font-2); }
 .scope-chips { display: flex; flex-wrap: wrap; gap: var(--cs-space-1); margin-top: var(--cs-space-2); }
-.scope-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--cs-input-border); border-radius: 999px; padding: 1px var(--cs-space-2); font-size: var(--cs-font-1); font-family: var(--vscode-editor-font-family); }
+.scope-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--cs-input-border); border-radius: 999px; padding: 1px var(--cs-space-2); font-size: var(--cs-font-1); font-family: var(--vscode-editor-font-family); background: var(--cs-chip-bg); color: var(--cs-chip-fg); }
 .scope-chip button { display: inline-flex; padding: 0; border: none; background: transparent; color: var(--cs-desc); width: auto; flex: 0 0 auto; }
 .scope-chip button:hover { background: transparent; color: var(--cs-error); }
 .scope-warn { color: var(--cs-warn); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
