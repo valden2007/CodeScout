@@ -2540,6 +2540,63 @@ describe('v1.4b-4 appearance handles', () => {
   });
 });
 
+describe('v1.4b ui-apply fix + file picker', () => {
+  const lightState = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'light' as const, accentColor: 'blue' as const, uiDensity: 'compact' as const, uiFontSize: 's' as const, showConfidence: true, findingsSort: 'file' as const, reportTheme: 'light' as const };
+
+  it('uiTheme=light renders data-theme=light + the light palette in both pages', () => {
+    const center = buildSettingsHtml(lightState);
+    expect(center).toContain('data-theme="light"');
+    expect(center).toContain('data-accent="blue"');
+    expect(center).toContain('data-density="compact"');
+    expect(center).toContain('data-fontsize="s"');
+    expect(center).toContain('body[data-theme="light"]');
+    const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', { theme: 'light', accent: 'blue', density: 'compact', fontSize: 's', showConfidence: true, findingsSort: 'file', reportTheme: 'light' });
+    expect(panel).toContain('data-theme="light"');
+    expect(panel).toContain('body[data-theme="light"]');
+  });
+
+  it('saveAll awaits every config.update and re-renders only after; center subscribes to config', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    const saveAll = extension.slice(extension.indexOf("command === 'saveAll'"), extension.indexOf("command === 'openLink'"));
+    expect(saveAll).toContain('await config.update');
+    expect(saveAll).not.toMatch(/[^t] config\.update\(/);
+    expect(saveAll).toContain('await render(');
+    expect(extension).toContain('settingsConfigSubscription = vscode.workspace.onDidChangeConfiguration');
+    expect(extension).toContain('settingsConfigSubscription?.dispose()');
+    expect(extension).toContain("'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme'");
+  });
+
+  it('split/merge scope globs dedupe and preserve order', async () => {
+    const { splitScopeGlobs, mergeScopeGlobs } = await import('../extension/src/settingsHtml');
+    expect(splitScopeGlobs(' src/**, a.ts ,, src/** ')).toEqual(['src/**', 'a.ts']);
+    expect(mergeScopeGlobs('src/**', ['src/**', 'lib/**', ''])).toBe('src/**, lib/**');
+    expect(mergeScopeGlobs('', ['x/**'])).toBe('x/**');
+    expect(mergeScopeGlobs('a', ['a', 'b', 'b'])).toBe('a, b');
+  });
+
+  it('center renders the picker button, chips container, warn and the result listener', () => {
+    const center = buildSettingsHtml(lightState);
+    expect(center).toContain('id="pickScope"');
+    expect(center).toContain('codicon-folder-opened');
+    expect(center).toContain('Выбрать файлы/папки');
+    expect(center).toContain('id="scopeChips"');
+    expect(center).toContain('id="scopeWarn"');
+    expect(center).toContain("command: 'pickScope'");
+    expect(center).toContain("data.type !== 'scopePickResult'");
+    expect(center).toContain('вне workspace, не добавлено');
+    expect(center).toContain('codicon-close');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("command === 'pickScope'");
+    expect(extension).toContain('canSelectFiles: true');
+    expect(extension).toContain('canSelectFolders: true');
+    expect(extension).toContain('canSelectMany: true');
+    expect(extension).toContain("openLabel: 'Добавить в scope аудита'");
+    expect(extension).toContain('defaultUri: vscode.Uri.file(workspaceRoot)');
+    expect(extension).toContain('scopePickResult');
+    expect(extension).toContain('`${rel}/**`');
+  });
+});
+
 describe('H1.1.2 path traversal guards', () => {
   it('checks workspace prefix with separator and resolves symlinks via realpath', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');

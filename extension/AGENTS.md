@@ -246,6 +246,23 @@ pre-design now.
     honors showConfidence (hides % chip) and findingsSort (section/
     issue order). Panel re-renders on config change for all 7 keys
     (no Reload); saveAll writes them. Tests: 198.
+12. UI-apply fix + file picker (v1.4b-3/4 follow-up): ROOT CAUSE of
+    "appearance settings don't apply" was the fix-batch-7 origin
+    guard — the host onDidReceiveMessage callback has NO second
+    `event`/origin arg, so `event?.origin !== 'vscode-webview'` was
+    always true and dropped EVERY settings message (save never
+    re-rendered, button stuck "Сохраняю…"). Replaced with a
+    message-shape guard (typeof command === 'string' +
+    KNOWN_SETTINGS_COMMANDS). Center now also subscribes to
+    onDidChangeConfiguration for all ui/audit/project keys and
+    re-renders (disposed on panel dispose). File picker: 📁 Проект
+    has "Выбрать файлы/папки" (codicon-folder-opened) → command
+    'pickScope' → showOpenDialog(many, defaultUri=workspace);
+    folders→"rel/**", files→"rel", outside→inline warn; result
+    posted back as {type:'scopePickResult'} and merged into the
+    auditScope FIELD (source of truth) with dedupe; chips under the
+    field (codicon-close removes a glob) and mark the shared save
+    button dirty. Tests: 202.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

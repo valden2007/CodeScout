@@ -50,6 +50,14 @@ function icon(name: string): string {
   return `<i class="codicon codicon-${name}" aria-hidden="true"></i>`;
 }
 
+export function splitScopeGlobs(value: string): string[] {
+  return [...new Set((value ?? '').split(',').map((glob) => glob.trim()).filter(Boolean))];
+}
+
+export function mergeScopeGlobs(existing: string, added: string[]): string {
+  return [...new Set([...splitScopeGlobs(existing), ...added.map((glob) => glob.trim()).filter(Boolean)])].join(', ');
+}
+
 export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets): string {
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
@@ -172,8 +180,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <label for="auditScope">Scope аудита (glob через запятую, пусто = все)</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml(state.auditScope)}">
   <div class="row">
+    <button id="pickScope" type="button" class="secondary">${icon('folder-opened')}<span>Выбрать файлы/папки</span></button>
     <button id="openRules" type="button" class="secondary">${icon('file')}<span>Открыть rules.md</span></button>
   </div>
+  <div class="scope-chips" id="scopeChips"></div>
+  <p class="scope-warn hidden" id="scopeWarn"></p>
   <p class="hint">rules.md подмешивается в каждый промт. Документация докачивается (таймаут 5с, oversized усекается с сохранением начала), кэшируется в .codescout/docs-cache.json на 24ч. Scope ограничивает полный аудит; ПКМ-проверка его игнорирует.</p>
 </section>
 <section id="sec-appearance">
@@ -335,6 +346,53 @@ saveAllBtn.addEventListener('click', () => {
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
+document.getElementById('pickScope').addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
+const scopeChips = document.getElementById('scopeChips');
+const scopeWarn = document.getElementById('scopeWarn');
+function splitGlobs(value) {
+  const seen = [];
+  for (const part of String(value || '').split(',')) { const g = part.trim(); if (g && !seen.includes(g)) seen.push(g); }
+  return seen;
+}
+function renderChips() {
+  if (!scopeChips) return;
+  scopeChips.textContent = '';
+  for (const glob of splitGlobs(auditScopeInput.value)) {
+    const chip = document.createElement('span');
+    chip.className = 'scope-chip';
+    const text = document.createElement('span');
+    text.textContent = glob;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.title = 'Убрать из scope';
+    remove.innerHTML = '<i class="codicon codicon-close" aria-hidden="true"></i>';
+    remove.addEventListener('click', () => {
+      auditScopeInput.value = splitGlobs(auditScopeInput.value).filter((g) => g !== glob).join(', ');
+      renderChips();
+      refreshDirty();
+    });
+    chip.appendChild(text);
+    chip.appendChild(remove);
+    scopeChips.appendChild(chip);
+  }
+}
+auditScopeInput.addEventListener('input', renderChips);
+window.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type !== 'scopePickResult') return;
+  const merged = [];
+  for (const g of [...splitGlobs(auditScopeInput.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }
+  auditScopeInput.value = merged.join(', ');
+  renderChips();
+  refreshDirty();
+  if (scopeWarn) {
+    const outside = data.outside || [];
+    if (data.noWorkspace) { scopeWarn.textContent = 'Нет открытой папки — выбор недоступен'; scopeWarn.classList.remove('hidden'); }
+    else if (outside.length) { scopeWarn.textContent = 'вне workspace, не добавлено: ' + outside.join(', '); scopeWarn.classList.remove('hidden'); }
+    else { scopeWarn.textContent = ''; scopeWarn.classList.add('hidden'); }
+  }
+});
+renderChips();
 document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
   btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
 });

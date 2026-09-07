@@ -2096,8 +2096,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <label for="auditScope">Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml2(state.auditScope)}">
   <div class="row">
+    <button id="pickScope" type="button" class="secondary">${icon2("folder-opened")}<span>\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438</span></button>
     <button id="openRules" type="button" class="secondary">${icon2("file")}<span>\u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</span></button>
   </div>
+  <div class="scope-chips" id="scopeChips"></div>
+  <p class="scope-warn hidden" id="scopeWarn"></p>
   <p class="hint">rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.</p>
 </section>
 <section id="sec-appearance">
@@ -2259,6 +2262,53 @@ saveAllBtn.addEventListener('click', () => {
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
+document.getElementById('pickScope').addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
+const scopeChips = document.getElementById('scopeChips');
+const scopeWarn = document.getElementById('scopeWarn');
+function splitGlobs(value) {
+  const seen = [];
+  for (const part of String(value || '').split(',')) { const g = part.trim(); if (g && !seen.includes(g)) seen.push(g); }
+  return seen;
+}
+function renderChips() {
+  if (!scopeChips) return;
+  scopeChips.textContent = '';
+  for (const glob of splitGlobs(auditScopeInput.value)) {
+    const chip = document.createElement('span');
+    chip.className = 'scope-chip';
+    const text = document.createElement('span');
+    text.textContent = glob;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.title = '\u0423\u0431\u0440\u0430\u0442\u044C \u0438\u0437 scope';
+    remove.innerHTML = '<i class="codicon codicon-close" aria-hidden="true"></i>';
+    remove.addEventListener('click', () => {
+      auditScopeInput.value = splitGlobs(auditScopeInput.value).filter((g) => g !== glob).join(', ');
+      renderChips();
+      refreshDirty();
+    });
+    chip.appendChild(text);
+    chip.appendChild(remove);
+    scopeChips.appendChild(chip);
+  }
+}
+auditScopeInput.addEventListener('input', renderChips);
+window.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type !== 'scopePickResult') return;
+  const merged = [];
+  for (const g of [...splitGlobs(auditScopeInput.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }
+  auditScopeInput.value = merged.join(', ');
+  renderChips();
+  refreshDirty();
+  if (scopeWarn) {
+    const outside = data.outside || [];
+    if (data.noWorkspace) { scopeWarn.textContent = '\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u043F\u0430\u043F\u043A\u0438 \u2014 \u0432\u044B\u0431\u043E\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D'; scopeWarn.classList.remove('hidden'); }
+    else if (outside.length) { scopeWarn.textContent = '\u0432\u043D\u0435 workspace, \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E: ' + outside.join(', '); scopeWarn.classList.remove('hidden'); }
+    else { scopeWarn.textContent = ''; scopeWarn.classList.add('hidden'); }
+  }
+});
+renderChips();
 document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
   btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
 });
@@ -2293,7 +2343,7 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -2837,6 +2887,14 @@ function readUiPrefs() {
   });
 }
 var settingsPanel;
+var settingsConfigSubscription;
+async function fileIsDirectory(uri) {
+  try {
+    return (await vscode2.workspace.fs.stat(uri)).type === vscode2.FileType.Directory;
+  } catch {
+    return false;
+  }
+}
 async function readSettingsState(context) {
   const selection = await resolveExtensionSelection(context);
   const key = await context.secrets.get(SECRET_KEY);
@@ -2933,12 +2991,39 @@ function activate(context) {
       if (!settingsPanel) {
         settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438", vscode2.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => {
+          settingsConfigSubscription?.dispose();
+          settingsConfigSubscription = void 0;
           settingsPanel = void 0;
         });
-        settingsPanel.webview.onDidReceiveMessage((message, event) => {
-          if (event?.origin !== "vscode-webview") return;
+        settingsConfigSubscription = vscode2.workspace.onDidChangeConfiguration((event) => {
+          const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "reportLanguage", "showAuditBanner"];
+          if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
+          void render();
+        });
+        settingsPanel.webview.onDidReceiveMessage((message) => {
+          if (!message || typeof message.command !== "string") return;
           if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
+            if (message.command === "pickScope") {
+              const workspaceRoot = getWorkspaceRoot();
+              if (!workspaceRoot) {
+                await settingsPanel?.webview.postMessage({ type: "scopePickResult", globs: [], outside: [], noWorkspace: true });
+                return;
+              }
+              const picked = await vscode2.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode2.Uri.file(workspaceRoot), openLabel: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0432 scope \u0430\u0443\u0434\u0438\u0442\u0430" });
+              const globs = [];
+              const outside = [];
+              for (const uri of picked ?? []) {
+                const rel = (0, import_node_path4.relative)(workspaceRoot, (0, import_node_path4.resolve)(uri.fsPath)).replaceAll("\\", "/");
+                if (!rel || rel.startsWith("..") || (0, import_node_path4.isAbsolute)(rel)) {
+                  outside.push(uri.fsPath);
+                  continue;
+                }
+                globs.push(uri.fsPath === (0, import_node_path4.resolve)(workspaceRoot) || await fileIsDirectory(uri) ? `${rel}/**` : rel);
+              }
+              await settingsPanel?.webview.postMessage({ type: "scopePickResult", globs, outside });
+              return;
+            }
             if (message.command === "saveKeyProvider") {
               const status = await saveKeyProvider(context, message);
               await syncKeyStatus();

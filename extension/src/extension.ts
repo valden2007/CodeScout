@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { abortError, createProvider, isAbortError, RetryEvent, sleep } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
@@ -24,7 +24,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -610,6 +610,15 @@ function readUiPrefs(): UiPrefs {
 }
 
 let settingsPanel: vscode.WebviewPanel | undefined;
+let settingsConfigSubscription: vscode.Disposable | undefined;
+
+async function fileIsDirectory(uri: vscode.Uri): Promise<boolean> {
+  try {
+    return (await vscode.workspace.fs.stat(uri)).type === vscode.FileType.Directory;
+  } catch {
+    return false;
+  }
+}
 
 async function readSettingsState(context: vscode.ExtensionContext): Promise<SettingsState> {
   const selection = await resolveExtensionSelection(context);
@@ -710,11 +719,34 @@ export function activate(context: vscode.ExtensionContext): void {
       };
       if (!settingsPanel) {
         settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
-        settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
-        settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage, event: unknown) => {
-          if ((event as { origin?: string })?.origin !== 'vscode-webview') return;
+        settingsPanel.onDidDispose(() => {
+          settingsConfigSubscription?.dispose();
+          settingsConfigSubscription = undefined;
+          settingsPanel = undefined;
+        });
+        settingsConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'reportLanguage', 'showAuditBanner'];
+          if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
+          void render();
+        });
+        settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage) => {
+          if (!message || typeof message.command !== 'string') return;
           if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
+            if (message.command === 'pickScope') {
+              const workspaceRoot = getWorkspaceRoot();
+              if (!workspaceRoot) { await settingsPanel?.webview.postMessage({ type: 'scopePickResult', globs: [], outside: [], noWorkspace: true }); return; }
+              const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: 'Добавить в scope аудита' });
+              const globs: string[] = [];
+              const outside: string[] = [];
+              for (const uri of picked ?? []) {
+                const rel = relative(workspaceRoot, resolve(uri.fsPath)).replaceAll('\\', '/');
+                if (!rel || rel.startsWith('..') || isAbsolute(rel)) { outside.push(uri.fsPath); continue; }
+                globs.push(uri.fsPath === resolve(workspaceRoot) || (await fileIsDirectory(uri)) ? `${rel}/**` : rel);
+              }
+              await settingsPanel?.webview.postMessage({ type: 'scopePickResult', globs, outside });
+              return;
+            }
             if (message.command === 'saveKeyProvider') {
               const status = await saveKeyProvider(context, message);
               await syncKeyStatus();
