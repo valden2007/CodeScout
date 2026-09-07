@@ -232,6 +232,47 @@
           "type": "boolean",
           "default": true,
           "description": "Показывать welcome-баннер полного аудита при старте окна."
+        },
+        "codescout.uiTheme": {
+          "type": "string",
+          "enum": ["auto", "dark", "light"],
+          "default": "auto",
+          "description": "Тема панелей CodeScout. auto — цвета из --vscode-* (тема VS Code); dark/light — фиксированная палитра страниц расширения."
+        },
+        "codescout.accentColor": {
+          "type": "string",
+          "enum": ["auto", "blue", "purple", "green", "orange", "pink"],
+          "default": "auto",
+          "description": "Акцентный цвет (--cs-accent). auto — кнопка/ссылка VS Code."
+        },
+        "codescout.uiDensity": {
+          "type": "string",
+          "enum": ["compact", "standard"],
+          "default": "standard",
+          "description": "Плотность отступов (--cs-space-*)."
+        },
+        "codescout.uiFontSize": {
+          "type": "string",
+          "enum": ["s", "m", "l"],
+          "default": "m",
+          "description": "Масштаб шрифтов (--cs-font-*)."
+        },
+        "codescout.showConfidence": {
+          "type": "boolean",
+          "default": true,
+          "description": "Показывать процент уверенности модели у находок."
+        },
+        "codescout.findingsSort": {
+          "type": "string",
+          "enum": ["severity", "file", "line"],
+          "default": "severity",
+          "description": "Порядок находок и секций в отчёте."
+        },
+        "codescout.reportTheme": {
+          "type": "string",
+          "enum": ["auto", "dark", "light"],
+          "default": "auto",
+          "description": "Тема экспортируемого HTML-отчёта (применяется и к превью)."
         }
       }
     }

@@ -1,0 +1,116 @@
+export type UiTheme = 'auto' | 'dark' | 'light';
+export type AccentColor = 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
+export type UiDensity = 'compact' | 'standard';
+export type UiFontSize = 's' | 'm' | 'l';
+export type FindingsSort = 'severity' | 'file' | 'line';
+
+export interface UiPrefs {
+  theme: UiTheme;
+  accent: AccentColor;
+  density: UiDensity;
+  fontSize: UiFontSize;
+  showConfidence: boolean;
+  findingsSort: FindingsSort;
+  reportTheme: UiTheme;
+}
+
+export const DEFAULT_UI_PREFS: UiPrefs = {
+  theme: 'auto',
+  accent: 'auto',
+  density: 'standard',
+  fontSize: 'm',
+  showConfidence: true,
+  findingsSort: 'severity',
+  reportTheme: 'auto'
+};
+
+const THEME_VALUES: UiTheme[] = ['auto', 'dark', 'light'];
+const ACCENT_VALUES: AccentColor[] = ['auto', 'blue', 'purple', 'green', 'orange', 'pink'];
+const DENSITY_VALUES: UiDensity[] = ['compact', 'standard'];
+const FONTSIZE_VALUES: UiFontSize[] = ['s', 'm', 'l'];
+const SORT_VALUES: FindingsSort[] = ['severity', 'file', 'line'];
+
+function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+export function normalizeUiPrefs(input: Partial<UiPrefs> | undefined): UiPrefs {
+  const p = input ?? {};
+  return {
+    theme: pick(p.theme, THEME_VALUES, DEFAULT_UI_PREFS.theme),
+    accent: pick(p.accent, ACCENT_VALUES, DEFAULT_UI_PREFS.accent),
+    density: pick(p.density, DENSITY_VALUES, DEFAULT_UI_PREFS.density),
+    fontSize: pick(p.fontSize, FONTSIZE_VALUES, DEFAULT_UI_PREFS.fontSize),
+    showConfidence: p.showConfidence !== false,
+    findingsSort: pick(p.findingsSort, SORT_VALUES, DEFAULT_UI_PREFS.findingsSort),
+    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme)
+  };
+}
+
+export function uiBodyAttrs(prefs: UiPrefs): string {
+  const p = normalizeUiPrefs(prefs);
+  return `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
+}
+
+// Базовые токены: цвета ТОЛЬКО из --vscode-* (авто-тема наследует тему VS Code).
+export const CS_BASE_TOKENS = `:root {
+  --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
+  --cs-radius-1: 4px; --cs-radius-2: 6px;
+  --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
+  --cs-fg: var(--vscode-foreground);
+  --cs-desc: var(--vscode-descriptionForeground);
+  --cs-border: var(--vscode-panel-border);
+  --cs-input-border: var(--vscode-input-border, var(--vscode-panel-border));
+  --cs-btn-bg: var(--vscode-button-background);
+  --cs-btn-fg: var(--vscode-button-foreground);
+  --cs-btn-hover: var(--vscode-button-hoverBackground);
+  --cs-btn2-bg: var(--vscode-button-secondaryBackground);
+  --cs-btn2-fg: var(--vscode-button-secondaryForeground);
+  --cs-btn2-hover: var(--vscode-button-secondaryHoverBackground);
+  --cs-accent: var(--vscode-textLink-foreground);
+  --cs-error: var(--vscode-errorForeground);
+  --cs-warn: var(--vscode-editorWarning-foreground);
+  --cs-pass: var(--vscode-testing-iconPassed);
+  --cs-code-bg: var(--vscode-textCodeBlock-background);
+  --cs-editor-bg: var(--vscode-editor-background);
+}`;
+
+// Палитра dark/light и акценты — единственное место, где допустимы #hex
+// (фиксированная тема наших страниц, когда пользователь выбрал не auto).
+// Контракт «нет #hex» действует вне блока cs-theme-palette.
+const CS_THEME_PALETTE = `
+/* cs-theme-palette:start */
+body[data-theme="dark"] {
+  --cs-fg: #d7dade; --cs-desc: #9aa0a6; --cs-border: #3a3d41; --cs-input-border: #3a3d41;
+  --cs-btn-bg: #0e639c; --cs-btn-fg: #ffffff; --cs-btn-hover: #1177bb;
+  --cs-btn2-bg: #3a3d41; --cs-btn2-fg: #d7dade; --cs-btn2-hover: #4a4e54;
+  --cs-accent: #4fa1de; --cs-error: #f14c4c; --cs-warn: #cca700; --cs-pass: #75beff;
+  --cs-code-bg: #1b1d21; --cs-editor-bg: #1e1f22;
+}
+body[data-theme="light"] {
+  --cs-fg: #1f2326; --cs-desc: #5a6068; --cs-border: #d0d3d6; --cs-input-border: #c8cbce;
+  --cs-btn-bg: #0067b8; --cs-btn-fg: #ffffff; --cs-btn-hover: #0279d3;
+  --cs-btn2-bg: #e4e6e9; --cs-btn2-fg: #1f2326; --cs-btn2-hover: #d4d7db;
+  --cs-accent: #0067b8; --cs-error: #c72e2e; --cs-warn: #8a6d00; --cs-pass: #0b6cba;
+  --cs-code-bg: #f2f3f4; --cs-editor-bg: #ffffff;
+}
+body[data-accent="blue"] { --cs-accent: #3b82f6; }
+body[data-accent="purple"] { --cs-accent: #8b5cf6; }
+body[data-accent="green"] { --cs-accent: #22a06b; }
+body[data-accent="orange"] { --cs-accent: #e07b39; }
+body[data-accent="pink"] { --cs-accent: #db4d8f; }
+/* cs-theme-palette:end */
+`;
+
+const CS_DENSITY = `
+body[data-density="compact"] { --cs-space-1: 3px; --cs-space-2: 6px; --cs-space-3: 9px; --cs-space-4: 12px; }
+`;
+
+const CS_FONTSIZE = `
+body[data-fontsize="s"] { --cs-font-1: 10px; --cs-font-2: 11px; --cs-font-3: 12px; --cs-font-4: 14px; }
+body[data-fontsize="l"] { --cs-font-1: 12px; --cs-font-2: 13px; --cs-font-3: 15px; --cs-font-4: 17px; }
+`;
+
+export function uiTokensCss(): string {
+  return `${CS_BASE_TOKENS}\n${CS_THEME_PALETTE}\n${CS_DENSITY}\n${CS_FONTSIZE}`;
+}

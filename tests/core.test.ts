@@ -18,6 +18,7 @@ import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collec
 import { buildReviewPrompt } from '../src/prompt-builder';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
+import type { UiPrefs } from '../extension/src/uiPrefs';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -545,7 +546,7 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const };
   it('renders the sidebar center with all five sections', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('class="sidebar"');
@@ -883,7 +884,7 @@ describe('E1.2e custom review focus', () => {
 });
 
 describe('E1.2e rules and doc links via settings', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const };
 
   it('appends project doc links to the audit system prompt', () => {
     const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
@@ -1239,7 +1240,7 @@ describe('E1.3f maxLines setting and chunking', () => {
   });
 
   it('settings page renders the maxLines field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     expect(html).toContain('id="maxLines"');
     expect(html).toContain('Макс. строк на файл (0 = без лимита)');
     expect(html).toContain('value="0"');
@@ -1275,8 +1276,9 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("private autoResumeEnabled = false;");
     expect(panel).toContain("get<boolean>('autoResume', false)");
-    expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
-    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce)');
+    expect(panel).toContain("'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes'");
+    expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -1306,11 +1308,11 @@ describe('E1.3j settings button + auto-audit indicator', () => {
   it('badge refreshes on settings save without reload', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('private refreshAutoResumeSettings(): void');
-    expect(panel).toContain("event.affectsConfiguration('codescout.autoResumeMaxAttempts')");
-    expect(panel).toContain("event.affectsConfiguration('codescout.autoResumeMaxMinutes')");
+    expect(panel).toContain("'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme'");
+    expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
     const listener = panel.slice(panel.indexOf('onDidChangeConfiguration'));
-    expect(listener.slice(0, 420)).toContain('this.refreshAutoResumeSettings()');
-    expect(listener.slice(0, 460)).toContain('this.render()');
+    expect(listener.slice(0, 520)).toContain('this.refreshAutoResumeSettings()');
+    expect(listener.slice(0, 560)).toContain('this.render()');
   });
 
   it('badge text reflects the configured limits (0 = unlimited)', async () => {
@@ -1334,7 +1336,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
   });
 
   it('settings page renders the two limit fields wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     expect(html).toContain('id="autoResumeMaxAttempts"');
     expect(html).toContain('id="autoResumeMaxMinutes"');
     expect(html).toContain('Авто-догон: макс. попыток (0 = без лимита)');
@@ -1464,7 +1466,7 @@ describe('E1.3b-settings configurable RAG limits', () => {
   });
 
   it('renders numeric limit fields in the project section with dirty save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     expect(html).toContain('id="docMaxKb"');
     expect(html).toContain('id="docMaxLinks"');
     expect(html).toContain('Макс. размер дока');
@@ -1680,7 +1682,7 @@ describe('G3 fix batch panel', () => {
 
 describe('G4 fix batch regressions and security layer', () => {
   it('clampInt clamps both directions and repairs a bad fallback', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     const source = html.slice(html.indexOf('function clampInt'), html.indexOf('}', html.indexOf('Math.min(max, Math.max(min, Number(fallback)))')) + 1);
     const clampInt = new Function(`return (${source.replace('function clampInt', 'function')})`)() as (v: unknown, min: number, max: number, f: string) => string;
     expect(clampInt('99999', 1, 2048, '50')).toBe('2048');
@@ -1975,7 +1977,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     expect(html).toContain('id="autoResume"');
     expect(html).toContain('codicon-robot'); expect(html).toContain('Автономный режим (авто-догон)');
     expect(html).toContain('checked');
@@ -2105,7 +2107,7 @@ describe('G6 fix batch security and robustness', () => {
   });
 
   it('settings webview has a nonce-only CSP and a single nonce-bearing script (smoke)', () => {
-    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
+    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const };
     const html = buildSettingsHtml(state, '', 'ok', 'abc123nonce');
     expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'nonce-abc123nonce\'; script-src \'nonce-abc123nonce\';">');
     expect(html).toContain('<script nonce="abc123nonce">');
@@ -2334,7 +2336,7 @@ describe('G7 fix batch security and robustness', () => {
 });
 
 describe('v1.4b settings center with sidebar', () => {
-  const centerState = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' };
+  const centerState = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const };
 
   it('sidebar lists exactly the five sections and each has a matching anchor', () => {
     const html = buildSettingsHtml(centerState);
@@ -2422,12 +2424,12 @@ describe('v1.4b-2 design system (codicons + tokens)', () => {
   it('no emoji anywhere in the default panel or center markup', () => {
     const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, assets, 'n1');
     expect(EMOJI.test(panel)).toBe(false);
-    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'n2', '', assets);
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const }, '', 'ok', 'n2', '', assets);
     expect(EMOJI.test(center)).toBe(false);
   });
 
   it('center sidebar sections carry their codicons', () => {
-    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' });
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const });
     expect(center).toContain('codicon-key');
     expect(center).toContain('codicon-sync');
     expect(center).toContain('codicon-folder');
@@ -2443,18 +2445,22 @@ describe('v1.4b-2 design system (codicons + tokens)', () => {
     expect(panel).toContain('<link rel="stylesheet" href="vscode-webview://abc/media/codicon.css">');
     expect(panel).toContain('<style nonce="nn">');
     expect(panel).toContain('<script nonce="nn">');
-    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'nn', '', assets);
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const }, '', 'ok', 'nn', '', assets);
     expect(center).toContain('font-src vscode-webview://abc;');
     expect(center).toContain('style-src \'nonce-nn\' vscode-webview://abc;');
   });
 
-  it('no #hex colors in the inline CSS of either page', () => {
+  it('no #hex colors outside the delimited theme-palette block', () => {
     const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, assets, 'nn');
-    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'nn', '', assets);
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const }, '', 'ok', 'nn', '', assets);
     for (const page of [panel, center]) {
-      const css = page.slice(page.indexOf('<style'), page.indexOf('</style>'));
+      let css = page.slice(page.indexOf('<style'), page.indexOf('</style>'));
+      css = css.replace(/\/\* cs-theme-palette:start \*\/[\s\S]*?\/\* cs-theme-palette:end \*\//g, '');
       expect(/#[0-9a-fA-F]{3,8}\b/.test(css)).toBe(false);
     }
+    // the palette block itself is present and carries the fixed hex colors
+    expect(panel).toContain('cs-theme-palette:start');
+    expect(/body\[data-theme="dark"\][\s\S]*?#[0-9a-fA-F]{6}/.test(panel)).toBe(true);
   });
 
   it('codicon assets live in media/ and are packaged into the vsix', () => {
@@ -2464,6 +2470,71 @@ describe('v1.4b-2 design system (codicons + tokens)', () => {
     expect(ignore).not.toMatch(/media/);
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('@vscode/codicons');
+  });
+});
+
+describe('v1.4b-4 appearance handles', () => {
+  const base: ReviewIssue[] = [
+    { file: 'b.ts', line: 5, category: 'bug', severity: 'low', description: 'x', confidence: 0.42 },
+    { file: 'a.ts', line: 9, category: 'bug', severity: 'critical', description: 'y', confidence: 0.9 }
+  ];
+  const stats = { files: 2, seconds: 1, critical: 1, medium: 0, low: 1 };
+  const prefs = (over: Partial<UiPrefs>) => ({ theme: 'auto', accent: 'auto', density: 'standard', fontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', ...over }) as UiPrefs;
+
+  it('defaults render the current look (auto theme, standard density, m font, confidence shown)', () => {
+    const html = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', undefined);
+    expect(html).toContain('data-theme="auto"');
+    expect(html).toContain('data-density="standard"');
+    expect(html).toContain('data-fontsize="m"');
+    expect(html).toContain('data-accent="auto"');
+    expect(html).toContain('data-report-theme="auto"');
+    expect(html).toContain('class="confidence"');
+    expect(html).toContain('42%');
+  });
+
+  it('theme/accent/density/fontsize become body data-attributes', () => {
+    const html = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ theme: 'dark', accent: 'purple', density: 'compact', fontSize: 'l', reportTheme: 'light' }));
+    expect(html).toContain('data-theme="dark"');
+    expect(html).toContain('data-accent="purple"');
+    expect(html).toContain('data-density="compact"');
+    expect(html).toContain('data-fontsize="l"');
+    expect(html).toContain('data-report-theme="light"');
+  });
+
+  it('showConfidence=false hides the % chip', () => {
+    const html = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ showConfidence: false }));
+    expect(html).not.toContain('class="confidence"');
+    expect(html).not.toContain('42%');
+  });
+
+  it('findingsSort reorders sections (severity vs file vs line)', () => {
+    const bySeverity = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ findingsSort: 'severity' }));
+    const byFile = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ findingsSort: 'file' }));
+    expect(bySeverity.indexOf('a.ts')).toBeLessThan(bySeverity.indexOf('b.ts'));
+    expect(byFile.indexOf('a.ts')).toBeLessThan(byFile.indexOf('b.ts'));
+    const byLine = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ findingsSort: 'line' }));
+    expect(byLine.indexOf('b.ts')).toBeLessThan(byLine.indexOf('a.ts'));
+  });
+
+  it('center exposes all seven appearance controls', () => {
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'dark' as const, accentColor: 'green' as const, uiDensity: 'compact' as const, uiFontSize: 'l' as const, showConfidence: false, findingsSort: 'line' as const, reportTheme: 'light' as const });
+    for (const id of ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'findingsSort', 'reportTheme', 'showConfidence']) expect(center).toContain(`id="${id}"`);
+    expect(center).toContain('data-theme="dark"');
+    expect(center).toContain('data-accent="green"');
+    expect(center).toContain('data-density="compact"');
+    expect(center).toContain('data-fontsize="l"');
+    expect(center).toContain('data-report-theme="light"');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    for (const key of ['codescout.uiTheme', 'codescout.accentColor', 'codescout.uiDensity', 'codescout.uiFontSize', 'codescout.showConfidence', 'codescout.findingsSort', 'codescout.reportTheme']) expect(manifest).toContain(key);
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    for (const key of ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme']) expect(extension).toContain(`update('${key}'`);
+  });
+
+  it('normalizeUiPrefs clamps junk to defaults', async () => {
+    const { normalizeUiPrefs, DEFAULT_UI_PREFS } = await import('../extension/src/uiPrefs');
+    expect(normalizeUiPrefs({ theme: 'neon', accent: 'chartreuse', findingsSort: 'chaos' } as never)).toEqual(DEFAULT_UI_PREFS);
+    expect(normalizeUiPrefs({ showConfidence: false }).showConfidence).toBe(false);
+    expect(normalizeUiPrefs(undefined).density).toBe('standard');
   });
 });
 

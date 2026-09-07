@@ -233,6 +233,19 @@ pre-design now.
     Shared --cs-* token block (spacing 4/8/12/16, radius 4/6, fonts 11/12/13/15,
     colors only from --vscode-*) in both pages — no #hex in inline CSS.
     autoResumeBadgeText lost its 🤖 prefix (icon now in markup). Tests: 192.
+11. Appearance handles (v1.4b-4): src/uiPrefs.ts — UiPrefs +
+    normalizeUiPrefs (clamps junk to defaults) + uiBodyAttrs +
+    uiTokensCss (shared --cs-* base + density/fontsize/accent + a
+    delimited /* cs-theme-palette */ block that is the ONLY place
+    #hex is allowed). 7 settings: uiTheme auto|dark|light,
+    accentColor auto|blue|purple|green|orange|pink, uiDensity
+    compact|standard, uiFontSize s|m|l, showConfidence (bool),
+    findingsSort severity|file|line, reportTheme auto|dark|light
+    (export theme, applied to preview via data-report-theme). Panel
+    and center render data-* attrs + shared tokens; buildReportHtml
+    honors showConfidence (hides % chip) and findingsSort (section/
+    issue order). Panel re-renders on config change for all 7 keys
+    (no Reload); saveAll writes them. Tests: 198.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

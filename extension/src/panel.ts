@@ -5,6 +5,7 @@ import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets } from './reportHtml';
+import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
@@ -70,6 +71,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private autoResumeEnabled = false;
   private autoResumeMaxAttempts = 0;
   private autoResumeMaxMinutes = 0;
+  private uiPrefs: UiPrefs = DEFAULT_UI_PREFS;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -81,6 +83,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.autoResumeEnabled = config.get<boolean>('autoResume', false);
     this.autoResumeMaxAttempts = clampSetting(config.get<number>('autoResumeMaxAttempts'), 1000);
     this.autoResumeMaxMinutes = clampSetting(config.get<number>('autoResumeMaxMinutes'), 10000);
+    this.uiPrefs = normalizeUiPrefs({
+      theme: config.get<string>('uiTheme', 'auto') as UiPrefs['theme'],
+      accent: config.get<string>('accentColor', 'auto') as UiPrefs['accent'],
+      density: config.get<string>('uiDensity', 'standard') as UiPrefs['density'],
+      fontSize: config.get<string>('uiFontSize', 'm') as UiPrefs['fontSize'],
+      showConfidence: config.get<boolean>('showConfidence', true),
+      findingsSort: config.get<string>('findingsSort', 'severity') as UiPrefs['findingsSort'],
+      reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme']
+    });
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -96,7 +107,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     this.refreshAutoResumeSettings();
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event.affectsConfiguration('codescout.autoResume') && !event.affectsConfiguration('codescout.autoResumeMaxAttempts') && !event.affectsConfiguration('codescout.autoResumeMaxMinutes')) return;
+      const watched = ['autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme'];
+      if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
       this.refreshAutoResumeSettings();
       this.render();
     });
@@ -307,7 +319,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     };
     const nonce = randomBytes(16).toString('hex');
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs);
   }
 }

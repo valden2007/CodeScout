@@ -15,6 +15,7 @@ import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, autoResumeBadgeText, autoResumeDecision, autoResumeLimitFromSetting, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
+import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
 
 const SECRET_KEY = 'codescout.apiKey';
@@ -562,6 +563,13 @@ interface SettingsMessage {
   auditScope?: string;
   auditPasses?: number;
   maxFiles?: number;
+  uiTheme?: string;
+  accentColor?: string;
+  uiDensity?: string;
+  uiFontSize?: string;
+  findingsSort?: string;
+  reportTheme?: string;
+  showConfidence?: boolean;
   url?: string;
 }
 
@@ -588,6 +596,19 @@ function auditBannerEnabled(): boolean {
   return vscode.workspace.getConfiguration('codescout').get<boolean>('showAuditBanner', true);
 }
 
+function readUiPrefs(): UiPrefs {
+  const config = vscode.workspace.getConfiguration('codescout');
+  return normalizeUiPrefs({
+    theme: config.get<string>('uiTheme', 'auto') as UiPrefs['theme'],
+    accent: config.get<string>('accentColor', 'auto') as UiPrefs['accent'],
+    density: config.get<string>('uiDensity', 'standard') as UiPrefs['density'],
+    fontSize: config.get<string>('uiFontSize', 'm') as UiPrefs['fontSize'],
+    showConfidence: config.get<boolean>('showConfidence', true),
+    findingsSort: config.get<string>('findingsSort', 'severity') as UiPrefs['findingsSort'],
+    reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme']
+  });
+}
+
 let settingsPanel: vscode.WebviewPanel | undefined;
 
 async function readSettingsState(context: vscode.ExtensionContext): Promise<SettingsState> {
@@ -611,7 +632,14 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('autoResumeMaxMinutes'), 10000),
     auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? '',
     auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses')),
-    version: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0')
+    version: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
+    uiTheme: readUiPrefs().theme,
+    accentColor: readUiPrefs().accent,
+    uiDensity: readUiPrefs().density,
+    uiFontSize: readUiPrefs().fontSize,
+    showConfidence: readUiPrefs().showConfidence,
+    findingsSort: readUiPrefs().findingsSort,
+    reportTheme: readUiPrefs().reportTheme
   };
 }
 
@@ -748,6 +776,15 @@ export function activate(context: vscode.ExtensionContext): void {
             const auditPasses = auditPassesFromSetting(message.auditPasses);
             const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1000);
             const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 10000);
+            const ui = normalizeUiPrefs({
+              theme: message.uiTheme as UiPrefs['theme'],
+              accent: message.accentColor as UiPrefs['accent'],
+              density: message.uiDensity as UiPrefs['density'],
+              fontSize: message.uiFontSize as UiPrefs['fontSize'],
+              showConfidence: message.showConfidence !== false,
+              findingsSort: message.findingsSort as UiPrefs['findingsSort'],
+              reportTheme: message.reportTheme as UiPrefs['reportTheme']
+            });
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
             await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
@@ -758,7 +795,14 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global);
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
-            parts.push(`✅ Сохранено · аудит: кругов ${auditPasses}, maxLines ${maxLines === 0 ? '∞' : maxLines}, maxFiles ${maxFiles}, авто-догон ${autoResume ? 'вкл' : 'выкл'} · проект: ${links.length} док(ов), scope ${auditScope || 'все'} · язык ${language.toUpperCase()}`);
+            await config.update('uiTheme', ui.theme, vscode.ConfigurationTarget.Global);
+            await config.update('accentColor', ui.accent, vscode.ConfigurationTarget.Global);
+            await config.update('uiDensity', ui.density, vscode.ConfigurationTarget.Global);
+            await config.update('uiFontSize', ui.fontSize, vscode.ConfigurationTarget.Global);
+            await config.update('showConfidence', ui.showConfidence, vscode.ConfigurationTarget.Global);
+            await config.update('findingsSort', ui.findingsSort, vscode.ConfigurationTarget.Global);
+            await config.update('reportTheme', ui.reportTheme, vscode.ConfigurationTarget.Global);
+            parts.push(`✅ Сохранено · аудит: кругов ${auditPasses}, maxLines ${maxLines === 0 ? '∞' : maxLines}, maxFiles ${maxFiles}, авто-догон ${autoResume ? 'вкл' : 'выкл'} · проект: ${links.length} док(ов), scope ${auditScope || 'все'} · язык ${language.toUpperCase()} · вид: ${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}`);
             await render(parts.join(' · '));
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();

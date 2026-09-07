@@ -1,3 +1,5 @@
+import { uiBodyAttrs, uiTokensCss, type UiPrefs } from './uiPrefs';
+
 export interface SettingsState {
   keyMask: string;
   keyConfigured: boolean;
@@ -17,6 +19,13 @@ export interface SettingsState {
   auditScope: string;
   auditPasses: number;
   version: string;
+  uiTheme: 'auto' | 'dark' | 'light';
+  accentColor: 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
+  uiDensity: 'compact' | 'standard';
+  uiFontSize: 's' | 'm' | 'l';
+  showConfidence: boolean;
+  findingsSort: 'severity' | 'file' | 'line';
+  reportTheme: 'auto' | 'dark' | 'light';
 }
 
 export interface SettingsAssets {
@@ -52,6 +61,7 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
     .join('');
+  const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme };
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -60,28 +70,10 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
 ${csp}
 ${codiconLink}
 <style${nonceAttr}>
-:root {
-  color-scheme: dark;
-  --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
-  --cs-radius-1: 4px; --cs-radius-2: 6px;
-  --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
-  --cs-fg: var(--vscode-foreground);
-  --cs-desc: var(--vscode-descriptionForeground);
-  --cs-border: var(--vscode-panel-border);
-  --cs-input-border: var(--vscode-input-border, var(--vscode-panel-border));
-  --cs-btn-bg: var(--vscode-button-background);
-  --cs-btn-fg: var(--vscode-button-foreground);
-  --cs-btn-hover: var(--vscode-button-hoverBackground);
-  --cs-btn2-bg: var(--vscode-button-secondaryBackground);
-  --cs-btn2-fg: var(--vscode-button-secondaryForeground);
-  --cs-btn2-hover: var(--vscode-button-secondaryHoverBackground);
-  --cs-accent: var(--vscode-textLink-foreground);
-  --cs-error: var(--vscode-errorForeground);
-  --cs-warn: var(--vscode-editorWarning-foreground);
-  --cs-pass: var(--vscode-testing-iconPassed);
-}
+:root { color-scheme: dark; }
+${uiTokensCss()}
 * { box-sizing: border-box; }
-body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--cs-font-3); line-height: 1.45; }
+body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--cs-editor-bg); font-family: var(--vscode-font-family); font-size: var(--cs-font-3); line-height: 1.45; }
 .brand { display: flex; align-items: center; gap: var(--cs-space-2); font-size: var(--cs-font-4); font-weight: 700; padding: var(--cs-space-3) var(--cs-space-4); border-bottom: 1px solid var(--cs-border); }
 .brand-mark { color: var(--cs-accent); display: inline-flex; }
 .layout { display: flex; align-items: flex-start; gap: 0; }
@@ -117,7 +109,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .about-line { display: flex; align-items: center; gap: var(--cs-space-2); margin: 6px 0; font-size: var(--cs-font-2); }
 </style>
 </head>
-<body data-anchor="${escapeHtml(anchor)}">
+<body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
 <div class="brand"><span class="brand-mark">${icon('search')}</span> CodeScout: Настройки</div>
 <div class="layout">
 <nav class="sidebar" id="sidebar">
@@ -186,6 +178,45 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>RU — по-русски</option>
     <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>EN — English</option>
   </select>
+  <label for="uiTheme">Тема интерфейса</label>
+  <select id="uiTheme">
+    <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>auto — как в VS Code</option>
+    <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>dark — фиксированная тёмная</option>
+    <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
+  </select>
+  <label for="accentColor">Акцентный цвет</label>
+  <select id="accentColor">
+    <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>auto — кнопка VS Code</option>
+    <option value="blue"${state.accentColor === 'blue' ? ' selected' : ''}>blue</option>
+    <option value="purple"${state.accentColor === 'purple' ? ' selected' : ''}>purple</option>
+    <option value="green"${state.accentColor === 'green' ? ' selected' : ''}>green</option>
+    <option value="orange"${state.accentColor === 'orange' ? ' selected' : ''}>orange</option>
+    <option value="pink"${state.accentColor === 'pink' ? ' selected' : ''}>pink</option>
+  </select>
+  <label for="uiDensity">Плотность</label>
+  <select id="uiDensity">
+    <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>standard</option>
+    <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>compact</option>
+  </select>
+  <label for="uiFontSize">Размер шрифта</label>
+  <select id="uiFontSize">
+    <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
+    <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
+    <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
+  </select>
+  <label for="findingsSort">Сортировка находок</label>
+  <select id="findingsSort">
+    <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>по важности</option>
+    <option value="file"${state.findingsSort === 'file' ? ' selected' : ''}>по файлу</option>
+    <option value="line"${state.findingsSort === 'line' ? ' selected' : ''}>по строке</option>
+  </select>
+  <label for="reportTheme">Тема экспортируемого отчёта</label>
+  <select id="reportTheme">
+    <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>auto</option>
+    <option value="dark"${state.reportTheme === 'dark' ? ' selected' : ''}>dark</option>
+    <option value="light"${state.reportTheme === 'light' ? ' selected' : ''}>light</option>
+  </select>
+  <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> Показывать % уверенности у находок</label>
   <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
 </section>
 <section id="sec-about">
@@ -212,6 +243,13 @@ const baseUrlInput = document.getElementById('baseUrl');
 const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
+const uiThemeSelect = document.getElementById('uiTheme');
+const accentSelect = document.getElementById('accentColor');
+const densitySelect = document.getElementById('uiDensity');
+const fontsizeSelect = document.getElementById('uiFontSize');
+const sortSelect = document.getElementById('findingsSort');
+const reportThemeSelect = document.getElementById('reportTheme');
+const showConfidenceBox = document.getElementById('showConfidence');
 const docLinksInput = document.getElementById('docLinks');
 const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
@@ -228,6 +266,9 @@ function snapshot() {
   return JSON.stringify({
     providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,
     reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked,
+    uiTheme: uiThemeSelect.value, accentColor: accentSelect.value, uiDensity: densitySelect.value,
+    uiFontSize: fontsizeSelect.value, findingsSort: sortSelect.value, reportTheme: reportThemeSelect.value,
+    showConfidence: showConfidenceBox.checked,
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
@@ -267,6 +308,13 @@ saveAllBtn.addEventListener('click', () => {
     apiKey: keyInput.value.trim() || undefined,
     reportLanguage: langSelect.value,
     showAuditBanner: bannerBox.checked,
+    uiTheme: uiThemeSelect.value,
+    accentColor: accentSelect.value,
+    uiDensity: densitySelect.value,
+    uiFontSize: fontsizeSelect.value,
+    findingsSort: sortSelect.value,
+    reportTheme: reportThemeSelect.value,
+    showConfidence: showConfidenceBox.checked,
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, '50')),
     docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, '5')),

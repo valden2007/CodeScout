@@ -1,6 +1,7 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 import { autoResumeBadgeText } from './projectAudit';
+import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 
 export interface AutoResumeIndicator {
   done: number;
@@ -58,12 +59,13 @@ function severityClass(severity: ReviewIssue['severity']): string {
   return severity;
 }
 
-function issueCard(issue: ReviewIssue, isNew = false): string {
+function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true): string {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : '';
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon('arrow-right')} <span>${escapeHtml(issue.suggestion)}</span></div>` : '';
+  const confidence = showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : '';
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} новая</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span><span class="confidence">${Math.round(issue.confidence * 100)}%</span></div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} новая</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${confidence}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
@@ -89,30 +91,11 @@ function headHtml(assets?: WebviewAssets, nonce = ''): string {
 ${csp}
 ${codiconLink}
 <style${nonceAttr}>
-:root {
-  color-scheme: dark;
-  --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
-  --cs-radius-1: 4px; --cs-radius-2: 6px;
-  --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
-  --cs-fg: var(--vscode-foreground);
-  --cs-desc: var(--vscode-descriptionForeground);
-  --cs-border: var(--vscode-panel-border);
-  --cs-input-border: var(--vscode-input-border, var(--vscode-panel-border));
-  --cs-btn-bg: var(--vscode-button-background);
-  --cs-btn-fg: var(--vscode-button-foreground);
-  --cs-btn-hover: var(--vscode-button-hoverBackground);
-  --cs-btn2-bg: var(--vscode-button-secondaryBackground);
-  --cs-btn2-fg: var(--vscode-button-secondaryForeground);
-  --cs-btn2-hover: var(--vscode-button-secondaryHoverBackground);
-  --cs-accent: var(--vscode-textLink-foreground);
-  --cs-error: var(--vscode-errorForeground);
-  --cs-warn: var(--vscode-editorWarning-foreground);
-  --cs-pass: var(--vscode-testing-iconPassed);
-  --cs-code-bg: var(--vscode-textCodeBlock-background);
-}
+:root { color-scheme: dark; }
+${uiTokensCss()}
 * { box-sizing: border-box; }
-body { margin: 0; padding: var(--cs-space-4) 14px 24px; color: var(--cs-fg); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--cs-font-3); line-height: 1.45; }
-.header { position: sticky; top: calc(-1 * var(--cs-space-4)); z-index: 2; margin: calc(-1 * var(--cs-space-4)) -14px 0; padding: var(--cs-space-4) 14px var(--cs-space-3); border-bottom: 1px solid var(--cs-border); background: var(--vscode-editor-background); }
+body { margin: 0; padding: var(--cs-space-4) 14px 24px; color: var(--cs-fg); background: var(--cs-editor-bg); font-family: var(--vscode-font-family); font-size: var(--cs-font-3); line-height: 1.45; }
+.header { position: sticky; top: calc(-1 * var(--cs-space-4)); z-index: 2; margin: calc(-1 * var(--cs-space-4)) -14px 0; padding: var(--cs-space-4) 14px var(--cs-space-3); border-bottom: 1px solid var(--cs-border); background: var(--cs-editor-bg); }
 .brand { display: flex; align-items: center; gap: var(--cs-space-2); font-size: var(--cs-font-4); font-weight: 700; letter-spacing: -0.2px; }
 .brand-settings { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 400; text-align: center; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
 .brand-settings:hover { background: var(--cs-btn2-hover); }
@@ -200,12 +183,17 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </head>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = ''): string {
-  const sorted = [...issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefs): string {
+  const ui = normalizeUiPrefs(prefs);
+  const sorted = [...issues].sort((a, b) => {
+    if (ui.findingsSort === 'file') return a.file.localeCompare(b.file) || a.line - b.line || severityOrder[a.severity] - severityOrder[b.severity];
+    if (ui.findingsSort === 'line') return a.line - b.line || a.file.localeCompare(b.file) || severityOrder[a.severity] - severityOrder[b.severity];
+    return severityOrder[a.severity] - severityOrder[b.severity] || a.file.localeCompare(b.file) || a.line - b.line;
+  });
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
-  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`))).join('')}</section>`).join('');
+  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`), ui.showConfidence)).join('')}</section>`).join('');
   const diffSummary = findingsDiff ? `<div class="diff-summary">${icon('diff-added')}${escapeHtml(findingsDiff.summary)}</div>` : '';
   const customBanner = customFocus ? `<div class="diff-summary custom">${icon('target')} Кастомное ревью: ${escapeHtml(customFocus.slice(0, 160))}</div>` : '';
   const fixedBlock = findingsDiff?.fixed?.length
@@ -222,7 +210,7 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   return `<!DOCTYPE html>
 <html lang="en">
 ${headHtml(assets, nonce)}
-<body>
+<body ${uiBodyAttrs(ui)}>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? 'Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : 'CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === 'stale' ? 'sync' : 'play')}<span>${welcomeReason === 'stale' ? 'Обновить' : 'Запустить аудит'}</span></button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
     <div class="brand"><span class="brand-mark">${icon('search')}</span> CodeScout <button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="Открыть настройки CodeScout">${icon('settings-gear')}<span>Настройки</span></button></div>
@@ -429,6 +417,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = ''): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefs): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs);
 }
