@@ -107,6 +107,11 @@ button:disabled { opacity: 0.55; cursor: default; }
 .dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-warn); display: none; }
 button.is-dirty .dirty-dot { display: inline-block; }
 .about-line { display: flex; align-items: center; gap: var(--cs-space-2); margin: 6px 0; font-size: var(--cs-font-2); }
+.scope-chips { display: flex; flex-wrap: wrap; gap: var(--cs-space-1); margin-top: var(--cs-space-2); }
+.scope-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--cs-input-border); border-radius: 999px; padding: 1px var(--cs-space-2); font-size: var(--cs-font-1); font-family: var(--vscode-editor-font-family); }
+.scope-chip button { display: inline-flex; padding: 0; border: none; background: transparent; color: var(--cs-desc); width: auto; flex: 0 0 auto; }
+.scope-chip button:hover { background: transparent; color: var(--cs-error); }
+.scope-warn { color: var(--cs-warn); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>

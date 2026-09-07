@@ -2278,14 +2278,16 @@ describe('G7 fix batch security and robustness', () => {
     await expect(fetchLiveModels('https://api.groq.com/openai/v1', 'k', async () => new Response(JSON.stringify({ data: [{ id: 'm1' }] }), { status: 200 }))).resolves.toEqual(['m1']);
   });
 
-  it('webviews pin localResourceRoots and the settings handler whitelists origin', () => {
+  it('webviews pin localResourceRoots and the settings handler guards messages', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('localResourceRoots: [this.extensionUri]');
     expect(panel).toContain('this.configSubscription = vscode.workspace.onDidChangeConfiguration');
     expect(panel).toContain('this.configSubscription?.dispose()');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('localResourceRoots: [context.extensionUri]');
-    expect(extension).toContain("!== 'vscode-webview'");
+    expect(extension).toContain("typeof message.command !== 'string'");
+    expect(extension).toContain('KNOWN_SETTINGS_COMMANDS.has(message.command)');
+    expect(extension).not.toContain("!== 'vscode-webview'");
   });
 
   it('setKey takes only a mask or a boolean, never the raw key', () => {
