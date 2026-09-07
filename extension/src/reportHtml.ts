@@ -179,8 +179,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? '⚙️ Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : '🔬 CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === 'stale' ? '🔄 Обновить' : '🚀 Запустить аудит'}</button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
-    <div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="Открыть настройки CodeScout">⚙️ Настройки</button></div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button></div>
+    <div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button class="brand-settings" type="button" data-command="openSettingsPage" title="Открыть настройки CodeScout">⚙️ Настройки</button></div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `🟢 ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : '🔴 Ключ не настроен'} <button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button></div>
     ${testMode ? '<span class="test-badge">🧪 ТЕСТ</span>' : ''}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404/i.test(statusMessage) ? '<button type="button" data-command="chooseModel">🔄 Выбрать доступную модель</button>' : ''}</div>` : ''}</div>
     ${auditResume ? `<div class="audit-resume"><strong>⏸ Аудит оборвался: проверено ${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))} файлов (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">▶️ Продолжить (${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))})</button><button type="button" data-command="restartAudit">🆕 Начать заново</button></div></div>` : ''}
@@ -365,7 +365,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         return;
       }
       event.preventDefault();
-      vscode.postMessage({ command: element.dataset.command });
+      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor });
     });
     document.addEventListener('change', (event) => {
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;

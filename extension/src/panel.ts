@@ -13,6 +13,7 @@ interface ScanMessage {
   focus?: string;
   scope?: string;
   globs?: string;
+  anchor?: string;
 }
 
 function safePost(webview: vscode.Webview, message: Record<string, unknown>): void {
@@ -120,7 +121,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'openSettings') {
         void vscode.commands.executeCommand('codescout.openSettings');
       } else if (message.command === 'openSettingsPage') {
-        void vscode.commands.executeCommand('codescout.openSettingsPage');
+        void vscode.commands.executeCommand('codescout.openSettingsPage', message.anchor ?? '');
       } else if (message.command === 'customReview') {
         void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {

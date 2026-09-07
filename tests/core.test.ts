@@ -545,16 +545,26 @@ describe('H1.1.2 prompt injection hardening', () => {
 });
 
 describe('E1.2a settings page (skeleton + keys)', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
-  it('renders both settings sections in the existing panel style', () => {
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
+  it('renders the sidebar center with all five sections', () => {
     const html = buildSettingsHtml(state);
-    expect(html).toContain('Ключ и провайдер');
-    expect(html).toContain('Внешний вид');
+    expect(html).toContain('class="sidebar"');
+    expect(html).toContain('🔑 Ключ и модель');
+    expect(html).toContain('🔄 Аудит');
+    expect(html).toContain('📁 Проект');
+    expect(html).toContain('🎨 Внешний вид');
+    expect(html).toContain('ℹ️ О расширении');
+    expect(html).toContain('id="sec-key"');
+    expect(html).toContain('id="sec-audit"');
+    expect(html).toContain('id="sec-project"');
+    expect(html).toContain('id="sec-appearance"');
+    expect(html).toContain('id="sec-about"');
     expect(html).toContain('value="auto"');
     expect(html).toContain('type="password"');
     expect(html).toContain('vscode.postMessage');
     expect(html).toContain('AIza•••XYZ');
     expect(html).toContain('checked');
+    expect(html).toContain('1.1.2');
   });
 
   it('never embeds the raw key and marks unset key explicitly', () => {
@@ -567,7 +577,7 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'openSettings'");
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
-    expect(report).toContain('data-command="openSettings"');
+    expect(report).toContain('data-command="openSettingsPage"');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.openSettings');
     expect(manifest).toContain('codescout.reportLanguage');
@@ -613,14 +623,14 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect((extension.match(/withReportLanguage\(projectPrompt\.prompt, currentReportLanguage\(\)\)/g) ?? []).length).toBe(2);
   });
 
-  it('disables save buttons until something changed and shows a pending label', () => {
+  it('disables the single save button until something changed and shows a pending label', () => {
     const html = buildSettingsHtml(state);
-    expect(html).toContain('id="saveKey" type="button" disabled');
-    expect(html).toContain('id="saveAppearance" type="button" disabled');
+    expect(html).toContain('id="saveAll" type="button" disabled');
     expect(html).toContain('function refreshDirty');
     expect(html).toContain('⏳ Сохраняю…');
-    expect(html).toContain('keyDirty');
-    expect(html).toContain('appearanceDirty');
+    expect(html).toContain('function snapshot()');
+    expect(html).toContain('let initial = snapshot()');
+    expect(html).toContain('saveAllBtn.disabled = !dirty');
   });
 
   it('renders success and error status kinds from the extension host', () => {
@@ -816,12 +826,12 @@ describe('E1.2e custom review focus', () => {
     const issues: ReviewIssue[] = [{ file: 'src/a.ts', line: 1, category: 'bug', severity: 'low', description: 'd', confidence: 0.5 }];
     const configured = buildReportHtml(issues, stats, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
     expect(configured).toContain('🟢 gemini · gemini-2.5-flash · AIza•••123 (защищённо)');
-    expect(configured).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+    expect(configured).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
     expect(configured).not.toContain('>Изменить<');
     expect(configured).not.toContain('>Настроить<');
     expect(configured).not.toContain('>Очистить<');
     const missing = buildReportHtml(issues, stats, false, false, '', 'retry', '', false);
-    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
   });
 
   it('prints the custom review header above the report', () => {
@@ -873,7 +883,7 @@ describe('E1.2e custom review focus', () => {
 });
 
 describe('E1.2e rules and doc links via settings', () => {
-  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
+  const state = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
 
   it('appends project doc links to the audit system prompt', () => {
     const root = mkdtempSync(join(tmpdir(), 'codescout-docs-'));
@@ -886,15 +896,15 @@ describe('E1.2e rules and doc links via settings', () => {
     }
   });
 
-  it('settings page renders the project section with dirty-aware save', () => {
+  it('settings page renders the project section wired to the single save', () => {
     const html = buildSettingsHtml({ ...state, docLinks: ['https://docs.example.com/api'] });
     expect(html).toContain('📁 Проект');
     expect(html).toContain('id="docLinks"');
     expect(html).toContain('https://docs.example.com/api');
     expect(html).toContain('📜 Открыть rules.md');
-    expect(html).toContain("command: 'saveDocLinks'");
+    expect(html).toContain("command: 'saveAll'");
     expect(html).toContain("command: 'openRules'");
-    expect(html).toContain('function projectDirty');
+    expect(html).toContain('function snapshot()');
   });
 
   it('persists doc links globally and creates rules.md from a template', () => {
@@ -1229,36 +1239,36 @@ describe('E1.3f maxLines setting and chunking', () => {
   });
 
   it('settings page renders the maxLines field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     expect(html).toContain('id="maxLines"');
     expect(html).toContain('Макс. строк на файл (0 = без лимита)');
     expect(html).toContain('value="0"');
-    expect(html).toContain("maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0'))");
-    expect(html).toContain('maxLinesInput.value !== initial.maxLines');
+    expect(html).toContain("maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, '0'))");
+    expect(html).toContain('maxLines: maxLinesInput.value');
   });
   it('panel header has a settings button next to the brand and keeps the quick key button', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
-    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettings"');
+    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettingsPage"');
     expect(html).toContain('⚙️ Настройки');
     expect(html).toContain('<div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button');
-    expect(html).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+    expect(html).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
   });
 });
 
 describe('E1.3j settings button + auto-audit indicator', () => {
-  it('gear opens native settings, key button opens the custom page', () => {
+  it('both panel buttons open the center; native settings kept as fallback', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout'))");
-    expect(extension).toContain("registerCommand('codescout.openSettingsPage', async () => {");
+    expect(extension).toContain("registerCommand('codescout.openSettingsPage', async (anchor?: string) => {");
     expect(extension).toContain("createWebviewPanel('codescout.settings', 'CodeScout: Настройки'");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'openSettingsPage'");
-    expect(panel).toContain("executeCommand('codescout.openSettingsPage')");
+    expect(panel).toContain("executeCommand('codescout.openSettingsPage', message.anchor ?? '')");
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.openSettingsPage');
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
-    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettings"');
-    expect(html).toContain('<button type="button" data-command="openSettingsPage">🔑 Ключ и модель</button>');
+    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettingsPage"');
+    expect(html).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
   });
 
   it('panel tracks autoResume setting and re-renders on config change', () => {
@@ -1324,7 +1334,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
   });
 
   it('settings page renders the two limit fields wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     expect(html).toContain('id="autoResumeMaxAttempts"');
     expect(html).toContain('id="autoResumeMaxMinutes"');
     expect(html).toContain('Авто-догон: макс. попыток (0 = без лимита)');
@@ -1454,14 +1464,14 @@ describe('E1.3b-settings configurable RAG limits', () => {
   });
 
   it('renders numeric limit fields in the project section with dirty save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     expect(html).toContain('id="docMaxKb"');
     expect(html).toContain('id="docMaxLinks"');
     expect(html).toContain('Макс. размер дока');
     expect(html).toContain('value="50"');
     expect(html).toContain('value="5"');
-    expect(html).toContain('docMaxKbInput.value !== initial.docMaxKb');
-    expect(html).toContain("docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50'))");
+    expect(html).toContain('docMaxKb: docMaxKbInput.value');
+    expect(html).toContain("docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, '50'))");
     expect(html).toContain('function clampInt(value, min, max, fallback)');
     expect(html).toContain('return String(Math.min(max, Math.max(min, n)));');
   });
@@ -1670,7 +1680,7 @@ describe('G3 fix batch panel', () => {
 
 describe('G4 fix batch regressions and security layer', () => {
   it('clampInt clamps both directions and repairs a bad fallback', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     const source = html.slice(html.indexOf('function clampInt'), html.indexOf('}', html.indexOf('Math.min(max, Math.max(min, Number(fallback)))')) + 1);
     const clampInt = new Function(`return (${source.replace('function clampInt', 'function')})`)() as (v: unknown, min: number, max: number, f: string) => string;
     expect(clampInt('99999', 1, 2048, '50')).toBe('2048');
@@ -1965,15 +1975,15 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
-    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1 });
+    const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     expect(html).toContain('id="autoResume"');
     expect(html).toContain('🤖 Автономный режим (авто-догон)');
     expect(html).toContain('checked');
     expect(html).toContain('id="auditScope"');
     expect(html).toContain('Scope аудита (glob через запятую, пусто = все)');
     expect(html).toContain('value="src/**"');
-    expect(html).toContain('auditScopeInput.value !== initial.auditScope');
-    expect(html).toContain('autoResumeBox.checked !== initial.autoResume');
+    expect(html).toContain('auditScope: auditScopeInput.value');
+    expect(html).toContain('autoResume: autoResumeBox.checked');
     expect(html).toContain('auditScope: auditScopeInput.value.trim()');
     expect(html).toContain('autoResume: autoResumeBox.checked');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
@@ -2053,7 +2063,7 @@ describe('E1.3i multi-pass audit and readable logs', () => {
     const settings = readFileSync('extension/src/settingsHtml.ts', 'utf8');
     expect(settings).toContain('id="auditPasses"');
     expect(settings).toContain('Кругов проверки на файл (1-3)');
-    expect(settings).toContain("auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, initial.auditPasses || '1'))");
+    expect(settings).toContain("auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, '1'))");
   });
 });
 
@@ -2095,15 +2105,15 @@ describe('G6 fix batch security and robustness', () => {
   });
 
   it('settings webview has a nonce-only CSP and a single nonce-bearing script (smoke)', () => {
-    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1 };
+    const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
     const html = buildSettingsHtml(state, '', 'ok', 'abc123nonce');
     expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; script-src \'nonce-abc123nonce\';">');
     expect(html).toContain('<script nonce="abc123nonce">');
     expect(html).not.toContain("'unsafe-eval'");
     expect(html).not.toMatch(/<script[^>]*>[^]*?<script/);
     expect(html).toContain('acquireVsCodeApi');
-    expect(html).toContain("command: 'saveKeyProvider'");
-    expect(html).toContain("command: 'saveDocLinks'");
+    expect(html).toContain("command: 'saveAll'");
+    expect(html).toContain("command: 'openLink'");
     expect(html).toContain("command: 'chooseModel'");
     expect(html).not.toMatch(/\son(click|input|change|submit)\s*=/);
     const noNonce = buildSettingsHtml(state);
@@ -2320,6 +2330,71 @@ describe('G7 fix batch security and robustness', () => {
     const poster = readFileSync('src/comment-poster.ts', 'utf8');
     expect(poster).toContain('try {');
     expect(poster).toContain('продолжаем постинг индивидуальных');
+  });
+});
+
+describe('v1.4b settings center with sidebar', () => {
+  const centerState = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' };
+
+  it('sidebar lists exactly the five sections and each has a matching anchor', () => {
+    const html = buildSettingsHtml(centerState);
+    const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
+    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
+    for (const id of navTargets) expect(html).toContain(`id="${id}"`);
+    expect(html).toContain('position: sticky');
+  });
+
+  it('scrollspy + anchor contract: active highlight on scroll and deep-link scroll on load', () => {
+    const html = buildSettingsHtml(centerState, '', 'ok', 'n', 'sec-key');
+    expect(html).toContain('window.addEventListener(\'scroll\', onScroll');
+    expect(html).toContain('function setActive');
+    expect(html).toContain("l.classList.toggle('active'");
+    expect(html).toContain('target.scrollIntoView({ behavior: \'smooth\', block: \'start\' })');
+    expect(html).toContain('data-anchor="sec-key"');
+    expect(html).toContain("document.body.getAttribute('data-anchor')");
+    expect(html).toContain('el.scrollIntoView()');
+  });
+
+  it('every audit and project handle renders and saveAll writes every config key', () => {
+    const html = buildSettingsHtml(centerState);
+    for (const id of ['auditPasses', 'maxLines', 'maxFiles', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'docLinks', 'docMaxKb', 'docMaxLinks', 'auditScope', 'reportLanguage', 'showBanner', 'provider', 'baseUrl']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).toContain('command: \'saveAll\'');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    for (const key of ['auditPasses', 'maxLines', 'maxFiles', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'docLinks', 'docMaxKb', 'docMaxLinks', 'auditScope', 'reportLanguage', 'showAuditBanner']) {
+      expect(extension).toContain(`update('${key}'`);
+    }
+    expect(extension).toContain("command === 'saveAll'");
+    expect(extension).toContain("command === 'openLink'");
+    expect(extension).toContain('vscode.env.openExternal');
+    expect(extension).toContain('github');
+  });
+
+  it('no duplicate audit handles left in the project section (moved to Аудит)', () => {
+    const html = buildSettingsHtml(centerState);
+    const project = html.slice(html.indexOf('id="sec-project"'), html.indexOf('id="sec-appearance"'));
+    const audit = html.slice(html.indexOf('id="sec-audit"'), html.indexOf('id="sec-project"'));
+    expect(audit).toContain('id="auditPasses"');
+    expect(audit).toContain('id="maxLines"');
+    expect(audit).toContain('id="maxFiles"');
+    expect(audit).toContain('id="autoResume"');
+    expect(project).not.toContain('id="auditPasses"');
+    expect(project).not.toContain('id="maxLines"');
+    expect(project).not.toContain('id="autoResume"');
+    expect(project).toContain('id="auditScope"');
+    expect(project).toContain('id="docLinks"');
+  });
+
+  it('both panel buttons open the center; key button carries the sec-key anchor', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'm');
+    const gear = html.match(/<button class="brand-settings"[^>]*data-command="(\w+)"/);
+    const key = html.match(/data-command="(\w+)" data-anchor="([\w-]+)">/);
+    expect(gear?.[1]).toBe('openSettingsPage');
+    expect(key?.[1]).toBe('openSettingsPage');
+    expect(key?.[2]).toBe('sec-key');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("executeCommand('codescout.openSettingsPage', message.anchor ?? '')");
   });
 });
 

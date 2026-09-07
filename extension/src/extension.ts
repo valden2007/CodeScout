@@ -23,7 +23,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -561,6 +561,8 @@ interface SettingsMessage {
   autoResumeMaxMinutes?: number;
   auditScope?: string;
   auditPasses?: number;
+  maxFiles?: number;
+  url?: string;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -603,11 +605,13 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     docMaxKb: docLimitsFromKb(vscode.workspace.getConfiguration('codescout').get<number>('docMaxKb')) / 1024,
     docMaxLinks: docLimitsFromCount(vscode.workspace.getConfiguration('codescout').get<number>('docMaxLinks')),
     maxLines: Math.max(0, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxLines', 0) || 0)),
+    maxFiles: Math.max(1, Math.round(vscode.workspace.getConfiguration('codescout').get<number>('maxFiles', 100) || 100)),
     autoResume: vscode.workspace.getConfiguration('codescout').get<boolean>('autoResume', false),
     autoResumeMaxAttempts: autoResumeLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('autoResumeMaxAttempts'), 1000),
     autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('autoResumeMaxMinutes'), 10000),
     auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? '',
-    auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses'))
+    auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses')),
+    version: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0')
   };
 }
 
@@ -669,9 +673,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
-    vscode.commands.registerCommand('codescout.openSettingsPage', async () => {
+    vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {
       const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'));
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '');
       };
       if (!settingsPanel) {
         settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [] });
@@ -719,6 +723,44 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
             await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? `включён (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace('🤖 Автономный режим: ВКЛ ', '')})` : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
+          } else if (message.command === 'saveAll') {
+            const config = vscode.workspace.getConfiguration('codescout');
+            const parts: string[] = [];
+            if (message.apiKey || message.providerKey || message.baseUrl !== undefined) {
+              parts.push(await saveKeyProvider(context, message));
+              await syncKeyStatus();
+            }
+            const language = message.reportLanguage === 'en' ? 'en' : 'ru';
+            const banner = message.showAuditBanner !== false;
+            await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
+            await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
+            const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
+            const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
+            const maxLinks = docLimitsFromCount(message.docMaxLinks);
+            const maxLinesRaw = Math.round(Number(message.maxLines));
+            const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(100000, maxLinesRaw) : 0;
+            const maxFiles = Math.min(10000, Math.max(1, Math.round(Number(message.maxFiles)) || 100));
+            const autoResume = message.autoResume === true;
+            const auditScope = (message.auditScope ?? '').trim();
+            const auditPasses = auditPassesFromSetting(message.auditPasses);
+            const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1000);
+            const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 10000);
+            await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
+            await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
+            await config.update('docMaxLinks', maxLinks, vscode.ConfigurationTarget.Global);
+            await config.update('maxLines', maxLines, vscode.ConfigurationTarget.Global);
+            await config.update('maxFiles', maxFiles, vscode.ConfigurationTarget.Global);
+            await config.update('autoResume', autoResume, vscode.ConfigurationTarget.Global);
+            await config.update('autoResumeMaxAttempts', autoResumeMaxAttempts, vscode.ConfigurationTarget.Global);
+            await config.update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global);
+            await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
+            await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
+            parts.push(`✅ Сохранено · аудит: кругов ${auditPasses}, maxLines ${maxLines === 0 ? '∞' : maxLines}, maxFiles ${maxFiles}, авто-догон ${autoResume ? 'вкл' : 'выкл'} · проект: ${links.length} док(ов), scope ${auditScope || 'все'} · язык ${language.toUpperCase()}`);
+            await render(parts.join(' · '));
+          } else if (message.command === 'openLink') {
+            const url = (message.url ?? '').trim();
+            if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
+            await render('');
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());

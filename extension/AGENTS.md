@@ -206,6 +206,22 @@ pre-design now.
    behavior for weak models. Panel header got a "⚙️ Настройки"
    button (data-command openSettings) beside the brand; the quick
     "🔑 Ключ и модель" button stays. Tests: 145.
+ 9b. Settings center (v1.4b-1): settingsHtml is now ONE webview with a
+    sticky left sidebar (Яндекс-style) and 5 anchor sections — 🔑 Ключ
+    и модель, 🔄 Аудит, 📁 Проект, 🎨 Внешний вид, ℹ️ О расширении
+    (version + README/repo/issue links via openLink). Click a nav item
+    → smooth scrollIntoView; scrollspy highlights the active section
+    (scroll listener + setActive). ONE dirty-gated 💾 Сохранить posts
+    command 'saveAll' (key/provider/baseUrl + appearance + audit +
+    project in one handler). Audit handles (auditPasses, maxLines,
+    maxFiles, autoResume + both limits) moved from the old project
+    section into 🔄 Аудит (no duplicates); 📁 Проект keeps docLinks,
+    docMaxKb, docMaxLinks, auditScope. Both panel buttons (⚙️ and
+    🔑 Ключ и модель) open the center via openSettingsPage; the key
+    button passes anchor 'sec-key' (panel forwards message.anchor →
+    command arg → buildSettingsHtml scrolls on load). Native
+    codescout.openSettings kept as system fallback. SettingsState
+    gained maxFiles + version. Tests: 186.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

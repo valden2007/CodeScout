@@ -108,14 +108,14 @@ function normalizeProvider(provider) {
   if (Object.hasOwn(PROVIDERS, value)) return value;
   throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github \u0438\u043B\u0438 custom.`);
 }
-function resolveApiKey(provider, explicitKey, env2 = process.env) {
+function resolveApiKey(provider, explicitKey, env3 = process.env) {
   if (explicitKey?.trim()) return explicitKey.trim();
   const normalized = normalizeProvider(provider);
-  if (normalized === "custom") return env2.CODESCOUT_API_KEY?.trim();
-  return env2[PROVIDERS[normalized].envKey]?.trim();
+  if (normalized === "custom") return env3.CODESCOUT_API_KEY?.trim();
+  return env3[PROVIDERS[normalized].envKey]?.trim();
 }
-function resolveApiKeyPriority(secretKey, provider, legacySetting, env2 = process.env) {
-  return secretKey?.trim() || resolveApiKey(provider, void 0, env2) || legacySetting?.trim() || void 0;
+function resolveApiKeyPriority(secretKey, provider, legacySetting, env3 = process.env) {
+  return secretKey?.trim() || resolveApiKey(provider, void 0, env3) || legacySetting?.trim() || void 0;
 }
 function resolveBaseUrl(provider, customBaseUrl) {
   if (customBaseUrl?.trim()) {
@@ -1327,8 +1327,8 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
 <body>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === "stale" ? "\u2699\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?" : "\u{1F52C} CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?"}</strong><div class="welcome-actions"><button type="button" data-command="startFullAudit">${welcomeReason === "stale" ? "\u{1F504} \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C" : "\u{1F680} \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442"}</button><button type="button" data-command="dismissWelcome">\u041F\u043E\u0437\u0436\u0435</button></div></div></div></div>` : ""}
-    <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout <button class="brand-settings" type="button" data-command="openSettings" title="\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettingsPage">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
+    <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout <button class="brand-settings" type="button" data-command="openSettingsPage" title="\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout">\u2699\uFE0F \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `\u{1F7E2} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E)` : "\u{1F534} \u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"} <button type="button" data-command="openSettingsPage" data-anchor="sec-key">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</button></div>
     ${testMode ? '<span class="test-badge">\u{1F9EA} \u0422\u0415\u0421\u0422</span>' : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404/i.test(statusMessage) ? '<button type="button" data-command="chooseModel">\u{1F504} \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C</button>' : ""}</div>` : ""}</div>
     ${auditResume ? `<div class="audit-resume"><strong>\u23F8 \u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${escapeHtml(String(auditResume.done))} \u0438\u0437 ${escapeHtml(String(auditResume.total))} \u0444\u0430\u0439\u043B\u043E\u0432 (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" data-command="resumeAudit">\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C (${escapeHtml(String(auditResume.done))} \u0438\u0437 ${escapeHtml(String(auditResume.total))})</button><button type="button" data-command="restartAudit">\u{1F195} \u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E</button></div></div>` : ""}
@@ -1513,7 +1513,7 @@ pre { margin: 9px 0; padding: 8px; overflow-x: auto; border: 1px solid var(--vsc
         return;
       }
       event.preventDefault();
-      vscode.postMessage({ command: element.dataset.command });
+      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor });
     });
     document.addEventListener('change', (event) => {
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
@@ -1628,7 +1628,7 @@ var CodeScoutPanel = class {
       } else if (message.command === "openSettings") {
         void vscode.commands.executeCommand("codescout.openSettings");
       } else if (message.command === "openSettingsPage") {
-        void vscode.commands.executeCommand("codescout.openSettingsPage");
+        void vscode.commands.executeCommand("codescout.openSettingsPage", message.anchor ?? "");
       } else if (message.command === "customReview") {
         void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
       } else if (message.command === "clearApiKey") {
@@ -1829,10 +1829,11 @@ function sampleTestSummary(found) {
 
 // src/settingsHtml.ts
 var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
+var REPO_URL = "https://github.com/valden2007/CodeScout";
 function escapeHtml2(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "") {
+function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "", anchor = "") {
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443" : value}</option>`).join("");
   return `<!DOCTYPE html>
@@ -1844,10 +1845,16 @@ function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce =
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
-body { margin: 0; padding: 16px 14px 24px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
-.brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+body { margin: 0; padding: 0; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; padding: 12px 16px; border-bottom: 1px solid var(--vscode-panel-border); }
 .brand-mark { color: var(--vscode-textLink-foreground); }
-section { margin-top: 16px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
+.layout { display: flex; align-items: flex-start; gap: 0; }
+.sidebar { position: sticky; top: 0; flex: 0 0 190px; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-right: 1px solid var(--vscode-panel-border); max-height: 100vh; overflow: auto; }
+.nav-link { display: block; padding: 7px 10px; border-radius: 4px; color: var(--vscode-foreground); text-decoration: none; font-size: 12px; cursor: pointer; }
+.nav-link:hover { background: var(--vscode-list-hoverBackground); }
+.nav-link.active { background: color-mix(in srgb, var(--vscode-textLink-foreground) 16%, transparent); color: var(--vscode-textLink-foreground); font-weight: 600; }
+.content { flex: 1 1 auto; min-width: 0; padding: 12px 16px 72px; }
+section { margin: 0 0 14px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; scroll-margin-top: 8px; }
 h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--vscode-textLink-foreground); }
 label { display: block; margin: 10px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
@@ -1863,17 +1870,29 @@ button:disabled:hover { background: var(--vscode-button-background); }
 .checkbox input { width: auto; }
 .hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
 .hidden { display: none; }
-.status { margin-top: 14px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? "" : "display: none;"} }
+.status { margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? "" : "display: none;"} }
 .status.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
+.savebar { position: fixed; left: 190px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+.savebar .dirty { color: var(--vscode-descriptionForeground); font-size: 11px; }
+.about-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
 </style>
 </head>
-<body>
+<body data-anchor="${escapeHtml2(anchor)}">
 <div class="brand"><span class="brand-mark">\u{1F575}\uFE0F</span> CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</div>
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+  <a class="nav-link active" href="#sec-key" data-target="sec-key">\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</a>
+  <a class="nav-link" href="#sec-audit" data-target="sec-audit">\u{1F504} \u0410\u0443\u0434\u0438\u0442</a>
+  <a class="nav-link" href="#sec-project" data-target="sec-project">\u{1F4C1} \u041F\u0440\u043E\u0435\u043A\u0442</a>
+  <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">\u{1F3A8} \u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</a>
+  <a class="nav-link" href="#sec-about" data-target="sec-about">\u2139\uFE0F \u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438</a>
+</nav>
+<div class="content">
 <div class="status${statusKind === "error" ? " error" : ""}" id="status">${escapeHtml2(statusMessage)}</div>
 <main>
-<section>
-  <h2>\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440</h2>
+<section id="sec-key">
+  <h2>\u{1F511} \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C</h2>
   <label for="provider">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440</label>
   <select id="provider">${providerOptions}</select>
   <label for="apiKey">API-\u043A\u043B\u044E\u0447 ( SecretStorage )</label>
@@ -1886,25 +1905,27 @@ button:disabled:hover { background: var(--vscode-button-background); }
   </div>
   <div class="current-key">\u0441\u0435\u0439\u0447\u0430\u0441: ${state.keyConfigured ? `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(state.model)}` : "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D"}</div>
   <div class="row">
-    <button id="saveKey" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
     <button id="chooseModel" type="button" class="secondary">\u{1F9F2} \u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026</button>
     <button id="clearKey" type="button" class="secondary">\u232B \u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447</button>
   </div>
   <p class="hint">auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.</p>
 </section>
-<section>
-  <h2>\u{1F3A8} \u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</h2>
-  <label for="reportLanguage">\u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432</label>
-  <select id="reportLanguage">
-    <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438</option>
-    <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>EN \u2014 English</option>
-  </select>
-  <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
-  <div class="row">
-    <button id="saveAppearance" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
-  </div>
+<section id="sec-audit">
+  <h2>\u{1F504} \u0410\u0443\u0434\u0438\u0442</h2>
+  <label for="auditPasses">\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)</label>
+  <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
+  <label for="maxLines">\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
+  <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
+  <label for="maxFiles">\u041C\u0430\u043A\u0441. \u0444\u0430\u0439\u043B\u043E\u0432 \u043D\u0430 \u0430\u0443\u0434\u0438\u0442</label>
+  <input id="maxFiles" type="number" min="1" max="10000" step="1" value="${state.maxFiles}">
+  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? " checked" : ""}> \u{1F916} \u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C (\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D)</label>
+  <label for="autoResumeMaxAttempts">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043F\u043E\u043F\u044B\u0442\u043E\u043A (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
+  <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
+  <label for="autoResumeMaxMinutes">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
+  <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
+  <p class="hint">maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B &gt;800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; N &gt; 0: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F. \u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u0432\u043E\u0437\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0438\u0437 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442\u0430 \u0441 backoff 30\u0441\u219260\u0441\u21922\u043C\u0438\u043D\u21925\u043C\u0438\u043D.</p>
 </section>
-<section>
+<section id="sec-project">
   <h2>\u{1F4C1} \u041F\u0440\u043E\u0435\u043A\u0442</h2>
   <label for="docLinks">\u0421\u0441\u044B\u043B\u043A\u0438 \u043D\u0430 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044E (\u043E\u0434\u043D\u0430 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435)</label>
   <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml2(state.docLinks.join("\n"))}</textarea>
@@ -1912,24 +1933,38 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
   <label for="docMaxLinks">\u041C\u0430\u043A\u0441. \u0447\u0438\u0441\u043B\u043E \u0441\u0441\u044B\u043B\u043E\u043A \u043D\u0430 \u0430\u0443\u0434\u0438\u0442</label>
   <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
-  <label for="maxLines">\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
-  <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
   <label for="auditScope">Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml2(state.auditScope)}">
-  <label for="auditPasses">\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)</label>
-  <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
-  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? " checked" : ""}> \u{1F916} \u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C (\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D)</label>
-  <label for="autoResumeMaxAttempts">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043F\u043E\u043F\u044B\u0442\u043E\u043A (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
-  <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
-  <label for="autoResumeMaxMinutes">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
-  <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
   <div class="row">
-    <button id="saveProject" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
     <button id="openRules" type="button" class="secondary">\u{1F4DC} \u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md</button>
   </div>
-  <p class="hint">rules.md (.codescout/rules.md) \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E, \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0441 \u0448\u0430\u0431\u043B\u043E\u043D\u043E\u043C. \u0421\u0441\u044B\u043B\u043A\u0438 \u0438\u0434\u0443\u0442 \u0432 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0442\u0435\u043A\u0441\u0442\u044B \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F (\u043B\u0438\u043C\u0438\u0442\u044B \u0432\u044B\u0448\u0435, \u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441; oversized-\u0434\u043E\u043A \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0434\u043E \u043B\u0438\u043C\u0438\u0442\u0430, \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F), \u043A\u044D\u0448\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24 \u0447\u0430\u0441\u0430 \u0438 \u043F\u043E\u043F\u0430\u0434\u0430\u044E\u0442 \u0432 \u043F\u0440\u043E\u043C\u0442 \u0441\u0435\u043A\u0446\u0438\u0435\u0439 \xAB\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430\xBB. \u0421\u0443\u043C\u043C\u0430\u0440\u043D\u043E \u0431\u043E\u043B\u044C\u0448\u0435 100KB \u2014 \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0440\u043E \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442. maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B &gt;800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; maxLines = N: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F (\u0434\u043B\u044F \u0441\u043B\u0430\u0431\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439).</p>
+  <p class="hint">rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.</p>
+</section>
+<section id="sec-appearance">
+  <h2>\u{1F3A8} \u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</h2>
+  <label for="reportLanguage">\u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432</label>
+  <select id="reportLanguage">
+    <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438</option>
+    <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>EN \u2014 English</option>
+  </select>
+  <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
+</section>
+<section id="sec-about">
+  <h2>\u2139\uFE0F \u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438</h2>
+  <div class="about-line">\u0412\u0435\u0440\u0441\u0438\u044F: <strong>${escapeHtml2(state.version)}</strong></div>
+  <div class="row">
+    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">\u{1F4D6} README</button>
+    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">\u{1F5C2} \u0420\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0439</button>
+    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">\u{1F41B} \u0421\u043E\u043E\u0431\u0449\u0438\u0442\u044C \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435</button>
+  </div>
 </section>
 </main>
+</div>
+</div>
+<div class="savebar">
+  <button id="saveAll" type="button" disabled>\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+  <span class="dirty" id="dirtyHint">\u043D\u0435\u0442 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439</span>
+</div>
 <script${nonce ? ` nonce="${nonce}"` : ""}>
 const vscode = acquireVsCodeApi();
 const providerSelect = document.getElementById('provider');
@@ -1942,15 +1977,25 @@ const docLinksInput = document.getElementById('docLinks');
 const docMaxKbInput = document.getElementById('docMaxKb');
 const docMaxLinksInput = document.getElementById('docMaxLinks');
 const maxLinesInput = document.getElementById('maxLines');
+const maxFilesInput = document.getElementById('maxFiles');
 const auditScopeInput = document.getElementById('auditScope');
 const auditPassesInput = document.getElementById('auditPasses');
 const autoResumeBox = document.getElementById('autoResume');
 const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
-const saveKeyBtn = document.getElementById('saveKey');
-const saveAppearanceBtn = document.getElementById('saveAppearance');
-const saveProjectBtn = document.getElementById('saveProject');
-const initial = { providerKey: providerSelect.value, baseUrl: baseUrlInput.value, reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked, docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value, maxLines: maxLinesInput.value, auditScope: auditScopeInput.value, auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked, autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value };
+const saveAllBtn = document.getElementById('saveAll');
+const dirtyHint = document.getElementById('dirtyHint');
+function snapshot() {
+  return JSON.stringify({
+    providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,
+    reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked,
+    docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
+    maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
+    auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
+    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value
+  });
+}
+let initial = snapshot();
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
@@ -1958,13 +2003,10 @@ function clampInt(value, min, max, fallback) {
 }
 function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
 providerSelect.addEventListener('change', toggleBaseUrl);
-function keyDirty() { return providerSelect.value !== initial.providerKey || keyInput.value.trim() !== '' || baseUrlInput.value.trim() !== initial.baseUrl.trim(); }
-function appearanceDirty() { return langSelect.value !== initial.reportLanguage || bannerBox.checked !== initial.showAuditBanner; }
-function projectDirty() { return docLinksInput.value !== initial.docLinks || docMaxKbInput.value !== initial.docMaxKb || docMaxLinksInput.value !== initial.docMaxLinks || maxLinesInput.value !== initial.maxLines || auditScopeInput.value !== initial.auditScope || auditPassesInput.value !== initial.auditPasses || autoResumeBox.checked !== initial.autoResume || autoResumeMaxAttemptsInput.value !== initial.autoResumeMaxAttempts || autoResumeMaxMinutesInput.value !== initial.autoResumeMaxMinutes; }
 function refreshDirty() {
-  saveKeyBtn.disabled = !keyDirty();
-  saveAppearanceBtn.disabled = !appearanceDirty();
-  saveProjectBtn.disabled = !projectDirty();
+  const dirty = snapshot() !== initial;
+  saveAllBtn.disabled = !dirty;
+  dirtyHint.textContent = dirty ? '\u0435\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F' : '\u043D\u0435\u0442 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439';
 }
 document.querySelectorAll('input, select, textarea').forEach((el) => {
   el.addEventListener('input', refreshDirty);
@@ -1973,44 +2015,53 @@ document.querySelectorAll('input, select, textarea').forEach((el) => {
 document.getElementById('revealKey').addEventListener('change', (event) => {
   keyInput.type = event.target.checked ? 'text' : 'password';
 });
-saveKeyBtn.addEventListener('click', () => {
-  saveKeyBtn.disabled = true;
-  saveKeyBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
-  const payload = { command: 'saveKeyProvider', providerKey: providerSelect.value, baseUrl: baseUrlInput.value.trim() };
-  const key = keyInput.value.trim();
-  if (key) payload.apiKey = key;
-  vscode.postMessage(payload);
+saveAllBtn.addEventListener('click', () => {
+  saveAllBtn.disabled = true;
+  saveAllBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
+  vscode.postMessage({
+    command: 'saveAll',
+    providerKey: providerSelect.value,
+    baseUrl: baseUrlInput.value.trim(),
+    apiKey: keyInput.value.trim() || undefined,
+    reportLanguage: langSelect.value,
+    showAuditBanner: bannerBox.checked,
+    linksText: docLinksInput.value,
+    docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, '50')),
+    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, '5')),
+    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, '0')),
+    maxFiles: Number(clampInt(maxFilesInput.value, 1, 10000, '100')),
+    auditScope: auditScopeInput.value.trim(),
+    auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, '1')),
+    autoResume: autoResumeBox.checked,
+    autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
+    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0'))
+  });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
-saveAppearanceBtn.addEventListener('click', () => {
-  saveAppearanceBtn.disabled = true;
-  saveAppearanceBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
-  vscode.postMessage({
-    command: 'saveAppearance',
-    reportLanguage: langSelect.value,
-    showAuditBanner: bannerBox.checked
-  });
-});
-saveProjectBtn.addEventListener('click', () => {
-  saveProjectBtn.disabled = true;
-  saveProjectBtn.textContent = '\u23F3 \u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026';
-  vscode.postMessage({
-    command: 'saveDocLinks',
-    linksText: docLinksInput.value,
-    docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, initial.docMaxKb || '50')),
-    docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, initial.docMaxLinks || '5')),
-    maxLines: Number(clampInt(maxLinesInput.value, 0, 100000, initial.maxLines || '0')),
-    auditScope: auditScopeInput.value.trim(),
-    auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, initial.auditPasses || '1')),
-    autoResume: autoResumeBox.checked,
-    autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, initial.autoResumeMaxAttempts || '0')),
-    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, initial.autoResumeMaxMinutes || '0'))
-  });
-});
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
+document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
+  btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
+});
+const sections = Array.prototype.slice.call(document.querySelectorAll('main section[id]'));
+const navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
+function setActive(id) { navLinks.forEach((l) => l.classList.toggle('active', l.getAttribute('data-target') === id)); }
+function onScroll() {
+  let current = sections.length ? sections[0].id : '';
+  for (const s of sections) { if (s.getBoundingClientRect().top <= 120) current = s.id; }
+  setActive(current);
+}
+window.addEventListener('scroll', onScroll, { passive: true });
+navLinks.forEach((l) => l.addEventListener('click', (event) => {
+  event.preventDefault();
+  const target = document.getElementById(l.getAttribute('data-target'));
+  if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive(l.getAttribute('data-target')); }
+}));
 toggleBaseUrl();
 refreshDirty();
+onScroll();
+const anchor = document.body.getAttribute('data-anchor');
+if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollIntoView(); setActive(anchor); } }
 </script>
 </body>
 </html>`;
@@ -2023,7 +2074,7 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "clearApiKey", "chooseModel", "saveDocLinks", "openRules"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -2570,11 +2621,13 @@ async function readSettingsState(context) {
     docMaxKb: docLimitsFromKb(vscode2.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
     docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks")),
     maxLines: Math.max(0, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxLines", 0) || 0)),
+    maxFiles: Math.max(1, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100) || 100)),
     autoResume: vscode2.workspace.getConfiguration("codescout").get("autoResume", false),
     autoResumeMaxAttempts: autoResumeLimitFromSetting(vscode2.workspace.getConfiguration("codescout").get("autoResumeMaxAttempts"), 1e3),
     autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode2.workspace.getConfiguration("codescout").get("autoResumeMaxMinutes"), 1e4),
     auditScope: vscode2.workspace.getConfiguration("codescout").get("auditScope") ?? "",
-    auditPasses: auditPassesFromSetting(vscode2.workspace.getConfiguration("codescout").get("auditPasses"))
+    auditPasses: auditPassesFromSetting(vscode2.workspace.getConfiguration("codescout").get("auditPasses")),
+    version: String(context.extension.packageJSON.version ?? "0.0.0")
   };
 }
 async function saveKeyProvider(context, message) {
@@ -2632,9 +2685,9 @@ function activate(context) {
   context.subscriptions.push(
     vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
     vscode2.commands.registerCommand("codescout.openSettings", () => vscode2.commands.executeCommand("workbench.action.openSettings", "codescout")),
-    vscode2.commands.registerCommand("codescout.openSettingsPage", async () => {
+    vscode2.commands.registerCommand("codescout.openSettingsPage", async (anchor) => {
       const render = async (status = "", statusKind = "ok") => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto.randomBytes)(16).toString("hex"));
+        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto.randomBytes)(16).toString("hex"), anchor ?? "");
       };
       if (!settingsPanel) {
         settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438", vscode2.ViewColumn.One, { enableScripts: true, localResourceRoots: [] });
@@ -2684,6 +2737,44 @@ function activate(context) {
               await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
               await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
               await render(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: ${links.length} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 ${maxKb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 ${maxLinks} \xB7 maxLines: ${maxLines === 0 ? "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)" : `${maxLines} \u0441\u0442\u0440\u043E\u043A`} \xB7 \u043A\u0440\u0443\u0433\u043E\u0432: ${auditPasses} \xB7 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C ${autoResume ? `\u0432\u043A\u043B\u044E\u0447\u0451\u043D (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace("\u{1F916} \u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B ", "")})` : "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D"} \xB7 scope: ${auditScope || "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B"}`);
+            } else if (message.command === "saveAll") {
+              const config = vscode2.workspace.getConfiguration("codescout");
+              const parts = [];
+              if (message.apiKey || message.providerKey || message.baseUrl !== void 0) {
+                parts.push(await saveKeyProvider(context, message));
+                await syncKeyStatus();
+              }
+              const language = message.reportLanguage === "en" ? "en" : "ru";
+              const banner = message.showAuditBanner !== false;
+              await config.update("reportLanguage", language, vscode2.ConfigurationTarget.Global);
+              await config.update("showAuditBanner", banner, vscode2.ConfigurationTarget.Global);
+              const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
+              const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
+              const maxLinks = docLimitsFromCount(message.docMaxLinks);
+              const maxLinesRaw = Math.round(Number(message.maxLines));
+              const maxLines = Number.isFinite(maxLinesRaw) && maxLinesRaw > 0 ? Math.min(1e5, maxLinesRaw) : 0;
+              const maxFiles = Math.min(1e4, Math.max(1, Math.round(Number(message.maxFiles)) || 100));
+              const autoResume = message.autoResume === true;
+              const auditScope = (message.auditScope ?? "").trim();
+              const auditPasses = auditPassesFromSetting(message.auditPasses);
+              const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1e3);
+              const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 1e4);
+              await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
+              await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
+              await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
+              await config.update("maxLines", maxLines, vscode2.ConfigurationTarget.Global);
+              await config.update("maxFiles", maxFiles, vscode2.ConfigurationTarget.Global);
+              await config.update("autoResume", autoResume, vscode2.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxAttempts", autoResumeMaxAttempts, vscode2.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode2.ConfigurationTarget.Global);
+              await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
+              await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
+              parts.push(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 ${auditPasses}, maxLines ${maxLines === 0 ? "\u221E" : maxLines}, maxFiles ${maxFiles}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D ${autoResume ? "\u0432\u043A\u043B" : "\u0432\u044B\u043A\u043B"} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: ${links.length} \u0434\u043E\u043A(\u043E\u0432), scope ${auditScope || "\u0432\u0441\u0435"} \xB7 \u044F\u0437\u044B\u043A ${language.toUpperCase()}`);
+              await render(parts.join(" \xB7 "));
+            } else if (message.command === "openLink") {
+              const url = (message.url ?? "").trim();
+              if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));
+              await render("");
             } else if (message.command === "openRules") {
               try {
                 await openOrCreateRules(getWorkspaceRoot());
