@@ -1486,8 +1486,10 @@ ${headHtml(assets, nonce)}
           <option value="active">\u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0444\u0430\u0439\u043B</option>
           <option value="list">\u0441\u043F\u0438\u0441\u043E\u043A \u0444\u0430\u0439\u043B\u043E\u0432 (\u0433\u043B\u043E\u0431\u044B \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E)</option>
         </select>
-        <input id="customGlobs" type="text" class="hidden" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+        <input id="customGlobs" type="text" class="hidden custom-globs" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+        <button type="button" class="cs-btn secondary hidden" id="pickScopeForm">${icon("folder-opened")}<span>\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438</span></button>
       </div>
+      <p class="custom-warn hidden" id="customScopeWarn"></p>
       <div class="custom-actions">
         <button type="button" class="cs-btn" id="startCustomReview">${icon("beaker")}<span>\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E</span></button>
       </div>
@@ -1607,6 +1609,20 @@ ${headHtml(assets, nonce)}
           auto.seconds = Number(data.secondsLeft || 0);
         }
         renderAuto();
+      } else if (data.type === 'scopePickResult') {
+        const globsEl = document.getElementById('customGlobs');
+        const warn = document.getElementById('customScopeWarn');
+        if (globsEl) {
+          const merged = [];
+          for (const g of [...splitGlobs(globsEl.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }
+          globsEl.value = merged.join(', ');
+        }
+        if (warn) {
+          const outside = data.outside || [];
+          if (data.noWorkspace) { warn.textContent = '\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u043F\u0430\u043F\u043A\u0438 \u2014 \u0432\u044B\u0431\u043E\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D'; warn.classList.remove('hidden'); }
+          else if (outside.length) { warn.textContent = '\u0432\u043D\u0435 workspace, \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E: ' + outside.join(', '); warn.classList.remove('hidden'); }
+          else if ((data.globs || []).length) { warn.textContent = ''; warn.classList.add('hidden'); }
+        }
       }
     });
     setInterval(() => {
@@ -1662,8 +1678,18 @@ ${headHtml(assets, nonce)}
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
       if (!scope) return;
       const globsEl = document.getElementById('customGlobs');
-      if (globsEl) globsEl.classList.toggle('hidden', scope.value !== 'list');
+      const pickBtn = document.getElementById('pickScopeForm');
+      const isList = scope.value === 'list';
+      if (globsEl) globsEl.classList.toggle('hidden', !isList);
+      if (pickBtn) pickBtn.classList.toggle('hidden', !isList);
     });
+    const pickFormBtn = document.getElementById('pickScopeForm');
+    if (pickFormBtn) pickFormBtn.addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
+    function splitGlobs(value) {
+      const out = [];
+      for (const part of String(value || '').split(',')) { const g = part.trim(); if (g && !out.includes(g)) out.push(g); }
+      return out;
+    }
   </script>
 </body>
 </html>`;
@@ -1798,6 +1824,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "cancelScan") {
         void vscode.commands.executeCommand("codescout.cancelScan");
+      } else if (message.command === "pickScope") {
+        void this.handlePickScope();
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
         const requestedUri = vscode.Uri.file((0, import_node_path3.resolve)(message.file));
         const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
@@ -1830,6 +1858,33 @@ var CodeScoutPanel = class {
       }
     }, void 0, []);
     this.render();
+  }
+  async handlePickScope() {
+    const webview = this.view?.webview;
+    if (!webview) return;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      await webview.postMessage({ type: "scopePickResult", globs: [], outside: [], noWorkspace: true });
+      return;
+    }
+    const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0432 scope \u0430\u0443\u0434\u0438\u0442\u0430" });
+    const globs = [];
+    const outside = [];
+    for (const uri of picked ?? []) {
+      const rel = (0, import_node_path3.relative)(workspaceRoot, (0, import_node_path3.resolve)(uri.fsPath)).replaceAll("\\", "/");
+      if (!rel || rel.startsWith("..") || (0, import_node_path3.isAbsolute)(rel)) {
+        outside.push(uri.fsPath);
+        continue;
+      }
+      let isDirectory = false;
+      try {
+        isDirectory = (await vscode.workspace.fs.stat(uri)).type === vscode.FileType.Directory;
+      } catch {
+        isDirectory = false;
+      }
+      globs.push(isDirectory ? `${rel}/**` : rel);
+    }
+    await webview.postMessage({ type: "scopePickResult", globs, outside });
   }
   setWelcomeChoiceHandler(onStart, onDismiss) {
     this.onWelcomeStart = onStart;

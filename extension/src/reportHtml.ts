@@ -238,8 +238,10 @@ ${headHtml(assets, nonce)}
           <option value="active">только открытый файл</option>
           <option value="list">список файлов (глобы через запятую)</option>
         </select>
-        <input id="customGlobs" type="text" class="hidden" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+        <input id="customGlobs" type="text" class="hidden custom-globs" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
+        <button type="button" class="cs-btn secondary hidden" id="pickScopeForm">${icon('folder-opened')}<span>Выбрать файлы/папки</span></button>
       </div>
+      <p class="custom-warn hidden" id="customScopeWarn"></p>
       <div class="custom-actions">
         <button type="button" class="cs-btn" id="startCustomReview">${icon('beaker')}<span>Запустить своё ревью</span></button>
       </div>
@@ -359,6 +361,20 @@ ${headHtml(assets, nonce)}
           auto.seconds = Number(data.secondsLeft || 0);
         }
         renderAuto();
+      } else if (data.type === 'scopePickResult') {
+        const globsEl = document.getElementById('customGlobs');
+        const warn = document.getElementById('customScopeWarn');
+        if (globsEl) {
+          const merged = [];
+          for (const g of [...splitGlobs(globsEl.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }
+          globsEl.value = merged.join(', ');
+        }
+        if (warn) {
+          const outside = data.outside || [];
+          if (data.noWorkspace) { warn.textContent = 'Нет открытой папки — выбор недоступен'; warn.classList.remove('hidden'); }
+          else if (outside.length) { warn.textContent = 'вне workspace, не добавлено: ' + outside.join(', '); warn.classList.remove('hidden'); }
+          else if ((data.globs || []).length) { warn.textContent = ''; warn.classList.add('hidden'); }
+        }
       }
     });
     setInterval(() => {
@@ -414,8 +430,18 @@ ${headHtml(assets, nonce)}
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
       if (!scope) return;
       const globsEl = document.getElementById('customGlobs');
-      if (globsEl) globsEl.classList.toggle('hidden', scope.value !== 'list');
+      const pickBtn = document.getElementById('pickScopeForm');
+      const isList = scope.value === 'list';
+      if (globsEl) globsEl.classList.toggle('hidden', !isList);
+      if (pickBtn) pickBtn.classList.toggle('hidden', !isList);
     });
+    const pickFormBtn = document.getElementById('pickScopeForm');
+    if (pickFormBtn) pickFormBtn.addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
+    function splitGlobs(value) {
+      const out = [];
+      for (const part of String(value || '').split(',')) { const g = part.trim(); if (g && !out.includes(g)) out.push(g); }
+      return out;
+    }
   </script>
 </body>
 </html>`;

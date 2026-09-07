@@ -148,6 +148,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'cancelScan') {
         void vscode.commands.executeCommand('codescout.cancelScan');
+      } else if (message.command === 'pickScope') {
+        void this.handlePickScope();
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
         const requestedUri = vscode.Uri.file(resolve(message.file));
         const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
@@ -181,6 +183,31 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       }
     }, undefined, []);
     this.render();
+  }
+
+  private async handlePickScope(): Promise<void> {
+    const webview = this.view?.webview;
+    if (!webview) return;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      await webview.postMessage({ type: 'scopePickResult', globs: [], outside: [], noWorkspace: true });
+      return;
+    }
+    const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: 'Добавить в scope аудита' });
+    const globs: string[] = [];
+    const outside: string[] = [];
+    for (const uri of picked ?? []) {
+      const rel = relative(workspaceRoot, resolve(uri.fsPath)).replaceAll('\\', '/');
+      if (!rel || rel.startsWith('..') || isAbsolute(rel)) { outside.push(uri.fsPath); continue; }
+      let isDirectory = false;
+      try {
+        isDirectory = (await vscode.workspace.fs.stat(uri)).type === vscode.FileType.Directory;
+      } catch {
+        isDirectory = false;
+      }
+      globs.push(isDirectory ? `${rel}/**` : rel);
+    }
+    await webview.postMessage({ type: 'scopePickResult', globs, outside });
   }
 
   setWelcomeChoiceHandler(onStart: () => void, onDismiss?: () => void): void {

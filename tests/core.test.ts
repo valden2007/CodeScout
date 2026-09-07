@@ -2597,6 +2597,54 @@ describe('v1.4b ui-apply fix + file picker', () => {
   });
 });
 
+describe('v1.4b-5 light theme tokens + form picker', () => {
+  const lightCss = () => uiTokensCss();
+
+  it('light palette overrides every control token (input/select/button)', () => {
+    const css = lightCss();
+    const light = css.slice(css.indexOf('body[data-theme="light"]'), css.indexOf('body[data-accent'));
+    for (const token of ['--cs-input-bg', '--cs-input-fg', '--cs-input-border', '--cs-select-bg', '--cs-select-fg', '--cs-btn-bg', '--cs-btn-fg', '--cs-btn-hover', '--cs-btn2-bg', '--cs-btn2-fg', '--cs-btn2-hover', '--cs-card-bg', '--cs-shadow']) {
+      expect(light).toContain(token);
+    }
+    expect(light).toContain('--cs-editor-bg: #f5f5f5');
+    expect(light).toContain('--cs-card-bg: #ffffff');
+  });
+
+  it('no control sits on a bare --vscode-input/button outside the auto base block', () => {
+    for (const page of [
+      buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', { theme: 'light', accent: 'auto', density: 'standard', fontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto' }),
+      buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'light' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const })
+    ]) {
+      let css = page.slice(page.indexOf('<style'), page.indexOf('</style>'));
+      css = css.replace(/:root\s*\{[^}]*\}/g, '');
+      css = css.replace(/\/\* cs-theme-palette:start \*\/[\s\S]*?\/\* cs-theme-palette:end \*\//g, '');
+      expect(css).not.toMatch(/var\(--vscode-input/);
+      expect(css).not.toMatch(/var\(--vscode-button/);
+    }
+  });
+
+  it('custom review form exposes the picker button, warn and result merge', () => {
+    const html = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 });
+    expect(html).toContain('id="pickScopeForm"');
+    expect(html).toContain('codicon-folder-opened');
+    expect(html).toContain('id="customScopeWarn"');
+    expect(html).toContain("command: 'pickScope'");
+    expect(html).toContain("data.type === 'scopePickResult'");
+    expect(html).toContain('вне workspace, не добавлено');
+    expect(html).toContain('function splitGlobs');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("command === 'pickScope'");
+    expect(panel).toContain('handlePickScope');
+    expect(panel).toContain('canSelectFiles: true');
+    expect(panel).toContain('canSelectFolders: true');
+    expect(panel).toContain('canSelectMany: true');
+    expect(panel).toContain("openLabel: 'Добавить в scope аудита'");
+    expect(panel).toContain('defaultUri: vscode.Uri.file(workspaceRoot)');
+    expect(panel).toContain('`${rel}/**`');
+    expect(panel).toContain("type: 'scopePickResult'");
+  });
+});
+
 describe('H1.1.2 path traversal guards', () => {
   it('checks workspace prefix with separator and resolves symlinks via realpath', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');

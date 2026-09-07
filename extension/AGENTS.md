@@ -263,6 +263,21 @@ pre-design now.
     auditScope FIELD (source of truth) with dedupe; chips under the
     field (codicon-close removes a glob) and mark the shared save
     button dirty. Tests: 202.
+13. Light theme + form picker (v1.4b-5): all control colors now go
+    through --cs-* tokens (--cs-input-bg/fg/border, --cs-select-bg/fg,
+    --cs-checkbox, --cs-chip-bg/fg, --cs-card-bg/border, --cs-shadow,
+    --cs-list-hover, --cs-btn-*); auto maps them to --vscode-*, and
+    forced light/dark override the TOKENS (never the raw --vscode-*).
+    Light palette: bg #f5f5f5, cards #ffffff + border + soft shadow,
+    light inputs w/ dark text, visible hovers (WCAG AA). Native open
+    <select> dropdown stays OS-level (accepted); closed select is
+    themed. Contract: no var(--vscode-input/button) outside the auto
+    :root block. Custom-review form: in 'list' scope a "Выбрать
+    файлы/папки" (codicon-folder-opened) button posts 'pickScope';
+    panel.handlePickScope runs showOpenDialog and posts
+    {type:'scopePickResult'} back; the form merges into customGlobs
+    (folder→rel/**, file→rel, dedupe) with an inline outside-warn.
+    Tests: 205.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
