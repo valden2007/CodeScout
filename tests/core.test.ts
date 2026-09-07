@@ -115,7 +115,7 @@ describe('E9.8 rules and W1.0 project context', () => {
     expect(audit.ignored).toEqual([]);
     expect(audit.files.every((file) => !file.filename.startsWith('dist/'))).toBe(true);
     const html = buildEmptyReportHtml();
-    expect(html).toContain('🔬 Полный аудит проекта');
+    expect(html).toContain('codicon-telescope'); expect(html).toContain('Полный аудит проекта');
     expect(readFileSync('extension/package.json', 'utf8')).toContain('codescout.scanFull');
     rmSync(root, { recursive: true, force: true });
   });
@@ -140,7 +140,7 @@ describe('E9.8 rules and W1.0 project context', () => {
 describe('E9.5 scan cancellation', () => {
   it('renders a stop button only while scanning and shows cancelled status support', () => {
     const scanningHtml = buildReportHtml([], { files: 2, seconds: 1, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Проверяю файл 1/2: src/app.ts...');
-    expect(scanningHtml).toContain('⛔ Остановить');
+    expect(scanningHtml).toContain('codicon-debug-stop'); expect(scanningHtml).toContain('Остановить');
     expect(scanningHtml).toContain('data-command="cancelScan"');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('⛔ Сканирование остановлено пользователем');
@@ -168,8 +168,8 @@ describe('E9.5 scan cancellation', () => {
 describe('E9 scan progress and labels', () => {
   it('renders Russian-first scan button labels and live progress text', () => {
     const html = buildReportHtml([], { files: 2, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Проверяю файл 1/2: src/app.ts...');
-    expect(html).toContain('🔍 Проверить последний коммит');
-    expect(html).toContain('📝 Проверить изменения до коммита');
+    expect(html).toContain('codicon-git-commit'); expect(html).toContain('Проверить последний коммит');
+    expect(html).toContain('codicon-diff'); expect(html).toContain('Проверить изменения до коммита');
     expect(html).toContain('🔎 Проверяю файл 1/2: src/app.ts...');
     expect(html).toContain('data-command="scanLastCommit"');
     expect(html).toContain('data-command="scanUncommitted"');
@@ -187,17 +187,17 @@ describe('E9 scan progress and labels', () => {
 describe('E5.9.1 self-test sample', () => {
   it('renders a clear clean-review state with the self-test action', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1.2, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
-    expect(html).toContain('✅');
+    expect(html).toContain('codicon-pass');
     expect(html).toContain('Проверено файлов: 1 — проблем не найдено');
     expect(html).toContain('Сомневаешься? Проверь, как CodeScout ловит баги:');
-    expect(html).toContain('🧪 Тест на примере');
+    expect(html).toContain('codicon-beaker'); expect(html).toContain('Тест на примере');
     expect(html).toContain('0 issues</strong> · 1 files');
   });
 
   it('warns when the self-test model finds no planted issues', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, 'Пример: ожидалось 2-3 бага, найдено 0. ⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️', 'error', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash', true);
     expect(html).toContain('Модель слишком слабая для ревью');
-    expect(html).toContain('🧪 ТЕСТ');
+    expect(html).toContain('codicon-beaker'); expect(html).toContain('ТЕСТ');
   });
   it('contains three planted bug patterns', () => {
     expect(SAMPLE_DIFF).toContain('catch (e) {}');
@@ -254,7 +254,7 @@ describe('E5.7 live model picker', () => {
 
   it('shows an available-model picker action after a 404', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, true, '⚠️ 404: эндпоинт или модель model не найдены. Проверь provider/model.', 'error', 'AIza•••123', true, 'gemini', 'model');
-    expect(html).toContain('🔄 Выбрать доступную модель');
+    expect(html).toContain('codicon-sync'); expect(html).toContain('Выбрать доступную модель');
     expect(html).toContain('data-command="chooseModel"');
   });
 });
@@ -272,7 +272,7 @@ describe('E5.6 provider auto-detection', () => {
 
   it('renders provider and model in the key status line', () => {
     const html = buildEmptyReportHtml('sk-o•••123', true, 'openrouter', 'meta-llama/llama-3.3-instruct:free');
-    expect(html).toContain('🟢 openrouter · meta-llama/llama-3.3-instruct:free · sk-o•••123');
+    expect(html).toContain('codicon-pass'); expect(html).toContain('openrouter · meta-llama/llama-3.3-instruct:free · sk-o•••123');
   });
 });
 
@@ -549,11 +549,11 @@ describe('E1.2a settings page (skeleton + keys)', () => {
   it('renders the sidebar center with all five sections', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('class="sidebar"');
-    expect(html).toContain('🔑 Ключ и модель');
-    expect(html).toContain('🔄 Аудит');
-    expect(html).toContain('📁 Проект');
-    expect(html).toContain('🎨 Внешний вид');
-    expect(html).toContain('ℹ️ О расширении');
+    expect(html).toContain('codicon-key'); expect(html).toContain('Ключ и модель');
+    expect(html).toContain('codicon-sync'); expect(html).toContain('>Аудит<');
+    expect(html).toContain('codicon-folder'); expect(html).toContain('>Проект<');
+    expect(html).toContain('codicon-symbol-color'); expect(html).toContain('Внешний вид');
+    expect(html).toContain('codicon-info'); expect(html).toContain('О расширении');
     expect(html).toContain('id="sec-key"');
     expect(html).toContain('id="sec-audit"');
     expect(html).toContain('id="sec-project"');
@@ -627,7 +627,7 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     const html = buildSettingsHtml(state);
     expect(html).toContain('id="saveAll" type="button" disabled');
     expect(html).toContain('function refreshDirty');
-    expect(html).toContain('⏳ Сохраняю…');
+    expect(html).toContain('Сохраняю…');
     expect(html).toContain('function snapshot()');
     expect(html).toContain('let initial = snapshot()');
     expect(html).toContain('saveAllBtn.disabled = !dirty');
@@ -644,8 +644,8 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(extension).toContain('❌ Ошибка: ${error instanceof Error ? error.message : String(error)}');
     expect(extension).toContain('применится к следующему ревью');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
-    expect(report).toContain('🔑 Ключ и модель</button>');
-    expect(report).toContain('⚙️ Настройки</button>');
+    expect(report).toContain("icon('key')");
+    expect(report).toContain("icon('settings-gear')");
     expect(report).not.toContain("'Изменить'");
     expect(report).not.toContain('⚙️ Модель:');
   });
@@ -754,15 +754,15 @@ describe('E1.2d findings diff and scan history', () => {
     const html = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', diff);
     expect(html).toContain('class="diff-summary"');
     expect(html).toContain('🆕 новых: 1 · ✅ починено: 0 · 🔁 осталось: 1');
-    expect(html).toContain('class="badge new">🆕 новая<');
+    expect(html).toContain('codicon-add'); expect(html).toContain('новая');
     expect(html).not.toContain('<details');
     const resolvedHtml = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff(previous, []));
     expect(resolvedHtml).toContain('<details class="fixed-block"');
-    expect(resolvedHtml).toContain('✅ Починено с прошлого скана (1)');
+    expect(resolvedHtml).toContain('codicon-check'); expect(resolvedHtml).toContain('Починено с прошлого скана (1)');
     expect(resolvedHtml).toContain('src/a.ts:5');
     const plain = buildReportHtml(issues, stats);
     expect(plain).not.toContain('<div class="diff-summary">');
-    expect(plain).not.toContain('class="badge new">🆕 новая<');
+    expect(plain).not.toContain('codicon-add');
   });
 
   it('round-trips history.json and tolerates missing or broken files', () => {
@@ -808,7 +808,7 @@ describe('E1.2e custom review focus', () => {
   it('renders the focus form hidden by default and wires it through delegation', () => {
     const html = buildReportHtml([], stats);
     expect(html).toContain('id="toggleCustomForm"');
-    expect(html).toContain('🎯 Своё ревью');
+    expect(html).toContain('codicon-beaker'); expect(html).toContain('Своё ревью');
     expect(html).toContain('class="custom-form hidden"');
     expect(html).toContain('id="customForm"');
     expect(html).toContain('<textarea id="customFocusText"');
@@ -825,18 +825,18 @@ describe('E1.2e custom review focus', () => {
   it('keeps a clean key row with one button to settings', () => {
     const issues: ReviewIssue[] = [{ file: 'src/a.ts', line: 1, category: 'bug', severity: 'low', description: 'd', confidence: 0.5 }];
     const configured = buildReportHtml(issues, stats, false, false, '', 'retry', 'AIza•••123', true, 'gemini', 'gemini-2.5-flash');
-    expect(configured).toContain('🟢 gemini · gemini-2.5-flash · AIza•••123 (защищённо)');
-    expect(configured).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
+    expect(configured).toContain('codicon-pass'); expect(configured).toContain('gemini · gemini-2.5-flash · AIza•••123 (защищённо)');
+    expect(configured).toContain('data-command="openSettingsPage" data-anchor="sec-key">');
     expect(configured).not.toContain('>Изменить<');
     expect(configured).not.toContain('>Настроить<');
     expect(configured).not.toContain('>Очистить<');
     const missing = buildReportHtml(issues, stats, false, false, '', 'retry', '', false);
-    expect(missing).toContain('🔴 Ключ не настроен <button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
+    expect(missing).toContain('codicon-error'); expect(missing).toContain('Ключ не настроен');
   });
 
   it('prints the custom review header above the report', () => {
     const html = buildReportHtml(issues1(), stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, 'все ли запросы в транзакциях');
-    expect(html).toContain('<div class="diff-summary custom">🎯 Кастомное ревью: все ли запросы в транзакциях</div>');
+    expect(html).toContain('codicon-target'); expect(html).toContain('Кастомное ревью: все ли запросы в транзакциях');
     const plain = buildReportHtml(issues1(), stats);
     expect(plain).not.toContain('diff-summary custom');
   });
@@ -898,10 +898,10 @@ describe('E1.2e rules and doc links via settings', () => {
 
   it('settings page renders the project section wired to the single save', () => {
     const html = buildSettingsHtml({ ...state, docLinks: ['https://docs.example.com/api'] });
-    expect(html).toContain('📁 Проект');
+    expect(html).toContain('codicon-folder'); expect(html).toContain('>Проект<');
     expect(html).toContain('id="docLinks"');
     expect(html).toContain('https://docs.example.com/api');
-    expect(html).toContain('📜 Открыть rules.md');
+    expect(html).toContain('codicon-file'); expect(html).toContain('Открыть rules.md');
     expect(html).toContain("command: 'saveAll'");
     expect(html).toContain("command: 'openRules'");
     expect(html).toContain('function snapshot()');
@@ -1016,13 +1016,13 @@ describe('E1.3a audit checkpoints', () => {
 
   it('renders resume banner with two buttons and hides it by default', () => {
     const withResume = buildReportHtml(issue, { files: 2, seconds: 1, critical: 1, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'groq/llama', false, '', false, 'new', undefined, '', { done: 21, total: 26, model: 'groq/llama', startedAt: Date.now() });
-    expect(withResume).toContain('data-command="resumeAudit">▶️ Продолжить (21 из 26)');
-    expect(withResume).toContain('data-command="restartAudit">🆕 Начать заново');
-    expect(withResume).toContain('⏸ Аудит оборвался');
+    expect(withResume).toContain('codicon-play'); expect(withResume).toContain('Продолжить (21 из 26)');
+    expect(withResume).toContain('codicon-refresh'); expect(withResume).toContain('Начать заново');
+    expect(withResume).toContain('codicon-debug-alt'); expect(withResume).toContain('Аудит оборвался');
     const plain = buildReportHtml(issue, { files: 1, seconds: 1, critical: 1, medium: 0, low: 0 });
     expect(plain).not.toContain('resumeAudit');
     expect(buildEmptyReportHtml('', false)).not.toContain('resumeAudit');
-    expect(buildEmptyReportHtml('', false, 'gemini', 'm', false, 'new', { done: 5, total: 9, model: 'm', startedAt: 1 })).toContain('▶️ Продолжить (5 из 9)');
+    expect(buildEmptyReportHtml('', false, 'gemini', 'm', false, 'new', { done: 5, total: 9, model: 'm', startedAt: 1 })).toContain('Продолжить (5 из 9)');
   });
 
   it('wires resume/restart through panel, extension and manifest', () => {
@@ -1248,10 +1248,10 @@ describe('E1.3f maxLines setting and chunking', () => {
   });
   it('panel header has a settings button next to the brand and keeps the quick key button', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
-    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettingsPage"');
-    expect(html).toContain('⚙️ Настройки');
-    expect(html).toContain('<div class="brand"><span class="brand-mark">🕵️</span> CodeScout <button');
-    expect(html).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
+    expect(html).toContain('<button class="brand-settings cs-btn" type="button" data-command="openSettingsPage"');
+    expect(html).toContain('codicon-settings-gear');
+    expect(html).toContain('<div class="brand"><span class="brand-mark"><i class="codicon codicon-search"');
+    expect(html).toContain('data-command="openSettingsPage" data-anchor="sec-key">');
   });
 });
 
@@ -1267,8 +1267,8 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.openSettingsPage');
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
-    expect(html).toContain('<button class="brand-settings" type="button" data-command="openSettingsPage"');
-    expect(html).toContain('<button type="button" data-command="openSettingsPage" data-anchor="sec-key">🔑 Ключ и модель</button>');
+    expect(html).toContain('<button class="brand-settings cs-btn" type="button" data-command="openSettingsPage"');
+    expect(html).toContain('data-command="openSettingsPage" data-anchor="sec-key">');
   });
 
   it('panel tracks autoResume setting and re-renders on config change', () => {
@@ -1276,22 +1276,22 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("private autoResumeEnabled = false;");
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("event.affectsConfiguration('codescout.autoResume')");
-    expect(panel).toContain('this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
     const idle = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
-    expect(idle).toContain('🤖 Автономный режим: ВКЛ');
+    expect(idle).toContain('Автономный режим: ВКЛ');
     expect(idle).toContain('class="auto-badge"');
     expect(idle).not.toContain('Автономный режим включён');
     expect(idle).not.toContain('авто-догон активен');
     const running = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
-    expect(running).toContain('🤖 Автономный режим: ВКЛ');
+    expect(running).toContain('Автономный режим: ВКЛ');
     const off = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false);
     expect(off).not.toContain('Автономный режим: ВКЛ');
     expect(off).not.toContain('<div class="auto-badge"');
     const emptyOn = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, true);
-    expect(emptyOn).toContain('🤖 Автономный режим: ВКЛ');
+    expect(emptyOn).toContain('Автономный режим: ВКЛ');
     const emptyOff = buildEmptyReportHtml('k', true, 'groq', 'm', false, 'new', undefined, false);
     expect(emptyOff).not.toContain('Автономный режим: ВКЛ');
     const badgeAt = idle.indexOf('<div class="auto-badge"');
@@ -1299,8 +1299,8 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(actionsAt).toBeGreaterThan(-1);
     expect(badgeAt).toBeGreaterThan(actionsAt);
     const css = idle.slice(idle.indexOf('.auto-badge'), idle.indexOf('.auto-badge') + 120);
-    expect(css).toContain('font-size: 11px');
-    expect(css).toContain('--vscode-descriptionForeground');
+    expect(css).toContain('var(--cs-font-1)');
+    expect(css).toContain('var(--cs-desc)');
   });
 
   it('badge refreshes on settings save without reload', () => {
@@ -1315,16 +1315,16 @@ describe('E1.3j settings button + auto-audit indicator', () => {
 
   it('badge text reflects the configured limits (0 = unlimited)', async () => {
     const { autoResumeBadgeText } = await import('../extension/src/projectAudit');
-    expect(autoResumeBadgeText(0, 0)).toBe('🤖 Автономный режим: ВКЛ (без лимита)');
-    expect(autoResumeBadgeText(5, 0)).toBe('🤖 Автономный режим: ВКЛ (макс. 5 попыток)');
-    expect(autoResumeBadgeText(0, 90)).toBe('🤖 Автономный режим: ВКЛ (макс. 90 мин)');
-    expect(autoResumeBadgeText(5, 90)).toBe('🤖 Автономный режим: ВКЛ (макс. 5 попыток / 90 мин)');
+    expect(autoResumeBadgeText(0, 0)).toBe('Автономный режим: ВКЛ (без лимита)');
+    expect(autoResumeBadgeText(5, 0)).toBe('Автономный режим: ВКЛ (макс. 5 попыток)');
+    expect(autoResumeBadgeText(0, 90)).toBe('Автономный режим: ВКЛ (макс. 90 мин)');
+    expect(autoResumeBadgeText(5, 90)).toBe('Автономный режим: ВКЛ (макс. 5 попыток / 90 мин)');
     const base = [] as never[];
     const stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
     const unlimited = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 0, 0);
-    expect(unlimited).toContain('🤖 Автономный режим: ВКЛ (без лимита)');
+    expect(unlimited).toContain('Автономный режим: ВКЛ (без лимита)');
     const both = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 7, 120);
-    expect(both).toContain('🤖 Автономный режим: ВКЛ (макс. 7 попыток / 120 мин)');
+    expect(both).toContain('Автономный режим: ВКЛ (макс. 7 попыток / 120 мин)');
     const attemptsOnly = buildReportHtml(base, stats, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true, 3, 0);
     expect(attemptsOnly).toContain('(макс. 3 попыток)');
     expect(attemptsOnly).not.toContain('мин)');
@@ -1930,7 +1930,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
 
   it('panel renders the auto-resume indicator with countdown support', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, true, false, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, { done: 5, total: 9, secondsLeft: 60, attempt: 2, maxAttempts: 20 });
-    expect(html).toContain('🤖 авто-догон: 5/9, попытка 2/20 через 60с');
+    expect(html).toContain('codicon-robot'); expect(html).toContain('авто-догон: 5/9, попытка 2/20 через 60с');
     expect(html).toContain('id="autoLine"');
     expect(html).toContain("data.type === 'auto'");
     const plain = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 });
@@ -1977,7 +1977,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
     const html = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: true, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: 'src/**', auditPasses: 1, maxFiles: 100, version: '1.1.2' });
     expect(html).toContain('id="autoResume"');
-    expect(html).toContain('🤖 Автономный режим (авто-догон)');
+    expect(html).toContain('codicon-robot'); expect(html).toContain('Автономный режим (авто-догон)');
     expect(html).toContain('checked');
     expect(html).toContain('id="auditScope"');
     expect(html).toContain('Scope аудита (glob через запятую, пусто = все)');
@@ -1998,7 +1998,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     ];
     const html = buildReportHtml(issues, { files: 2, seconds: 1, critical: 0, medium: 0, low: 2 });
     expect(html).toContain('id="fileSearch"');
-    expect(html).toContain('🔍 поиск файла…');
+    expect(html).toContain('поиск файла…');
     expect(html).toContain("sec.classList.toggle('hidden', q !== '' && !name.includes(q))");
     const empty = buildReportHtml([], { files: 0, seconds: 1, critical: 0, medium: 0, low: 0 }, false, true);
     expect(empty).not.toContain('id="fileSearch"');
@@ -2107,7 +2107,7 @@ describe('G6 fix batch security and robustness', () => {
   it('settings webview has a nonce-only CSP and a single nonce-bearing script (smoke)', () => {
     const state = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, maxFiles: 100, version: '1.1.2' };
     const html = buildSettingsHtml(state, '', 'ok', 'abc123nonce');
-    expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; script-src \'nonce-abc123nonce\';">');
+    expect(html).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'nonce-abc123nonce\'; script-src \'nonce-abc123nonce\';">');
     expect(html).toContain('<script nonce="abc123nonce">');
     expect(html).not.toContain("'unsafe-eval'");
     expect(html).not.toMatch(/<script[^>]*>[^]*?<script/);
@@ -2278,11 +2278,11 @@ describe('G7 fix batch security and robustness', () => {
 
   it('webviews pin localResourceRoots and the settings handler whitelists origin', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('localResourceRoots: []');
+    expect(panel).toContain('localResourceRoots: [this.extensionUri]');
     expect(panel).toContain('this.configSubscription = vscode.workspace.onDidChangeConfiguration');
     expect(panel).toContain('this.configSubscription?.dispose()');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('localResourceRoots: []');
+    expect(extension).toContain('localResourceRoots: [context.extensionUri]');
     expect(extension).toContain("!== 'vscode-webview'");
   });
 
@@ -2388,13 +2388,82 @@ describe('v1.4b settings center with sidebar', () => {
 
   it('both panel buttons open the center; key button carries the sec-key anchor', () => {
     const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'm');
-    const gear = html.match(/<button class="brand-settings"[^>]*data-command="(\w+)"/);
+    const gear = html.match(/<button class="brand-settings[^"]*"[^>]*data-command="(\w+)"/);
     const key = html.match(/data-command="(\w+)" data-anchor="([\w-]+)">/);
     expect(gear?.[1]).toBe('openSettingsPage');
     expect(key?.[1]).toBe('openSettingsPage');
     expect(key?.[2]).toBe('sec-key');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("executeCommand('codescout.openSettingsPage', message.anchor ?? '')");
+  });
+});
+
+describe('v1.4b-2 design system (codicons + tokens)', () => {
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
+  const assets = { codiconCss: 'vscode-webview://abc/media/codicon.css', cspSource: 'vscode-webview://abc' };
+
+  it('panel action buttons use codicons, not emoji', () => {
+    const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'm');
+    expect(html).toContain('codicon-git-commit');
+    expect(html).toContain('codicon-diff');
+    expect(html).toContain('codicon-telescope');
+    expect(html).toContain('codicon-beaker');
+    expect(html).toContain('codicon-settings-gear');
+    expect(html).toContain('codicon-key');
+    const stop = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, true);
+    expect(stop).toContain('codicon-debug-stop');
+    const resume = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', { done: 1, total: 2, model: 'm', startedAt: 1 });
+    expect(resume).toContain('codicon-play');
+    expect(resume).toContain('codicon-refresh');
+    const badge = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, true);
+    expect(badge).toContain('codicon-robot');
+  });
+
+  it('no emoji anywhere in the default panel or center markup', () => {
+    const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, assets, 'n1');
+    expect(EMOJI.test(panel)).toBe(false);
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'n2', '', assets);
+    expect(EMOJI.test(center)).toBe(false);
+  });
+
+  it('center sidebar sections carry their codicons', () => {
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' });
+    expect(center).toContain('codicon-key');
+    expect(center).toContain('codicon-sync');
+    expect(center).toContain('codicon-folder');
+    expect(center).toContain('codicon-symbol-color');
+    expect(center).toContain('codicon-info');
+    expect(center).toContain('codicon-save');
+  });
+
+  it('CSP allows the codicon font and stylesheet via cspSource', () => {
+    const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, assets, 'nn');
+    expect(panel).toContain("font-src vscode-webview://abc;");
+    expect(panel).toContain("style-src 'nonce-nn' vscode-webview://abc;");
+    expect(panel).toContain('<link rel="stylesheet" href="vscode-webview://abc/media/codicon.css">');
+    expect(panel).toContain('<style nonce="nn">');
+    expect(panel).toContain('<script nonce="nn">');
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'nn', '', assets);
+    expect(center).toContain('font-src vscode-webview://abc;');
+    expect(center).toContain('style-src \'nonce-nn\' vscode-webview://abc;');
+  });
+
+  it('no #hex colors in the inline CSS of either page', () => {
+    const panel = buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, assets, 'nn');
+    const center = buildSettingsHtml({ keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0' }, '', 'ok', 'nn', '', assets);
+    for (const page of [panel, center]) {
+      const css = page.slice(page.indexOf('<style'), page.indexOf('</style>'));
+      expect(/#[0-9a-fA-F]{3,8}\b/.test(css)).toBe(false);
+    }
+  });
+
+  it('codicon assets live in media/ and are packaged into the vsix', () => {
+    expect(readFileSync('extension/media/codicon.css', 'utf8')).toContain('@font-face');
+    expect(readFileSync('extension/media/codicon.ttf', 'utf8').length).toBeGreaterThan(1000);
+    const ignore = readFileSync('extension/.vscodeignore', 'utf8');
+    expect(ignore).not.toMatch(/media/);
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('@vscode/codicons');
   });
 });
 

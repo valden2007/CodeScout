@@ -516,10 +516,10 @@ export function autoResumeLimitFromSetting(value: number | undefined, max: numbe
 export function autoResumeBadgeText(maxAttempts: number, maxMinutes: number): string {
   const hasAttempts = maxAttempts > 0;
   const hasMinutes = maxMinutes > 0;
-  if (hasAttempts && hasMinutes) return `🤖 Автономный режим: ВКЛ (макс. ${maxAttempts} попыток / ${maxMinutes} мин)`;
-  if (hasAttempts) return `🤖 Автономный режим: ВКЛ (макс. ${maxAttempts} попыток)`;
-  if (hasMinutes) return `🤖 Автономный режим: ВКЛ (макс. ${maxMinutes} мин)`;
-  return '🤖 Автономный режим: ВКЛ (без лимита)';
+  if (hasAttempts && hasMinutes) return `Автономный режим: ВКЛ (макс. ${maxAttempts} попыток / ${maxMinutes} мин)`;
+  if (hasAttempts) return `Автономный режим: ВКЛ (макс. ${maxAttempts} попыток)`;
+  if (hasMinutes) return `Автономный режим: ВКЛ (макс. ${maxMinutes} мин)`;
+  return 'Автономный режим: ВКЛ (без лимита)';
 }
 
 export type ReviewScope = 'all' | 'active' | 'list';

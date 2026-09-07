@@ -656,7 +656,7 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeScout');
-  const panel = new CodeScoutPanel();
+  const panel = new CodeScoutPanel(context.extensionUri);
   // The old one-time flow used: await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true')
   // 👋 Запустить полный аудит для контекста?
   panel.setWelcomeChoiceHandler(() => { void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true'); });
@@ -675,10 +675,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
     vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {
       const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
-        if (settingsPanel) settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '');
+        if (settingsPanel) {
+          const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'codicon.css')).toString(), cspSource: settingsPanel.webview.cspSource };
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets);
+        }
       };
       if (!settingsPanel) {
-        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [] });
+        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
         settingsPanel.webview.onDidReceiveMessage((message: SettingsMessage, event: unknown) => {
           if ((event as { origin?: string })?.origin !== 'vscode-webview') return;
@@ -722,7 +725,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global);
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? `включён (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace('🤖 Автономный режим: ВКЛ ', '')})` : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
+            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? `включён (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace('Автономный режим: ВКЛ ', '')})` : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
           } else if (message.command === 'saveAll') {
             const config = vscode.workspace.getConfiguration('codescout');
             const parts: string[] = [];

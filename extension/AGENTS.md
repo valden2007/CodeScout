@@ -222,6 +222,17 @@ pre-design now.
     command arg → buildSettingsHtml scrolls on load). Native
     codescout.openSettings kept as system fallback. SettingsState
     gained maxFiles + version. Tests: 186.
+10b. Design system (v1.4b-2): @vscode/codicons devDep; media/codicon.css
+    + codicon.ttf shipped in the vsix; panel and settings webview load it
+    via asWebviewUri and a CSP with font-src/style-src ${cspSource} +
+    nonce'd <style>/<script> (buildReportHtml/buildSettingsHtml take
+    {codiconCss,cspSource} + nonce; panel/settings pass them, localResourceRoots
+    widened to extensionUri). All UI emoji replaced by codicons (commit/diff/
+    telescope/beaker/settings-gear/key/debug-stop/play/refresh/robot + section
+    icons); Output logs and the GitHub report keep emoji (text, not UI).
+    Shared --cs-* token block (spacing 4/8/12/16, radius 4/6, fonts 11/12/13/15,
+    colors only from --vscode-*) in both pages — no #hex in inline CSS.
+    autoResumeBadgeText lost its 🤖 prefix (icon now in markup). Tests: 192.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

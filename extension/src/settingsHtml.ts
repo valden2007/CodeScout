@@ -19,6 +19,11 @@ export interface SettingsState {
   version: string;
 }
 
+export interface SettingsAssets {
+  codiconCss: string;
+  cspSource: string;
+}
+
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
 
 const REPO_URL = 'https://github.com/valden2007/CodeScout';
@@ -32,8 +37,18 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = ''): string {
+function icon(name: string): string {
+  return `<i class="codicon codicon-${name}" aria-hidden="true"></i>`;
+}
+
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets): string {
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
+  const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
+  const csp = assets
+    ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${assets.cspSource}; img-src data:; style-src ${styleSrc} ${assets.cspSource}; script-src ${scriptSrc};">`
+    : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${styleSrc}; script-src ${scriptSrc};">`;
+  const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : '';
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
     .join('');
@@ -42,58 +57,81 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src ${scriptSrc};">
-<style>
-:root { color-scheme: dark; }
+${csp}
+${codiconLink}
+<style${nonceAttr}>
+:root {
+  color-scheme: dark;
+  --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
+  --cs-radius-1: 4px; --cs-radius-2: 6px;
+  --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
+  --cs-fg: var(--vscode-foreground);
+  --cs-desc: var(--vscode-descriptionForeground);
+  --cs-border: var(--vscode-panel-border);
+  --cs-input-border: var(--vscode-input-border, var(--vscode-panel-border));
+  --cs-btn-bg: var(--vscode-button-background);
+  --cs-btn-fg: var(--vscode-button-foreground);
+  --cs-btn-hover: var(--vscode-button-hoverBackground);
+  --cs-btn2-bg: var(--vscode-button-secondaryBackground);
+  --cs-btn2-fg: var(--vscode-button-secondaryForeground);
+  --cs-btn2-hover: var(--vscode-button-secondaryHoverBackground);
+  --cs-accent: var(--vscode-textLink-foreground);
+  --cs-error: var(--vscode-errorForeground);
+  --cs-warn: var(--vscode-editorWarning-foreground);
+  --cs-pass: var(--vscode-testing-iconPassed);
+}
 * { box-sizing: border-box; }
-body { margin: 0; padding: 0; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 13px; line-height: 1.45; }
-.brand { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; padding: 12px 16px; border-bottom: 1px solid var(--vscode-panel-border); }
-.brand-mark { color: var(--vscode-textLink-foreground); }
+body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--cs-font-3); line-height: 1.45; }
+.brand { display: flex; align-items: center; gap: var(--cs-space-2); font-size: var(--cs-font-4); font-weight: 700; padding: var(--cs-space-3) var(--cs-space-4); border-bottom: 1px solid var(--cs-border); }
+.brand-mark { color: var(--cs-accent); display: inline-flex; }
 .layout { display: flex; align-items: flex-start; gap: 0; }
-.sidebar { position: sticky; top: 0; flex: 0 0 190px; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-right: 1px solid var(--vscode-panel-border); max-height: 100vh; overflow: auto; }
-.nav-link { display: block; padding: 7px 10px; border-radius: 4px; color: var(--vscode-foreground); text-decoration: none; font-size: 12px; cursor: pointer; }
+.sidebar { position: sticky; top: 0; flex: 0 0 200px; display: flex; flex-direction: column; gap: 2px; padding: var(--cs-space-3) var(--cs-space-2); border-right: 1px solid var(--cs-border); max-height: 100vh; overflow: auto; }
+.nav-link { display: flex; align-items: center; gap: var(--cs-space-2); padding: 7px 10px; border-radius: var(--cs-radius-1); color: var(--cs-fg); text-decoration: none; font-size: var(--cs-font-2); cursor: pointer; border-left: 3px solid transparent; }
 .nav-link:hover { background: var(--vscode-list-hoverBackground); }
-.nav-link.active { background: color-mix(in srgb, var(--vscode-textLink-foreground) 16%, transparent); color: var(--vscode-textLink-foreground); font-weight: 600; }
-.content { flex: 1 1 auto; min-width: 0; padding: 12px 16px 72px; }
-section { margin: 0 0 14px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; scroll-margin-top: 8px; }
-h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--vscode-textLink-foreground); }
-label { display: block; margin: 10px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); }
-input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
-textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: 12px; resize: vertical; }
-button { padding: 6px 12px; border: 1px solid transparent; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font: inherit; font-size: 12px; cursor: pointer; }
-button:hover { background: var(--vscode-button-hoverBackground); }
-button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.nav-link.active { background: color-mix(in srgb, var(--cs-accent) 14%, transparent); color: var(--cs-accent); font-weight: 600; border-left-color: var(--cs-accent); }
+.content { flex: 1 1 auto; min-width: 0; padding: var(--cs-space-3) var(--cs-space-4) 72px; }
+section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-border); border-radius: var(--cs-radius-2); scroll-margin-top: var(--cs-space-2); }
+h2 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 6px; font-size: var(--cs-font-3); font-weight: 600; color: var(--cs-accent); }
+label { display: block; margin: 10px 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-desc); }
+input, select { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; }
+textarea { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; font-size: var(--cs-font-2); resize: vertical; }
+button { display: inline-flex; align-items: center; gap: var(--cs-space-2); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
+button:hover:not(:disabled) { background: var(--cs-btn-hover); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+button.secondary { color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
+button.secondary:hover:not(:disabled) { background: var(--cs-btn2-hover); }
 button:disabled { opacity: 0.55; cursor: default; }
-button:disabled:hover { background: var(--vscode-button-background); }
-.row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.checkbox { display: flex; align-items: center; gap: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: var(--cs-space-2); margin-top: var(--cs-space-3); }
+.checkbox { display: flex; align-items: center; gap: var(--cs-space-2); }
 .checkbox input { width: auto; }
-.hint { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 6px 0 0; }
+.hint { color: var(--cs-desc); font-size: var(--cs-font-1); margin: 6px 0 0; }
 .hidden { display: none; }
-.status { margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--vscode-textLink-foreground); border-radius: 3px; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); font-size: 12px; ${statusMessage ? '' : 'display: none;'} }
-.status.error { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent); }
-.current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
-.savebar { position: fixed; left: 190px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
-.savebar .dirty { color: var(--vscode-descriptionForeground); font-size: 11px; }
-.about-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
+.status { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-2) 10px; border-left: 3px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 12%, transparent); font-size: var(--cs-font-2); ${statusMessage ? '' : 'display: none;'} }
+.status.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
+.current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); color: var(--cs-desc); overflow-wrap: anywhere; }
+.savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--vscode-editor-background); }
+.savebar .dirty { color: var(--cs-desc); font-size: var(--cs-font-1); }
+.dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-warn); display: none; }
+button.is-dirty .dirty-dot { display: inline-block; }
+.about-line { display: flex; align-items: center; gap: var(--cs-space-2); margin: 6px 0; font-size: var(--cs-font-2); }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}">
-<div class="brand"><span class="brand-mark">🕵️</span> CodeScout: Настройки</div>
+<div class="brand"><span class="brand-mark">${icon('search')}</span> CodeScout: Настройки</div>
 <div class="layout">
 <nav class="sidebar" id="sidebar">
-  <a class="nav-link active" href="#sec-key" data-target="sec-key">🔑 Ключ и модель</a>
-  <a class="nav-link" href="#sec-audit" data-target="sec-audit">🔄 Аудит</a>
-  <a class="nav-link" href="#sec-project" data-target="sec-project">📁 Проект</a>
-  <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">🎨 Внешний вид</a>
-  <a class="nav-link" href="#sec-about" data-target="sec-about">ℹ️ О расширении</a>
+  <a class="nav-link active" href="#sec-key" data-target="sec-key">${icon('key')}<span>Ключ и модель</span></a>
+  <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>Аудит</span></a>
+  <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>Проект</span></a>
+  <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>Внешний вид</span></a>
+  <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>О расширении</span></a>
 </nav>
 <div class="content">
 <div class="status${statusKind === 'error' ? ' error' : ''}" id="status">${escapeHtml(statusMessage)}</div>
 <main>
 <section id="sec-key">
-  <h2>🔑 Ключ и модель</h2>
+  <h2>${icon('key')} Ключ и модель</h2>
   <label for="provider">Провайдер</label>
   <select id="provider">${providerOptions}</select>
   <label for="apiKey">API-ключ ( SecretStorage )</label>
@@ -106,20 +144,20 @@ button:disabled:hover { background: var(--vscode-button-background); }
   </div>
   <div class="current-key">сейчас: ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : 'ключ не настроен'}</div>
   <div class="row">
-    <button id="chooseModel" type="button" class="secondary">🧲 Живые модели…</button>
-    <button id="clearKey" type="button" class="secondary">⌫ Забыть ключ</button>
+    <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>Живые модели…</span></button>
+    <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>Забыть ключ</span></button>
   </div>
   <p class="hint">auto = groq-ключ → groq, AIza… → gemini, sk-or-… → openrouter, ghp_… → github.</p>
 </section>
 <section id="sec-audit">
-  <h2>🔄 Аудит</h2>
+  <h2>${icon('sync')} Аудит</h2>
   <label for="auditPasses">Кругов проверки на файл (1-3)</label>
   <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
   <label for="maxLines">Макс. строк на файл (0 = без лимита)</label>
   <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
   <label for="maxFiles">Макс. файлов на аудит</label>
   <input id="maxFiles" type="number" min="1" max="10000" step="1" value="${state.maxFiles}">
-  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> 🤖 Автономный режим (авто-догон)</label>
+  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> ${icon('robot')}<span>Автономный режим (авто-догон)</span></label>
   <label for="autoResumeMaxAttempts">Авто-догон: макс. попыток (0 = без лимита)</label>
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
   <label for="autoResumeMaxMinutes">Авто-догон: макс. минут (0 = без лимита)</label>
@@ -127,7 +165,7 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <p class="hint">maxLines = 0: лимита нет, файлы &gt;800 строк режутся чанками с перекрытием 50 строк; N &gt; 0: файлы длиннее N скипаются. Авто-догон возобновляет прерванный аудит из чекпоинта с backoff 30с→60с→2мин→5мин.</p>
 </section>
 <section id="sec-project">
-  <h2>📁 Проект</h2>
+  <h2>${icon('folder')} Проект</h2>
   <label for="docLinks">Ссылки на документацию (одна в строке)</label>
   <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml(state.docLinks.join('\n'))}</textarea>
   <label for="docMaxKb">Макс. размер дока в промт (KB)</label>
@@ -137,12 +175,12 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <label for="auditScope">Scope аудита (glob через запятую, пусто = все)</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml(state.auditScope)}">
   <div class="row">
-    <button id="openRules" type="button" class="secondary">📜 Открыть rules.md</button>
+    <button id="openRules" type="button" class="secondary">${icon('file')}<span>Открыть rules.md</span></button>
   </div>
   <p class="hint">rules.md подмешивается в каждый промт. Документация докачивается (таймаут 5с, oversized усекается с сохранением начала), кэшируется в .codescout/docs-cache.json на 24ч. Scope ограничивает полный аудит; ПКМ-проверка его игнорирует.</p>
 </section>
 <section id="sec-appearance">
-  <h2>🎨 Внешний вид</h2>
+  <h2>${icon('symbol-color')} Внешний вид</h2>
   <label for="reportLanguage">Язык отчётов</label>
   <select id="reportLanguage">
     <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>RU — по-русски</option>
@@ -151,22 +189,22 @@ button:disabled:hover { background: var(--vscode-button-background); }
   <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
 </section>
 <section id="sec-about">
-  <h2>ℹ️ О расширении</h2>
+  <h2>${icon('info')} О расширении</h2>
   <div class="about-line">Версия: <strong>${escapeHtml(state.version)}</strong></div>
   <div class="row">
-    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">📖 README</button>
-    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">🗂 Репозиторий</button>
-    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">🐛 Сообщить о проблеме</button>
+    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">${icon('book')}<span>README</span></button>
+    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon('repo')}<span>Репозиторий</span></button>
+    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">${icon('report')}<span>Сообщить о проблеме</span></button>
   </div>
 </section>
 </main>
 </div>
 </div>
 <div class="savebar">
-  <button id="saveAll" type="button" disabled>💾 Сохранить</button>
+  <button id="saveAll" type="button" disabled><span class="dirty-dot"></span>${icon('save')}<span>Сохранить</span></button>
   <span class="dirty" id="dirtyHint">нет несохранённых изменений</span>
 </div>
-<script${nonce ? ` nonce="${nonce}"` : ''}>
+<script${nonceAttr}>
 const vscode = acquireVsCodeApi();
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -207,6 +245,7 @@ providerSelect.addEventListener('change', toggleBaseUrl);
 function refreshDirty() {
   const dirty = snapshot() !== initial;
   saveAllBtn.disabled = !dirty;
+  saveAllBtn.classList.toggle('is-dirty', dirty);
   dirtyHint.textContent = dirty ? 'есть несохранённые изменения' : 'нет несохранённых изменений';
 }
 document.querySelectorAll('input, select, textarea').forEach((el) => {
@@ -218,7 +257,9 @@ document.getElementById('revealKey').addEventListener('change', (event) => {
 });
 saveAllBtn.addEventListener('click', () => {
   saveAllBtn.disabled = true;
-  saveAllBtn.textContent = '⏳ Сохраняю…';
+  saveAllBtn.classList.remove('is-dirty');
+  const label = saveAllBtn.querySelector('span:last-child');
+  if (label) label.textContent = 'Сохраняю…';
   vscode.postMessage({
     command: 'saveAll',
     providerKey: providerSelect.value,

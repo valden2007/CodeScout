@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { realpathSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets } from './reportHtml';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
@@ -46,6 +47,7 @@ function realExistingPath(path: string): string {
 }
 
 export class CodeScoutPanel implements vscode.WebviewViewProvider {
+  constructor(private readonly extensionUri: vscode.Uri) {}
   private view?: vscode.WebviewView;
   private issues: ReviewIssue[] = [];
   private stats: ReportStats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
@@ -91,7 +93,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.configSubscription = undefined;
       if (this.view === webviewView) this.view = undefined;
     });
-    webviewView.webview.options = { enableScripts: true, localResourceRoots: [] };
+    webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     this.refreshAutoResumeSettings();
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('codescout.autoResume') && !event.affectsConfiguration('codescout.autoResumeMaxAttempts') && !event.affectsConfiguration('codescout.autoResumeMaxMinutes')) return;
@@ -298,8 +300,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
 
   private render(): void {
     if (!this.view) return;
+    const webview = this.view.webview;
+    const assets: WebviewAssets = {
+      codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'codicon.css')).toString(),
+      cspSource: webview.cspSource
+    };
+    const nonce = randomBytes(16).toString('hex');
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce);
   }
 }
