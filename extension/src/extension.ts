@@ -570,6 +570,7 @@ interface SettingsMessage {
   findingsSort?: string;
   reportTheme?: string;
   showConfidence?: boolean;
+  customColors?: string;
   url?: string;
 }
 
@@ -605,7 +606,8 @@ function readUiPrefs(): UiPrefs {
     fontSize: config.get<string>('uiFontSize', 'm') as UiPrefs['fontSize'],
     showConfidence: config.get<boolean>('showConfidence', true),
     findingsSort: config.get<string>('findingsSort', 'severity') as UiPrefs['findingsSort'],
-    reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme']
+    reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme'],
+    customColors: config.get<string>('customColors', '')
   });
 }
 
@@ -648,7 +650,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     uiFontSize: readUiPrefs().fontSize,
     showConfidence: readUiPrefs().showConfidence,
     findingsSort: readUiPrefs().findingsSort,
-    reportTheme: readUiPrefs().reportTheme
+    reportTheme: readUiPrefs().reportTheme,
+    customColors: JSON.stringify(readUiPrefs().customColors)
   };
 }
 
@@ -725,7 +728,7 @@ export function activate(context: vscode.ExtensionContext): void {
           settingsPanel = undefined;
         });
         settingsConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'reportLanguage', 'showAuditBanner'];
+          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'reportLanguage', 'showAuditBanner'];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
         });
@@ -815,7 +818,8 @@ export function activate(context: vscode.ExtensionContext): void {
               fontSize: message.uiFontSize as UiPrefs['fontSize'],
               showConfidence: message.showConfidence !== false,
               findingsSort: message.findingsSort as UiPrefs['findingsSort'],
-              reportTheme: message.reportTheme as UiPrefs['reportTheme']
+              reportTheme: message.reportTheme as UiPrefs['reportTheme'],
+              customColors: message.customColors
             });
             await config.update('docLinks', links, vscode.ConfigurationTarget.Global);
             await config.update('docMaxKb', maxKb, vscode.ConfigurationTarget.Global);
@@ -834,6 +838,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('showConfidence', ui.showConfidence, vscode.ConfigurationTarget.Global);
             await config.update('findingsSort', ui.findingsSort, vscode.ConfigurationTarget.Global);
             await config.update('reportTheme', ui.reportTheme, vscode.ConfigurationTarget.Global);
+            await config.update('customColors', JSON.stringify(ui.customColors), vscode.ConfigurationTarget.Global);
             parts.push(`✅ Сохранено · аудит: кругов ${auditPasses}, maxLines ${maxLines === 0 ? '∞' : maxLines}, maxFiles ${maxFiles}, авто-догон ${autoResume ? 'вкл' : 'выкл'} · проект: ${links.length} док(ов), scope ${auditScope || 'все'} · язык ${language.toUpperCase()} · вид: ${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}`);
             await render(parts.join(' · '));
           } else if (message.command === 'openLink') {

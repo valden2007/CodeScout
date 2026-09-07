@@ -1,8 +1,53 @@
-export type UiTheme = 'auto' | 'dark' | 'light';
+export type UiTheme = 'auto' | 'dark' | 'light' | 'custom';
 export type AccentColor = 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
 export type UiDensity = 'compact' | 'standard';
 export type UiFontSize = 's' | 'm' | 'l';
 export type FindingsSort = 'severity' | 'file' | 'line';
+
+export interface CustomColors {
+  bg: string;
+  card: string;
+  fg: string;
+  desc: string;
+  border: string;
+  accent: string;
+  inputBg: string;
+  inputFg: string;
+}
+
+export const DEFAULT_CUSTOM_COLORS: CustomColors = {
+  bg: '#f5f5f5',
+  card: '#ffffff',
+  fg: '#1f2326',
+  desc: '#5a6068',
+  border: '#d0d3d6',
+  accent: '#0a64b4',
+  inputBg: '#ffffff',
+  inputFg: '#1f2326'
+};
+
+const CUSTOM_COLOR_KEYS: (keyof CustomColors)[] = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+export function normalizeCustomColors(input: unknown): CustomColors {
+  let obj: Record<string, unknown> = {};
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === 'object') obj = parsed as Record<string, unknown>;
+    } catch {
+      obj = {};
+    }
+  } else if (input && typeof input === 'object') {
+    obj = input as Record<string, unknown>;
+  }
+  const result = { ...DEFAULT_CUSTOM_COLORS };
+  for (const key of CUSTOM_COLOR_KEYS) {
+    const value = obj[key];
+    if (typeof value === 'string' && HEX_RE.test(value.trim())) result[key] = value.trim().toLowerCase();
+  }
+  return result;
+}
 
 export interface UiPrefs {
   theme: UiTheme;
@@ -12,6 +57,7 @@ export interface UiPrefs {
   showConfidence: boolean;
   findingsSort: FindingsSort;
   reportTheme: UiTheme;
+  customColors: CustomColors;
 }
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
@@ -21,10 +67,11 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   fontSize: 'm',
   showConfidence: true,
   findingsSort: 'severity',
-  reportTheme: 'auto'
+  reportTheme: 'auto',
+  customColors: { ...DEFAULT_CUSTOM_COLORS }
 };
 
-const THEME_VALUES: UiTheme[] = ['auto', 'dark', 'light'];
+const THEME_VALUES: UiTheme[] = ['auto', 'dark', 'light', 'custom'];
 const ACCENT_VALUES: AccentColor[] = ['auto', 'blue', 'purple', 'green', 'orange', 'pink'];
 const DENSITY_VALUES: UiDensity[] = ['compact', 'standard'];
 const FONTSIZE_VALUES: UiFontSize[] = ['s', 'm', 'l'];
@@ -34,7 +81,7 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
-export function normalizeUiPrefs(input: Partial<UiPrefs> | undefined): UiPrefs {
+export function normalizeUiPrefs(input: (Partial<Omit<UiPrefs, 'customColors'>> & { customColors?: unknown }) | undefined): UiPrefs {
   const p = input ?? {};
   return {
     theme: pick(p.theme, THEME_VALUES, DEFAULT_UI_PREFS.theme),
@@ -43,13 +90,66 @@ export function normalizeUiPrefs(input: Partial<UiPrefs> | undefined): UiPrefs {
     fontSize: pick(p.fontSize, FONTSIZE_VALUES, DEFAULT_UI_PREFS.fontSize),
     showConfidence: p.showConfidence !== false,
     findingsSort: pick(p.findingsSort, SORT_VALUES, DEFAULT_UI_PREFS.findingsSort),
-    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme)
+    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
+    customColors: normalizeCustomColors(p.customColors)
   };
+}
+
+// 8 пользовательских цветов → токены страниц. border/input* расходятся на производные.
+export function customVarsStyle(colors: CustomColors): string {
+  const c = normalizeCustomColors(colors);
+  return [
+    `--cs-editor-bg: ${c.bg}`,
+    `--cs-card-bg: ${c.card}`,
+    `--cs-fg: ${c.fg}`,
+    `--cs-desc: ${c.desc}`,
+    `--cs-border: ${c.border}`,
+    `--cs-card-border: ${c.border}`,
+    `--cs-input-border: ${c.border}`,
+    `--cs-accent: ${c.accent}`,
+    `--cs-input-bg: ${c.inputBg}`,
+    `--cs-select-bg: ${c.inputBg}`,
+    `--cs-input-fg: ${c.inputFg}`,
+    `--cs-select-fg: ${c.inputFg}`
+  ].join('; ');
 }
 
 export function uiBodyAttrs(prefs: UiPrefs): string {
   const p = normalizeUiPrefs(prefs);
-  return `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
+  const base = `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
+  if (p.theme !== 'custom') return base;
+  return `${base} style="${customVarsStyle(p.customColors)}"`;
+}
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  let h = hex.trim().replace('#', '');
+  if (h.length === 3) h = h.split('').map((ch) => ch + ch).join('');
+  if (h.length !== 6) return null;
+  const n = Number.parseInt(h, 16);
+  if (Number.isNaN(n)) return null;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function relativeLuminance(rgb: [number, number, number]): number {
+  const channel = (value: number) => {
+    const s = value / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+export function contrastRatio(fg: string, bg: string): number {
+  const a = hexToRgb(fg);
+  const b = hexToRgb(bg);
+  if (!a || !b) return 1;
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const [hi, lo] = la >= lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+export function isLowContrast(fg: string, bg: string): boolean {
+  return contrastRatio(fg, bg) < 4.5;
 }
 
 // Базовые токены (режим auto): цвета ТОЛЬКО из --vscode-* — наследуют тему VS Code.

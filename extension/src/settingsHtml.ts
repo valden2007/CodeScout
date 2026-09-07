@@ -1,4 +1,4 @@
-import { uiBodyAttrs, uiTokensCss, type UiPrefs } from './uiPrefs';
+import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type CustomColors } from './uiPrefs';
 
 export interface SettingsState {
   keyMask: string;
@@ -19,13 +19,14 @@ export interface SettingsState {
   auditScope: string;
   auditPasses: number;
   version: string;
-  uiTheme: 'auto' | 'dark' | 'light';
+  uiTheme: 'auto' | 'dark' | 'light' | 'custom';
   accentColor: 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
   uiDensity: 'compact' | 'standard';
   uiFontSize: 's' | 'm' | 'l';
   showConfidence: boolean;
   findingsSort: 'severity' | 'file' | 'line';
   reportTheme: 'auto' | 'dark' | 'light';
+  customColors: string;
 }
 
 export interface SettingsAssets {
@@ -36,6 +37,17 @@ export interface SettingsAssets {
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
 
 const REPO_URL = 'https://github.com/valden2007/CodeScout';
+
+const paletteFields: { key: keyof CustomColors; label: string }[] = [
+  { key: 'bg', label: 'Фон страницы' },
+  { key: 'card', label: 'Фон карточки' },
+  { key: 'fg', label: 'Текст' },
+  { key: 'desc', label: 'Приглушённый текст' },
+  { key: 'border', label: 'Границы' },
+  { key: 'accent', label: 'Акцент' },
+  { key: 'inputBg', label: 'Фон инпута' },
+  { key: 'inputFg', label: 'Текст инпута' }
+];
 
 function escapeHtml(value: string): string {
   return value
@@ -69,7 +81,8 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
     .join('');
-  const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme };
+  const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
+  const cc = prefs.customColors;
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -112,7 +125,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .status { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-2) 10px; border-left: 3px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 12%, transparent); font-size: var(--cs-font-2); ${statusMessage ? '' : 'display: none;'} }
 .status.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); color: var(--cs-desc); overflow-wrap: anywhere; }
-.savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--vscode-editor-background); }
+.savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--cs-card-bg); color: var(--cs-fg); }
 .savebar .dirty { color: var(--cs-desc); font-size: var(--cs-font-1); }
 .dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-warn); display: none; }
 button.is-dirty .dirty-dot { display: inline-block; }
@@ -122,6 +135,12 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .scope-chip button { display: inline-flex; padding: 0; border: none; background: transparent; color: var(--cs-desc); width: auto; flex: 0 0 auto; }
 .scope-chip button:hover { background: transparent; color: var(--cs-error); }
 .scope-warn { color: var(--cs-warn); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+.palette-editor { margin-top: var(--cs-space-2); padding: var(--cs-space-2); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 5%, transparent); }
+.palette-row { display: grid; grid-template-columns: 1fr auto 92px; align-items: center; gap: var(--cs-space-2); margin: 6px 0; }
+.palette-row label { margin: 0; }
+.cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
+.cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+.contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -201,7 +220,20 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>auto — как в VS Code</option>
     <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>dark — фиксированная тёмная</option>
     <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
+    <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>custom — своя палитра</option>
   </select>
+  <div class="palette-editor${state.uiTheme === 'custom' ? '' : ' hidden'}" id="paletteEditor">
+    ${paletteFields.map((f) => `
+    <div class="palette-row">
+      <label for="cc-${f.key}">${f.label}</label>
+      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(cc[f.key])}">
+      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(cc[f.key])}">
+    </div>`).join('')}
+    <div class="row">
+      <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
+    </div>
+    <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+  </div>
   <label for="accentColor">Акцентный цвет</label>
   <select id="accentColor">
     <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>auto — кнопка VS Code</option>
@@ -280,13 +312,61 @@ const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempt
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
+const paletteEditor = document.getElementById('paletteEditor');
+const contrastHint = document.getElementById('contrastHint');
+const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
+const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg' };
+const CC_DEFAULT = ${JSON.stringify(cc)};
+function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#paletteEditor .cc-hex')); }
+function collectPalette() { const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; }); return JSON.stringify(m); }
+function lum(hex) {
+  let h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6) return null;
+  const n = parseInt(h, 16); if (isNaN(n)) return null;
+  const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  return 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255);
+}
+function lowContrast(fg, bg) { const a = lum(fg), b = lum(bg); if (a === null || b === null) return false; const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) < 4.5; }
+function applyPreview() {
+  const isCustom = uiThemeSelect.value === 'custom';
+  if (paletteEditor) paletteEditor.classList.toggle('hidden', !isCustom);
+  const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  for (const k of CC_KEYS) { if (isCustom) document.body.style.setProperty(CC_VAR[k], m[k] || ''); else document.body.style.removeProperty(CC_VAR[k]); }
+  if (contrastHint) {
+    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg));
+    contrastHint.classList.toggle('hidden', !low);
+  }
+}
+function syncRow(el) {
+  const key = el.getAttribute('data-key');
+  const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + key + '"]');
+  const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + key + '"]');
+  if (el.classList.contains('cc-color') && hexEl) hexEl.value = el.value;
+  if (el.classList.contains('cc-hex') && colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim();
+}
+document.querySelectorAll('#paletteEditor .cc-color, #paletteEditor .cc-hex').forEach((el) => {
+  el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
+});
+uiThemeSelect.addEventListener('change', applyPreview);
+const resetBtn = document.getElementById('resetPalette');
+if (resetBtn) resetBtn.addEventListener('click', () => {
+  for (const k of CC_KEYS) {
+    const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + k + '"]');
+    const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + k + '"]');
+    if (colorEl) colorEl.value = CC_DEFAULT[k];
+    if (hexEl) hexEl.value = CC_DEFAULT[k];
+  }
+  applyPreview();
+  refreshDirty();
+});
 function snapshot() {
   return JSON.stringify({
     providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,
     reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked,
     uiTheme: uiThemeSelect.value, accentColor: accentSelect.value, uiDensity: densitySelect.value,
     uiFontSize: fontsizeSelect.value, findingsSort: sortSelect.value, reportTheme: reportThemeSelect.value,
-    showConfidence: showConfidenceBox.checked,
+    showConfidence: showConfidenceBox.checked, customColors: collectPalette(),
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
@@ -333,6 +413,7 @@ saveAllBtn.addEventListener('click', () => {
     findingsSort: sortSelect.value,
     reportTheme: reportThemeSelect.value,
     showConfidence: showConfidenceBox.checked,
+    customColors: collectPalette(),
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, '50')),
     docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, '5')),
@@ -414,6 +495,7 @@ navLinks.forEach((l) => l.addEventListener('click', (event) => {
 }));
 toggleBaseUrl();
 refreshDirty();
+applyPreview();
 onScroll();
 const anchor = document.body.getAttribute('data-anchor');
 if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollIntoView(); setActive(anchor); } }

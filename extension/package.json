@@ -235,9 +235,14 @@
         },
         "codescout.uiTheme": {
           "type": "string",
-          "enum": ["auto", "dark", "light"],
+          "enum": ["auto", "dark", "light", "custom"],
           "default": "auto",
-          "description": "Тема панелей CodeScout. auto — цвета из --vscode-* (тема VS Code); dark/light — фиксированная палитра страниц расширения."
+          "description": "Тема панелей CodeScout. auto — цвета из --vscode-* (тема VS Code); dark/light — фиксированная палитра; custom — своя палитра (codescout.customColors)."
+        },
+        "codescout.customColors": {
+          "type": "string",
+          "default": "",
+          "description": "JSON-палитра для uiTheme=custom: {\"bg\",\"card\",\"fg\",\"desc\",\"border\",\"accent\",\"inputBg\",\"inputFg\"} — значения #hex. Битые цвета получают дефолт токена."
         },
         "codescout.accentColor": {
           "type": "string",

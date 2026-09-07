@@ -278,6 +278,20 @@ pre-design now.
     {type:'scopePickResult'} back; the form merges into customGlobs
     (folder→rel/**, file→rel, dedupe) with an inline outside-warn.
     Tests: 205.
+14. Custom palette + save-bar fix (v1.4b-6): uiTheme enum += custom;
+    codescout.customColors (JSON string of 8 tokens bg/card/fg/desc/
+    border/accent/inputBg/inputFg). normalizeCustomColors drops broken
+    hex to the token default; uiBodyAttrs emits data-theme="custom" +
+    an inline style="--cs-*: …" (hex lives only in the inline attr and
+    the delimited palette, never in the shared CSS). The 📁 Внешний вид
+    section shows a palette editor (color-input + hex field per token,
+    label+swatch, «Сбросить палитру») when theme=custom, with a live
+    preview applied to body.style BEFORE save (save stays dirty-gated)
+    and a WCAG contrast guard (fg-vs-bg/card/input < 4.5:1 → yellow
+    «низкий контраст» hint via isLowContrast/contrastRatio). Fixed the
+    un-themed save-bar: .savebar now uses --cs-card-bg/--cs-border/
+    --cs-fg (was a hardcoded --vscode-editor-background → dark in light).
+    Panel + center re-render on customColors config change. Tests: 209.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

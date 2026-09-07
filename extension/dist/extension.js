@@ -1187,6 +1187,37 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
 }
 
 // src/uiPrefs.ts
+var DEFAULT_CUSTOM_COLORS = {
+  bg: "#f5f5f5",
+  card: "#ffffff",
+  fg: "#1f2326",
+  desc: "#5a6068",
+  border: "#d0d3d6",
+  accent: "#0a64b4",
+  inputBg: "#ffffff",
+  inputFg: "#1f2326"
+};
+var CUSTOM_COLOR_KEYS = ["bg", "card", "fg", "desc", "border", "accent", "inputBg", "inputFg"];
+var HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+function normalizeCustomColors(input) {
+  let obj = {};
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch {
+      obj = {};
+    }
+  } else if (input && typeof input === "object") {
+    obj = input;
+  }
+  const result = { ...DEFAULT_CUSTOM_COLORS };
+  for (const key of CUSTOM_COLOR_KEYS) {
+    const value = obj[key];
+    if (typeof value === "string" && HEX_RE.test(value.trim())) result[key] = value.trim().toLowerCase();
+  }
+  return result;
+}
 var DEFAULT_UI_PREFS = {
   theme: "auto",
   accent: "auto",
@@ -1194,9 +1225,10 @@ var DEFAULT_UI_PREFS = {
   fontSize: "m",
   showConfidence: true,
   findingsSort: "severity",
-  reportTheme: "auto"
+  reportTheme: "auto",
+  customColors: { ...DEFAULT_CUSTOM_COLORS }
 };
-var THEME_VALUES = ["auto", "dark", "light"];
+var THEME_VALUES = ["auto", "dark", "light", "custom"];
 var ACCENT_VALUES = ["auto", "blue", "purple", "green", "orange", "pink"];
 var DENSITY_VALUES = ["compact", "standard"];
 var FONTSIZE_VALUES = ["s", "m", "l"];
@@ -1213,12 +1245,32 @@ function normalizeUiPrefs(input) {
     fontSize: pick(p.fontSize, FONTSIZE_VALUES, DEFAULT_UI_PREFS.fontSize),
     showConfidence: p.showConfidence !== false,
     findingsSort: pick(p.findingsSort, SORT_VALUES, DEFAULT_UI_PREFS.findingsSort),
-    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme)
+    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
+    customColors: normalizeCustomColors(p.customColors)
   };
+}
+function customVarsStyle(colors) {
+  const c = normalizeCustomColors(colors);
+  return [
+    `--cs-editor-bg: ${c.bg}`,
+    `--cs-card-bg: ${c.card}`,
+    `--cs-fg: ${c.fg}`,
+    `--cs-desc: ${c.desc}`,
+    `--cs-border: ${c.border}`,
+    `--cs-card-border: ${c.border}`,
+    `--cs-input-border: ${c.border}`,
+    `--cs-accent: ${c.accent}`,
+    `--cs-input-bg: ${c.inputBg}`,
+    `--cs-select-bg: ${c.inputBg}`,
+    `--cs-input-fg: ${c.inputFg}`,
+    `--cs-select-fg: ${c.inputFg}`
+  ].join("; ");
 }
 function uiBodyAttrs(prefs) {
   const p = normalizeUiPrefs(prefs);
-  return `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
+  const base = `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
+  if (p.theme !== "custom") return base;
+  return `${base} style="${customVarsStyle(p.customColors)}"`;
 }
 var CS_BASE_TOKENS = `:root {
   --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
@@ -1767,7 +1819,8 @@ var CodeScoutPanel = class {
       fontSize: config.get("uiFontSize", "m"),
       showConfidence: config.get("showConfidence", true),
       findingsSort: config.get("findingsSort", "severity"),
-      reportTheme: config.get("reportTheme", "auto")
+      reportTheme: config.get("reportTheme", "auto"),
+      customColors: config.get("customColors", "")
     });
   }
   resolveWebviewView(webviewView) {
@@ -1783,7 +1836,7 @@ var CodeScoutPanel = class {
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     this.refreshAutoResumeSettings();
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-      const watched = ["autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme"];
+      const watched = ["autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "customColors"];
       if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
       this.refreshAutoResumeSettings();
       this.render();
@@ -2048,6 +2101,16 @@ function sampleTestSummary(found) {
 // src/settingsHtml.ts
 var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
 var REPO_URL = "https://github.com/valden2007/CodeScout";
+var paletteFields = [
+  { key: "bg", label: "\u0424\u043E\u043D \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B" },
+  { key: "card", label: "\u0424\u043E\u043D \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438" },
+  { key: "fg", label: "\u0422\u0435\u043A\u0441\u0442" },
+  { key: "desc", label: "\u041F\u0440\u0438\u0433\u043B\u0443\u0448\u0451\u043D\u043D\u044B\u0439 \u0442\u0435\u043A\u0441\u0442" },
+  { key: "border", label: "\u0413\u0440\u0430\u043D\u0438\u0446\u044B" },
+  { key: "accent", label: "\u0410\u043A\u0446\u0435\u043D\u0442" },
+  { key: "inputBg", label: "\u0424\u043E\u043D \u0438\u043D\u043F\u0443\u0442\u0430" },
+  { key: "inputFg", label: "\u0422\u0435\u043A\u0441\u0442 \u0438\u043D\u043F\u0443\u0442\u0430" }
+];
 function escapeHtml2(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -2061,7 +2124,8 @@ function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce =
   const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : "";
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443" : value}</option>`).join("");
-  const prefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme };
+  const prefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
+  const cc = prefs.customColors;
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -2104,7 +2168,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .status { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-2) 10px; border-left: 3px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 12%, transparent); font-size: var(--cs-font-2); ${statusMessage ? "" : "display: none;"} }
 .status.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); color: var(--cs-desc); overflow-wrap: anywhere; }
-.savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--vscode-editor-background); }
+.savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--cs-card-bg); color: var(--cs-fg); }
 .savebar .dirty { color: var(--cs-desc); font-size: var(--cs-font-1); }
 .dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-warn); display: none; }
 button.is-dirty .dirty-dot { display: inline-block; }
@@ -2114,6 +2178,12 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .scope-chip button { display: inline-flex; padding: 0; border: none; background: transparent; color: var(--cs-desc); width: auto; flex: 0 0 auto; }
 .scope-chip button:hover { background: transparent; color: var(--cs-error); }
 .scope-warn { color: var(--cs-warn); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+.palette-editor { margin-top: var(--cs-space-2); padding: var(--cs-space-2); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 5%, transparent); }
+.palette-row { display: grid; grid-template-columns: 1fr auto 92px; align-items: center; gap: var(--cs-space-2); margin: 6px 0; }
+.palette-row label { margin: 0; }
+.cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
+.cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+.contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -2193,7 +2263,20 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="auto"${state.uiTheme === "auto" ? " selected" : ""}>auto \u2014 \u043A\u0430\u043A \u0432 VS Code</option>
     <option value="dark"${state.uiTheme === "dark" ? " selected" : ""}>dark \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0442\u0451\u043C\u043D\u0430\u044F</option>
     <option value="light"${state.uiTheme === "light" ? " selected" : ""}>light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F</option>
+    <option value="custom"${state.uiTheme === "custom" ? " selected" : ""}>custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430</option>
   </select>
+  <div class="palette-editor${state.uiTheme === "custom" ? "" : " hidden"}" id="paletteEditor">
+    ${paletteFields.map((f) => `
+    <div class="palette-row">
+      <label for="cc-${f.key}">${f.label}</label>
+      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml2(cc[f.key])}">
+      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml2(cc[f.key])}">
+    </div>`).join("")}
+    <div class="row">
+      <button id="resetPalette" type="button" class="secondary">${icon2("discard")}<span>\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443</span></button>
+    </div>
+    <p class="contrast-hint hidden" id="contrastHint">\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C</p>
+  </div>
   <label for="accentColor">\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442</label>
   <select id="accentColor">
     <option value="auto"${state.accentColor === "auto" ? " selected" : ""}>auto \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 VS Code</option>
@@ -2272,13 +2355,61 @@ const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempt
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
+const paletteEditor = document.getElementById('paletteEditor');
+const contrastHint = document.getElementById('contrastHint');
+const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
+const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg' };
+const CC_DEFAULT = ${JSON.stringify(cc)};
+function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#paletteEditor .cc-hex')); }
+function collectPalette() { const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; }); return JSON.stringify(m); }
+function lum(hex) {
+  let h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6) return null;
+  const n = parseInt(h, 16); if (isNaN(n)) return null;
+  const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  return 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255);
+}
+function lowContrast(fg, bg) { const a = lum(fg), b = lum(bg); if (a === null || b === null) return false; const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) < 4.5; }
+function applyPreview() {
+  const isCustom = uiThemeSelect.value === 'custom';
+  if (paletteEditor) paletteEditor.classList.toggle('hidden', !isCustom);
+  const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  for (const k of CC_KEYS) { if (isCustom) document.body.style.setProperty(CC_VAR[k], m[k] || ''); else document.body.style.removeProperty(CC_VAR[k]); }
+  if (contrastHint) {
+    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg));
+    contrastHint.classList.toggle('hidden', !low);
+  }
+}
+function syncRow(el) {
+  const key = el.getAttribute('data-key');
+  const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + key + '"]');
+  const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + key + '"]');
+  if (el.classList.contains('cc-color') && hexEl) hexEl.value = el.value;
+  if (el.classList.contains('cc-hex') && colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim();
+}
+document.querySelectorAll('#paletteEditor .cc-color, #paletteEditor .cc-hex').forEach((el) => {
+  el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
+});
+uiThemeSelect.addEventListener('change', applyPreview);
+const resetBtn = document.getElementById('resetPalette');
+if (resetBtn) resetBtn.addEventListener('click', () => {
+  for (const k of CC_KEYS) {
+    const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + k + '"]');
+    const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + k + '"]');
+    if (colorEl) colorEl.value = CC_DEFAULT[k];
+    if (hexEl) hexEl.value = CC_DEFAULT[k];
+  }
+  applyPreview();
+  refreshDirty();
+});
 function snapshot() {
   return JSON.stringify({
     providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,
     reportLanguage: langSelect.value, showAuditBanner: bannerBox.checked,
     uiTheme: uiThemeSelect.value, accentColor: accentSelect.value, uiDensity: densitySelect.value,
     uiFontSize: fontsizeSelect.value, findingsSort: sortSelect.value, reportTheme: reportThemeSelect.value,
-    showConfidence: showConfidenceBox.checked,
+    showConfidence: showConfidenceBox.checked, customColors: collectPalette(),
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
@@ -2325,6 +2456,7 @@ saveAllBtn.addEventListener('click', () => {
     findingsSort: sortSelect.value,
     reportTheme: reportThemeSelect.value,
     showConfidence: showConfidenceBox.checked,
+    customColors: collectPalette(),
     linksText: docLinksInput.value,
     docMaxKb: Number(clampInt(docMaxKbInput.value, 1, 2048, '50')),
     docMaxLinks: Number(clampInt(docMaxLinksInput.value, 1, 50, '5')),
@@ -2406,6 +2538,7 @@ navLinks.forEach((l) => l.addEventListener('click', (event) => {
 }));
 toggleBaseUrl();
 refreshDirty();
+applyPreview();
 onScroll();
 const anchor = document.body.getAttribute('data-anchor');
 if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollIntoView(); setActive(anchor); } }
@@ -2961,7 +3094,8 @@ function readUiPrefs() {
     fontSize: config.get("uiFontSize", "m"),
     showConfidence: config.get("showConfidence", true),
     findingsSort: config.get("findingsSort", "severity"),
-    reportTheme: config.get("reportTheme", "auto")
+    reportTheme: config.get("reportTheme", "auto"),
+    customColors: config.get("customColors", "")
   });
 }
 var settingsPanel;
@@ -3001,7 +3135,8 @@ async function readSettingsState(context) {
     uiFontSize: readUiPrefs().fontSize,
     showConfidence: readUiPrefs().showConfidence,
     findingsSort: readUiPrefs().findingsSort,
-    reportTheme: readUiPrefs().reportTheme
+    reportTheme: readUiPrefs().reportTheme,
+    customColors: JSON.stringify(readUiPrefs().customColors)
   };
 }
 async function saveKeyProvider(context, message) {
@@ -3074,7 +3209,7 @@ function activate(context) {
           settingsPanel = void 0;
         });
         settingsConfigSubscription = vscode2.workspace.onDidChangeConfiguration((event) => {
-          const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "reportLanguage", "showAuditBanner"];
+          const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "customColors", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "reportLanguage", "showAuditBanner"];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
         });
@@ -3170,7 +3305,8 @@ function activate(context) {
                 fontSize: message.uiFontSize,
                 showConfidence: message.showConfidence !== false,
                 findingsSort: message.findingsSort,
-                reportTheme: message.reportTheme
+                reportTheme: message.reportTheme,
+                customColors: message.customColors
               });
               await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
               await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
@@ -3189,6 +3325,7 @@ function activate(context) {
               await config.update("showConfidence", ui.showConfidence, vscode2.ConfigurationTarget.Global);
               await config.update("findingsSort", ui.findingsSort, vscode2.ConfigurationTarget.Global);
               await config.update("reportTheme", ui.reportTheme, vscode2.ConfigurationTarget.Global);
+              await config.update("customColors", JSON.stringify(ui.customColors), vscode2.ConfigurationTarget.Global);
               parts.push(`\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 ${auditPasses}, maxLines ${maxLines === 0 ? "\u221E" : maxLines}, maxFiles ${maxFiles}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D ${autoResume ? "\u0432\u043A\u043B" : "\u0432\u044B\u043A\u043B"} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: ${links.length} \u0434\u043E\u043A(\u043E\u0432), scope ${auditScope || "\u0432\u0441\u0435"} \xB7 \u044F\u0437\u044B\u043A ${language.toUpperCase()} \xB7 \u0432\u0438\u0434: ${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}`);
               await render(parts.join(" \xB7 "));
             } else if (message.command === "openLink") {

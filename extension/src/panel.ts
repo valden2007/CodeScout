@@ -90,7 +90,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       fontSize: config.get<string>('uiFontSize', 'm') as UiPrefs['fontSize'],
       showConfidence: config.get<boolean>('showConfidence', true),
       findingsSort: config.get<string>('findingsSort', 'severity') as UiPrefs['findingsSort'],
-      reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme']
+      reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme'],
+      customColors: config.get<string>('customColors', '')
     });
   }
 
@@ -107,7 +108,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     this.refreshAutoResumeSettings();
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-      const watched = ['autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme'];
+      const watched = ['autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors'];
       if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
       this.refreshAutoResumeSettings();
       this.render();
