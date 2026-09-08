@@ -18,6 +18,7 @@ export interface SettingsState {
   autoResumeMaxMinutes: number;
   auditScope: string;
   auditPasses: number;
+  rateLimitPauses?: number;
   version: string;
   uiTheme: 'auto' | 'dark' | 'light' | 'custom';
   accentColor: 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
@@ -208,6 +209,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
   <label for="autoResumeMaxMinutes">Авто-догон: макс. минут (0 = без лимита)</label>
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
+  <label for="rateLimitPauses">Паузы при rate-limit на файл (0-5, 0 = скип сразу)</label>
+  <input id="rateLimitPauses" type="number" min="0" max="5" step="1" value="${state.rateLimitPauses ?? 3}">
   <label for="findingsSort">Сортировка находок</label>
   <select id="findingsSort">
     <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>по важности</option>
@@ -351,6 +354,7 @@ const auditPassesInput = document.getElementById('auditPasses');
 const autoResumeBox = document.getElementById('autoResume');
 const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
+const rateLimitPausesInput = document.getElementById('rateLimitPauses');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
 const themeEditor = document.getElementById('themeEditor');
@@ -445,7 +449,7 @@ function snapshot() {
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
-    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value
+    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value
   });
 }
 let initial = snapshot();
@@ -498,7 +502,8 @@ saveAllBtn.addEventListener('click', () => {
     auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, '1')),
     autoResume: autoResumeBox.checked,
     autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
-    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0'))
+    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0')),
+    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3'))
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
