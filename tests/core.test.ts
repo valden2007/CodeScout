@@ -2343,7 +2343,7 @@ describe('v1.4b settings center with sidebar', () => {
   it('sidebar lists exactly the five sections and each has a matching anchor', () => {
     const html = buildSettingsHtml(centerState);
     const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
-    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-theme', 'sec-about']);
+    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
     for (const id of navTargets) expect(html).toContain(`id="${id}"`);
     expect(html).toContain('position: sticky');
   });
@@ -2700,43 +2700,46 @@ describe('v1.4b-6 custom palette + save-bar fix', () => {
   });
 });
 
-describe('v1.4b-7 Theme Editor section + sharing', () => {
+describe('v1.4b-7/8 appearance subtabs + auto-custom', () => {
   const themeState = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'custom' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const, customColors: '' };
 
-  it('findingsSort moved into the Аудит section (not Внешний вид)', () => {
+  it('no 6th sidebar item; Theme Editor lives inside Внешний вид', () => {
+    const html = buildSettingsHtml(themeState);
+    expect(html).not.toContain('data-target="sec-theme"');
+    expect(html).not.toContain('id="sec-theme"');
+    expect(html).toContain('id="sec-appearance"');
+    expect(html).toContain('data-subtab="subtab-basic"');
+    expect(html).toContain('data-subtab="subtab-custom"');
+    expect(html).toContain('id="subtab-basic"');
+    expect(html).toContain('id="subtab-custom"');
+    const appearance = html.slice(html.indexOf('id="sec-appearance"'), html.indexOf('id="sec-about"'));
+    expect(appearance).toContain('id="themeEditor"');
+    expect(appearance).toContain('ЦВЕТА');
+    expect(appearance).toContain('ГЕОМЕТРИЯ');
+    expect(appearance).toContain('ТИПОГРАФИКА');
+  });
+
+  it('findingsSort stays in Аудит; uiFontSize lives in the custom subtab', () => {
     const html = buildSettingsHtml(themeState);
     const audit = html.slice(html.indexOf('id="sec-audit"'), html.indexOf('id="sec-project"'));
-    const appearance = html.slice(html.indexOf('id="sec-appearance"'), html.indexOf('id="sec-theme"'));
+    const basic = html.slice(html.indexOf('id="subtab-basic"'), html.indexOf('id="subtab-custom"'));
+    const custom = html.slice(html.indexOf('id="subtab-custom"'), html.indexOf('id="sec-about"'));
     expect(audit).toContain('id="findingsSort"');
-    expect(appearance).not.toContain('id="findingsSort"');
-    expect(appearance).not.toContain('id="uiFontSize"');
+    expect(basic).not.toContain('id="findingsSort"');
+    expect(basic).not.toContain('id="uiFontSize"');
+    expect(custom).toContain('id="uiFontSize"');
+    expect(basic).toContain('id="uiTheme"');
   });
 
-  it('Theme Editor is a 6th sidebar section with color/geometry/typography groups', () => {
-    const html = buildSettingsHtml(themeState);
-    expect(html).toContain('data-target="sec-theme"');
-    expect(html).toContain('id="sec-theme"');
-    expect(html).toContain('Theme Editor');
-    expect(html).toContain('ЦВЕТА');
-    expect(html).toContain('ГЕОМЕТРИЯ');
-    expect(html).toContain('ТИПОГРАФИКА');
-    for (const key of ['btnBg', 'btnFg', 'btnHover', 'error', 'warn', 'pass', 'chipBg', 'chipFg']) expect(html).toContain(`data-key="${key}"`);
-    for (const key of ['btnRadius', 'btnHeight', 'cardRadius']) expect(html).toContain(`data-key="${key}"`);
-    expect(html).toContain('id="uiFontSize"');
-    expect(html).toContain('id="openThemeEditor"');
-    expect(html).toContain('id="enableCustom"');
-    expect(html).toContain('id="copyTheme"');
-    expect(html).toContain('id="applyTheme"');
-    expect(html).toContain('id="themeJson"');
-    expect(html).toContain('id="themeInactiveHint"');
-  });
-
-  it('appearance Theme Editor button sets custom + scrolls to the section anchor', () => {
+  it('auto-custom: editing a control forces uiTheme=custom in DOM + dirty; button switches subtab; saveAll sends custom', () => {
     const settings = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(settings).toContain("function ensureCustom()");
     expect(settings).toContain("uiThemeSelect.value = 'custom'");
-    expect(settings).toContain("getElementById('sec-theme')");
-    expect(settings).toContain("setActive('sec-theme')");
-    expect(settings).toContain("scrollIntoView({ behavior: 'smooth', block: 'start' })");
+    expect(settings).toContain('ensureCustom(); syncRow(el); applyPreview(); refreshDirty();');
+    expect(settings).toContain("openThemeBtn.addEventListener('click', () => showSubtab('subtab-custom'))");
+    expect(settings).toContain('function showSubtab(id)');
+    expect(settings).toContain("uiTheme: uiThemeSelect.value");
+    expect(settings).toContain('Изменения ниже автоматически включат тему custom');
   });
 
   it('new tokens land in the inline custom style', () => {

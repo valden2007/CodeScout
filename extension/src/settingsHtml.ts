@@ -156,7 +156,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
 .cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 .contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
-#sec-theme h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
+.subtabs { display: flex; gap: var(--cs-space-1); margin-bottom: var(--cs-space-3); border-bottom: 1px solid var(--cs-border); }
+.subtab-btn { width: auto; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--cs-desc); border-radius: 0; padding: var(--cs-space-2) var(--cs-space-3); }
+.subtab-btn:hover:not(:disabled) { background: transparent; }
+.subtab-btn.active { color: var(--cs-accent); border-bottom-color: var(--cs-accent); font-weight: 600; }
+#subtab-custom h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
 .theme-inactive { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-2); font-size: var(--cs-font-1); margin: 0 0 var(--cs-space-2); }
 .theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
@@ -171,7 +175,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>Аудит</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>Проект</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>Внешний вид</span></a>
-  <a class="nav-link" href="#sec-theme" data-target="sec-theme">${icon('symbol-color')}<span>Theme Editor</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>О расширении</span></a>
 </nav>
 <div class="content">
@@ -239,78 +242,83 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </section>
 <section id="sec-appearance">
   <h2>${icon('symbol-color')} Внешний вид</h2>
-  <label for="reportLanguage">Язык отчётов</label>
-  <select id="reportLanguage">
-    <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>RU — по-русски</option>
-    <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>EN — English</option>
-  </select>
-  <label for="uiTheme">Тема интерфейса</label>
-  <select id="uiTheme">
-    <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>auto — как в VS Code</option>
-    <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>dark — фиксированная тёмная</option>
-    <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
-    <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>custom — своя палитра</option>
-  </select>
-  <div class="row">
-    <button id="openThemeEditor" type="button" class="secondary">${icon('symbol-color')}<span>Theme Editor</span></button>
+  <div class="subtabs">
+    <button type="button" class="subtab-btn active" data-subtab="subtab-basic">Базовые</button>
+    <button type="button" class="subtab-btn" data-subtab="subtab-custom">Кастомизация</button>
   </div>
-  <label for="accentColor">Акцентный цвет</label>
-  <select id="accentColor">
-    <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>auto — кнопка VS Code</option>
-    <option value="blue"${state.accentColor === 'blue' ? ' selected' : ''}>blue</option>
-    <option value="purple"${state.accentColor === 'purple' ? ' selected' : ''}>purple</option>
-    <option value="green"${state.accentColor === 'green' ? ' selected' : ''}>green</option>
-    <option value="orange"${state.accentColor === 'orange' ? ' selected' : ''}>orange</option>
-    <option value="pink"${state.accentColor === 'pink' ? ' selected' : ''}>pink</option>
-  </select>
-  <label for="uiDensity">Плотность</label>
-  <select id="uiDensity">
-    <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>standard</option>
-    <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>compact</option>
-  </select>
-  <label for="reportTheme">Тема экспортируемого отчёта</label>
-  <select id="reportTheme">
-    <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>auto</option>
-    <option value="dark"${state.reportTheme === 'dark' ? ' selected' : ''}>dark</option>
-    <option value="light"${state.reportTheme === 'light' ? ' selected' : ''}>light</option>
-  </select>
-  <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> Показывать % уверенности у находок</label>
-  <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
-</section>
-<section id="sec-theme">
-  <h2>${icon('symbol-color')} Theme Editor</h2>
-  <p class="theme-inactive${state.uiTheme === 'custom' ? ' hidden' : ''}" id="themeInactiveHint">Палитра применяется при теме custom.
-    <button id="enableCustom" type="button" class="secondary">${icon('wand')}<span>Включить custom</span></button>
-  </p>
-  <div id="themeEditor">
-    <h3>ЦВЕТА</h3>
-    ${colorFields.map((f) => `
-    <div class="palette-row">
-      <label for="cc-${f.key}">${f.label}</label>
-      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(String(cc[f.key]))}">
-      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(String(cc[f.key]))}">
-    </div>`).join('')}
-    <h3>ГЕОМЕТРИЯ</h3>
-    ${geometryFields.map((f) => `
-    <div class="palette-row">
-      <label for="cg-${f.key}">${f.label}</label>
-      <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
-      <span></span>
-    </div>`).join('')}
-    <h3>ТИПОГРАФИКА</h3>
-    <label for="uiFontSize">Размер шрифта</label>
-    <select id="uiFontSize">
-      <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
-      <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
-      <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
+  <div class="subtab" id="subtab-basic">
+    <label for="reportLanguage">Язык отчётов</label>
+    <select id="reportLanguage">
+      <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>RU — по-русски</option>
+      <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>EN — English</option>
+    </select>
+    <label for="uiTheme">Тема интерфейса</label>
+    <select id="uiTheme">
+      <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>auto — как в VS Code</option>
+      <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>dark — фиксированная тёмная</option>
+      <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
+      <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>custom — своя палитра</option>
     </select>
     <div class="row">
-      <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
-      <button id="copyTheme" type="button" class="secondary">${icon('clippy')}<span>Копировать JSON темы</span></button>
-      <button id="applyTheme" type="button" class="secondary">${icon('desktop-download')}<span>Применить из JSON</span></button>
+      <button id="openThemeEditor" type="button" class="secondary">${icon('symbol-color')}<span>Theme Editor</span></button>
     </div>
-    <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#…","btnRadius":4,…}'></textarea>
-    <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+    <label for="accentColor">Акцентный цвет</label>
+    <select id="accentColor">
+      <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>auto — кнопка VS Code</option>
+      <option value="blue"${state.accentColor === 'blue' ? ' selected' : ''}>blue</option>
+      <option value="purple"${state.accentColor === 'purple' ? ' selected' : ''}>purple</option>
+      <option value="green"${state.accentColor === 'green' ? ' selected' : ''}>green</option>
+      <option value="orange"${state.accentColor === 'orange' ? ' selected' : ''}>orange</option>
+      <option value="pink"${state.accentColor === 'pink' ? ' selected' : ''}>pink</option>
+    </select>
+    <label for="uiDensity">Плотность</label>
+    <select id="uiDensity">
+      <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>standard</option>
+      <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>compact</option>
+    </select>
+    <label for="reportTheme">Тема экспортируемого отчёта</label>
+    <select id="reportTheme">
+      <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>auto</option>
+      <option value="dark"${state.reportTheme === 'dark' ? ' selected' : ''}>dark</option>
+      <option value="light"${state.reportTheme === 'light' ? ' selected' : ''}>light</option>
+    </select>
+    <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> Показывать % уверенности у находок</label>
+    <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
+  </div>
+  <div class="subtab hidden" id="subtab-custom">
+    <p class="theme-inactive${state.uiTheme === 'custom' ? ' hidden' : ''}" id="themeInactiveHint">Изменения ниже автоматически включат тему custom.
+      <button id="enableCustom" type="button" class="secondary">${icon('wand')}<span>Включить custom сейчас</span></button>
+    </p>
+    <div id="themeEditor">
+      <h3>ЦВЕТА</h3>
+      ${colorFields.map((f) => `
+      <div class="palette-row">
+        <label for="cc-${f.key}">${f.label}</label>
+        <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(String(cc[f.key]))}">
+        <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(String(cc[f.key]))}">
+      </div>`).join('')}
+      <h3>ГЕОМЕТРИЯ</h3>
+      ${geometryFields.map((f) => `
+      <div class="palette-row">
+        <label for="cg-${f.key}">${f.label}</label>
+        <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
+        <span></span>
+      </div>`).join('')}
+      <h3>ТИПОГРАФИКА</h3>
+      <label for="uiFontSize">Размер шрифта</label>
+      <select id="uiFontSize">
+        <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
+        <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
+        <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
+      </select>
+      <div class="row">
+        <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
+        <button id="copyTheme" type="button" class="secondary">${icon('clippy')}<span>Копировать JSON темы</span></button>
+        <button id="applyTheme" type="button" class="secondary">${icon('desktop-download')}<span>Применить из JSON</span></button>
+      </div>
+      <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#…","btnRadius":4,…}'></textarea>
+      <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+    </div>
   </div>
 </section>
 <section id="sec-about">
@@ -405,20 +413,23 @@ function syncRow(el) {
   if (el.classList.contains('cc-color')) { const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]'); if (hexEl) hexEl.value = el.value; }
   if (el.classList.contains('cc-hex')) { const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]'); if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim(); }
 }
+function ensureCustom() {
+  if (uiThemeSelect.value !== 'custom') {
+    uiThemeSelect.value = 'custom';
+    uiThemeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
 document.querySelectorAll('#themeEditor .cc-color, #themeEditor .cc-hex, #themeEditor .cc-num').forEach((el) => {
-  el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
+  el.addEventListener('input', () => { ensureCustom(); syncRow(el); applyPreview(); refreshDirty(); });
 });
 uiThemeSelect.addEventListener('change', applyPreview);
 const openThemeBtn = document.getElementById('openThemeEditor');
-if (openThemeBtn) openThemeBtn.addEventListener('click', () => {
-  if (uiThemeSelect.value !== 'custom') { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); }
-  const sec = document.getElementById('sec-theme');
-  if (sec) { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive('sec-theme'); }
-});
+if (openThemeBtn) openThemeBtn.addEventListener('click', () => showSubtab('subtab-custom'));
 const enableCustomBtn = document.getElementById('enableCustom');
-if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); });
+if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { ensureCustom(); applyPreview(); refreshDirty(); });
 const resetBtn = document.getElementById('resetPalette');
 if (resetBtn) resetBtn.addEventListener('click', () => {
+  ensureCustom();
   for (const k of CC_KEYS) setColor(k, CC_DEFAULT[k]);
   for (const k of GEOM_KEYS) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = CC_DEFAULT[k]; }
   applyPreview();
@@ -432,6 +443,7 @@ if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
   try {
     const parsed = JSON.parse(themeJson.value);
     if (parsed && typeof parsed === 'object') {
+      ensureCustom();
       for (const k of CC_KEYS) { if (typeof parsed[k] === 'string') setColor(k, parsed[k]); }
       for (const k of GEOM_KEYS) { if (Number.isFinite(Number(parsed[k]))) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = Number(parsed[k]); } }
       applyPreview();
@@ -439,6 +451,11 @@ if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
     }
   } catch (e) { /* ignore malformed JSON */ }
 });
+function showSubtab(id) {
+  document.querySelectorAll('.subtab').forEach((p) => p.classList.toggle('hidden', p.id !== id));
+  document.querySelectorAll('.subtab-btn').forEach((b) => b.classList.toggle('active', b.getAttribute('data-subtab') === id));
+}
+document.querySelectorAll('.subtab-btn').forEach((b) => b.addEventListener('click', () => showSubtab(b.getAttribute('data-subtab'))));
 function snapshot() {
   return JSON.stringify({
     providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,

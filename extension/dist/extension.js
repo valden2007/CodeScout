@@ -2234,7 +2234,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
 .cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 .contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
-#sec-theme h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
+.subtabs { display: flex; gap: var(--cs-space-1); margin-bottom: var(--cs-space-3); border-bottom: 1px solid var(--cs-border); }
+.subtab-btn { width: auto; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--cs-desc); border-radius: 0; padding: var(--cs-space-2) var(--cs-space-3); }
+.subtab-btn:hover:not(:disabled) { background: transparent; }
+.subtab-btn.active { color: var(--cs-accent); border-bottom-color: var(--cs-accent); font-weight: 600; }
+#subtab-custom h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
 .theme-inactive { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-2); font-size: var(--cs-font-1); margin: 0 0 var(--cs-space-2); }
 .theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
@@ -2249,7 +2253,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon2("sync")}<span>\u0410\u0443\u0434\u0438\u0442</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon2("folder")}<span>\u041F\u0440\u043E\u0435\u043A\u0442</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon2("symbol-color")}<span>\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</span></a>
-  <a class="nav-link" href="#sec-theme" data-target="sec-theme">${icon2("symbol-color")}<span>Theme Editor</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon2("info")}<span>\u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438</span></a>
 </nav>
 <div class="content">
@@ -2317,78 +2320,83 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </section>
 <section id="sec-appearance">
   <h2>${icon2("symbol-color")} \u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</h2>
-  <label for="reportLanguage">\u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432</label>
-  <select id="reportLanguage">
-    <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438</option>
-    <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>EN \u2014 English</option>
-  </select>
-  <label for="uiTheme">\u0422\u0435\u043C\u0430 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430</label>
-  <select id="uiTheme">
-    <option value="auto"${state.uiTheme === "auto" ? " selected" : ""}>auto \u2014 \u043A\u0430\u043A \u0432 VS Code</option>
-    <option value="dark"${state.uiTheme === "dark" ? " selected" : ""}>dark \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0442\u0451\u043C\u043D\u0430\u044F</option>
-    <option value="light"${state.uiTheme === "light" ? " selected" : ""}>light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F</option>
-    <option value="custom"${state.uiTheme === "custom" ? " selected" : ""}>custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430</option>
-  </select>
-  <div class="row">
-    <button id="openThemeEditor" type="button" class="secondary">${icon2("symbol-color")}<span>Theme Editor</span></button>
+  <div class="subtabs">
+    <button type="button" class="subtab-btn active" data-subtab="subtab-basic">\u0411\u0430\u0437\u043E\u0432\u044B\u0435</button>
+    <button type="button" class="subtab-btn" data-subtab="subtab-custom">\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F</button>
   </div>
-  <label for="accentColor">\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442</label>
-  <select id="accentColor">
-    <option value="auto"${state.accentColor === "auto" ? " selected" : ""}>auto \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 VS Code</option>
-    <option value="blue"${state.accentColor === "blue" ? " selected" : ""}>blue</option>
-    <option value="purple"${state.accentColor === "purple" ? " selected" : ""}>purple</option>
-    <option value="green"${state.accentColor === "green" ? " selected" : ""}>green</option>
-    <option value="orange"${state.accentColor === "orange" ? " selected" : ""}>orange</option>
-    <option value="pink"${state.accentColor === "pink" ? " selected" : ""}>pink</option>
-  </select>
-  <label for="uiDensity">\u041F\u043B\u043E\u0442\u043D\u043E\u0441\u0442\u044C</label>
-  <select id="uiDensity">
-    <option value="standard"${state.uiDensity === "standard" ? " selected" : ""}>standard</option>
-    <option value="compact"${state.uiDensity === "compact" ? " selected" : ""}>compact</option>
-  </select>
-  <label for="reportTheme">\u0422\u0435\u043C\u0430 \u044D\u043A\u0441\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C\u043E\u0433\u043E \u043E\u0442\u0447\u0451\u0442\u0430</label>
-  <select id="reportTheme">
-    <option value="auto"${state.reportTheme === "auto" ? " selected" : ""}>auto</option>
-    <option value="dark"${state.reportTheme === "dark" ? " selected" : ""}>dark</option>
-    <option value="light"${state.reportTheme === "light" ? " selected" : ""}>light</option>
-  </select>
-  <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? " checked" : ""}> \u041F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C % \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0443 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
-  <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
-</section>
-<section id="sec-theme">
-  <h2>${icon2("symbol-color")} Theme Editor</h2>
-  <p class="theme-inactive${state.uiTheme === "custom" ? " hidden" : ""}" id="themeInactiveHint">\u041F\u0430\u043B\u0438\u0442\u0440\u0430 \u043F\u0440\u0438\u043C\u0435\u043D\u044F\u0435\u0442\u0441\u044F \u043F\u0440\u0438 \u0442\u0435\u043C\u0435 custom.
-    <button id="enableCustom" type="button" class="secondary">${icon2("wand")}<span>\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C custom</span></button>
-  </p>
-  <div id="themeEditor">
-    <h3>\u0426\u0412\u0415\u0422\u0410</h3>
-    ${colorFields.map((f) => `
-    <div class="palette-row">
-      <label for="cc-${f.key}">${f.label}</label>
-      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml2(String(cc[f.key]))}">
-      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml2(String(cc[f.key]))}">
-    </div>`).join("")}
-    <h3>\u0413\u0415\u041E\u041C\u0415\u0422\u0420\u0418\u042F</h3>
-    ${geometryFields.map((f) => `
-    <div class="palette-row">
-      <label for="cg-${f.key}">${f.label}</label>
-      <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
-      <span></span>
-    </div>`).join("")}
-    <h3>\u0422\u0418\u041F\u041E\u0413\u0420\u0410\u0424\u0418\u041A\u0410</h3>
-    <label for="uiFontSize">\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430</label>
-    <select id="uiFontSize">
-      <option value="s"${state.uiFontSize === "s" ? " selected" : ""}>s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439</option>
-      <option value="m"${state.uiFontSize === "m" ? " selected" : ""}>m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439</option>
-      <option value="l"${state.uiFontSize === "l" ? " selected" : ""}>l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439</option>
+  <div class="subtab" id="subtab-basic">
+    <label for="reportLanguage">\u042F\u0437\u044B\u043A \u043E\u0442\u0447\u0451\u0442\u043E\u0432</label>
+    <select id="reportLanguage">
+      <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438</option>
+      <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>EN \u2014 English</option>
+    </select>
+    <label for="uiTheme">\u0422\u0435\u043C\u0430 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430</label>
+    <select id="uiTheme">
+      <option value="auto"${state.uiTheme === "auto" ? " selected" : ""}>auto \u2014 \u043A\u0430\u043A \u0432 VS Code</option>
+      <option value="dark"${state.uiTheme === "dark" ? " selected" : ""}>dark \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0442\u0451\u043C\u043D\u0430\u044F</option>
+      <option value="light"${state.uiTheme === "light" ? " selected" : ""}>light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F</option>
+      <option value="custom"${state.uiTheme === "custom" ? " selected" : ""}>custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430</option>
     </select>
     <div class="row">
-      <button id="resetPalette" type="button" class="secondary">${icon2("discard")}<span>\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443</span></button>
-      <button id="copyTheme" type="button" class="secondary">${icon2("clippy")}<span>\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C JSON \u0442\u0435\u043C\u044B</span></button>
-      <button id="applyTheme" type="button" class="secondary">${icon2("desktop-download")}<span>\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 JSON</span></button>
+      <button id="openThemeEditor" type="button" class="secondary">${icon2("symbol-color")}<span>Theme Editor</span></button>
     </div>
-    <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#\u2026","btnRadius":4,\u2026}'></textarea>
-    <p class="contrast-hint hidden" id="contrastHint">\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C</p>
+    <label for="accentColor">\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442</label>
+    <select id="accentColor">
+      <option value="auto"${state.accentColor === "auto" ? " selected" : ""}>auto \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 VS Code</option>
+      <option value="blue"${state.accentColor === "blue" ? " selected" : ""}>blue</option>
+      <option value="purple"${state.accentColor === "purple" ? " selected" : ""}>purple</option>
+      <option value="green"${state.accentColor === "green" ? " selected" : ""}>green</option>
+      <option value="orange"${state.accentColor === "orange" ? " selected" : ""}>orange</option>
+      <option value="pink"${state.accentColor === "pink" ? " selected" : ""}>pink</option>
+    </select>
+    <label for="uiDensity">\u041F\u043B\u043E\u0442\u043D\u043E\u0441\u0442\u044C</label>
+    <select id="uiDensity">
+      <option value="standard"${state.uiDensity === "standard" ? " selected" : ""}>standard</option>
+      <option value="compact"${state.uiDensity === "compact" ? " selected" : ""}>compact</option>
+    </select>
+    <label for="reportTheme">\u0422\u0435\u043C\u0430 \u044D\u043A\u0441\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C\u043E\u0433\u043E \u043E\u0442\u0447\u0451\u0442\u0430</label>
+    <select id="reportTheme">
+      <option value="auto"${state.reportTheme === "auto" ? " selected" : ""}>auto</option>
+      <option value="dark"${state.reportTheme === "dark" ? " selected" : ""}>dark</option>
+      <option value="light"${state.reportTheme === "light" ? " selected" : ""}>light</option>
+    </select>
+    <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? " checked" : ""}> \u041F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C % \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0443 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
+    <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
+  </div>
+  <div class="subtab hidden" id="subtab-custom">
+    <p class="theme-inactive${state.uiTheme === "custom" ? " hidden" : ""}" id="themeInactiveHint">\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043D\u0438\u0436\u0435 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0432\u043A\u043B\u044E\u0447\u0430\u0442 \u0442\u0435\u043C\u0443 custom.
+      <button id="enableCustom" type="button" class="secondary">${icon2("wand")}<span>\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C custom \u0441\u0435\u0439\u0447\u0430\u0441</span></button>
+    </p>
+    <div id="themeEditor">
+      <h3>\u0426\u0412\u0415\u0422\u0410</h3>
+      ${colorFields.map((f) => `
+      <div class="palette-row">
+        <label for="cc-${f.key}">${f.label}</label>
+        <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml2(String(cc[f.key]))}">
+        <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml2(String(cc[f.key]))}">
+      </div>`).join("")}
+      <h3>\u0413\u0415\u041E\u041C\u0415\u0422\u0420\u0418\u042F</h3>
+      ${geometryFields.map((f) => `
+      <div class="palette-row">
+        <label for="cg-${f.key}">${f.label}</label>
+        <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
+        <span></span>
+      </div>`).join("")}
+      <h3>\u0422\u0418\u041F\u041E\u0413\u0420\u0410\u0424\u0418\u041A\u0410</h3>
+      <label for="uiFontSize">\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430</label>
+      <select id="uiFontSize">
+        <option value="s"${state.uiFontSize === "s" ? " selected" : ""}>s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439</option>
+        <option value="m"${state.uiFontSize === "m" ? " selected" : ""}>m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439</option>
+        <option value="l"${state.uiFontSize === "l" ? " selected" : ""}>l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439</option>
+      </select>
+      <div class="row">
+        <button id="resetPalette" type="button" class="secondary">${icon2("discard")}<span>\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443</span></button>
+        <button id="copyTheme" type="button" class="secondary">${icon2("clippy")}<span>\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C JSON \u0442\u0435\u043C\u044B</span></button>
+        <button id="applyTheme" type="button" class="secondary">${icon2("desktop-download")}<span>\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 JSON</span></button>
+      </div>
+      <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#\u2026","btnRadius":4,\u2026}'></textarea>
+      <p class="contrast-hint hidden" id="contrastHint">\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C</p>
+    </div>
   </div>
 </section>
 <section id="sec-about">
@@ -2483,20 +2491,23 @@ function syncRow(el) {
   if (el.classList.contains('cc-color')) { const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]'); if (hexEl) hexEl.value = el.value; }
   if (el.classList.contains('cc-hex')) { const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]'); if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim(); }
 }
+function ensureCustom() {
+  if (uiThemeSelect.value !== 'custom') {
+    uiThemeSelect.value = 'custom';
+    uiThemeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
 document.querySelectorAll('#themeEditor .cc-color, #themeEditor .cc-hex, #themeEditor .cc-num').forEach((el) => {
-  el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
+  el.addEventListener('input', () => { ensureCustom(); syncRow(el); applyPreview(); refreshDirty(); });
 });
 uiThemeSelect.addEventListener('change', applyPreview);
 const openThemeBtn = document.getElementById('openThemeEditor');
-if (openThemeBtn) openThemeBtn.addEventListener('click', () => {
-  if (uiThemeSelect.value !== 'custom') { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); }
-  const sec = document.getElementById('sec-theme');
-  if (sec) { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive('sec-theme'); }
-});
+if (openThemeBtn) openThemeBtn.addEventListener('click', () => showSubtab('subtab-custom'));
 const enableCustomBtn = document.getElementById('enableCustom');
-if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); });
+if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { ensureCustom(); applyPreview(); refreshDirty(); });
 const resetBtn = document.getElementById('resetPalette');
 if (resetBtn) resetBtn.addEventListener('click', () => {
+  ensureCustom();
   for (const k of CC_KEYS) setColor(k, CC_DEFAULT[k]);
   for (const k of GEOM_KEYS) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = CC_DEFAULT[k]; }
   applyPreview();
@@ -2510,6 +2521,7 @@ if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
   try {
     const parsed = JSON.parse(themeJson.value);
     if (parsed && typeof parsed === 'object') {
+      ensureCustom();
       for (const k of CC_KEYS) { if (typeof parsed[k] === 'string') setColor(k, parsed[k]); }
       for (const k of GEOM_KEYS) { if (Number.isFinite(Number(parsed[k]))) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = Number(parsed[k]); } }
       applyPreview();
@@ -2517,6 +2529,11 @@ if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
     }
   } catch (e) { /* ignore malformed JSON */ }
 });
+function showSubtab(id) {
+  document.querySelectorAll('.subtab').forEach((p) => p.classList.toggle('hidden', p.id !== id));
+  document.querySelectorAll('.subtab-btn').forEach((b) => b.classList.toggle('active', b.getAttribute('data-subtab') === id));
+}
+document.querySelectorAll('.subtab-btn').forEach((b) => b.addEventListener('click', () => showSubtab(b.getAttribute('data-subtab'))));
 function snapshot() {
   return JSON.stringify({
     providerKey: providerSelect.value, baseUrl: baseUrlInput.value, key: keyInput.value,

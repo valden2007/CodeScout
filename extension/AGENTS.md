@@ -323,6 +323,20 @@ pre-design now.
     postIssues notes "показаны первые 100 из N"; keyUrl(custom)=undefined;
     cli onExit process.exit(code). prompt-builder escapeAngle and
     ink-box.d.ts generics verified correct + locked by tests. Tests: 222.
+17. Appearance subtabs + auto-custom (v1.4b-8): the separate "Theme
+    Editor" sidebar section is gone — customization now lives INSIDE
+    🎨 Внешний вид as two session-scoped sub-tabs [Базовые]
+    [Кастомизация] (Базовые: reportLanguage, uiTheme, Theme Editor
+    button, accent, density, reportTheme, showConfidence, banner;
+    Кастомизация: colors/geometry/typography + copy/apply JSON).
+    Sub-tabs toggle with no scroll (showSubtab). AUTO-CUSTOM: editing
+    any control in Кастомизация runs ensureCustom() which sets the
+    uiTheme select to custom, dispatches change (applyPreview +
+    dirty), so saveAll writes uiTheme=custom — the user never flips
+    the theme by hand; a soft hint "Изменения ниже автоматически
+    включат тему custom" shows while theme!=custom. The Базовые
+    "Theme Editor" button just switches to the Кастомизация sub-tab.
+    Tests: 222 (sidebar 5 items, subtabs, auto-custom source, tokens).
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
