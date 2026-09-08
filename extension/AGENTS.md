@@ -292,6 +292,23 @@ pre-design now.
     un-themed save-bar: .savebar now uses --cs-card-bg/--cs-border/
     --cs-fg (was a hardcoded --vscode-editor-background → dark in light).
     Panel + center re-render on customColors config change. Tests: 209.
+15. Theme Editor section + sharing (v1.4b-7): findingsSort moved from
+    🎨 Внешний вид into 🔄 Аудит (manifest order + markup); uiFontSize
+    moved into the new Theme Editor. New 6th sidebar section
+    "Theme Editor" (codicon-symbol-color, #sec-theme) with groups
+    ЦВЕТА (16 color inputs incl buttons/severity/chips), ГЕОМЕТРИЯ
+    (btnRadius 2-12, btnHeight 24-40, cardRadius 0-16 number fields),
+    ТИПОГРАФИКА (fontSize s/m/l). CustomColors extended with those
+    keys; normalizeCustomColors clamps geometry + drops bad hex;
+    customVarsStyle emits --cs-btn-*/--cs-error/warn/pass/--cs-chip-*/
+    --cs-radius-btn/--cs-btn-height/--cs-radius-card (button/section
+    CSS now uses these). "🎨 Theme Editor" button in appearance sets
+    custom (dirty) + scrolls to #sec-theme; when theme!=custom the
+    editor shows "применяется при теме custom" + "Включить custom".
+    Live preview before save; contrast guard extended to btnFg/btnBg +
+    error/warn/pass vs bg. Sharing: "📋 Копировать JSON темы" fills
+    #themeJson, "📥 Применить из JSON" parses it into the fields.
+    Tests: 215.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

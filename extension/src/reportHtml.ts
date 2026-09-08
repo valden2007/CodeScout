@@ -1,7 +1,7 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 import { autoResumeBadgeText } from './projectAudit';
-import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
+import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefsInput } from './uiPrefs';
 
 export interface AutoResumeIndicator {
   done: number;
@@ -121,7 +121,7 @@ body.modal .welcome-overlay * { pointer-events: auto; }
 .link-button { display: inline; width: auto; padding: 0; color: var(--cs-accent); background: transparent; text-decoration: underline; }
 .primary-action { width: auto; margin: var(--cs-space-1) auto var(--cs-space-2); padding: var(--cs-space-2) var(--cs-space-4); text-align: center; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--cs-space-3); }
-button { flex: 1 1 150px; width: auto; padding: 6px 9px; border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; text-align: left; }
+button { flex: 1 1 150px; width: auto; min-height: var(--cs-btn-height); padding: 6px 9px; border: 1px solid transparent; border-radius: var(--cs-radius-btn); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; text-align: left; }
 button:hover:not(:disabled) { background: var(--cs-btn-hover); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -146,7 +146,7 @@ button:disabled { opacity: 0.65; cursor: default; }
 .pill.low, .badge.low { color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 15%, transparent); }
 .file-section { margin-top: 18px; }
 h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs-font-3); font-weight: 600; overflow-wrap: anywhere; }
-.issue-card { margin: var(--cs-space-2) 0; padding: 10px 10px 11px; border: 1px solid var(--cs-card-border); border-left: 3px solid var(--cs-pass); border-radius: var(--cs-radius-1); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
+.issue-card { margin: var(--cs-space-2) 0; padding: 10px 10px 11px; border: 1px solid var(--cs-card-border); border-left: 3px solid var(--cs-pass); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
 .issue-card.critical { border-left-color: var(--cs-error); }
 .issue-card.medium { border-left-color: var(--cs-warn); }
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -187,7 +187,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </head>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefs): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput): string {
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
     if (ui.findingsSort === 'file') return a.file.localeCompare(b.file) || a.line - b.line || severityOrder[a.severity] - severityOrder[b.severity];
@@ -447,6 +447,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefs): string {
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput): string {
   return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs);
 }

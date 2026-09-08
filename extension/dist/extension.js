@@ -1195,9 +1195,25 @@ var DEFAULT_CUSTOM_COLORS = {
   border: "#d0d3d6",
   accent: "#0a64b4",
   inputBg: "#ffffff",
-  inputFg: "#1f2326"
+  inputFg: "#1f2326",
+  btnBg: "#0067b8",
+  btnFg: "#ffffff",
+  btnHover: "#0279d3",
+  error: "#c72e2e",
+  warn: "#8a6d00",
+  pass: "#0b6cba",
+  chipBg: "#e6e8ea",
+  chipFg: "#1f2326",
+  btnRadius: 4,
+  btnHeight: 30,
+  cardRadius: 6
 };
-var CUSTOM_COLOR_KEYS = ["bg", "card", "fg", "desc", "border", "accent", "inputBg", "inputFg"];
+var COLOR_KEYS = ["bg", "card", "fg", "desc", "border", "accent", "inputBg", "inputFg", "btnBg", "btnFg", "btnHover", "error", "warn", "pass", "chipBg", "chipFg"];
+var GEOMETRY_LIMITS = {
+  btnRadius: [2, 12],
+  btnHeight: [24, 40],
+  cardRadius: [0, 16]
+};
 var HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 function normalizeCustomColors(input) {
   let obj = {};
@@ -1212,9 +1228,14 @@ function normalizeCustomColors(input) {
     obj = input;
   }
   const result = { ...DEFAULT_CUSTOM_COLORS };
-  for (const key of CUSTOM_COLOR_KEYS) {
+  for (const key of COLOR_KEYS) {
     const value = obj[key];
     if (typeof value === "string" && HEX_RE.test(value.trim())) result[key] = value.trim().toLowerCase();
+  }
+  for (const key of Object.keys(GEOMETRY_LIMITS)) {
+    const value = Number(obj[key]);
+    const [min, max] = GEOMETRY_LIMITS[key];
+    if (Number.isFinite(value)) result[key] = Math.min(max, Math.max(min, Math.round(value)));
   }
   return result;
 }
@@ -1263,7 +1284,18 @@ function customVarsStyle(colors) {
     `--cs-input-bg: ${c.inputBg}`,
     `--cs-select-bg: ${c.inputBg}`,
     `--cs-input-fg: ${c.inputFg}`,
-    `--cs-select-fg: ${c.inputFg}`
+    `--cs-select-fg: ${c.inputFg}`,
+    `--cs-btn-bg: ${c.btnBg}`,
+    `--cs-btn-fg: ${c.btnFg}`,
+    `--cs-btn-hover: ${c.btnHover}`,
+    `--cs-error: ${c.error}`,
+    `--cs-warn: ${c.warn}`,
+    `--cs-pass: ${c.pass}`,
+    `--cs-chip-bg: ${c.chipBg}`,
+    `--cs-chip-fg: ${c.chipFg}`,
+    `--cs-radius-btn: ${c.btnRadius}px`,
+    `--cs-btn-height: ${c.btnHeight}px`,
+    `--cs-radius-card: ${c.cardRadius}px`
   ].join("; ");
 }
 function uiBodyAttrs(prefs) {
@@ -1275,6 +1307,7 @@ function uiBodyAttrs(prefs) {
 var CS_BASE_TOKENS = `:root {
   --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
   --cs-radius-1: 4px; --cs-radius-2: 6px;
+  --cs-radius-btn: 4px; --cs-radius-card: 6px; --cs-btn-height: 30px;
   --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
   --cs-fg: var(--vscode-foreground);
   --cs-desc: var(--vscode-descriptionForeground);
@@ -1430,7 +1463,7 @@ body.modal .welcome-overlay * { pointer-events: auto; }
 .link-button { display: inline; width: auto; padding: 0; color: var(--cs-accent); background: transparent; text-decoration: underline; }
 .primary-action { width: auto; margin: var(--cs-space-1) auto var(--cs-space-2); padding: var(--cs-space-2) var(--cs-space-4); text-align: center; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--cs-space-3); }
-button { flex: 1 1 150px; width: auto; padding: 6px 9px; border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; text-align: left; }
+button { flex: 1 1 150px; width: auto; min-height: var(--cs-btn-height); padding: 6px 9px; border: 1px solid transparent; border-radius: var(--cs-radius-btn); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; text-align: left; }
 button:hover:not(:disabled) { background: var(--cs-btn-hover); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -1455,7 +1488,7 @@ button:disabled { opacity: 0.65; cursor: default; }
 .pill.low, .badge.low { color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 15%, transparent); }
 .file-section { margin-top: 18px; }
 h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs-font-3); font-weight: 600; overflow-wrap: anywhere; }
-.issue-card { margin: var(--cs-space-2) 0; padding: 10px 10px 11px; border: 1px solid var(--cs-card-border); border-left: 3px solid var(--cs-pass); border-radius: var(--cs-radius-1); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
+.issue-card { margin: var(--cs-space-2) 0; padding: 10px 10px 11px; border: 1px solid var(--cs-card-border); border-left: 3px solid var(--cs-pass); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
 .issue-card.critical { border-left-color: var(--cs-error); }
 .issue-card.medium { border-left-color: var(--cs-warn); }
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -2101,15 +2134,28 @@ function sampleTestSummary(found) {
 // src/settingsHtml.ts
 var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
 var REPO_URL = "https://github.com/valden2007/CodeScout";
-var paletteFields = [
+var colorFields = [
   { key: "bg", label: "\u0424\u043E\u043D \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B" },
   { key: "card", label: "\u0424\u043E\u043D \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438" },
   { key: "fg", label: "\u0422\u0435\u043A\u0441\u0442" },
   { key: "desc", label: "\u041F\u0440\u0438\u0433\u043B\u0443\u0448\u0451\u043D\u043D\u044B\u0439 \u0442\u0435\u043A\u0441\u0442" },
   { key: "border", label: "\u0413\u0440\u0430\u043D\u0438\u0446\u044B" },
   { key: "accent", label: "\u0410\u043A\u0446\u0435\u043D\u0442" },
-  { key: "inputBg", label: "\u0424\u043E\u043D \u0438\u043D\u043F\u0443\u0442\u0430" },
-  { key: "inputFg", label: "\u0422\u0435\u043A\u0441\u0442 \u0438\u043D\u043F\u0443\u0442\u0430" }
+  { key: "btnBg", label: "\u041A\u043D\u043E\u043F\u043A\u0430: \u0444\u043E\u043D" },
+  { key: "btnFg", label: "\u041A\u043D\u043E\u043F\u043A\u0430: \u0442\u0435\u043A\u0441\u0442" },
+  { key: "btnHover", label: "\u041A\u043D\u043E\u043F\u043A\u0430: hover" },
+  { key: "inputBg", label: "\u0418\u043D\u043F\u0443\u0442: \u0444\u043E\u043D" },
+  { key: "inputFg", label: "\u0418\u043D\u043F\u0443\u0442: \u0442\u0435\u043A\u0441\u0442" },
+  { key: "error", label: "Severity: error" },
+  { key: "warn", label: "Severity: warning" },
+  { key: "pass", label: "Severity: pass" },
+  { key: "chipBg", label: "\u0427\u0438\u043F\u044B: \u0444\u043E\u043D" },
+  { key: "chipFg", label: "\u0427\u0438\u043F\u044B: \u0442\u0435\u043A\u0441\u0442" }
+];
+var geometryFields = [
+  { key: "btnRadius", label: "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u043D\u043E\u043F\u043E\u043A (px)", min: 2, max: 12 },
+  { key: "btnHeight", label: "\u0412\u044B\u0441\u043E\u0442\u0430 \u043A\u043D\u043E\u043F\u043E\u043A (px)", min: 24, max: 40 },
+  { key: "cardRadius", label: "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A (px)", min: 0, max: 16 }
 ];
 function escapeHtml2(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -2146,14 +2192,14 @@ body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--cs-editor-b
 .nav-link:hover { background: var(--cs-list-hover); }
 .nav-link.active { background: color-mix(in srgb, var(--cs-accent) 14%, transparent); color: var(--cs-accent); font-weight: 600; border-left-color: var(--cs-accent); }
 .content { flex: 1 1 auto; min-width: 0; padding: var(--cs-space-3) var(--cs-space-4) 72px; }
-section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-2); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); scroll-margin-top: var(--cs-space-2); }
+section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); scroll-margin-top: var(--cs-space-2); }
 h2 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 6px; font-size: var(--cs-font-3); font-weight: 600; color: var(--cs-accent); }
 label { display: block; margin: 10px 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-desc); }
 input, select { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; }
 select { color: var(--cs-select-fg); background: var(--cs-select-bg); }
 input[type="checkbox"] { accent-color: var(--cs-accent); }
 textarea { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; font-size: var(--cs-font-2); resize: vertical; }
-button { display: inline-flex; align-items: center; gap: var(--cs-space-2); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
+button { display: inline-flex; align-items: center; gap: var(--cs-space-2); min-height: var(--cs-btn-height); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-btn); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
 button:hover:not(:disabled) { background: var(--cs-btn-hover); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -2184,6 +2230,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
 .cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 .contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+#sec-theme h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
+.theme-inactive { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-2); font-size: var(--cs-font-1); margin: 0 0 var(--cs-space-2); }
+.theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
+.cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+#themeJson { margin-top: var(--cs-space-2); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -2194,6 +2245,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon2("sync")}<span>\u0410\u0443\u0434\u0438\u0442</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon2("folder")}<span>\u041F\u0440\u043E\u0435\u043A\u0442</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon2("symbol-color")}<span>\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434</span></a>
+  <a class="nav-link" href="#sec-theme" data-target="sec-theme">${icon2("symbol-color")}<span>Theme Editor</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon2("info")}<span>\u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438</span></a>
 </nav>
 <div class="content">
@@ -2231,6 +2283,12 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
   <label for="autoResumeMaxMinutes">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
+  <label for="findingsSort">\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
+  <select id="findingsSort">
+    <option value="severity"${state.findingsSort === "severity" ? " selected" : ""}>\u043F\u043E \u0432\u0430\u0436\u043D\u043E\u0441\u0442\u0438</option>
+    <option value="file"${state.findingsSort === "file" ? " selected" : ""}>\u043F\u043E \u0444\u0430\u0439\u043B\u0443</option>
+    <option value="line"${state.findingsSort === "line" ? " selected" : ""}>\u043F\u043E \u0441\u0442\u0440\u043E\u043A\u0435</option>
+  </select>
   <p class="hint">maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B &gt;800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; N &gt; 0: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F. \u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u0432\u043E\u0437\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0438\u0437 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442\u0430 \u0441 backoff 30\u0441\u219260\u0441\u21922\u043C\u0438\u043D\u21925\u043C\u0438\u043D.</p>
 </section>
 <section id="sec-project">
@@ -2265,17 +2323,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="light"${state.uiTheme === "light" ? " selected" : ""}>light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F</option>
     <option value="custom"${state.uiTheme === "custom" ? " selected" : ""}>custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430</option>
   </select>
-  <div class="palette-editor${state.uiTheme === "custom" ? "" : " hidden"}" id="paletteEditor">
-    ${paletteFields.map((f) => `
-    <div class="palette-row">
-      <label for="cc-${f.key}">${f.label}</label>
-      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml2(cc[f.key])}">
-      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml2(cc[f.key])}">
-    </div>`).join("")}
-    <div class="row">
-      <button id="resetPalette" type="button" class="secondary">${icon2("discard")}<span>\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443</span></button>
-    </div>
-    <p class="contrast-hint hidden" id="contrastHint">\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C</p>
+  <div class="row">
+    <button id="openThemeEditor" type="button" class="secondary">${icon2("symbol-color")}<span>Theme Editor</span></button>
   </div>
   <label for="accentColor">\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442</label>
   <select id="accentColor">
@@ -2291,18 +2340,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="standard"${state.uiDensity === "standard" ? " selected" : ""}>standard</option>
     <option value="compact"${state.uiDensity === "compact" ? " selected" : ""}>compact</option>
   </select>
-  <label for="uiFontSize">\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430</label>
-  <select id="uiFontSize">
-    <option value="s"${state.uiFontSize === "s" ? " selected" : ""}>s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439</option>
-    <option value="m"${state.uiFontSize === "m" ? " selected" : ""}>m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439</option>
-    <option value="l"${state.uiFontSize === "l" ? " selected" : ""}>l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439</option>
-  </select>
-  <label for="findingsSort">\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
-  <select id="findingsSort">
-    <option value="severity"${state.findingsSort === "severity" ? " selected" : ""}>\u043F\u043E \u0432\u0430\u0436\u043D\u043E\u0441\u0442\u0438</option>
-    <option value="file"${state.findingsSort === "file" ? " selected" : ""}>\u043F\u043E \u0444\u0430\u0439\u043B\u0443</option>
-    <option value="line"${state.findingsSort === "line" ? " selected" : ""}>\u043F\u043E \u0441\u0442\u0440\u043E\u043A\u0435</option>
-  </select>
   <label for="reportTheme">\u0422\u0435\u043C\u0430 \u044D\u043A\u0441\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C\u043E\u0433\u043E \u043E\u0442\u0447\u0451\u0442\u0430</label>
   <select id="reportTheme">
     <option value="auto"${state.reportTheme === "auto" ? " selected" : ""}>auto</option>
@@ -2311,6 +2348,42 @@ button.is-dirty .dirty-dot { display: inline-block; }
   </select>
   <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? " checked" : ""}> \u041F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C % \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0443 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
   <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? " checked" : ""}> \u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435</label>
+</section>
+<section id="sec-theme">
+  <h2>${icon2("symbol-color")} Theme Editor</h2>
+  <p class="theme-inactive${state.uiTheme === "custom" ? " hidden" : ""}" id="themeInactiveHint">\u041F\u0430\u043B\u0438\u0442\u0440\u0430 \u043F\u0440\u0438\u043C\u0435\u043D\u044F\u0435\u0442\u0441\u044F \u043F\u0440\u0438 \u0442\u0435\u043C\u0435 custom.
+    <button id="enableCustom" type="button" class="secondary">${icon2("wand")}<span>\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C custom</span></button>
+  </p>
+  <div id="themeEditor">
+    <h3>\u0426\u0412\u0415\u0422\u0410</h3>
+    ${colorFields.map((f) => `
+    <div class="palette-row">
+      <label for="cc-${f.key}">${f.label}</label>
+      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml2(String(cc[f.key]))}">
+      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml2(String(cc[f.key]))}">
+    </div>`).join("")}
+    <h3>\u0413\u0415\u041E\u041C\u0415\u0422\u0420\u0418\u042F</h3>
+    ${geometryFields.map((f) => `
+    <div class="palette-row">
+      <label for="cg-${f.key}">${f.label}</label>
+      <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
+      <span></span>
+    </div>`).join("")}
+    <h3>\u0422\u0418\u041F\u041E\u0413\u0420\u0410\u0424\u0418\u041A\u0410</h3>
+    <label for="uiFontSize">\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430</label>
+    <select id="uiFontSize">
+      <option value="s"${state.uiFontSize === "s" ? " selected" : ""}>s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439</option>
+      <option value="m"${state.uiFontSize === "m" ? " selected" : ""}>m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439</option>
+      <option value="l"${state.uiFontSize === "l" ? " selected" : ""}>l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439</option>
+    </select>
+    <div class="row">
+      <button id="resetPalette" type="button" class="secondary">${icon2("discard")}<span>\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443</span></button>
+      <button id="copyTheme" type="button" class="secondary">${icon2("clippy")}<span>\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C JSON \u0442\u0435\u043C\u044B</span></button>
+      <button id="applyTheme" type="button" class="secondary">${icon2("desktop-download")}<span>\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 JSON</span></button>
+    </div>
+    <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#\u2026","btnRadius":4,\u2026}'></textarea>
+    <p class="contrast-hint hidden" id="contrastHint">\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C</p>
+  </div>
 </section>
 <section id="sec-about">
   <h2>${icon2("info")} \u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438</h2>
@@ -2355,13 +2428,22 @@ const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempt
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
-const paletteEditor = document.getElementById('paletteEditor');
+const themeEditor = document.getElementById('themeEditor');
 const contrastHint = document.getElementById('contrastHint');
-const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
-const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg' };
+const themeInactiveHint = document.getElementById('themeInactiveHint');
+const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg', 'btnBg', 'btnFg', 'btnHover', 'error', 'warn', 'pass', 'chipBg', 'chipFg'];
+const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg', btnBg: '--cs-btn-bg', btnFg: '--cs-btn-fg', btnHover: '--cs-btn-hover', error: '--cs-error', warn: '--cs-warn', pass: '--cs-pass', chipBg: '--cs-chip-bg', chipFg: '--cs-chip-fg' };
+const GEOM_KEYS = ['btnRadius', 'btnHeight', 'cardRadius'];
+const GEOM_VAR = { btnRadius: ['--cs-radius-btn', 'px'], btnHeight: ['--cs-btn-height', 'px'], cardRadius: ['--cs-radius-card', 'px'] };
 const CC_DEFAULT = ${JSON.stringify(cc)};
-function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#paletteEditor .cc-hex')); }
-function collectPalette() { const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; }); return JSON.stringify(m); }
+function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#themeEditor .cc-hex')); }
+function numInputs() { return Array.prototype.slice.call(document.querySelectorAll('#themeEditor .cc-num')); }
+function collectPalette() {
+  const m = {};
+  hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  numInputs().forEach((el) => { m[el.getAttribute('data-key')] = Number(el.value); });
+  return JSON.stringify(m);
+}
 function lum(hex) {
   let h = String(hex || '').replace('#', '');
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
@@ -2373,35 +2455,60 @@ function lum(hex) {
 function lowContrast(fg, bg) { const a = lum(fg), b = lum(bg); if (a === null || b === null) return false; const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) < 4.5; }
 function applyPreview() {
   const isCustom = uiThemeSelect.value === 'custom';
-  if (paletteEditor) paletteEditor.classList.toggle('hidden', !isCustom);
+  if (themeInactiveHint) themeInactiveHint.classList.toggle('hidden', isCustom);
   const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  numInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
   for (const k of CC_KEYS) { if (isCustom) document.body.style.setProperty(CC_VAR[k], m[k] || ''); else document.body.style.removeProperty(CC_VAR[k]); }
+  for (const k of GEOM_KEYS) { if (isCustom) document.body.style.setProperty(GEOM_VAR[k][0], (m[k] || '') + GEOM_VAR[k][1]); else document.body.style.removeProperty(GEOM_VAR[k][0]); }
   if (contrastHint) {
-    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg));
+    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg) || lowContrast(m.btnFg, m.btnBg) || lowContrast(m.error, m.bg) || lowContrast(m.warn, m.bg) || lowContrast(m.pass, m.bg));
     contrastHint.classList.toggle('hidden', !low);
   }
 }
+function setColor(key, value) {
+  const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]');
+  const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]');
+  if (hexEl) hexEl.value = value;
+  if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(value).trim())) colorEl.value = String(value).trim();
+}
 function syncRow(el) {
   const key = el.getAttribute('data-key');
-  const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + key + '"]');
-  const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + key + '"]');
-  if (el.classList.contains('cc-color') && hexEl) hexEl.value = el.value;
-  if (el.classList.contains('cc-hex') && colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim();
+  if (el.classList.contains('cc-color')) { const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]'); if (hexEl) hexEl.value = el.value; }
+  if (el.classList.contains('cc-hex')) { const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]'); if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim(); }
 }
-document.querySelectorAll('#paletteEditor .cc-color, #paletteEditor .cc-hex').forEach((el) => {
+document.querySelectorAll('#themeEditor .cc-color, #themeEditor .cc-hex, #themeEditor .cc-num').forEach((el) => {
   el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
 });
 uiThemeSelect.addEventListener('change', applyPreview);
+const openThemeBtn = document.getElementById('openThemeEditor');
+if (openThemeBtn) openThemeBtn.addEventListener('click', () => {
+  if (uiThemeSelect.value !== 'custom') { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); }
+  const sec = document.getElementById('sec-theme');
+  if (sec) { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive('sec-theme'); }
+});
+const enableCustomBtn = document.getElementById('enableCustom');
+if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); });
 const resetBtn = document.getElementById('resetPalette');
 if (resetBtn) resetBtn.addEventListener('click', () => {
-  for (const k of CC_KEYS) {
-    const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + k + '"]');
-    const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + k + '"]');
-    if (colorEl) colorEl.value = CC_DEFAULT[k];
-    if (hexEl) hexEl.value = CC_DEFAULT[k];
-  }
+  for (const k of CC_KEYS) setColor(k, CC_DEFAULT[k]);
+  for (const k of GEOM_KEYS) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = CC_DEFAULT[k]; }
   applyPreview();
   refreshDirty();
+});
+const copyBtn = document.getElementById('copyTheme');
+const themeJson = document.getElementById('themeJson');
+if (copyBtn && themeJson) copyBtn.addEventListener('click', () => { themeJson.value = collectPalette(); themeJson.select(); });
+const applyBtn = document.getElementById('applyTheme');
+if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
+  try {
+    const parsed = JSON.parse(themeJson.value);
+    if (parsed && typeof parsed === 'object') {
+      for (const k of CC_KEYS) { if (typeof parsed[k] === 'string') setColor(k, parsed[k]); }
+      for (const k of GEOM_KEYS) { if (Number.isFinite(Number(parsed[k]))) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = Number(parsed[k]); } }
+      applyPreview();
+      refreshDirty();
+    }
+  } catch (e) { /* ignore malformed JSON */ }
 });
 function snapshot() {
   return JSON.stringify({

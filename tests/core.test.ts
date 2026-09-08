@@ -18,7 +18,7 @@ import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collec
 import { buildReviewPrompt } from '../src/prompt-builder';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
-import { uiTokensCss, type UiPrefs } from '../extension/src/uiPrefs';
+import { uiTokensCss, type UiPrefs, type UiPrefsInput } from '../extension/src/uiPrefs';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -2343,7 +2343,7 @@ describe('v1.4b settings center with sidebar', () => {
   it('sidebar lists exactly the five sections and each has a matching anchor', () => {
     const html = buildSettingsHtml(centerState);
     const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
-    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
+    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-theme', 'sec-about']);
     for (const id of navTargets) expect(html).toContain(`id="${id}"`);
     expect(html).toContain('position: sticky');
   });
@@ -2481,7 +2481,7 @@ describe('v1.4b-4 appearance handles', () => {
     { file: 'a.ts', line: 9, category: 'bug', severity: 'critical', description: 'y', confidence: 0.9 }
   ];
   const stats = { files: 2, seconds: 1, critical: 1, medium: 0, low: 1 };
-  const prefs = (over: Partial<UiPrefs>) => ({ theme: 'auto', accent: 'auto', density: 'standard', fontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', ...over }) as UiPrefs;
+  const prefs = (over: UiPrefsInput) => ({ theme: 'auto', accent: 'auto', density: 'standard', fontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', ...over }) as UiPrefs;
 
   it('defaults render the current look (auto theme, standard density, m font, confidence shown)', () => {
     const html = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', undefined);
@@ -2679,7 +2679,7 @@ describe('v1.4b-6 custom palette + save-bar fix', () => {
     const center = buildSettingsHtml(customState);
     expect(center).toContain('id="contrastHint"');
     expect(center).toContain('низкий контраст — текст может быть нечитаем');
-    expect(center).toContain('id="paletteEditor"');
+    expect(center).toContain('id="themeEditor"');
     expect(center).toContain('id="resetPalette"');
     expect(center).toContain('type="color"');
     expect(center).toContain('Сбросить палитру');
@@ -2697,6 +2697,74 @@ describe('v1.4b-6 custom palette + save-bar fix', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("update('customColors'");
     expect(extension).toContain("get<string>('customColors', '')");
+  });
+});
+
+describe('v1.4b-7 Theme Editor section + sharing', () => {
+  const themeState = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'custom' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const, customColors: '' };
+
+  it('findingsSort moved into the Аудит section (not Внешний вид)', () => {
+    const html = buildSettingsHtml(themeState);
+    const audit = html.slice(html.indexOf('id="sec-audit"'), html.indexOf('id="sec-project"'));
+    const appearance = html.slice(html.indexOf('id="sec-appearance"'), html.indexOf('id="sec-theme"'));
+    expect(audit).toContain('id="findingsSort"');
+    expect(appearance).not.toContain('id="findingsSort"');
+    expect(appearance).not.toContain('id="uiFontSize"');
+  });
+
+  it('Theme Editor is a 6th sidebar section with color/geometry/typography groups', () => {
+    const html = buildSettingsHtml(themeState);
+    expect(html).toContain('data-target="sec-theme"');
+    expect(html).toContain('id="sec-theme"');
+    expect(html).toContain('Theme Editor');
+    expect(html).toContain('ЦВЕТА');
+    expect(html).toContain('ГЕОМЕТРИЯ');
+    expect(html).toContain('ТИПОГРАФИКА');
+    for (const key of ['btnBg', 'btnFg', 'btnHover', 'error', 'warn', 'pass', 'chipBg', 'chipFg']) expect(html).toContain(`data-key="${key}"`);
+    for (const key of ['btnRadius', 'btnHeight', 'cardRadius']) expect(html).toContain(`data-key="${key}"`);
+    expect(html).toContain('id="uiFontSize"');
+    expect(html).toContain('id="openThemeEditor"');
+    expect(html).toContain('id="enableCustom"');
+    expect(html).toContain('id="copyTheme"');
+    expect(html).toContain('id="applyTheme"');
+    expect(html).toContain('id="themeJson"');
+    expect(html).toContain('id="themeInactiveHint"');
+  });
+
+  it('appearance Theme Editor button sets custom + scrolls to the section anchor', () => {
+    const settings = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(settings).toContain("uiThemeSelect.value = 'custom'");
+    expect(settings).toContain("getElementById('sec-theme')");
+    expect(settings).toContain("setActive('sec-theme')");
+    expect(settings).toContain("scrollIntoView({ behavior: 'smooth', block: 'start' })");
+  });
+
+  it('new tokens land in the inline custom style', () => {
+    const html = buildSettingsHtml({ ...themeState, customColors: JSON.stringify({ btnBg: '#112233', btnFg: '#ffffff', btnRadius: 8, btnHeight: 36, cardRadius: 10, error: '#aa0000', chipBg: '#123456' }) });
+    expect(html).toContain('--cs-btn-bg: #112233');
+    expect(html).toContain('--cs-btn-fg: #ffffff');
+    expect(html).toContain('--cs-error: #aa0000');
+    expect(html).toContain('--cs-chip-bg: #123456');
+    expect(html).toContain('--cs-radius-btn: 8px');
+    expect(html).toContain('--cs-btn-height: 36px');
+    expect(html).toContain('--cs-radius-card: 10px');
+  });
+
+  it('normalize clamps geometry and keeps valid colors; JSON round-trips', async () => {
+    const { normalizeCustomColors, DEFAULT_CUSTOM_COLORS } = await import('../extension/src/uiPrefs');
+    expect(normalizeCustomColors({ btnRadius: 999, btnHeight: 1, cardRadius: -5 })).toMatchObject({ btnRadius: 12, btnHeight: 24, cardRadius: 0 });
+    expect(normalizeCustomColors({ btnBg: 'bad', pass: '#0f0' }).btnBg).toBe(DEFAULT_CUSTOM_COLORS.btnBg);
+    expect(normalizeCustomColors({ pass: '#0f0' }).pass).toBe('#0f0');
+    const full = normalizeCustomColors({});
+    expect(normalizeCustomColors(JSON.stringify(full))).toEqual(full);
+  });
+
+  it('contrast guard covers button fg/bg and severity', () => {
+    const settings = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(settings).toContain('lowContrast(m.btnFg, m.btnBg)');
+    expect(settings).toContain('lowContrast(m.error, m.bg)');
+    expect(settings).toContain('lowContrast(m.warn, m.bg)');
+    expect(settings).toContain('lowContrast(m.pass, m.bg)');
   });
 });
 

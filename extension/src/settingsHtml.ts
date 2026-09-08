@@ -38,15 +38,29 @@ const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custo
 
 const REPO_URL = 'https://github.com/valden2007/CodeScout';
 
-const paletteFields: { key: keyof CustomColors; label: string }[] = [
+const colorFields: { key: keyof CustomColors; label: string }[] = [
   { key: 'bg', label: 'Фон страницы' },
   { key: 'card', label: 'Фон карточки' },
   { key: 'fg', label: 'Текст' },
   { key: 'desc', label: 'Приглушённый текст' },
   { key: 'border', label: 'Границы' },
   { key: 'accent', label: 'Акцент' },
-  { key: 'inputBg', label: 'Фон инпута' },
-  { key: 'inputFg', label: 'Текст инпута' }
+  { key: 'btnBg', label: 'Кнопка: фон' },
+  { key: 'btnFg', label: 'Кнопка: текст' },
+  { key: 'btnHover', label: 'Кнопка: hover' },
+  { key: 'inputBg', label: 'Инпут: фон' },
+  { key: 'inputFg', label: 'Инпут: текст' },
+  { key: 'error', label: 'Severity: error' },
+  { key: 'warn', label: 'Severity: warning' },
+  { key: 'pass', label: 'Severity: pass' },
+  { key: 'chipBg', label: 'Чипы: фон' },
+  { key: 'chipFg', label: 'Чипы: текст' }
+];
+
+const geometryFields: { key: keyof CustomColors; label: string; min: number; max: number }[] = [
+  { key: 'btnRadius', label: 'Радиус кнопок (px)', min: 2, max: 12 },
+  { key: 'btnHeight', label: 'Высота кнопок (px)', min: 24, max: 40 },
+  { key: 'cardRadius', label: 'Радиус карточек (px)', min: 0, max: 16 }
 ];
 
 function escapeHtml(value: string): string {
@@ -103,14 +117,14 @@ body { margin: 0; padding: 0; color: var(--cs-fg); background: var(--cs-editor-b
 .nav-link:hover { background: var(--cs-list-hover); }
 .nav-link.active { background: color-mix(in srgb, var(--cs-accent) 14%, transparent); color: var(--cs-accent); font-weight: 600; border-left-color: var(--cs-accent); }
 .content { flex: 1 1 auto; min-width: 0; padding: var(--cs-space-3) var(--cs-space-4) 72px; }
-section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-2); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); scroll-margin-top: var(--cs-space-2); }
+section { margin: 0 0 14px; padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); scroll-margin-top: var(--cs-space-2); }
 h2 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 6px; font-size: var(--cs-font-3); font-weight: 600; color: var(--cs-accent); }
 label { display: block; margin: 10px 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-desc); }
 input, select { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; }
 select { color: var(--cs-select-fg); background: var(--cs-select-bg); }
 input[type="checkbox"] { accent-color: var(--cs-accent); }
 textarea { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; font-size: var(--cs-font-2); resize: vertical; }
-button { display: inline-flex; align-items: center; gap: var(--cs-space-2); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-1); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
+button { display: inline-flex; align-items: center; gap: var(--cs-space-2); min-height: var(--cs-btn-height); padding: 6px var(--cs-space-3); border: 1px solid transparent; border-radius: var(--cs-radius-btn); color: var(--cs-btn-fg); background: var(--cs-btn-bg); font: inherit; font-size: var(--cs-font-2); cursor: pointer; }
 button:hover:not(:disabled) { background: var(--cs-btn-hover); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -141,6 +155,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .cc-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); }
 .cc-hex { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 .contrast-hint { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+#sec-theme h3 { margin: var(--cs-space-3) 0 var(--cs-space-1); font-size: var(--cs-font-1); text-transform: uppercase; letter-spacing: 0.5px; color: var(--cs-desc); }
+.theme-inactive { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-2); font-size: var(--cs-font-1); margin: 0 0 var(--cs-space-2); }
+.theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
+.cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+#themeJson { margin-top: var(--cs-space-2); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -151,6 +170,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>Аудит</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>Проект</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>Внешний вид</span></a>
+  <a class="nav-link" href="#sec-theme" data-target="sec-theme">${icon('symbol-color')}<span>Theme Editor</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>О расширении</span></a>
 </nav>
 <div class="content">
@@ -188,6 +208,12 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
   <label for="autoResumeMaxMinutes">Авто-догон: макс. минут (0 = без лимита)</label>
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
+  <label for="findingsSort">Сортировка находок</label>
+  <select id="findingsSort">
+    <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>по важности</option>
+    <option value="file"${state.findingsSort === 'file' ? ' selected' : ''}>по файлу</option>
+    <option value="line"${state.findingsSort === 'line' ? ' selected' : ''}>по строке</option>
+  </select>
   <p class="hint">maxLines = 0: лимита нет, файлы &gt;800 строк режутся чанками с перекрытием 50 строк; N &gt; 0: файлы длиннее N скипаются. Авто-догон возобновляет прерванный аудит из чекпоинта с backoff 30с→60с→2мин→5мин.</p>
 </section>
 <section id="sec-project">
@@ -222,17 +248,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
     <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>custom — своя палитра</option>
   </select>
-  <div class="palette-editor${state.uiTheme === 'custom' ? '' : ' hidden'}" id="paletteEditor">
-    ${paletteFields.map((f) => `
-    <div class="palette-row">
-      <label for="cc-${f.key}">${f.label}</label>
-      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(cc[f.key])}">
-      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(cc[f.key])}">
-    </div>`).join('')}
-    <div class="row">
-      <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
-    </div>
-    <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+  <div class="row">
+    <button id="openThemeEditor" type="button" class="secondary">${icon('symbol-color')}<span>Theme Editor</span></button>
   </div>
   <label for="accentColor">Акцентный цвет</label>
   <select id="accentColor">
@@ -248,18 +265,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>standard</option>
     <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>compact</option>
   </select>
-  <label for="uiFontSize">Размер шрифта</label>
-  <select id="uiFontSize">
-    <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
-    <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
-    <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
-  </select>
-  <label for="findingsSort">Сортировка находок</label>
-  <select id="findingsSort">
-    <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>по важности</option>
-    <option value="file"${state.findingsSort === 'file' ? ' selected' : ''}>по файлу</option>
-    <option value="line"${state.findingsSort === 'line' ? ' selected' : ''}>по строке</option>
-  </select>
   <label for="reportTheme">Тема экспортируемого отчёта</label>
   <select id="reportTheme">
     <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>auto</option>
@@ -268,6 +273,42 @@ button.is-dirty .dirty-dot { display: inline-block; }
   </select>
   <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> Показывать % уверенности у находок</label>
   <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
+</section>
+<section id="sec-theme">
+  <h2>${icon('symbol-color')} Theme Editor</h2>
+  <p class="theme-inactive${state.uiTheme === 'custom' ? ' hidden' : ''}" id="themeInactiveHint">Палитра применяется при теме custom.
+    <button id="enableCustom" type="button" class="secondary">${icon('wand')}<span>Включить custom</span></button>
+  </p>
+  <div id="themeEditor">
+    <h3>ЦВЕТА</h3>
+    ${colorFields.map((f) => `
+    <div class="palette-row">
+      <label for="cc-${f.key}">${f.label}</label>
+      <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(String(cc[f.key]))}">
+      <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(String(cc[f.key]))}">
+    </div>`).join('')}
+    <h3>ГЕОМЕТРИЯ</h3>
+    ${geometryFields.map((f) => `
+    <div class="palette-row">
+      <label for="cg-${f.key}">${f.label}</label>
+      <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
+      <span></span>
+    </div>`).join('')}
+    <h3>ТИПОГРАФИКА</h3>
+    <label for="uiFontSize">Размер шрифта</label>
+    <select id="uiFontSize">
+      <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
+      <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
+      <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
+    </select>
+    <div class="row">
+      <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
+      <button id="copyTheme" type="button" class="secondary">${icon('clippy')}<span>Копировать JSON темы</span></button>
+      <button id="applyTheme" type="button" class="secondary">${icon('desktop-download')}<span>Применить из JSON</span></button>
+    </div>
+    <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#…","btnRadius":4,…}'></textarea>
+    <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+  </div>
 </section>
 <section id="sec-about">
   <h2>${icon('info')} О расширении</h2>
@@ -312,13 +353,22 @@ const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempt
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
-const paletteEditor = document.getElementById('paletteEditor');
+const themeEditor = document.getElementById('themeEditor');
 const contrastHint = document.getElementById('contrastHint');
-const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
-const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg' };
+const themeInactiveHint = document.getElementById('themeInactiveHint');
+const CC_KEYS = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg', 'btnBg', 'btnFg', 'btnHover', 'error', 'warn', 'pass', 'chipBg', 'chipFg'];
+const CC_VAR = { bg: '--cs-editor-bg', card: '--cs-card-bg', fg: '--cs-fg', desc: '--cs-desc', border: '--cs-border', accent: '--cs-accent', inputBg: '--cs-input-bg', inputFg: '--cs-input-fg', btnBg: '--cs-btn-bg', btnFg: '--cs-btn-fg', btnHover: '--cs-btn-hover', error: '--cs-error', warn: '--cs-warn', pass: '--cs-pass', chipBg: '--cs-chip-bg', chipFg: '--cs-chip-fg' };
+const GEOM_KEYS = ['btnRadius', 'btnHeight', 'cardRadius'];
+const GEOM_VAR = { btnRadius: ['--cs-radius-btn', 'px'], btnHeight: ['--cs-btn-height', 'px'], cardRadius: ['--cs-radius-card', 'px'] };
 const CC_DEFAULT = ${JSON.stringify(cc)};
-function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#paletteEditor .cc-hex')); }
-function collectPalette() { const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; }); return JSON.stringify(m); }
+function hexInputs() { return Array.prototype.slice.call(document.querySelectorAll('#themeEditor .cc-hex')); }
+function numInputs() { return Array.prototype.slice.call(document.querySelectorAll('#themeEditor .cc-num')); }
+function collectPalette() {
+  const m = {};
+  hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  numInputs().forEach((el) => { m[el.getAttribute('data-key')] = Number(el.value); });
+  return JSON.stringify(m);
+}
 function lum(hex) {
   let h = String(hex || '').replace('#', '');
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
@@ -330,35 +380,60 @@ function lum(hex) {
 function lowContrast(fg, bg) { const a = lum(fg), b = lum(bg); if (a === null || b === null) return false; const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) < 4.5; }
 function applyPreview() {
   const isCustom = uiThemeSelect.value === 'custom';
-  if (paletteEditor) paletteEditor.classList.toggle('hidden', !isCustom);
+  if (themeInactiveHint) themeInactiveHint.classList.toggle('hidden', isCustom);
   const m = {}; hexInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
+  numInputs().forEach((el) => { m[el.getAttribute('data-key')] = el.value; });
   for (const k of CC_KEYS) { if (isCustom) document.body.style.setProperty(CC_VAR[k], m[k] || ''); else document.body.style.removeProperty(CC_VAR[k]); }
+  for (const k of GEOM_KEYS) { if (isCustom) document.body.style.setProperty(GEOM_VAR[k][0], (m[k] || '') + GEOM_VAR[k][1]); else document.body.style.removeProperty(GEOM_VAR[k][0]); }
   if (contrastHint) {
-    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg));
+    const low = isCustom && (lowContrast(m.fg, m.bg) || lowContrast(m.fg, m.card) || lowContrast(m.inputFg, m.inputBg) || lowContrast(m.btnFg, m.btnBg) || lowContrast(m.error, m.bg) || lowContrast(m.warn, m.bg) || lowContrast(m.pass, m.bg));
     contrastHint.classList.toggle('hidden', !low);
   }
 }
+function setColor(key, value) {
+  const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]');
+  const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]');
+  if (hexEl) hexEl.value = value;
+  if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(value).trim())) colorEl.value = String(value).trim();
+}
 function syncRow(el) {
   const key = el.getAttribute('data-key');
-  const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + key + '"]');
-  const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + key + '"]');
-  if (el.classList.contains('cc-color') && hexEl) hexEl.value = el.value;
-  if (el.classList.contains('cc-hex') && colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim();
+  if (el.classList.contains('cc-color')) { const hexEl = document.querySelector('#themeEditor .cc-hex[data-key="' + key + '"]'); if (hexEl) hexEl.value = el.value; }
+  if (el.classList.contains('cc-hex')) { const colorEl = document.querySelector('#themeEditor .cc-color[data-key="' + key + '"]'); if (colorEl && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(el.value.trim())) colorEl.value = el.value.trim(); }
 }
-document.querySelectorAll('#paletteEditor .cc-color, #paletteEditor .cc-hex').forEach((el) => {
+document.querySelectorAll('#themeEditor .cc-color, #themeEditor .cc-hex, #themeEditor .cc-num').forEach((el) => {
   el.addEventListener('input', () => { syncRow(el); applyPreview(); refreshDirty(); });
 });
 uiThemeSelect.addEventListener('change', applyPreview);
+const openThemeBtn = document.getElementById('openThemeEditor');
+if (openThemeBtn) openThemeBtn.addEventListener('click', () => {
+  if (uiThemeSelect.value !== 'custom') { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); }
+  const sec = document.getElementById('sec-theme');
+  if (sec) { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive('sec-theme'); }
+});
+const enableCustomBtn = document.getElementById('enableCustom');
+if (enableCustomBtn) enableCustomBtn.addEventListener('click', () => { uiThemeSelect.value = 'custom'; applyPreview(); refreshDirty(); });
 const resetBtn = document.getElementById('resetPalette');
 if (resetBtn) resetBtn.addEventListener('click', () => {
-  for (const k of CC_KEYS) {
-    const colorEl = document.querySelector('#paletteEditor .cc-color[data-key="' + k + '"]');
-    const hexEl = document.querySelector('#paletteEditor .cc-hex[data-key="' + k + '"]');
-    if (colorEl) colorEl.value = CC_DEFAULT[k];
-    if (hexEl) hexEl.value = CC_DEFAULT[k];
-  }
+  for (const k of CC_KEYS) setColor(k, CC_DEFAULT[k]);
+  for (const k of GEOM_KEYS) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = CC_DEFAULT[k]; }
   applyPreview();
   refreshDirty();
+});
+const copyBtn = document.getElementById('copyTheme');
+const themeJson = document.getElementById('themeJson');
+if (copyBtn && themeJson) copyBtn.addEventListener('click', () => { themeJson.value = collectPalette(); themeJson.select(); });
+const applyBtn = document.getElementById('applyTheme');
+if (applyBtn && themeJson) applyBtn.addEventListener('click', () => {
+  try {
+    const parsed = JSON.parse(themeJson.value);
+    if (parsed && typeof parsed === 'object') {
+      for (const k of CC_KEYS) { if (typeof parsed[k] === 'string') setColor(k, parsed[k]); }
+      for (const k of GEOM_KEYS) { if (Number.isFinite(Number(parsed[k]))) { const numEl = document.querySelector('#themeEditor .cc-num[data-key="' + k + '"]'); if (numEl) numEl.value = Number(parsed[k]); } }
+      applyPreview();
+      refreshDirty();
+    }
+  } catch (e) { /* ignore malformed JSON */ }
 });
 function snapshot() {
   return JSON.stringify({

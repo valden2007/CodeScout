@@ -13,6 +13,17 @@ export interface CustomColors {
   accent: string;
   inputBg: string;
   inputFg: string;
+  btnBg: string;
+  btnFg: string;
+  btnHover: string;
+  error: string;
+  warn: string;
+  pass: string;
+  chipBg: string;
+  chipFg: string;
+  btnRadius: number;
+  btnHeight: number;
+  cardRadius: number;
 }
 
 export const DEFAULT_CUSTOM_COLORS: CustomColors = {
@@ -23,10 +34,28 @@ export const DEFAULT_CUSTOM_COLORS: CustomColors = {
   border: '#d0d3d6',
   accent: '#0a64b4',
   inputBg: '#ffffff',
-  inputFg: '#1f2326'
+  inputFg: '#1f2326',
+  btnBg: '#0067b8',
+  btnFg: '#ffffff',
+  btnHover: '#0279d3',
+  error: '#c72e2e',
+  warn: '#8a6d00',
+  pass: '#0b6cba',
+  chipBg: '#e6e8ea',
+  chipFg: '#1f2326',
+  btnRadius: 4,
+  btnHeight: 30,
+  cardRadius: 6
 };
 
-const CUSTOM_COLOR_KEYS: (keyof CustomColors)[] = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg'];
+type ColorKey = 'bg' | 'card' | 'fg' | 'desc' | 'border' | 'accent' | 'inputBg' | 'inputFg' | 'btnBg' | 'btnFg' | 'btnHover' | 'error' | 'warn' | 'pass' | 'chipBg' | 'chipFg';
+type GeometryKey = 'btnRadius' | 'btnHeight' | 'cardRadius';
+const COLOR_KEYS: ColorKey[] = ['bg', 'card', 'fg', 'desc', 'border', 'accent', 'inputBg', 'inputFg', 'btnBg', 'btnFg', 'btnHover', 'error', 'warn', 'pass', 'chipBg', 'chipFg'];
+const GEOMETRY_LIMITS: Record<GeometryKey, [number, number]> = {
+  btnRadius: [2, 12],
+  btnHeight: [24, 40],
+  cardRadius: [0, 16]
+};
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 export function normalizeCustomColors(input: unknown): CustomColors {
@@ -42,9 +71,14 @@ export function normalizeCustomColors(input: unknown): CustomColors {
     obj = input as Record<string, unknown>;
   }
   const result = { ...DEFAULT_CUSTOM_COLORS };
-  for (const key of CUSTOM_COLOR_KEYS) {
+  for (const key of COLOR_KEYS) {
     const value = obj[key];
     if (typeof value === 'string' && HEX_RE.test(value.trim())) result[key] = value.trim().toLowerCase();
+  }
+  for (const key of Object.keys(GEOMETRY_LIMITS) as GeometryKey[]) {
+    const value = Number(obj[key]);
+    const [min, max] = GEOMETRY_LIMITS[key];
+    if (Number.isFinite(value)) result[key] = Math.min(max, Math.max(min, Math.round(value)));
   }
   return result;
 }
@@ -81,7 +115,9 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
-export function normalizeUiPrefs(input: (Partial<Omit<UiPrefs, 'customColors'>> & { customColors?: unknown }) | undefined): UiPrefs {
+export type UiPrefsInput = Partial<Omit<UiPrefs, 'customColors'>> & { customColors?: unknown };
+
+export function normalizeUiPrefs(input: UiPrefsInput | undefined): UiPrefs {
   const p = input ?? {};
   return {
     theme: pick(p.theme, THEME_VALUES, DEFAULT_UI_PREFS.theme),
@@ -95,7 +131,8 @@ export function normalizeUiPrefs(input: (Partial<Omit<UiPrefs, 'customColors'>> 
   };
 }
 
-// 8 пользовательских цветов → токены страниц. border/input* расходятся на производные.
+// Пользовательская палитра → токены страниц. border/input* расходятся на
+// производные; геометрия правит радиусы/высоту кнопок и карточек.
 export function customVarsStyle(colors: CustomColors): string {
   const c = normalizeCustomColors(colors);
   return [
@@ -110,11 +147,22 @@ export function customVarsStyle(colors: CustomColors): string {
     `--cs-input-bg: ${c.inputBg}`,
     `--cs-select-bg: ${c.inputBg}`,
     `--cs-input-fg: ${c.inputFg}`,
-    `--cs-select-fg: ${c.inputFg}`
+    `--cs-select-fg: ${c.inputFg}`,
+    `--cs-btn-bg: ${c.btnBg}`,
+    `--cs-btn-fg: ${c.btnFg}`,
+    `--cs-btn-hover: ${c.btnHover}`,
+    `--cs-error: ${c.error}`,
+    `--cs-warn: ${c.warn}`,
+    `--cs-pass: ${c.pass}`,
+    `--cs-chip-bg: ${c.chipBg}`,
+    `--cs-chip-fg: ${c.chipFg}`,
+    `--cs-radius-btn: ${c.btnRadius}px`,
+    `--cs-btn-height: ${c.btnHeight}px`,
+    `--cs-radius-card: ${c.cardRadius}px`
   ].join('; ');
 }
 
-export function uiBodyAttrs(prefs: UiPrefs): string {
+export function uiBodyAttrs(prefs: UiPrefsInput): string {
   const p = normalizeUiPrefs(prefs);
   const base = `data-theme="${p.theme}" data-density="${p.density}" data-fontsize="${p.fontSize}" data-accent="${p.accent}" data-report-theme="${p.reportTheme}"`;
   if (p.theme !== 'custom') return base;
@@ -158,6 +206,7 @@ export function isLowContrast(fg: string, bg: string): boolean {
 export const CS_BASE_TOKENS = `:root {
   --cs-space-1: 4px; --cs-space-2: 8px; --cs-space-3: 12px; --cs-space-4: 16px;
   --cs-radius-1: 4px; --cs-radius-2: 6px;
+  --cs-radius-btn: 4px; --cs-radius-card: 6px; --cs-btn-height: 30px;
   --cs-font-1: 11px; --cs-font-2: 12px; --cs-font-3: 13px; --cs-font-4: 15px;
   --cs-fg: var(--vscode-foreground);
   --cs-desc: var(--vscode-descriptionForeground);
