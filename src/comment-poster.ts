@@ -16,9 +16,11 @@ function uniqueIssues(issues: ReviewIssue[]): ReviewIssue[] {
 }
 
 export async function postIssues(client: GitHubClient, issues: ReviewIssue[], filesAnalyzed: number, durationMs: number): Promise<number> {
-  const unique = uniqueIssues(issues).slice(0, 100);
+  const deduped = uniqueIssues(issues);
+  const unique = deduped.slice(0, 100);
+  const note = deduped.length > unique.length ? `Показаны первые ${unique.length} из ${deduped.length} находок.` : '';
   try {
-    await client.upsertSummaryComment(buildSummaryComment(unique, filesAnalyzed, durationMs));
+    await client.upsertSummaryComment(buildSummaryComment(unique, filesAnalyzed, durationMs, note));
   } catch (error) {
     console.warn(`CodeScout: не удалось обновить summary-комментарий — ${error instanceof Error ? error.message : String(error)}; продолжаем постинг индивидуальных находок`);
   }

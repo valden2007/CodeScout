@@ -309,6 +309,20 @@ pre-design now.
     error/warn/pass vs bg. Sharing: "📋 Копировать JSON темы" fills
     #themeJson, "📥 Применить из JSON" parses it into the fields.
     Tests: 215.
+16. Batch 8 (rate-limit + hardening): reviewFiles now, on 429
+    (RateLimitError) or a network error for a FILE, pauses and retries
+    the SAME file via ladder [60,120,300]s up to codescout.rateLimitPauses
+    (0-5, default 3; Output "⏸ rate-limit: пауза Ns, ретри файл X");
+    skips only after the pauses; rateLimitPauses=0 restores the old
+    single quick-retry. Hardening: panel ignores non-object messages;
+    TUI Header stripAnsi(path); escapeMarkdown also escapes ` and |;
+    summary escapes severity + file(escapeCell); DiffReader runs
+    git rev-parse --verify on the base ref (friendly "Ветка не найдена")
+    and SAFE_BASE_REF drops ~/@; action masks error.message via
+    maskError (type + first 80 chars, scrubs key/token/secret patterns);
+    postIssues notes "показаны первые 100 из N"; keyUrl(custom)=undefined;
+    cli onExit process.exit(code). prompt-builder escapeAngle and
+    ink-box.d.ts generics verified correct + locked by tests. Tests: 222.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

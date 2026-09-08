@@ -50,11 +50,11 @@ export function severityEmoji(severity: ReviewSeverity): string {
   return SEVERITY_META[severity]?.emoji ?? '⚪';
 }
 
-export function buildSummaryComment(issues: ReviewIssue[], filesAnalyzed: number, durationMs: number): string {
+export function buildSummaryComment(issues: ReviewIssue[], filesAnalyzed: number, durationMs: number, truncatedNote = ''): string {
   const sorted = [...issues].sort((left, right) => (SEVERITY_META[left.severity]?.rank ?? 99) - (SEVERITY_META[right.severity]?.rank ?? 99));
   const seconds = (Math.max(0, durationMs) / 1000).toFixed(1);
   const rows = sorted.length > 0
-    ? sorted.map((issue) => `| ${severityEmoji(issue.severity)} ${issue.severity} | ${escapeHtml(issue.category)} | ${escapeCell(escapeHtml(issue.description))} | ${inlineCode(`${issue.file}:${issue.line}`)} |`).join('\n')
+    ? sorted.map((issue) => `| ${severityEmoji(issue.severity)} ${escapeHtml(issue.severity)} | ${escapeHtml(issue.category)} | ${escapeCell(escapeHtml(issue.description))} | ${inlineCode(`${escapeCell(issue.file)}:${issue.line}`)} |`).join('\n')
     : '| — | — | No actionable issues found. | — |';
   const details = sorted.map((issue) => {
     const emoji = severityEmoji(issue.severity);
@@ -64,6 +64,6 @@ export function buildSummaryComment(issues: ReviewIssue[], filesAnalyzed: number
     const confidence = typeof issue.confidence === 'number' && Number.isFinite(issue.confidence) ? Math.round(issue.confidence * 100) : 0;
     return `<details><summary>${emoji} <strong>${escapeHtml(title)}</strong> — ${inlineCode(`${issue.file}:${issue.line}`)}</summary>\n\n${inlineCode(codeLine)}${suggestion}\n\nConfidence: ${confidence}%\n</details>`;
   }).join('\n\n');
-  const report = `${SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;
+  const report = `${SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s${truncatedNote ? `\n\n${escapeHtml(truncatedNote)}` : ''}\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;
   return truncateSafely(report);
 }

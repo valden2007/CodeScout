@@ -47,7 +47,7 @@ export function Header({ path, filesAnalyzed = 0 }: { path: string; filesAnalyze
     <Box borderStyle="round" borderColor="cyan" padding={1}>
       <Box flexDirection="column">
         <Text color="cyan" bold>🕵️ CodeScout CLI</Text>
-        <Text>Scanning: {path}</Text>
+        <Text>Scanning: {stripAnsi(path)}</Text>
         <Text dimColor>Changed files: {filesAnalyzed}</Text>
       </Box>
     </Box>

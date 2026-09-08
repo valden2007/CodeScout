@@ -1861,7 +1861,7 @@ describe('G5 fix batch performance and robustness', () => {
     expect(app).not.toContain('process.exitCode');
     expect(app).not.toContain('[apiKey, args, result.error');
     const cli = readFileSync('src/cli.ts', 'utf8');
-    expect(cli).toContain('onExit: (code: number) => { process.exitCode = code; }');
+    expect(cli).toContain('onExit: (code: number) => { process.exitCode = code; if (code) process.exit(code); }');
   });
 
   it('diff parser counts in-hunk +++/--- lines and matches path segments only', () => {
@@ -2765,6 +2765,88 @@ describe('v1.4b-7 Theme Editor section + sharing', () => {
     expect(settings).toContain('lowContrast(m.error, m.bg)');
     expect(settings).toContain('lowContrast(m.warn, m.bg)');
     expect(settings).toContain('lowContrast(m.pass, m.bg)');
+  });
+});
+
+describe('G8 rate-limit pause + hardening', () => {
+  it('escapeAngle leaves no raw angle brackets in the patch region', () => {
+    const file = { filename: 'x.ts', status: 'modified', additions: 2, deletions: 0, patch: '@@ -1 +1,2 @@\n+if (a < b && c > d) {}\n+const html = "<div>";' };
+    const prompt = buildReviewPrompt(file, file.patch);
+    const begin = prompt.lastIndexOf('<<<CODESCOUT_PATCH_BEGIN>>>') + '<<<CODESCOUT_PATCH_BEGIN>>>'.length + 1;
+    const between = prompt.slice(begin, prompt.lastIndexOf('<<<CODESCOUT_PATCH_END>>>'));
+    expect(between).not.toContain('<');
+    expect(between).not.toContain('>');
+    expect(between).toContain('&lt;div&gt;');
+  });
+
+  it('reviewFiles retries the same file on 429 with a 60/120/300 pause ladder; 0 = old behavior', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('RATE_LIMIT_PAUSE_LADDER = [60, 120, 300]');
+    expect(extension).toContain('error instanceof RateLimitError || isNetworkError(error)');
+    expect(extension).toContain('pauses < rateLimitPauses');
+    expect(extension).toContain('⏸ rate-limit: пауза ${waitSeconds}с, ретри файл');
+    expect(extension).toContain('rateLimitPauses === 0 && quickRetries < 1');
+    expect(extension).toContain("rateLimitPausesFromSetting(auditConfig.get<number>('rateLimitPauses'))");
+    expect(extension).toContain('function rateLimitPausesFromSetting');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('codescout.rateLimitPauses');
+    expect(manifest).toContain('"default": 3');
+    expect(manifest).toContain('"maximum": 5');
+  });
+
+  it('panel ignores non-object webview messages; TUI Header strips ANSI from path', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("if (!message || typeof message !== 'object') return;");
+    const components = readFileSync('src/tui/components.tsx', 'utf8');
+    expect(components).toContain('<Text>Scanning: {stripAnsi(path)}</Text>');
+  });
+
+  it('formatIssue escapes backticks and pipes; summary escapes severity and file', async () => {
+    const { formatIssue } = await import('../src/github-client');
+    const body = formatIssue({ file: 'a.ts', line: 1, category: 'bug', severity: 'low', description: 'x', suggestion: 'use `code` | now', confidence: 0.5 });
+    expect(body).toContain('\\`code\\`');
+    expect(body).toContain('\\|');
+    const report = buildSummaryComment([{ file: 'a|b.ts', line: 2, category: 'bug', severity: 'low', description: 'd', confidence: 0.5 }], 1, 0);
+    expect(report).toContain('a\\|b.ts');
+    expect(report).toContain('low');
+  });
+
+  it('action maskError scrubs secrets and truncates', async () => {
+    const { maskError } = await import('../src/action');
+    const masked = maskError(new Error('failed with api-key=sk-abcdef123456 and gsk_zzz'));
+    expect(masked).not.toContain('sk-abcdef123456');
+    expect(masked).not.toContain('gsk_zzz');
+    expect(masked.startsWith('Error:')).toBe(true);
+    expect(maskError(new Error('boom'))).toBe('Error: boom');
+    const long = maskError(new Error('x'.repeat(500)));
+    expect(long.length).toBeLessThanOrEqual('Error: '.length + 80);
+  });
+
+  it('keyUrl is undefined for custom; d.ts uses real angle brackets', () => {
+    expect(detectProvider('gsk_x')).toEqual({ provider: 'groq', model: 'llama-3.3-70b-versatile' });
+    const ink = readFileSync('src/ink-box.d.ts', 'utf8');
+    expect(ink).toContain('React.PropsWithChildren<Record<string, unknown>>');
+    expect(ink).toContain('React.ComponentType<InkBoxProps>');
+    expect(ink).not.toContain('&lt;');
+    expect(ink).not.toContain('&gt;');
+  });
+
+  it('readGitDiff reports a friendly error for a missing/odd base ref', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codescout-baseerr-'));
+    try {
+      const git = (...a: string[]) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      git('init', '-b', 'main');
+      git('config', 'user.email', 't@t');
+      git('config', 'user.name', 't');
+      writeFileSync(join(root, 'a.ts'), 'const a = 1;\n');
+      git('add', '.');
+      git('commit', '-m', 'init');
+      expect(() => readGitDiff(root, { base: 'nope-branch' })).toThrow(/Ветка не найдена/);
+      expect(() => readGitDiff(root, { base: 'HEAD~1' })).toThrow(/Некорректное имя/);
+      expect(() => readGitDiff(root, { base: 'user@main' })).toThrow(/Некорректное имя/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

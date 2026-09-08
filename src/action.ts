@@ -10,6 +10,15 @@ import { parseReviewResponse } from './response-parser';
 import { asyncPool } from './async-pool';
 import { DiffFile, ReviewIssue } from './types';
 
+export function maskError(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'Error';
+  const raw = error instanceof Error ? error.message : String(error);
+  const scrubbed = raw
+    .replace(/(api[_-]?key|token|secret|password|authorization|bearer)\s*[:=]\s*\S+/gi, '$1=[masked]')
+    .replace(/(sk-|gsk_|ghp_|github_pat_|AIza)[A-Za-z0-9_-]+/g, '[key]');
+  return `${name}: ${scrubbed.slice(0, 80)}`;
+}
+
 export async function run(): Promise<void> {
   const startedAt = Date.now();
   try {
@@ -32,7 +41,7 @@ export async function run(): Promise<void> {
         }
         return found;
       } catch (error) {
-        core.warning(`CodeScout: файл ${file.filename} пропущен — ${error instanceof Error ? error.message : String(error)}`);
+        core.warning(`CodeScout: файл ${file.filename} пропущен — ${maskError(error)}`);
         return [] as ReviewIssue[];
       }
     });
@@ -44,7 +53,7 @@ export async function run(): Promise<void> {
     core.setOutput('summary', summary);
     core.info(`${summary} Posted ${posted} inline comment(s).`);
   } catch (error) {
-    core.setFailed(error instanceof Error ? error.message : String(error));
+    core.setFailed(maskError(error));
   }
 }
 

@@ -114,6 +114,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.render();
     });
     this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
+      if (!message || typeof message !== 'object') return;
       if (message.command === 'scanLastCommit') {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
       } else if (message.command === 'scanUncommitted') {

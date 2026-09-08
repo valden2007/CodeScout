@@ -115,9 +115,9 @@ export function defaultModel(provider?: string): string {
   return normalized === 'custom' ? '' : PROVIDERS[normalized].defaultModel;
 }
 
-export function keyUrl(provider: string): string {
+export function keyUrl(provider: string): string | undefined {
   const normalized = normalizeProvider(provider);
-  return normalized === 'custom' ? 'https://docs.ollama.com' : PROVIDERS[normalized].keyUrl;
+  return normalized === 'custom' ? undefined : PROVIDERS[normalized].keyUrl;
 }
 
 export function completionUrl(baseUrl: string): string {

@@ -54,7 +54,7 @@ export class GitHubClient {
 }
 
 function escapeMarkdown(value: string): string {
-  return value.replace(/([\\[\]()])/g, '\\$1');
+  return value.replace(/([\\[\]()|`])/g, '\\$1');
 }
 
 export function formatIssue(issue: ReviewIssue): string {

@@ -133,7 +133,7 @@ function defaultModel(provider) {
 }
 function keyUrl(provider) {
   const normalized = normalizeProvider(provider);
-  return normalized === "custom" ? "https://docs.ollama.com" : PROVIDERS[normalized].keyUrl;
+  return normalized === "custom" ? void 0 : PROVIDERS[normalized].keyUrl;
 }
 function completionUrl(baseUrl) {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
@@ -573,7 +573,7 @@ function tryRunGit(args, cwd) {
 function parseGitDiff(diff) {
   return parseUnifiedDiff(diff);
 }
-var SAFE_BASE_REF = /^[A-Za-z0-9._/@~-]+$/;
+var SAFE_BASE_REF = /^[A-Za-z0-9._/-]+$/;
 function readGitDiff(repoPath, options = {}) {
   const validationError = validateGitPath(repoPath);
   if (validationError) throw new Error(validationError);
@@ -583,7 +583,10 @@ function readGitDiff(repoPath, options = {}) {
   const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath, true);
   if (options.base) {
     const base = options.base.trim();
-    if (!base || base.startsWith("-") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / @ ~ \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432 \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
+    if (!base || base.startsWith("-") || base.includes("~") || base.includes("@") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432, ~, @ \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
+    if (tryRunGit(["rev-parse", "--verify", "--quiet", `${base}^{commit}`], repoPath) === void 0 && tryRunGit(["rev-parse", "--verify", "--quiet", base], repoPath) === void 0) {
+      throw new Error(`\u0412\u0435\u0442\u043A\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430: "${base}". \u041F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u043C\u044F (git branch -a).`);
+    }
     return parseGitDiff(git("diff", `${base}...HEAD`));
   }
   if (options.lastCommit) {
@@ -1875,6 +1878,7 @@ var CodeScoutPanel = class {
       this.render();
     });
     this.messageSubscription = webviewView.webview.onDidReceiveMessage((message) => {
+      if (!message || typeof message !== "object") return;
       if (message.command === "scanLastCommit") {
         void vscode.commands.executeCommand("codescout.scanLastCommit");
       } else if (message.command === "scanUncommitted") {
@@ -2283,6 +2287,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
   <label for="autoResumeMaxMinutes">\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)</label>
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
+  <label for="rateLimitPauses">\u041F\u0430\u0443\u0437\u044B \u043F\u0440\u0438 rate-limit \u043D\u0430 \u0444\u0430\u0439\u043B (0-5, 0 = \u0441\u043A\u0438\u043F \u0441\u0440\u0430\u0437\u0443)</label>
+  <input id="rateLimitPauses" type="number" min="0" max="5" step="1" value="${state.rateLimitPauses ?? 3}">
   <label for="findingsSort">\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043D\u0430\u0445\u043E\u0434\u043E\u043A</label>
   <select id="findingsSort">
     <option value="severity"${state.findingsSort === "severity" ? " selected" : ""}>\u043F\u043E \u0432\u0430\u0436\u043D\u043E\u0441\u0442\u0438</option>
@@ -2426,6 +2432,7 @@ const auditPassesInput = document.getElementById('auditPasses');
 const autoResumeBox = document.getElementById('autoResume');
 const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
+const rateLimitPausesInput = document.getElementById('rateLimitPauses');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
 const themeEditor = document.getElementById('themeEditor');
@@ -2520,7 +2527,7 @@ function snapshot() {
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
-    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value
+    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value
   });
 }
 let initial = snapshot();
@@ -2573,7 +2580,8 @@ saveAllBtn.addEventListener('click', () => {
     auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, '1')),
     autoResume: autoResumeBox.checked,
     autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
-    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0'))
+    autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0')),
+    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3'))
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
@@ -2762,11 +2770,21 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass) {
+var RATE_LIMIT_PAUSE_LADDER = [60, 120, 300];
+function isNetworkError(error) {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND|socket hang up|EAI_AGAIN/i.test(msg);
+}
+function rateLimitPausesFromSetting(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 3;
+  return Math.min(5, n);
+}
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
-    throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider)}`);
+    throw new Error(`\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F ${selection.provider}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key. \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: ${keyUrl(selection.provider) ?? "\u043D\u0430\u0441\u0442\u0440\u043E\u0439 codescout.baseUrl / CODESCOUT_BASE_URL"}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
@@ -2775,7 +2793,9 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   for (const [fileIndex, file] of files.entries()) {
     let completed = false;
     let lastError;
-    for (let attempt = 0; attempt < 2 && !completed; attempt++) {
+    let pauses = 0;
+    let quickRetries = 0;
+    for (; ; ) {
       const fileIssues = [];
       try {
         const importsLine = importsResolver?.(file.filename) ?? "";
@@ -2796,9 +2816,23 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
         issues.push(...deduped);
         onFileChecked?.(file.filename, deduped);
         completed = true;
+        break;
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
+        const retriable = error instanceof RateLimitError || isNetworkError(error);
+        if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
+          const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
+          pauses += 1;
+          onRatePause?.(file.filename, waitSeconds, pauses, rateLimitPauses);
+          await sleeper(waitSeconds * 1e3, signal);
+          continue;
+        }
+        if (rateLimitPauses === 0 && quickRetries < 1) {
+          quickRetries += 1;
+          continue;
+        }
+        break;
       }
     }
     if (!completed) {
@@ -2919,6 +2953,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const auditMaxFiles = auditConfig.get("maxFiles", 100);
     const auditMaxLines = auditConfig.get("maxLines", 0);
     const auditPasses = auditPassesFromSetting(auditConfig.get("auditPasses"));
+    const auditRateLimitPauses = rateLimitPausesFromSetting(auditConfig.get("rateLimitPauses"));
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get("auditScope") ?? "";
@@ -2998,7 +3033,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         const seconds = Math.max(0, Math.round((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) / 1e3 * 10) / 10);
         output.appendLine(`\u2705 \u0444\u0430\u0439\u043B ${doneNames.size}/${planFiles.length}: ${filename} \u2014 \u0433\u043E\u0442\u043E\u0432\u043E \u0437\u0430 ${seconds}\u0441`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`\u{1F504} \u043A\u0440\u0443\u0433 ${pass}/${totalPasses}: \u0444\u0430\u0439\u043B ${filename}`));
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`\u{1F504} \u043A\u0440\u0443\u0433 ${pass}/${totalPasses}: \u0444\u0430\u0439\u043B ${filename}`), auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`));
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -3075,6 +3110,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const reviewConfig = vscode2.workspace.getConfiguration("codescout");
     const maxFiles = reviewConfig.get("maxFiles", 100);
     const maxLines = reviewConfig.get("maxLines", 0);
+    const customPauses = rateLimitPausesFromSetting(reviewConfig.get("rateLimitPauses"));
     const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
@@ -3088,7 +3124,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B", elapsedMs);
       output.appendLine(`\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`));
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
@@ -3235,6 +3271,7 @@ async function readSettingsState(context) {
     autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode2.workspace.getConfiguration("codescout").get("autoResumeMaxMinutes"), 1e4),
     auditScope: vscode2.workspace.getConfiguration("codescout").get("auditScope") ?? "",
     auditPasses: auditPassesFromSetting(vscode2.workspace.getConfiguration("codescout").get("auditPasses")),
+    rateLimitPauses: rateLimitPausesFromSetting(vscode2.workspace.getConfiguration("codescout").get("rateLimitPauses")),
     version: String(context.extension.packageJSON.version ?? "0.0.0"),
     uiTheme: readUiPrefs().theme,
     accentColor: readUiPrefs().accent,
@@ -3403,6 +3440,7 @@ function activate(context) {
               const autoResume = message.autoResume === true;
               const auditScope = (message.auditScope ?? "").trim();
               const auditPasses = auditPassesFromSetting(message.auditPasses);
+              const rateLimitPauses = rateLimitPausesFromSetting(message.rateLimitPauses);
               const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1e3);
               const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 1e4);
               const ui = normalizeUiPrefs({
@@ -3425,6 +3463,7 @@ function activate(context) {
               await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode2.ConfigurationTarget.Global);
               await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
               await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
+              await config.update("rateLimitPauses", rateLimitPauses, vscode2.ConfigurationTarget.Global);
               await config.update("uiTheme", ui.theme, vscode2.ConfigurationTarget.Global);
               await config.update("accentColor", ui.accent, vscode2.ConfigurationTarget.Global);
               await config.update("uiDensity", ui.density, vscode2.ConfigurationTarget.Global);

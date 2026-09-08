@@ -46,7 +46,7 @@ function parseGitDiff(diff: string): LocalDiffFile[] {
   return parseUnifiedDiff(diff);
 }
 
-const SAFE_BASE_REF = /^[A-Za-z0-9._/@~-]+$/;
+const SAFE_BASE_REF = /^[A-Za-z0-9._/-]+$/;
 
 export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): LocalDiffFile[] {
   const validationError = validateGitPath(repoPath);
@@ -58,7 +58,10 @@ export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): Lo
 
   if (options.base) {
     const base = options.base.trim();
-    if (!base || base.startsWith('-') || !SAFE_BASE_REF.test(base)) throw new Error(`Некорректное имя базовой ветки: "${options.base}". Разрешены буквы, цифры, . _ / @ ~ и дефис (без пробелов и дефиса в начале).`);
+    if (!base || base.startsWith('-') || base.includes('~') || base.includes('@') || !SAFE_BASE_REF.test(base)) throw new Error(`Некорректное имя базовой ветки: "${options.base}". Разрешены буквы, цифры, . _ / и дефис (без пробелов, ~, @ и дефиса в начале).`);
+    if (tryRunGit(['rev-parse', '--verify', '--quiet', `${base}^\{commit\}`], repoPath) === undefined && tryRunGit(['rev-parse', '--verify', '--quiet', base], repoPath) === undefined) {
+      throw new Error(`Ветка не найдена: "${base}". Проверь имя (git branch -a).`);
+    }
     return parseGitDiff(git('diff', `${base}...HEAD`));
   }
   if (options.lastCommit) {
