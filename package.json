@@ -38,7 +38,7 @@
     "cli:scan": "tsx src/cli.ts scan",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p extension/tsconfig.json --noEmit"
   },
   "engines": {
     "node": ">=20"

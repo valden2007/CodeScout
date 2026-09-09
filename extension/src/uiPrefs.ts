@@ -1,4 +1,5 @@
 export type UiTheme = 'auto' | 'dark' | 'light' | 'custom';
+export type ReportTheme = 'auto' | 'dark' | 'light';
 export type AccentColor = 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
 export type UiDensity = 'compact' | 'standard';
 export type UiFontSize = 's' | 'm' | 'l';
@@ -90,7 +91,7 @@ export interface UiPrefs {
   fontSize: UiFontSize;
   showConfidence: boolean;
   findingsSort: FindingsSort;
-  reportTheme: UiTheme;
+  reportTheme: ReportTheme;
   customColors: CustomColors;
 }
 
@@ -106,6 +107,9 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
 };
 
 const THEME_VALUES: UiTheme[] = ['auto', 'dark', 'light', 'custom'];
+// reportTheme — тема экспортируемого отчёта: custom у неё смысла нет
+// (в манифесте и в селекте центра только auto|dark|light).
+const REPORT_THEME_VALUES: ReportTheme[] = ['auto', 'dark', 'light'];
 const ACCENT_VALUES: AccentColor[] = ['auto', 'blue', 'purple', 'green', 'orange', 'pink'];
 const DENSITY_VALUES: UiDensity[] = ['compact', 'standard'];
 const FONTSIZE_VALUES: UiFontSize[] = ['s', 'm', 'l'];
@@ -126,7 +130,7 @@ export function normalizeUiPrefs(input: UiPrefsInput | undefined): UiPrefs {
     fontSize: pick(p.fontSize, FONTSIZE_VALUES, DEFAULT_UI_PREFS.fontSize),
     showConfidence: p.showConfidence !== false,
     findingsSort: pick(p.findingsSort, SORT_VALUES, DEFAULT_UI_PREFS.findingsSort),
-    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
+    reportTheme: pick(p.reportTheme, REPORT_THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
     customColors: normalizeCustomColors(p.customColors)
   };
 }

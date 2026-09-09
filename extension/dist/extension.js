@@ -671,6 +671,7 @@ var DEFAULT_UI_PREFS = {
   customColors: { ...DEFAULT_CUSTOM_COLORS }
 };
 var THEME_VALUES = ["auto", "dark", "light", "custom"];
+var REPORT_THEME_VALUES = ["auto", "dark", "light"];
 var ACCENT_VALUES = ["auto", "blue", "purple", "green", "orange", "pink"];
 var DENSITY_VALUES = ["compact", "standard"];
 var FONTSIZE_VALUES = ["s", "m", "l"];
@@ -687,7 +688,7 @@ function normalizeUiPrefs(input) {
     fontSize: pick(p.fontSize, FONTSIZE_VALUES, DEFAULT_UI_PREFS.fontSize),
     showConfidence: p.showConfidence !== false,
     findingsSort: pick(p.findingsSort, SORT_VALUES, DEFAULT_UI_PREFS.findingsSort),
-    reportTheme: pick(p.reportTheme, THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
+    reportTheme: pick(p.reportTheme, REPORT_THEME_VALUES, DEFAULT_UI_PREFS.reportTheme),
     customColors: normalizeCustomColors(p.customColors)
   };
 }
@@ -1935,12 +1936,12 @@ var CodeScoutPanel = class {
     this.render();
   }
   setKey(keyMaskOrStatus, provider = "gemini", model = "gemini-2.5-flash") {
-    if (typeof keyMaskOrStatus === "boolean") {
-      this.keyConfigured = keyMaskOrStatus;
-      if (!keyMaskOrStatus) this.keyMask = "";
-    } else {
+    if (typeof keyMaskOrStatus === "string") {
       this.keyMask = keyMaskOrStatus;
       this.keyConfigured = keyMaskOrStatus.trim().length > 0;
+    } else {
+      this.keyConfigured = keyMaskOrStatus === true;
+      if (!this.keyConfigured) this.keyMask = "";
     }
     this.provider = provider;
     this.model = model;
@@ -3664,7 +3665,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const maxFiles = reviewConfig.get("maxFiles", 100);
     const maxLines = reviewConfig.get("maxLines", 0);
     const customPauses = rateLimitPausesFromSetting(reviewConfig.get("rateLimitPauses"));
-    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
       panel.setError(scope === "list" ? t("panel.errNoGlobMatch", lang, { globs: globs.join(", ") }) : t("panel.errNoFiles", lang));

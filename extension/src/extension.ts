@@ -486,7 +486,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const maxFiles = reviewConfig.get<number>('maxFiles', 100);
     const maxLines = reviewConfig.get<number>('maxLines', 0);
     const customPauses = rateLimitPausesFromSetting(reviewConfig.get<number>('rateLimitPauses'));
-    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
+    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
     if (collection.files.length === 0) {
       panel.setError(scope === 'list' ? t('panel.errNoGlobMatch', lang, { globs: globs.join(', ') }) : t('panel.errNoFiles', lang));

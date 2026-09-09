@@ -233,13 +233,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setKey(keyMaskOrStatus: string | boolean, provider = 'gemini', model = 'gemini-2.5-flash'): void {
-    if (typeof keyMaskOrStatus === 'boolean') {
-      this.keyConfigured = keyMaskOrStatus;
-      if (!keyMaskOrStatus) this.keyMask = '';
-    } else {
+  setKey(keyMaskOrStatus: string | boolean | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
+    if (typeof keyMaskOrStatus === 'string') {
       this.keyMask = keyMaskOrStatus;
       this.keyConfigured = keyMaskOrStatus.trim().length > 0;
+    } else {
+      this.keyConfigured = keyMaskOrStatus === true;
+      if (!this.keyConfigured) this.keyMask = '';
     }
     this.provider = provider;
     this.model = model;

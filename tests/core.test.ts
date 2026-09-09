@@ -19,7 +19,7 @@ import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/pro
 import { t, keysOf, normalizeLang } from '../src/i18n';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
-import { uiTokensCss, type UiPrefs, type UiPrefsInput } from '../extension/src/uiPrefs';
+import { uiTokensCss, normalizeUiPrefs, type UiPrefs, type UiPrefsInput } from '../extension/src/uiPrefs';
 import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -1977,7 +1977,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri))");
     expect(extension).toContain('isDirectory ? `${rel}/**` : rel');
     expect(extension).toContain("runCustomReview(context, output, panel, t('custom.explorerFocus', lang, { rel }), 'list', globs)");
-    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message))");
+    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message))");
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
@@ -3007,5 +3007,34 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(sampleTestSummary(0, 'en')).toContain('too weak');
     const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'a.ts', line: 1, category: 'bug', severity: 'low', description: 'x' }] }, [{ file: 'b.ts', line: 2, category: 'bug', severity: 'low', description: 'y', code: '', confidence: 0.5 }], 'en');
     expect(diff?.summary).toBe('🆕 new: 1 · ✅ fixed: 1 · 🔁 unchanged: 0');
+  });
+});
+
+describe('typecheck: 3 tsc -p extension errors closed', () => {
+  it('root typecheck also compiles the extension project (CI catches extension/*)', () => {
+    const pkg = readFileSync('package.json', 'utf8');
+    expect(pkg).toContain('"typecheck": "tsc --noEmit && tsc -p extension/tsconfig.json --noEmit"');
+  });
+
+  it('active-file scope reads document.uri.fsPath — TextDocument has no fsPath', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('activeTextEditor?.document.uri.fsPath');
+    expect(extension).not.toContain('.document.fsPath');
+  });
+
+  it('reportTheme clamps junk (custom) to auto while uiTheme still allows custom', () => {
+    const junk = { theme: 'custom', reportTheme: 'custom' } as unknown as UiPrefsInput;
+    expect(normalizeUiPrefs(junk).theme).toBe('custom');
+    expect(normalizeUiPrefs(junk).reportTheme).toBe('auto');
+    expect(normalizeUiPrefs({ reportTheme: 'light' }).reportTheme).toBe('light');
+    expect(normalizeUiPrefs({ reportTheme: 'dark' }).reportTheme).toBe('dark');
+  });
+
+  it('setKey accepts undefined and clears the key without touching raw input', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('setKey(keyMaskOrStatus: string | boolean | undefined');
+    expect(panel).toContain('keyMaskOrStatus === true');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('panel.setKey(undefined)');
   });
 });
