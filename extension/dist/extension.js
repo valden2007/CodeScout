@@ -994,6 +994,18 @@ var ru_default = {
   "about.readme": "README",
   "about.repo": "\u0420\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0439",
   "about.issue": "\u0421\u043E\u043E\u0431\u0449\u0438\u0442\u044C \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435",
+  "issue.happened": "\u0427\u0442\u043E \u0441\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C",
+  "issue.steps": "\u0428\u0430\u0433\u0438 \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F",
+  "issue.expectedActual": "\u041E\u0436\u0438\u0434\u0430\u043B / \u041F\u043E\u043B\u0443\u0447\u0438\u043B",
+  "issue.expected": "\u041E\u0436\u0438\u0434\u0430\u043B",
+  "issue.actual": "\u041F\u043E\u043B\u0443\u0447\u0438\u043B",
+  "issue.diag": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
+  "issue.keyYes": "\u043A\u043B\u044E\u0447: \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D (\u0441\u0430\u043C \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F)",
+  "issue.keyNo": "\u043A\u043B\u044E\u0447: \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
+  "issue.lastError": "\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u043D\u0430: {e}",
+  "issue.noError": "\u043E\u0448\u0438\u0431\u043E\u043A \u0441\u043A\u0430\u043D\u0430 \u043D\u0435 \u0431\u044B\u043B\u043E",
+  "issue.outputTail": "\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Output",
+  "issue.hint": "\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0437\u0434\u0435\u0441\u044C \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443",
   "progress.file.check": "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B",
   "progress.file.audit": "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B",
   "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
@@ -1256,6 +1268,18 @@ var en_default = {
   "about.readme": "README",
   "about.repo": "Repository",
   "about.issue": "Report an issue",
+  "issue.happened": "What happened",
+  "issue.steps": "Steps to reproduce",
+  "issue.expectedActual": "Expected / Actual",
+  "issue.expected": "Expected",
+  "issue.actual": "Actual",
+  "issue.diag": "Diagnostics",
+  "issue.keyYes": "key: installed (the key itself is never submitted)",
+  "issue.keyNo": "key: not configured",
+  "issue.lastError": "last scan error: {e}",
+  "issue.noError": "no scan errors",
+  "issue.outputTail": "Recent Output lines",
+  "issue.hint": "describe it briefly here",
   "progress.file.check": "\u{1F50E} Checking file",
   "progress.file.audit": "\u{1F50E} Full audit: file",
   "progress.file.custom": "\u{1F3AF} Custom review: file",
@@ -1952,6 +1976,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.openAuditReport");
       } else if (message.command === "runAgain") {
         void vscode.commands.executeCommand("codescout.scanFull");
+      } else if (message.command === "reportIssue") {
+        void vscode.commands.executeCommand("codescout.reportIssue");
       } else if (message.command === "customReview") {
         void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
       } else if (message.command === "clearApiKey") {
@@ -2822,9 +2848,54 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
   }
 }
 
+// src/reportIssue.ts
+var CODESCOUT_REPO_URL = "https://github.com/valden2007/CodeScout";
+var SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
+function redactSecrets(value, keyValues = []) {
+  let out = value;
+  for (const key of keyValues) {
+    if (key && key.length >= 4) out = out.split(key).join("***");
+  }
+  return out.replace(SECRET_PATTERNS, "***");
+}
+function reportIssueUrl(body) {
+  return `${CODESCOUT_REPO_URL}/issues/new?body=${encodeURIComponent(body)}`;
+}
+function buildIssueBody(lang, input) {
+  const T = (key, vars) => t(key, lang, vars);
+  const safe = (value) => redactSecrets(value, input.keyValues);
+  const lines = [
+    `**CodeScout ${input.extVersion} \xB7 VS Code ${input.vscodeVersion} \xB7 ${safe(input.os)}**`,
+    "",
+    `## ${T("issue.happened")}`,
+    `_${T("issue.hint")}_`,
+    "",
+    `## ${T("issue.steps")}`,
+    "1. ",
+    "",
+    `## ${T("issue.expectedActual")}`,
+    `**${T("issue.expected")}:** `,
+    `**${T("issue.actual")}:** `,
+    "",
+    `## ${T("issue.diag")}`,
+    `- provider: ${safe(input.provider)} \xB7 model: ${safe(input.model)} \xB7 language: ${input.language} \xB7 uiTheme: ${safe(input.uiTheme)} \xB7 auditPasses: ${input.auditPasses} \xB7 rateLimitPauses: ${input.rateLimitPauses}`,
+    `- ${T(input.hasKey ? "issue.keyYes" : "issue.keyNo")}`,
+    `- ${input.lastScanError ? T("issue.lastError", { e: safe(input.lastScanError).slice(0, 300) }) : T("issue.noError")}`,
+    "",
+    `<details><summary>${T("issue.outputTail")}</summary>`,
+    "",
+    "```text",
+    ...input.outputTail.map((line) => safe(line).slice(0, 400)),
+    "```",
+    "",
+    "</details>",
+    ""
+  ];
+  return safe(lines.join("\n"));
+}
+
 // src/settingsHtml.ts
 var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
-var REPO_URL = "https://github.com/valden2007/CodeScout";
 var colorFields = [
   { key: "bg" },
   { key: "card" },
@@ -3097,9 +3168,9 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <h2>${icon2("info")} ${T("sec.about")}</h2>
   <div class="about-line">${T("about.version")} <strong>${escapeHtml2(state.version)}</strong></div>
   <div class="row">
-    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">${icon2("book")}<span>${T("about.readme")}</span></button>
-    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon2("repo")}<span>${T("about.repo")}</span></button>
-    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">${icon2("report")}<span>${T("about.issue")}</span></button>
+    <button id="openReadme" type="button" class="secondary" data-url="${CODESCOUT_REPO_URL}#readme">${icon2("book")}<span>${T("about.readme")}</span></button>
+    <button id="openRepo" type="button" class="secondary" data-url="${CODESCOUT_REPO_URL}">${icon2("repo")}<span>${T("about.repo")}</span></button>
+    <button id="reportIssue" type="button" class="secondary">${icon2("report")}<span>${T("about.issue")}</span></button>
   </div>
 </section>
 </main>
@@ -3353,6 +3424,8 @@ renderChips();
 document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
   btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
 });
+const reportIssueBtn = document.getElementById('reportIssue');
+if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));
 const sections = Array.prototype.slice.call(document.querySelectorAll('main section[id]'));
 const navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
 function setActive(id) { navLinks.forEach((l) => l.classList.toggle('active', l.getAttribute('data-target') === id)); }
@@ -3379,13 +3452,14 @@ if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollInt
 }
 
 // src/extension.ts
+var import_node_os = require("node:os");
 var SECRET_KEY = "codescout.apiKey";
 var SECRET_PROVIDER = "codescout.provider";
 var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -3566,6 +3640,7 @@ async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThink
   return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, void 0, void 0, (filename) => importsContextLine(workspaceRoot, filename));
 }
 var activeAbortController;
+var lastScanError;
 async function runSampleReview(context, output, panel) {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -3590,6 +3665,7 @@ async function runSampleReview(context, output, panel) {
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Self-test error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
@@ -3794,6 +3870,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       return { kind: "done" };
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
@@ -3867,6 +3944,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
@@ -3935,6 +4013,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
@@ -4071,6 +4150,18 @@ async function saveKeyProvider(context, message) {
 }
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
+  const outputTail = [];
+  const realAppendLine = output.appendLine.bind(output);
+  const realClear = output.clear.bind(output);
+  output.appendLine = (value) => {
+    outputTail.push(String(value ?? ""));
+    if (outputTail.length > 50) outputTail.splice(0, outputTail.length - 50);
+    realAppendLine(value ?? "");
+  };
+  output.clear = () => {
+    outputTail.length = 0;
+    realClear();
+  };
   const panel = new CodeScoutPanel(context.extensionUri);
   panel.setWelcomeChoiceHandler(() => {
     void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
@@ -4098,6 +4189,27 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.openAuditReport", async () => {
       output.show(true);
       await vscode2.commands.executeCommand("codescout.panel.focus");
+    }),
+    vscode2.commands.registerCommand("codescout.reportIssue", async () => {
+      const cfg = vscode2.workspace.getConfiguration("codescout");
+      const secretKey = await context.secrets.get(SECRET_KEY);
+      const body = buildIssueBody(currentReportLanguage(), {
+        extVersion: String(context.extension.packageJSON.version ?? "0.0.0"),
+        vscodeVersion: vscode2.version,
+        os: `${(0, import_node_os.platform)()} ${(0, import_node_os.release)()}`,
+        provider: cfg.get("provider") || "auto",
+        model: cfg.get("model") || "",
+        language: currentReportLanguage(),
+        uiTheme: cfg.get("uiTheme", "auto"),
+        auditPasses: auditPassesFromSetting(cfg.get("auditPasses")),
+        rateLimitPauses: rateLimitPausesFromSetting(cfg.get("rateLimitPauses")),
+        hasKey: Boolean(secretKey?.trim()),
+        // только для вычёркивания из body; само значение не попадает наружу
+        keyValues: [secretKey ?? "", cfg.get("apiKey") ?? ""],
+        outputTail: [...outputTail],
+        lastScanError
+      });
+      await vscode2.env.openExternal(vscode2.Uri.parse(reportIssueUrl(body)));
     }),
     vscode2.commands.registerCommand("codescout.toggleLanguage", async () => {
       const config = vscode2.workspace.getConfiguration("codescout");
@@ -4249,6 +4361,9 @@ function activate(context) {
             } else if (message.command === "openLink") {
               const url = (message.url ?? "").trim();
               if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));
+              await render("");
+            } else if (message.command === "reportIssue") {
+              await vscode2.commands.executeCommand("codescout.reportIssue");
               await render("");
             } else if (message.command === "openRules") {
               try {

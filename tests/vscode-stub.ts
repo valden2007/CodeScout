@@ -17,6 +17,7 @@ class StubState {
   panels: StubWebviewPanel[] = [];
   secrets = new Map<string, string>();
   globalState = new Map<string, unknown>();
+  openedUris: unknown[] = [];
   outputLines: string[] = [];
 
   reset(): void {
@@ -27,6 +28,7 @@ class StubState {
     this.panels = [];
     this.secrets.clear();
     this.globalState.clear();
+    this.openedUris = [];
     this.outputLines = [];
   }
 
@@ -153,7 +155,9 @@ export const workspace = {
   fs: { async stat(): Promise<{ type: number }> { return { type: 1 }; } }
 };
 
-export const env = { async openExternal(): Promise<boolean> { return true; } };
+export const env = { async openExternal(uri: unknown): Promise<boolean> { state.openedUris.push(uri); return true; } };
+
+export const version = '1.96.0';
 
 export const ConfigurationTarget = { Global: 1, Workspace: 2, WorkspaceFolder: 3 };
 export const ViewColumn = { One: 1, Two: 2, Three: 3 };

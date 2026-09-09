@@ -1,5 +1,6 @@
 import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type CustomColors } from './uiPrefs';
 import { t, type Lang } from '../../src/i18n';
+import { CODESCOUT_REPO_URL as REPO_URL } from './reportIssue';
 
 export interface SettingsState {
   keyMask: string;
@@ -37,8 +38,6 @@ export interface SettingsAssets {
 }
 
 const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
-
-const REPO_URL = 'https://github.com/valden2007/CodeScout';
 
 const colorFields: { key: keyof CustomColors }[] = [
   { key: 'bg' },
@@ -339,7 +338,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <div class="row">
     <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">${icon('book')}<span>${T('about.readme')}</span></button>
     <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon('repo')}<span>${T('about.repo')}</span></button>
-    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">${icon('report')}<span>${T('about.issue')}</span></button>
+    <button id="reportIssue" type="button" class="secondary">${icon('report')}<span>${T('about.issue')}</span></button>
   </div>
 </section>
 </main>
@@ -590,6 +589,8 @@ renderChips();
 document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
   btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
 });
+const reportIssueBtn = document.getElementById('reportIssue');
+if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));
 const sections = Array.prototype.slice.call(document.querySelectorAll('main section[id]'));
 const navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
 function setActive(id) { navLinks.forEach((l) => l.classList.toggle('active', l.getAttribute('data-target') === id)); }

@@ -18,6 +18,8 @@ import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
 import { t } from '../../src/i18n';
+import { buildIssueBody, reportIssueUrl } from './reportIssue';
+import { platform, release } from 'node:os';
 
 const SECRET_KEY = 'codescout.apiKey';
 const SECRET_PROVIDER = 'codescout.provider';
@@ -25,7 +27,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -236,6 +238,7 @@ async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boo
 }
 
 let activeAbortController: AbortController | undefined;
+let lastScanError: string | undefined;
 
 async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
   const controller = new AbortController();
@@ -258,6 +261,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Self-test error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
@@ -445,6 +449,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
@@ -515,6 +520,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
@@ -583,6 +589,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    lastScanError = message;
     panel.setError(message);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
@@ -758,6 +765,20 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeScout');
+  // Хвост Output (последние 50 строк) нужен диагностику reportIssue; сам
+  // канал VS Code не отдаёт содержимое обратно, поэтому зеркалируем appendLine.
+  const outputTail: string[] = [];
+  const realAppendLine = output.appendLine.bind(output);
+  const realClear = output.clear.bind(output);
+  output.appendLine = (value?: string): void => {
+    outputTail.push(String(value ?? ''));
+    if (outputTail.length > 50) outputTail.splice(0, outputTail.length - 50);
+    realAppendLine(value ?? '');
+  };
+  output.clear = (): void => {
+    outputTail.length = 0;
+    realClear();
+  };
   const panel = new CodeScoutPanel(context.extensionUri);
   // The old one-time flow used: await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true')
   // 👋 Запустить полный аудит для контекста?
@@ -786,6 +807,27 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.openAuditReport', async () => {
       output.show(true);
       await vscode.commands.executeCommand('codescout.panel.focus');
+    }),
+    vscode.commands.registerCommand('codescout.reportIssue', async () => {
+      const cfg = vscode.workspace.getConfiguration('codescout');
+      const secretKey = await context.secrets.get(SECRET_KEY);
+      const body = buildIssueBody(currentReportLanguage(), {
+        extVersion: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
+        vscodeVersion: vscode.version,
+        os: `${platform()} ${release()}`,
+        provider: cfg.get<string>('provider') || 'auto',
+        model: cfg.get<string>('model') || '',
+        language: currentReportLanguage(),
+        uiTheme: cfg.get<string>('uiTheme', 'auto'),
+        auditPasses: auditPassesFromSetting(cfg.get<number>('auditPasses')),
+        rateLimitPauses: rateLimitPausesFromSetting(cfg.get<number>('rateLimitPauses')),
+        hasKey: Boolean(secretKey?.trim()),
+        // только для вычёркивания из body; само значение не попадает наружу
+        keyValues: [secretKey ?? '', cfg.get<string>('apiKey') ?? ''],
+        outputTail: [...outputTail],
+        lastScanError
+      });
+      await vscode.env.openExternal(vscode.Uri.parse(reportIssueUrl(body)));
     }),
     vscode.commands.registerCommand('codescout.toggleLanguage', async () => {
       const config = vscode.workspace.getConfiguration('codescout');
@@ -932,6 +974,9 @@ export function activate(context: vscode.ExtensionContext): void {
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();
             if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
+            await render('');
+          } else if (message.command === 'reportIssue') {
+            await vscode.commands.executeCommand('codescout.reportIssue');
             await render('');
           } else if (message.command === 'openRules') {
             try {

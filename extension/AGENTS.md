@@ -412,6 +412,28 @@ pre-design now.
     (codescout.openAuditReport → output.show + panel.focus) and runAgain
     (scanFull). All strings in both dicts; e2e: dismissOnboarding click
     hides the card forever (vscode-stub globalState). Tests: 247.
+ 21. reportIssue + open-source wrapper (v1.4b-13): pure
+    extension/src/reportIssue.ts — buildIssueBody(lang, input) makes a
+    Markdown draft (Что случилось / Шаги / Ожидал-Получил / Диагностика:
+    versions ext+VS Code+OS, provider/model/language/uiTheme/auditPasses/
+    rateLimitPauses, key installed? yes/no — NEVER the key, last 50 Output
+    lines, last scan error) + redactSecrets strips exact key values AND
+    sk/gsk/ghp/AIza/ya29/glpat prefixes, reportIssueUrl →
+    github.com/valden2007/CodeScout/issues/new?body=<encoded>. Command
+    codescout.reportIssue (registered in activate) closes over the output
+    tail mirror (appendLine wrapper keeps the last 50 lines; clear wipes
+    them) and module-level lastScanError set at every scan catch; the
+    revived «Сообщить о проблеме» button in ℹ️ О расширении posts
+    reportIssue (whitelisted) → openExternal; panel message branch too.
+    SECURITY CONTRACT in tests: body never contains the mock key or any
+    provider prefix (unit + e2e through the real command). GitHub visitors
+    get the same fields via .github/ISSUE_TEMPLATE/{bug_report,
+    feature_request}.md; CONTRIBUTING.md rewritten (reports, dev flow,
+    tests incl. vscode-stub, translation = src/i18n/<lang>.json + option
+    + enum); README += «Privacy & local models» (Ollama
+    http://localhost:11434/v1, LM Studio, code never leaves the machine)
+    and «How to report a bug»; MIT verified in LICENSE (2026) +
+    "license":"MIT" in both manifests (locked by test). Tests: 256.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

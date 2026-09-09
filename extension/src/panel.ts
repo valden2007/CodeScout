@@ -154,6 +154,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.openAuditReport');
       } else if (message.command === 'runAgain') {
         void vscode.commands.executeCommand('codescout.scanFull');
+      } else if (message.command === 'reportIssue') {
+        void vscode.commands.executeCommand('codescout.reportIssue');
       } else if (message.command === 'customReview') {
         void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {

@@ -206,6 +206,22 @@ shows what your key can actually use. For `custom`, point `codescout.baseUrl`
 Ollama, LM Studio, or a proxy. Base URLs must be `https://`; plain `http://` is
 accepted only for `localhost` / `127.0.0.1` so keys never travel in the clear.
 
+## Privacy & local models
+
+CodeScout can run **fully offline**: point it at a local OpenAI-compatible
+server and your code never leaves the machine.
+
+- **Ollama** — set `codescout.baseUrl` to `http://localhost:11434/v1`.
+- **LM Studio** — set it to `http://localhost:1234/v1`.
+- Plain `http://` is accepted only for `localhost` / `127.0.0.1`; anything
+  else must be `https://`, so keys and diffs never travel unencrypted.
+- Keys live in VS Code SecretStorage (or env / GitHub Secrets) and are never
+  logged, exported or sent anywhere except the provider you configured.
+
+The CLI (`--base-url`) and the extension (Settings → Key & model → Base URL)
+support the same custom endpoints; the model list is fetched live from
+`GET /models`, so local model names work as-is.
+
 ## Architecture
 
 A single TypeScript core (`src/`) is shared by all three frontends:
@@ -249,6 +265,16 @@ never logged. Model output and fetched web content are treated as untrusted
 input: control/bidi characters are stripped, prompt-injection fences are
 neutralized, and doc fetches block localhost and cloud-metadata addresses
 (SSRF). The extension webview runs under a nonce-based Content-Security-Policy.
+
+## How to report a bug
+
+Two clicks inside VS Code: open the CodeScout panel → **Settings → About →
+“Report an issue”**. The button builds an issue draft with your versions,
+provider/model/language, the last scan error and the last 50 Output lines —
+API keys are redacted before the browser opens, and the key itself is never
+included. From anywhere else, use the [bug template](.github/ISSUE_TEMPLATE/bug_report.md)
+or just [open an issue](https://github.com/valden2007/CodeScout/issues);
+contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

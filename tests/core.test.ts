@@ -13,6 +13,7 @@ import { completionUrl, detectProvider, maskApiKey, normalizeProvider, parseLive
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
+import { buildIssueBody, redactSecrets, reportIssueUrl, CODESCOUT_REPO_URL, type IssueReportInput } from '../extension/src/reportIssue';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS } from '../extension/src/projectAudit';
 import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
@@ -3191,5 +3192,118 @@ describe('v1.4b-12 onboarding + ETA', () => {
     expect(extension).toContain("registerCommand('codescout.openAuditReport'");
     expect(extension).toContain('panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 })');
     expect(extension).toContain('panel.setFirstAuditDone(true)');
+  });
+});
+
+describe('v1.4b-13 reportIssue + open-source wrapper', () => {
+  const base: IssueReportInput = {
+    extVersion: '1.4.0', vscodeVersion: '1.85.0', os: 'win32 10.0.19045', provider: 'groq', model: 'llama-3.3-70b-versatile',
+    language: 'ru', uiTheme: 'auto', auditPasses: 2, rateLimitPauses: 3, hasKey: true, keyValues: ['real-secret-value-XYZ'],
+    outputTail: ['starting audit', 'real-secret-value-XYZ leaked here', 'gsk_live_abc123def456 is the key'], lastScanError: undefined
+  };
+
+  it('RU and EN templates carry the four sections and diagnostics', () => {
+    const ru = buildIssueBody('ru', base);
+    expect(ru).toContain('## Что случилось');
+    expect(ru).toContain('## Шаги воспроизведения');
+    expect(ru).toContain('## Ожидал / Получил');
+    expect(ru).toContain('## Диагностика');
+    expect(ru).toContain('provider: groq · model: llama-3.3-70b-versatile');
+    expect(ru).toContain('win32 10.0.19045');
+    expect(ru).toContain('1.4.0');
+    expect(ru).toContain('ключ: установлен');
+    expect(ru).toContain('Последние строки Output');
+    const en = buildIssueBody('en', { ...base, hasKey: false });
+    expect(en).toContain('## What happened');
+    expect(en).toContain('## Steps to reproduce');
+    expect(en).toContain('## Expected / Actual');
+    expect(en).toContain('## Diagnostics');
+    expect(en).toContain('key: not configured');
+    expect(en).not.toMatch(/[\u0400-\u04FF]/);
+  });
+
+  it('security contract: no key values and no provider prefixes leak into the body', () => {
+    const body = buildIssueBody('ru', base);
+    expect(body).not.toContain('real-secret-value-XYZ');
+    expect(body).not.toContain('gsk_live_abc123def456');
+    expect(body).not.toContain('sk-or-');
+    for (const prefix of ['sk-', 'gsk_', 'ghp_', 'AIza']) expect(body).not.toContain(prefix);
+    const direct = redactSecrets('my ghp_TOKEN123456 and AIzaSyD1234567890ABC and sk-or-v1.KEYKEY', ['dup']);
+    expect(direct).not.toContain('ghp_TOKEN123456');
+    expect(direct).not.toContain('AIzaSyD1234567890ABC');
+    expect(direct).not.toContain('sk-or-v1.KEYKEY');
+    const keyLeak = buildIssueBody('en', { ...base, outputTail: ['AIzaSySECRETMODELKEY999'], lastScanError: 'boom' });
+    expect(keyLeak).not.toContain('AIzaSySECRETMODELKEY999');
+    expect(keyLeak).toContain('last scan error: boom');
+  });
+
+  it('reportIssueUrl builds a GitHub issues/new deep link', () => {
+    const url = reportIssueUrl('## Что случилось');
+    expect(url).toContain(`${CODESCOUT_REPO_URL}/issues/new?body=`);
+    expect(url).toContain(encodeURIComponent('## Что случилось'));
+    expect(decodeURIComponent(url.split('body=')[1])).toBe('## Что случилось');
+  });
+
+  it('wiring: reportIssue command reads diagnostics + lastScanError, panel + center buttons, no raw key', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("registerCommand('codescout.reportIssue'");
+    expect(extension).toContain('outputTail.push(String(value ?? \'\'))');
+    expect(extension).toContain('if (outputTail.length > 50) outputTail.splice(0, outputTail.length - 50)');
+    expect(extension).toContain('lastScanError = message;');
+    expect(extension).toContain('reportIssueUrl(body)');
+    expect(extension).toContain("hasKey: Boolean(secretKey?.trim())");
+    expect(extension).toContain('keyValues: [secretKey ?? \'\', cfg.get<string>(\'apiKey\') ?? \'\']');
+    expect(extension).toContain('const KNOWN_SETTINGS_COMMANDS = new Set([\'saveKeyProvider\', \'saveAppearance\', \'saveAll\', \'clearApiKey\', \'chooseModel\', \'saveDocLinks\', \'openRules\', \'openLink\', \'pickScope\', \'reportIssue\'])');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'reportIssue'");
+    expect(panel).toContain("executeCommand('codescout.reportIssue')");
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).toContain('<button id="reportIssue" type="button" class="secondary">');
+    expect(center).toContain("vscode.postMessage({ command: 'reportIssue' })");
+    expect(center).not.toContain('data-url="${REPO_URL}/issues"');
+    expect(center).toContain("CODESCOUT_REPO_URL as REPO_URL");
+  });
+
+  it('issue templates exist with the same four fields for GitHub visitors', () => {
+    const bug = readFileSync('.github/ISSUE_TEMPLATE/bug_report.md', 'utf8');
+    expect(bug).toContain('Что случилось');
+    expect(bug).toContain('Шаги воспроизведения');
+    expect(bug).toContain('Ожидал / Получил');
+    expect(bug).toContain('Диагностика');
+    expect(bug).toContain('labels: bug');
+    expect(bug).toContain('redacted automatically');
+    expect(bug).not.toMatch(/(?:sk|gsk|ghp|AIza)[A-Za-z0-9_-]{16,}/);
+    const feat = readFileSync('.github/ISSUE_TEMPLATE/feature_request.md', 'utf8');
+    expect(feat).toContain('labels: enhancement');
+    expect(feat).toContain('Предлагаемое решение');
+  });
+
+  it('CONTRIBUTING covers bugs, PR, tests and the translation recipe', () => {
+    const contributing = readFileSync('CONTRIBUTING.md', 'utf8');
+    expect(contributing).toContain('Report a bug');
+    expect(contributing).toContain('Pull requests');
+    expect(contributing).toContain('npm test');
+    expect(contributing.toLowerCase()).toContain('translation');
+    expect(contributing).toContain('src/i18n/<lang>.json');
+    expect(contributing).toContain('codescout.language');
+  });
+
+  it('README gains privacy/local-model and report-a-bug sections', () => {
+    const readme = readFileSync('README.md', 'utf8');
+    expect(readme).toContain('## Privacy & local models');
+    expect(readme).toContain('Ollama');
+    expect(readme).toContain('LM Studio');
+    expect(readme).toContain('http://localhost:11434/v1');
+    expect(readme).toContain('code never leaves the machine');
+    expect(readme).toContain('## How to report a bug');
+    expect(readme).toContain('.github/ISSUE_TEMPLATE/bug_report.md');
+  });
+
+  it('MIT license declared in both manifests and the LICENSE file', () => {
+    expect(JSON.parse(readFileSync('extension/package.json', 'utf8')).license).toBe('MIT');
+    expect(JSON.parse(readFileSync('package.json', 'utf8')).license).toBe('MIT');
+    const license = readFileSync('LICENSE', 'utf8');
+    expect(license).toContain('MIT License');
+    expect(license).toMatch(/Copyright \(c\) \d{4} CodeScout/);
   });
 });
