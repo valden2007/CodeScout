@@ -2345,10 +2345,10 @@ describe('G7 fix batch security and robustness', () => {
 describe('v1.4b settings center with sidebar', () => {
   const centerState = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const, customColors: '' };
 
-  it('sidebar lists exactly the five sections and each has a matching anchor', () => {
+  it('sidebar lists exactly the six sections and each has a matching anchor', () => {
     const html = buildSettingsHtml(centerState);
     const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
-    expect(navTargets).toEqual(['sec-key', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
+    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
     for (const id of navTargets) expect(html).toContain(`id="${id}"`);
     expect(html).toContain('position: sticky');
   });
@@ -2881,8 +2881,12 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(keysOf('ru').length).toBeGreaterThanOrEqual(200);
     for (const [key, value] of Object.entries(ruDict)) expect(value.trim(), key).not.toBe('');
     for (const [key, value] of Object.entries(enDict)) expect(value.trim(), key).not.toBe('');
-    expect(ruDict['appear.language']).toBe('Язык интерфейса и отчётов');
-    expect(enDict['appear.language']).toBe('Interface & report language');
+    expect(ruDict['sec.lang']).toBe('Язык');
+    expect(enDict['sec.lang']).toBe('Language');
+    expect(ruDict['lang.select']).toBe('Язык интерфейса, отчётов и ответов модели');
+    expect(enDict['lang.select']).toBe('Interface, reports and model answers language');
+    expect(ruDict['appear.language']).toBeUndefined();
+    expect(enDict['appear.language']).toBeUndefined();
   });
 
   it('t() interpolates vars and falls back to the key itself', () => {
@@ -2914,9 +2918,9 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(centerEn).not.toMatch(CYRILLIC);
     expect(centerEn).toContain('Basic');
     expect(centerEn).toContain('Customization');
-    expect(centerEn).toContain('Interface & report language');
+    expect(centerEn).toContain('Interface, reports and model answers language');
     const centerRu = buildSettingsHtml(centerState, '✅ Сохранено', 'ok', 'nonce4', '', undefined, 'ru');
-    expect(centerRu).toContain('Язык интерфейса и отчётов');
+    expect(centerRu).toContain('Язык интерфейса, отчётов и ответов модели');
     expect(centerRu).toContain('Фон страницы');
     const panelRu = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'src/app.ts', line: 12, category: 'bug', severity: 'critical', description: 'same' }] }, issues), '', undefined, undefined, false, 0, 0, undefined, 'nonce5', undefined, 'ru');
     expect(panelRu).toContain('Полный аудит проекта');
@@ -2933,7 +2937,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("config.inspect<string>('reportLanguage')");
     expect(extension).toContain("config.update('language', legacyValue === 'en' ? 'en' : 'ru', vscode.ConfigurationTarget.Global)");
     expect(extension).toContain("config.update('reportLanguage', undefined, vscode.ConfigurationTarget.Global)");
-    expect(extension).toContain('void migrateLanguageSetting(context);');
+    expect(extension).toContain('void migrateLanguageSetting(context).catch(() => {});');
     expect(extension).not.toContain("get<string>('reportLanguage')");
   });
 
@@ -2968,13 +2972,14 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("registerCommand('codescout.toggleLanguage'");
     expect(extension).toContain("config.get<string>('language') === 'en' ? 'ru' : 'en'");
     expect(extension).toContain("await config.update('language', next, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain('panel.forceLanguageRefresh();');
     expect(extension).toContain('rerenderSettings();');
     expect(extension).toContain("'docMaxLinks', 'language', 'showAuditBanner'");
   });
 
-  it('Базовые language select shares its source of truth with the globe button', () => {
+  it('Язык-секции select shares its source of truth with the globe button', () => {
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
-    expect(center).toContain("<label for=\"reportLanguage\">${T('appear.language')}<");
+    expect(center).toContain("<label for=\"reportLanguage\">${T('lang.select')}<");
     expect(center).toContain('<select id="reportLanguage">');
     expect(center).toContain('state.reportLanguage === ');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
@@ -3036,5 +3041,52 @@ describe('typecheck: 3 tsc -p extension errors closed', () => {
     expect(panel).toContain('keyMaskOrStatus === true');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('panel.setKey(undefined)');
+  });
+});
+
+describe('v1.4b-11 «Язык» section (moved out of Базовые)', () => {
+  const langState = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'en' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const, customColors: '' };
+
+  it('Язык section is the 2nd nav item, sits between Ключ and Аудит, with a globe icon', () => {
+    const html = buildSettingsHtml(langState, '', 'ok', 'n', '', undefined, 'en');
+    const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
+    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
+    expect(navTargets).toHaveLength(6);
+    const keyEnd = html.indexOf('</section>');
+    const langStart = html.indexOf('id="sec-lang"');
+    const auditStart = html.indexOf('id="sec-audit"');
+    expect(langStart).toBeGreaterThan(keyEnd);
+    expect(langStart).toBeLessThan(auditStart);
+    const langSection = html.slice(langStart, auditStart);
+    expect(langSection).toContain('codicon-globe');
+    expect(langSection).toContain('id="reportLanguage"');
+    expect(langSection).toContain('Interface, reports and model answers language');
+  });
+
+  it('reportLanguage select is GONE from Appearance Базовые subtab and appears with the hint', () => {
+    const html = buildSettingsHtml(langState, '', 'ok', 'n', '', undefined, 'en');
+    const langStart = html.indexOf('id="sec-lang"');
+    const auditStart = html.indexOf('id="sec-audit"');
+    const langSection = html.slice(langStart, auditStart);
+    expect(langSection).toContain('Switches everything at once');
+    const appearance = html.slice(html.indexOf('id="subtab-basic"'), html.indexOf('id="subtab-custom"'));
+    expect(appearance).not.toContain('id="reportLanguage"');
+    expect(appearance).toContain('id="uiTheme"');
+  });
+
+  it('single-tumbler semantics: language drives UI dict AND model prompt language', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("return vscode.workspace.getConfiguration('codescout').get<string>('language') === 'en' ? 'en' : 'ru'");
+    expect(extension).toContain('currentReportLanguage()');
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).toContain('src/i18n/<lang>.json');
+  });
+
+  it('globe stays a quick toggle synced to the same language setting', () => {
+    const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
+    expect(report).toContain('data-command="toggleLanguage"');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'toggleLanguage'");
+    expect(panel).toContain("executeCommand('codescout.toggleLanguage')");
   });
 });

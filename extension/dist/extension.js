@@ -876,6 +876,7 @@ var ru_default = {
   "empty.testSample": "\u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435",
   testBadge: "\u0422\u0415\u0421\u0422",
   "sec.key": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
+  "sec.lang": "\u042F\u0437\u044B\u043A",
   "sec.audit": "\u0410\u0443\u0434\u0438\u0442",
   "sec.project": "\u041F\u0440\u043E\u0435\u043A\u0442",
   "sec.appearance": "\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434",
@@ -915,7 +916,8 @@ var ru_default = {
   "project.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
   "project.openRules": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md",
   "project.hint": "rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.",
-  "appear.language": "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430 \u0438 \u043E\u0442\u0447\u0451\u0442\u043E\u0432",
+  "lang.select": "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430, \u043E\u0442\u0447\u0451\u0442\u043E\u0432 \u0438 \u043E\u0442\u0432\u0435\u0442\u043E\u0432 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "lang.hint": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442 \u0432\u0441\u0451 \u0441\u0440\u0430\u0437\u0443: \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441, \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0438 \u043E\u0442\u0432\u0435\u0442\u044B \u043C\u043E\u0434\u0435\u043B\u0438. \u0413\u043B\u043E\u0431\u0443\u0441 \u0432 \u0448\u0430\u043F\u043A\u0435 \u043F\u0430\u043D\u0435\u043B\u0438 \u2014 \u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0442\u0443\u043C\u0431\u043B\u0435\u0440 \u0442\u043E\u0433\u043E \u0436\u0435.",
   "appear.langRu": "RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438",
   "appear.langEn": "EN \u2014 English",
   "appear.rtAuto": "auto \u2014 \u043A\u0430\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441",
@@ -1120,6 +1122,7 @@ var en_default = {
   "empty.testSample": "Test on sample",
   testBadge: "TEST",
   "sec.key": "Key and model",
+  "sec.lang": "Language",
   "sec.audit": "Audit",
   "sec.project": "Project",
   "sec.appearance": "Appearance",
@@ -1159,7 +1162,8 @@ var en_default = {
   "project.pickFiles": "Pick files/folders",
   "project.openRules": "Open rules.md",
   "project.hint": "rules.md is mixed into every prompt. Docs are fetched (5s timeout, oversized truncated keeping the head) and cached in .codescout/docs-cache.json for 24h. Scope limits the full audit; the right-click review ignores it.",
-  "appear.language": "Interface & report language",
+  "lang.select": "Interface, reports and model answers language",
+  "lang.hint": "Switches everything at once: the UI, findings and model answers. The globe in the panel header is a quick toggle for the same setting.",
   "appear.langRu": "RU \u2014 Russian",
   "appear.langEn": "EN \u2014 English",
   "appear.rtAuto": "auto \u2014 match the interface",
@@ -1925,6 +1929,10 @@ var CodeScoutPanel = class {
   setWelcomeChoiceHandler(onStart, onDismiss) {
     this.onWelcomeStart = onStart;
     this.onWelcomeDismiss = onDismiss;
+  }
+  forceLanguageRefresh() {
+    this.refreshAutoResumeSettings();
+    this.render();
   }
   setWelcomeBanner(visible, reason = "new") {
     this.welcomeBanner = visible;
@@ -2707,6 +2715,16 @@ function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce =
   const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? T("center.providerAuto") : value}</option>`).join("");
   const prefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
+  const languageSection = `
+<section id="sec-lang">
+  <h2>${icon2("globe")} ${T("sec.lang")}</h2>
+  <label for="reportLanguage">${T("lang.select")}</label>
+  <select id="reportLanguage">
+    <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>${T("appear.langRu")}</option>
+    <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>${T("appear.langEn")}</option>
+  </select>
+  <p class="hint">${T("lang.hint")}</p>
+</section>`;
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -2781,6 +2799,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <div class="layout">
 <nav class="sidebar" id="sidebar">
   <a class="nav-link active" href="#sec-key" data-target="sec-key">${icon2("key")}<span>${T("sec.key")}</span></a>
+  <a class="nav-link" href="#sec-lang" data-target="sec-lang">${icon2("globe")}<span>${T("sec.lang")}</span></a>
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon2("sync")}<span>${T("sec.audit")}</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon2("folder")}<span>${T("sec.project")}</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon2("symbol-color")}<span>${T("sec.appearance")}</span></a>
@@ -2807,7 +2826,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="clearKey" type="button" class="secondary">${icon2("trash")}<span>${T("center.forgetKey")}</span></button>
   </div>
   <p class="hint">${T("center.prefixHint")}</p>
-</section>
+</section>${languageSection}
 <section id="sec-audit">
   <h2>${icon2("sync")} ${T("sec.audit")}</h2>
   <label for="auditPasses">${T("audit.passes")}</label>
@@ -2856,11 +2875,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button type="button" class="subtab-btn" data-subtab="subtab-custom">${T("subtab.custom")}</button>
   </div>
   <div class="subtab" id="subtab-basic">
-    <label for="reportLanguage">${T("appear.language")}</label>
-    <select id="reportLanguage">
-      <option value="ru"${state.reportLanguage === "ru" ? " selected" : ""}>${T("appear.langRu")}</option>
-      <option value="en"${state.reportLanguage === "en" ? " selected" : ""}>${T("appear.langEn")}</option>
-    </select>
     <label for="uiTheme">${T("appear.uiTheme")}</label>
     <select id="uiTheme">
       <option value="auto"${state.uiTheme === "auto" ? " selected" : ""}>${T("appear.themeAuto")}</option>
@@ -3905,7 +3919,8 @@ function activate(context) {
     panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
   };
   void syncKeyStatus();
-  void migrateLanguageSetting(context);
+  void migrateLanguageSetting(context).catch(() => {
+  });
   context.subscriptions.push(
     vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
     vscode2.commands.registerCommand("codescout.openSettings", () => vscode2.commands.executeCommand("workbench.action.openSettings", "codescout")),
@@ -3913,6 +3928,7 @@ function activate(context) {
       const config = vscode2.workspace.getConfiguration("codescout");
       const next = config.get("language") === "en" ? "ru" : "en";
       await config.update("language", next, vscode2.ConfigurationTarget.Global);
+      panel.forceLanguageRefresh();
       rerenderSettings();
     }),
     vscode2.commands.registerCommand("codescout.openSettingsPage", async (anchor) => {

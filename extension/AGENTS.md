@@ -34,6 +34,13 @@ CodeScout — AI code reviewer with THREE interfaces:
 - Keys stored in SecretStorage (extension) / env (CLI) / Secrets (action)
 - Product philosophy: любой новый лимит = настройка с разумным
   дефолтом; хардкод лимитов запрещён без продуктовой причины
+- i18n rule (v1.4b-11): новые UI-строки панели/центра/хост-статусов —
+  только через t(key, lang) И ключи сразу в оба словаря
+  src/i18n/{ru,en}.json. Контракт-тесты это проверяют: множества
+  ключей 1:1, EN-рендер панели+центра без единого кириллического
+  символа, миграция reportLanguage→language. Хардкод русского в
+  разметке/статусах = красный CI. Не переводим: severity, имена
+  настроек/команд, Output-логи, код/пути, тех-термины.
 
 ## Current state (v1.1.2 released)
 Done: zero-config onboarding (provider auto-detected by key prefix),
@@ -355,6 +362,33 @@ pre-design now.
     buildReviewPrompt(...,'en') notes), ru keeps the old scaffolding.
     Manifest nls: %tokens% + package.nls.json (English) +
     package.nls.ru.json (Russian). Tests: 231.
+ 19. Globe fix + «Язык» section (v1.4b-11): ROOT CAUSE of the dead
+    globe button — at commits 874c773..c13b91e the codicon-globe was
+    already rendered in the panel markup, but the host-side wiring
+    (panel onDidReceiveMessage branch + codescout.toggleLanguage
+    command + 'language' in the watched-config list) existed only in
+    the uncommitted worktree, so every vsix built from those commits
+    silently dropped the message (no whitelist in the panel — a plain
+    if/else chain without the branch = dead click). The wiring landed
+    with c0edcd4; toggleLanguage now also calls panel.forceLanguageRefresh()
+    + rerenderSettings() directly after the awaited config.update, so
+    re-render never depends on config-event timing. New e2e layer:
+    vitest.config.ts aliases 'vscode' → tests/vscode-stub.ts
+    (in-memory config store that fires onDidChangeConfiguration,
+    command registry, fake webview views/panels), and
+    tests/globe.test.ts drives the REAL activate()+CodeScoutPanel:
+    mock globe click → codescout.language flips en/ru → BOTH panel and
+    center webview.html re-render (EN asserts zero Cyrillic). Settings
+    center: 6th sidebar section 🌐 «Язык» (#sec-lang, after «Ключ и
+    модель») with the select «Язык интерфейса, отчётов и ответов
+    модели» MOVED out of Внешний вид→Базовые (gone from subtab-basic;
+    appear.language key deleted → lang.select/lang.hint/sec.lang), hint
+    «переключает всё сразу…», extension-point comment: new language =
+    new src/i18n/<lang>.json + <option> in the select + manifest enum.
+    Globe stays the quick toggle over the same codescout.language
+    setting (single source of truth, synced with the section select;
+    one switch drives UI dict + review prompt + model answer language).
+    Tests: 240.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

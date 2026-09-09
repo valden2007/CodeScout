@@ -761,7 +761,7 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
   };
   void syncKeyStatus();
-  void migrateLanguageSetting(context);
+  void migrateLanguageSetting(context).catch(() => {});
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
@@ -769,6 +769,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const config = vscode.workspace.getConfiguration('codescout');
       const next = config.get<string>('language') === 'en' ? 'ru' : 'en';
       await config.update('language', next, vscode.ConfigurationTarget.Global);
+      // Явная перезагрузка без опоры на тайминг onDidChangeConfiguration:
+      // панель и центр перерисовываются сразу, клик по глобусу не может
+      // «потеряться», если событие конфига не дошло.
+      panel.forceLanguageRefresh();
       rerenderSettings();
     }),
     vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {

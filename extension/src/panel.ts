@@ -222,6 +222,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.onWelcomeDismiss = onDismiss;
   }
 
+  forceLanguageRefresh(): void {
+    this.refreshAutoResumeSettings();
+    this.render();
+  }
+
   setWelcomeBanner(visible: boolean, reason: 'new' | 'stale' = 'new'): void {
     this.welcomeBanner = visible;
     this.welcomeReason = reason;

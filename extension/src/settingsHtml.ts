@@ -100,6 +100,20 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
     .join('');
   const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
+  // Точка расширения: новый язык = добавить словарь src/i18n/<lang>.json
+  // (ключи 1:1), <option value="<lang>"> в селект ниже и значение в enum
+  // codescout.language манифеста. Больше нигде ветвить не нужно — весь UI
+  // идёт через t(key, lang), а глобус в шапке панели дёргает тот же настройку.
+  const languageSection = `
+<section id="sec-lang">
+  <h2>${icon('globe')} ${T('sec.lang')}</h2>
+  <label for="reportLanguage">${T('lang.select')}</label>
+  <select id="reportLanguage">
+    <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>${T('appear.langRu')}</option>
+    <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>${T('appear.langEn')}</option>
+  </select>
+  <p class="hint">${T('lang.hint')}</p>
+</section>`;
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -174,6 +188,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <div class="layout">
 <nav class="sidebar" id="sidebar">
   <a class="nav-link active" href="#sec-key" data-target="sec-key">${icon('key')}<span>${T('sec.key')}</span></a>
+  <a class="nav-link" href="#sec-lang" data-target="sec-lang">${icon('globe')}<span>${T('sec.lang')}</span></a>
   <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>${T('sec.audit')}</span></a>
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>${T('sec.project')}</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>${T('sec.appearance')}</span></a>
@@ -200,7 +215,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
   <p class="hint">${T('center.prefixHint')}</p>
-</section>
+</section>${languageSection}
 <section id="sec-audit">
   <h2>${icon('sync')} ${T('sec.audit')}</h2>
   <label for="auditPasses">${T('audit.passes')}</label>
@@ -249,11 +264,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button type="button" class="subtab-btn" data-subtab="subtab-custom">${T('subtab.custom')}</button>
   </div>
   <div class="subtab" id="subtab-basic">
-    <label for="reportLanguage">${T('appear.language')}</label>
-    <select id="reportLanguage">
-      <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>${T('appear.langRu')}</option>
-      <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>${T('appear.langEn')}</option>
-    </select>
     <label for="uiTheme">${T('appear.uiTheme')}</label>
     <select id="uiTheme">
       <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>${T('appear.themeAuto')}</option>
