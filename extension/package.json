@@ -124,11 +124,11 @@
       ]
     },
     "configuration": {
-      "title": "CodeScout",
+      "title": "%settings.title%",
       "properties": {
         "codescout.apiKey": {
           "type": "string",
-          "description": "API key for the selected provider. Keep it private; it is stored as a secret-like setting.",
+          "description": "%apiKey.description%",
           "scope": "machine",
           "password": true
         },
@@ -142,23 +142,23 @@
             "custom"
           ],
           "default": "gemini",
-          "description": "LLM provider used by CodeScout."
+          "description": "%provider.description%"
         },
         "codescout.model": {
           "type": "string",
           "default": "gemini-2.5-flash",
-          "description": "Model name understood by the selected provider."
+          "description": "%model.description%"
         },
         "codescout.baseUrl": {
           "type": "string",
           "default": "",
-          "description": "Optional OpenAI-compatible base URL. Set this for Ollama, LM Studio, or another proxy."
+          "description": "%baseUrl.description%"
         },
         "codescout.maxFiles": {
           "type": "number",
           "default": 100,
           "minimum": 1,
-          "description": "Лимит файлов на один полный аудит. Всё, что не влезло, выводится в Output отдельной строкой."
+          "description": "%maxFiles.description%"
         },
         "codescout.docLinks": {
           "type": "array",
@@ -166,125 +166,152 @@
             "type": "string"
           },
           "default": [],
-          "description": "Ссылки на документацию проекта. Полный аудит подтягивает тексты по ним (лимиты — из настроек docMaxLinks и docMaxKb, таймаут 5с, кэш .codescout/docs-cache.json на 24ч) и добавляет секцию «Документация проекта» в промт."
+          "description": "%docLinks.description%"
         },
         "codescout.docMaxKb": {
           "type": "number",
           "default": 50,
           "minimum": 1,
           "maximum": 2048,
-          "description": "Максимальный размер одного документа документации в промт (KB). Документ больше — усекается до лимита (начало сохраняется)."
+          "description": "%docMaxKb.description%"
         },
         "codescout.docMaxLinks": {
           "type": "number",
           "default": 5,
           "minimum": 1,
           "maximum": 50,
-          "description": "Максимальное число документационных ссылок, подтягиваемых за один полный аудит."
+          "description": "%docMaxLinks.description%"
         },
         "codescout.maxLines": {
           "type": "number",
           "default": 0,
           "minimum": 0,
-          "description": "Максимум строк на файл в аудите. 0 = без лимита: файлы длиннее 800 строк режутся чанками с перекрытием 50 строк, находки дедуплицируются. N > 0 = файлы длиннее N скипаются (для слабых моделей)."
+          "description": "%maxLines.description%"
         },
         "codescout.auditScope": {
           "type": "string",
           "default": "",
-          "description": "Scope полного аудита: glob-паттерны через запятую (например, src/**, extension/src/**). Пусто = все файлы. Контекстная проверка по ПКМ scope игнорирует."
+          "description": "%auditScope.description%"
         },
         "codescout.auditPasses": {
           "type": "number",
           "default": 1,
           "minimum": 1,
           "maximum": 3,
-          "description": "Сколько кругов проверки делать на файл в полном аудите (1-3). Со 2-го круга в промт добавляется список находок предыдущих кругов с инструкцией искать пропущенное; находки всех кругов мерджатся с дедупом."
+          "description": "%auditPasses.description%"
         },
         "codescout.rateLimitPauses": {
           "type": "number",
           "default": 3,
           "minimum": 0,
           "maximum": 5,
-          "description": "Сколько раз притормозить и повторить файл при 429/сетевой ошибке (лестница 60с→120с→300с). 0 = старое поведение (скип после быстрой ретри)."
+          "description": "%rateLimitPauses.description%"
         },
         "codescout.autoResume": {
           "type": "boolean",
           "default": false,
-          "description": "Автономный режим (авто-догон): при rate-limit/сети аудит сам возобновляется из чекпоинта с backoff 30с→60с→2мин→5мин. Остановка пользователем убивает и запрос, и авто-режим. При старте VS Code автостарта нет."
+          "description": "%autoResume.description%"
         },
         "codescout.autoResumeMaxAttempts": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 1000,
-          "description": "Максимум авто-догонов за один запуск аудита. 0 = без лимита (нужно для больших проектов с мульти-пассом)."
+          "description": "%autoResumeMaxAttempts.description%"
         },
         "codescout.autoResumeMaxMinutes": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 10000,
-          "description": "Максимум минут, в течение которых авто-догон разрешён. 0 = без лимита."
+          "description": "%autoResumeMaxMinutes.description%"
         },
-        "codescout.reportLanguage": {
+        "codescout.language": {
           "type": "string",
           "enum": [
             "ru",
             "en"
           ],
           "default": "ru",
-          "description": "Language of report texts (description/suggestion/summary) generated by the model."
+          "description": "%language.description%"
         },
         "codescout.showAuditBanner": {
           "type": "boolean",
           "default": true,
-          "description": "Показывать welcome-баннер полного аудита при старте окна."
+          "description": "%showAuditBanner.description%"
         },
         "codescout.uiTheme": {
           "type": "string",
-          "enum": ["auto", "dark", "light", "custom"],
+          "enum": [
+            "auto",
+            "dark",
+            "light",
+            "custom"
+          ],
           "default": "auto",
-          "description": "Тема панелей CodeScout. auto — цвета из --vscode-* (тема VS Code); dark/light — фиксированная палитра; custom — своя палитра (codescout.customColors)."
+          "description": "%uiTheme.description%"
         },
         "codescout.customColors": {
           "type": "string",
           "default": "",
-          "description": "JSON-палитра для uiTheme=custom: {\"bg\",\"card\",\"fg\",\"desc\",\"border\",\"accent\",\"inputBg\",\"inputFg\"} — значения #hex. Битые цвета получают дефолт токена."
+          "description": "%customColors.description%"
         },
         "codescout.accentColor": {
           "type": "string",
-          "enum": ["auto", "blue", "purple", "green", "orange", "pink"],
+          "enum": [
+            "auto",
+            "blue",
+            "purple",
+            "green",
+            "orange",
+            "pink"
+          ],
           "default": "auto",
-          "description": "Акцентный цвет (--cs-accent). auto — кнопка/ссылка VS Code."
+          "description": "%accentColor.description%"
         },
         "codescout.uiDensity": {
           "type": "string",
-          "enum": ["compact", "standard"],
+          "enum": [
+            "compact",
+            "standard"
+          ],
           "default": "standard",
-          "description": "Плотность отступов (--cs-space-*)."
+          "description": "%uiDensity.description%"
         },
         "codescout.uiFontSize": {
           "type": "string",
-          "enum": ["s", "m", "l"],
+          "enum": [
+            "s",
+            "m",
+            "l"
+          ],
           "default": "m",
-          "description": "Масштаб шрифтов (--cs-font-*)."
+          "description": "%uiFontSize.description%"
         },
         "codescout.showConfidence": {
           "type": "boolean",
           "default": true,
-          "description": "Показывать процент уверенности модели у находок."
+          "description": "%showConfidence.description%"
         },
         "codescout.findingsSort": {
           "type": "string",
-          "enum": ["severity", "file", "line"],
+          "enum": [
+            "severity",
+            "file",
+            "line"
+          ],
           "default": "severity",
-          "description": "Порядок находок и секций в отчёте."
+          "description": "%findingsSort.description%"
         },
         "codescout.reportTheme": {
           "type": "string",
-          "enum": ["auto", "dark", "light"],
+          "enum": [
+            "auto",
+            "dark",
+            "light"
+          ],
           "default": "auto",
-          "description": "Тема экспортируемого HTML-отчёта (применяется и к превью)."
+          "description": "%reportTheme.description%"
         }
       }
     }

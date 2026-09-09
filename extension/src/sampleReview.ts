@@ -1,4 +1,5 @@
 import { DiffFile } from '../../src/types';
+import { t, type Lang } from '../../src/i18n';
 
 export const SAMPLE_DIFF = `diff --git a/codescout-sample.ts b/codescout-sample.ts
 new file mode 100644
@@ -32,6 +33,7 @@ export const SAMPLE_FILE: DiffFile = {
 
 export const SAMPLE_EXPECTED_BUGS = 3;
 
-export function sampleTestSummary(found: number): string {
-  return `Пример: ожидалось 2-3 бага, найдено ${found}. ${found === 0 ? '⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️' : found === 1 ? 'Нашёл только 1 из 3 — ревьюер слабый, подумай сменить модель' : 'Ревьюер жив!'}`;
+export function sampleTestSummary(found: number, lang: Lang = 'ru'): string {
+  const verdict = found === 0 ? t('sample.weak', lang) : found === 1 ? t('sample.onlyOne', lang) : t('sample.ok', lang);
+  return `${t('sample.summary', lang, { n: found })} ${verdict}`;
 }

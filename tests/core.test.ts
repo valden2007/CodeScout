@@ -15,7 +15,8 @@ import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, listAuditSourceFiles, loadIgnorePatterns, mergeCheckpointIssues, passFindingsSummary, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
-import { buildReviewPrompt } from '../src/prompt-builder';
+import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
+import { t, keysOf, normalizeLang } from '../src/i18n';
 import { ReviewIssue } from '../src/types';
 import { buildSettingsHtml } from '../extension/src/settingsHtml';
 import { uiTokensCss, type UiPrefs, type UiPrefsInput } from '../extension/src/uiPrefs';
@@ -144,7 +145,8 @@ describe('E9.5 scan cancellation', () => {
     expect(scanningHtml).toContain('codicon-debug-stop'); expect(scanningHtml).toContain('Остановить');
     expect(scanningHtml).toContain('data-command="cancelScan"');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('⛔ Сканирование остановлено пользователем');
+    expect(panel).toContain("t('status.cancelled', this.language)");
+    expect(readFileSync('src/i18n/ru.json', 'utf8')).toContain('⛔ Сканирование остановлено пользователем');
     expect(panel).toContain("message.command === 'cancelScan'");
   });
 
@@ -225,7 +227,8 @@ describe('E5.9 combined UX fixes', () => {
     expect(html).toContain('data-line="12"');
     expect(html).toContain('flex-wrap: wrap');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('Вставьте API-ключ провайдера — провайдер определится автоматически');
+    expect(extension).toContain("t('key.inputPrompt', lang)");
+    expect(readFileSync('src/i18n/ru.json', 'utf8')).toContain('Вставьте API-ключ провайдера — провайдер определится автоматически');
     expect(extension).not.toContain('Вставь API-ключ Gemini');
   });
 
@@ -244,7 +247,8 @@ describe('E5.9 combined UX fixes', () => {
     expect(panel).toContain('relative(realRoot, realCandidate)');
     expect(panel).toContain("inside.startsWith('..')");
     expect(panel).toContain('new vscode.Range(position, position)');
-    expect(panel).toContain('Файл не найден в workspace');
+    expect(panel).toContain("t('panel.errFileNotFound', this.language");
+    expect(readFileSync('src/i18n/ru.json', 'utf8')).toContain('Файл не найден в workspace');
   });
 });
 
@@ -581,10 +585,10 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(report).toContain('data-command="openSettingsPage"');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.openSettings');
-    expect(manifest).toContain('codescout.reportLanguage');
+    expect(manifest).toContain('codescout.language');
     expect(manifest).toContain('codescout.showAuditBanner');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("createWebviewPanel('codescout.settings', 'CodeScout: Настройки'");
+    expect(extension).toContain("createWebviewPanel('codescout.settings', t('title.center', currentReportLanguage())");
     expect(extension).toContain('vscode.ConfigurationTarget.Global');
     expect(extension).toContain('if (!auditBannerEnabled()) return;');
   });
@@ -642,8 +646,8 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(err).toContain('❌ Ошибка: boom');
     expect(err).toContain('.status.error');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('❌ Ошибка: ${error instanceof Error ? error.message : String(error)}');
-    expect(extension).toContain('применится к следующему ревью');
+    expect(extension).toContain("t('center.error', currentReportLanguage(), { msg: error instanceof Error ? error.message : String(error) })");
+    expect(readFileSync('src/i18n/ru.json', 'utf8')).toContain('применится к следующему ревью');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
     expect(report).toContain("icon('key')");
     expect(report).toContain("icon('settings-gear')");
@@ -874,7 +878,7 @@ describe('E1.2e custom review focus', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.customReview'");
     expect(extension).toContain('Итог кастомного ревью');
-    expect(extension).toContain("'🎯 Своё ревью: файл'");
+    expect(extension).toContain("t('progress.file.custom', lang)");
     expect((extension.match(/writeFindingsHistory\(workspaceRoot/g) ?? []).length).toBe(1);
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'customReview'");
@@ -1183,7 +1187,7 @@ describe('E1.3b RAG docs with cache and import context', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('fetchDocsForPrompt');
     expect(extension).toContain('importsContextLine(workspaceRoot, filename)');
-    expect(extension).toContain('buildReviewPrompt(file, chunk, importsLine, passLine)');
+    expect(extension).toContain('buildReviewPrompt(file, chunk, importsLine, passLine, promptLang)');
     expect(extension).toContain('аудит продолжается без текстов документации');
   });
 });
@@ -1261,7 +1265,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout'))");
     expect(extension).toContain("registerCommand('codescout.openSettingsPage', async (anchor?: string) => {");
-    expect(extension).toContain("createWebviewPanel('codescout.settings', 'CodeScout: Настройки'");
+    expect(extension).toContain("createWebviewPanel('codescout.settings', t('title.center', currentReportLanguage())");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'openSettingsPage'");
     expect(panel).toContain("executeCommand('codescout.openSettingsPage', message.anchor ?? '')");
@@ -1278,7 +1282,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes'");
     expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
-    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -1972,7 +1976,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri))");
     expect(extension).toContain('isDirectory ? `${rel}/**` : rel');
-    expect(extension).toContain("runCustomReview(context, output, panel, `Проверка выбора в проводнике: ${rel}`, 'list', globs)");
+    expect(extension).toContain("runCustomReview(context, output, panel, t('custom.explorerFocus', lang, { rel }), 'list', globs)");
     expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message))");
   });
 
@@ -2056,7 +2060,7 @@ describe('E1.3i multi-pass audit and readable logs', () => {
     expect(extension).toContain("auditPassesFromSetting(auditConfig.get<number>('auditPasses'))");
     expect(extension).toContain('for (let pass = 1; pass <= passes; pass++)');
     expect(extension).toContain('passFindingsSummary(dedupeIssues(fileIssues))');
-    expect(extension).toContain('buildReviewPrompt(file, chunk, importsLine, passLine)');
+    expect(extension).toContain('buildReviewPrompt(file, chunk, importsLine, passLine, promptLang)');
     expect(extension).toContain('const deduped = dedupeIssues(fileIssues)');
     expect(extension).toContain('🔎 файл ${index}/${total}: ${filename} — старт…');
     expect(extension).toContain('— готово за ${seconds}с');
@@ -2064,7 +2068,8 @@ describe('E1.3i multi-pass audit and readable logs', () => {
     expect(extension).not.toContain('🔎 Полный аудит: файл ${index}/${total}: ${filename} · ⏱');
     const settings = readFileSync('extension/src/settingsHtml.ts', 'utf8');
     expect(settings).toContain('id="auditPasses"');
-    expect(settings).toContain('Кругов проверки на файл (1-3)');
+    expect(settings).toContain("T('audit.passes')");
+    expect(readFileSync('src/i18n/ru.json', 'utf8')).toContain('Кругов проверки на файл');
     expect(settings).toContain("auditPasses: Number(clampInt(auditPassesInput.value, 1, 3, '1'))");
   });
 });
@@ -2208,8 +2213,8 @@ describe('G6 fix batch security and robustness', () => {
     expect(panel).toContain("const rawLine = parseInt(String(message.line), 10);");
     expect(panel).toContain('Number.isInteger(rawLine) && rawLine >= 1');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
-    expect(report).toContain('${escapeHtml(String(auditResume.done))}');
-    expect(report).toContain('${escapeHtml(String(auditResume.total))}');
+    expect(report).toContain("T('resume.title'");
+    expect(report).toContain('escapeHtml(auditResume.model)');
   });
 
   it('neutralizeFences survives reassembled nested markers', () => {
@@ -2590,7 +2595,7 @@ describe('v1.4b ui-apply fix + file picker', () => {
     expect(extension).toContain('canSelectFiles: true');
     expect(extension).toContain('canSelectFolders: true');
     expect(extension).toContain('canSelectMany: true');
-    expect(extension).toContain("openLabel: 'Добавить в scope аудита'");
+    expect(extension).toContain("openLabel: t('dialog.addToScope', currentReportLanguage())");
     expect(extension).toContain('defaultUri: vscode.Uri.file(workspaceRoot)');
     expect(extension).toContain('scopePickResult');
     expect(extension).toContain('`${rel}/**`');
@@ -2638,7 +2643,7 @@ describe('v1.4b-5 light theme tokens + form picker', () => {
     expect(panel).toContain('canSelectFiles: true');
     expect(panel).toContain('canSelectFolders: true');
     expect(panel).toContain('canSelectMany: true');
-    expect(panel).toContain("openLabel: 'Добавить в scope аудита'");
+    expect(panel).toContain("openLabel: t('dialog.addToScope', this.language)");
     expect(panel).toContain('defaultUri: vscode.Uri.file(workspaceRoot)');
     expect(panel).toContain('`${rel}/**`');
     expect(panel).toContain("type: 'scopePickResult'");
@@ -2739,7 +2744,7 @@ describe('v1.4b-7/8 appearance subtabs + auto-custom', () => {
     expect(settings).toContain("openThemeBtn.addEventListener('click', () => showSubtab('subtab-custom'))");
     expect(settings).toContain('function showSubtab(id)');
     expect(settings).toContain("uiTheme: uiThemeSelect.value");
-    expect(settings).toContain('Изменения ниже автоматически включат тему custom');
+    expect(settings).toContain("T('appear.customHint')");
   });
 
   it('new tokens land in the inline custom style', () => {
@@ -2862,5 +2867,145 @@ describe('H1.1.2 path traversal guards', () => {
     const correction = readFileSync('src/line-correction.ts', 'utf8');
     expect(correction).toContain('realpathSync(resolve(repoPath))');
     expect(correction).toContain('realpathSync(resolve(repoPath, issue.file))');
+  });
+});
+
+describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', () => {
+  const CYRILLIC = /[\u0400-\u04FF]/;
+  const ruDict = JSON.parse(readFileSync('src/i18n/ru.json', 'utf8')) as Record<string, string>;
+  const enDict = JSON.parse(readFileSync('src/i18n/en.json', 'utf8')) as Record<string, string>;
+
+  it('ru and en dictionaries have the same key set with non-empty values', () => {
+    expect(keysOf('ru').sort()).toEqual(keysOf('en').sort());
+    expect(keysOf('ru').length).toEqual(keysOf('en').length);
+    expect(keysOf('ru').length).toBeGreaterThanOrEqual(200);
+    for (const [key, value] of Object.entries(ruDict)) expect(value.trim(), key).not.toBe('');
+    for (const [key, value] of Object.entries(enDict)) expect(value.trim(), key).not.toBe('');
+    expect(ruDict['appear.language']).toBe('Язык интерфейса и отчётов');
+    expect(enDict['appear.language']).toBe('Interface & report language');
+  });
+
+  it('t() interpolates vars and falls back to the key itself', () => {
+    expect(t('badge.autoAttempts', 'ru', { n: 5 })).toBe('Автономный режим: ВКЛ (макс. 5 попыток)');
+    expect(t('badge.autoAttempts', 'en', { n: 5 })).toBe('Autonomous mode: ON (max 5 attempts)');
+    expect(t('no.such.key', 'en')).toBe('no.such.key');
+    expect(normalizeLang('xx')).toBe('ru');
+  });
+
+  it('EN render of panel and center carries no Russian; RU render still uses the dictionary', () => {
+    const issues: ReviewIssue[] = [{ file: 'src/app.ts', line: 12, code: 'const x = untrusted();', category: 'bug', severity: 'critical', description: 'Missing null check on user', suggestion: 'Add a guard clause', confidence: 0.92 }];
+    const stats = { files: 2, seconds: 3.5, critical: 1, medium: 0, low: 1 };
+    const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'src/old.ts', line: 3, category: 'docs', severity: 'low', description: 'gone' }] }, issues, 'en');
+    const panelEn = buildReportHtml(issues, stats, true, false, 'Review finished', 'success', 'AIza****1234', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Checking file 1/2: src/app.ts... · ⏱ 5s', true, 'new', diff, 'focus on security', undefined, { done: 1, total: 2, secondsLeft: 45, attempt: 1, maxAttempts: 3 }, true, 3, 90, undefined, 'nonce1', undefined, 'en');
+    expect(panelEn).not.toMatch(CYRILLIC);
+    expect(panelEn).toContain('codicon-globe');
+    expect(panelEn).toContain('Full project audit');
+    const emptyEn = buildEmptyReportHtml('AIza****1234', true, 'gemini', 'gemini-2.5-flash', false, 'new', undefined, false, 0, 0, undefined, 'nonce2', undefined, 'en');
+    expect(emptyEn).not.toMatch(CYRILLIC);
+    const centerState = {
+      keyMask: 'AIza****1234', keyConfigured: true, provider: 'custom', model: 'llama', baseUrl: 'http://localhost:11434/v1',
+      reportLanguage: 'en' as const, showAuditBanner: true, docLinks: ['https://docs.example.com'], docMaxKb: 50, docMaxLinks: 5,
+      maxLines: 0, maxFiles: 100, autoResume: true, autoResumeMaxAttempts: 3, autoResumeMaxMinutes: 90, auditScope: 'src/**',
+      auditPasses: 2, rateLimitPauses: 3, version: '1.4.0', uiTheme: 'custom' as const, accentColor: 'blue' as const,
+      uiDensity: 'compact' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const,
+      reportTheme: 'auto' as const, customColors: '{}'
+    };
+    const centerEn = buildSettingsHtml(centerState, '✅ Saved · custom · llama', 'ok', 'nonce3', '', undefined, 'en');
+    expect(centerEn).not.toMatch(CYRILLIC);
+    expect(centerEn).toContain('Basic');
+    expect(centerEn).toContain('Customization');
+    expect(centerEn).toContain('Interface & report language');
+    const centerRu = buildSettingsHtml(centerState, '✅ Сохранено', 'ok', 'nonce4', '', undefined, 'ru');
+    expect(centerRu).toContain('Язык интерфейса и отчётов');
+    expect(centerRu).toContain('Фон страницы');
+    const panelRu = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'src/app.ts', line: 12, category: 'bug', severity: 'critical', description: 'same' }] }, issues), '', undefined, undefined, false, 0, 0, undefined, 'nonce5', undefined, 'ru');
+    expect(panelRu).toContain('Полный аудит проекта');
+    expect(panelRu).toContain('🆕 новых: 0 · ✅ починено: 0 · 🔁 осталось: 1');
+  });
+
+  it('reportLanguage migrates to language once and the old key is dropped', () => {
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('"codescout.language"');
+    expect(manifest).not.toContain('"codescout.reportLanguage"');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('async function migrateLanguageSetting(context: vscode.ExtensionContext)');
+    expect(extension).toContain("context.secrets.get('codescout.languageMigrated')");
+    expect(extension).toContain("config.inspect<string>('reportLanguage')");
+    expect(extension).toContain("config.update('language', legacyValue === 'en' ? 'en' : 'ru', vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain("config.update('reportLanguage', undefined, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain('void migrateLanguageSetting(context);');
+    expect(extension).not.toContain("get<string>('reportLanguage')");
+  });
+
+  it('prompt language follows the language setting: en is all-English, ru keeps Russian scaffolding', () => {
+    const file = { filename: 'src/app.ts', status: 'M', additions: 2, deletions: 0, patch: '@@ -1 +1,2 @@\n+const a = 1;' } as const;
+    const enPrompt = buildReviewPrompt(file as never, '@@ -1 +1,2 @@\n+const a = 1;', 'a.ts imports: src/b.ts', 'dead code at 10', 'en');
+    expect(enPrompt).toContain('these files are not in the patch');
+    expect(enPrompt).toContain('In the previous pass on this file');
+    expect(enPrompt).not.toMatch(CYRILLIC);
+    const ruPrompt = buildReviewPrompt(file as never, '@@ -1 +1,2 @@\n+const a = 1;', 'a.ts imports: src/b.ts', 'dead code at 10', 'ru');
+    expect(ruPrompt).toContain('эти файлы не в патче');
+    expect(ruPrompt).toContain('В прошлый круг по этому файлу');
+    expect(SYSTEM_PROMPT).not.toMatch(CYRILLIC);
+    expect(withReportLanguage(SYSTEM_PROMPT, 'en')).toContain('in English');
+    expect(withReportLanguage(SYSTEM_PROMPT, 'en')).not.toMatch(CYRILLIC);
+    expect(withReportLanguage(SYSTEM_PROMPT, 'ru')).toContain('по-русски');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("return vscode.workspace.getConfiguration('codescout').get<string>('language') === 'en' ? 'en' : 'ru'");
+    expect((extension.match(/currentReportLanguage\(\)/g) ?? []).length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('globe button toggles the language setting without a reload and re-renders both pages', () => {
+    const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
+    expect(report).toContain("icon('globe')");
+    expect(report).toContain('data-command="toggleLanguage"');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'toggleLanguage'");
+    expect(panel).toContain("executeCommand('codescout.toggleLanguage')");
+    expect(panel).toContain("'customColors', 'language']");
+    expect(panel).toContain("this.language = normalizeLang(config.get<string>('language', 'ru'))");
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("registerCommand('codescout.toggleLanguage'");
+    expect(extension).toContain("config.get<string>('language') === 'en' ? 'ru' : 'en'");
+    expect(extension).toContain("await config.update('language', next, vscode.ConfigurationTarget.Global)");
+    expect(extension).toContain('rerenderSettings();');
+    expect(extension).toContain("'docMaxLinks', 'language', 'showAuditBanner'");
+  });
+
+  it('Базовые language select shares its source of truth with the globe button', () => {
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).toContain("<label for=\"reportLanguage\">${T('appear.language')}<");
+    expect(center).toContain('<select id="reportLanguage">');
+    expect(center).toContain('state.reportLanguage === ');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('reportLanguage: currentReportLanguage()');
+    expect(extension).toContain("const language = message.reportLanguage === 'en' ? 'en' : 'ru'");
+    expect(extension).toContain("await config.update('language', language, vscode.ConfigurationTarget.Global)");
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('this.uiPrefs, this.language)');
+  });
+
+  it('manifest nls: every %token% resolves, default file is English, ru file is Russian', () => {
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    const tokens = [...manifest.matchAll(/"%([a-zA-Z.]+)%"/g)].map((match) => match[1]);
+    expect(tokens.length).toBeGreaterThanOrEqual(25);
+    const nlsDefault = JSON.parse(readFileSync('extension/package.nls.json', 'utf8')) as Record<string, string>;
+    const nlsRu = JSON.parse(readFileSync('extension/package.nls.ru.json', 'utf8')) as Record<string, string>;
+    for (const token of [...new Set(tokens)]) {
+      expect(nlsDefault[token], token).toBeTruthy();
+      expect(nlsRu[token], token).toBeTruthy();
+      expect(nlsDefault[token]).not.toMatch(CYRILLIC);
+    }
+    expect(nlsRu['language.description']).toContain('Язык интерфейса');
+    expect(nlsDefault['language.description']).toContain('RU/EN');
+  });
+
+  it('sample summary and diff strip are localized', () => {
+    expect(sampleTestSummary(3)).toContain('Ревьюер жив!');
+    expect(sampleTestSummary(0)).toContain('слишком слабая');
+    expect(sampleTestSummary(3, 'en')).toBe('Sample: expected 2-3 bugs, found 3. Reviewer is alive!');
+    expect(sampleTestSummary(0, 'en')).toContain('too weak');
+    const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'a.ts', line: 1, category: 'bug', severity: 'low', description: 'x' }] }, [{ file: 'b.ts', line: 2, category: 'bug', severity: 'low', description: 'y', code: '', confidence: 0.5 }], 'en');
+    expect(diff?.summary).toBe('🆕 new: 1 · ✅ fixed: 1 · 🔁 unchanged: 0');
   });
 });

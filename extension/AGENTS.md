@@ -337,6 +337,24 @@ pre-design now.
     включат тему custom" shows while theme!=custom. The Базовые
     "Theme Editor" button just switches to the Кастомизация sub-tab.
     Tests: 222 (sidebar 5 items, subtabs, auto-custom source, tokens).
+ 18. i18n ru/en (v1.4b-5): src/i18n/{ru,en}.json + t(key, lang, vars) —
+    ALL panel/center strings (buttons, statuses, badges, section/subtab
+    headers, labels, hints, save-bar, custom-review form, palette editor,
+    About), host-sent progress/status/error strings, native notifications,
+    and center save statuses go through t(); Output logs, severities,
+    command/setting names, code/paths and tech terms (scope, glob,
+    чекпоинт, nonce) are NOT translated (whitelist). codescout.language
+    ru|en (default ru) replaces reportLanguage: migrateLanguageSetting
+    runs once (legacy value → language, old key cleared, SecretStorage
+    flag codescout.languageMigrated). Globe button (codicon-globe,
+    data-command=toggleLanguage) in the panel header flips the setting —
+    no Reload: panel and center re-render via onDidChangeConfiguration;
+    the Базовые «Язык интерфейса и отчётов» select and the globe share
+    one source of truth (codescout.language). Prompt language = language:
+    en makes system+review prompts fully English (withReportLanguage(en),
+    buildReviewPrompt(...,'en') notes), ru keeps the old scaffolding.
+    Manifest nls: %tokens% + package.nls.json (English) +
+    package.nls.ru.json (Russian). Tests: 231.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

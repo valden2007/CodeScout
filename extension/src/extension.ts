@@ -13,10 +13,11 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, autoResumeBadgeText, autoResumeDecision, autoResumeLimitFromSetting, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
+import { t } from '../../src/i18n';
 
 const SECRET_KEY = 'codescout.apiKey';
 const SECRET_PROVIDER = 'codescout.provider';
@@ -101,11 +102,11 @@ async function chooseLiveModel(selection: ProviderSelection, placeHolder: string
   try {
     models = await fetchModels(selection);
   } catch {
-    const manual = await vscode.window.showInputBox({ prompt: 'Не удалось получить /models. Впиши модель вручную', value: selection.model });
+    const manual = await vscode.window.showInputBox({ prompt: t('model.inputFetchFailed', currentReportLanguage()), value: selection.model });
     return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
   }
   if (models.length === 0) {
-    const manual = await vscode.window.showInputBox({ prompt: 'Список моделей пуст. Впиши модель вручную', value: selection.model });
+    const manual = await vscode.window.showInputBox({ prompt: t('model.inputEmpty', currentReportLanguage()), value: selection.model });
     return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
   }
   const picked = await vscode.window.showQuickPick([preferredLiveModel(models, selection.model), ...models.filter((model) => model !== preferredLiveModel(models, selection.model))], { placeHolder, matchOnDescription: true });
@@ -123,7 +124,7 @@ async function validateDefaultModel(context: vscode.ExtensionContext, selection:
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
       return { model: corrected, userChosen: false };
     }
-    return chooseLiveModel(selection, 'Выберите модель из доступных');
+    return chooseLiveModel(selection, t('model.pickTitle', currentReportLanguage()));
   } catch {
     return { model: selection.model, userChosen: false };
   }
@@ -162,11 +163,11 @@ function rateLimitPausesFromSetting(value: unknown): number {
   return Math.min(5, n);
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep): Promise<ScanResult> {
+async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru'): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
-    throw new Error(`Не найден API-ключ для ${selection.provider}. Укажи codescout.apiKey или выполни CodeScout: set API key. Получить ключ: ${keyUrl(selection.provider) ?? 'настрой codescout.baseUrl / CODESCOUT_BASE_URL'}`);
+    throw new Error(`${t('panel.errNoKey', promptLang, { p: selection.provider })}${t('panel.keyGet', promptLang, { x: keyUrl(selection.provider) ?? t('panel.keyGetAlt', promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
@@ -190,7 +191,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
             const elapsedMs = Date.now() - startedAt;
             onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
             onThinking?.(elapsedMs);
-            const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine));
+            const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
             const parsed = parseReviewResponse(raw, file.filename);
             fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
           }
@@ -229,7 +230,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
 
 async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
-  if (!workspaceRoot) throw new Error('Открой папку с Git-репозиторием в VS Code и повтори команду.');
+  if (!workspaceRoot) throw new Error(t('panel.errNoGit', currentReportLanguage()));
   if (signal?.aborted) throw abortError();
   return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, undefined, undefined, (filename) => importsContextLine(workspaceRoot, filename));
 }
@@ -245,8 +246,8 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
   output.appendLine('CodeScout: running built-in self-test...');
   panel.setScanning(true);
   try {
-    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(SYSTEM_PROMPT, currentReportLanguage()));
-    const summary = sampleTestSummary(result.issues.length);
+    const result = await reviewFiles(context, [SAMPLE_FILE], undefined, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(SYSTEM_PROMPT, currentReportLanguage()));
+    const summary = sampleTestSummary(result.issues.length, currentReportLanguage());
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
     for (const issue of result.issues) output.appendLine(formatIssue(issue));
@@ -321,7 +322,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
   output.show(true);
   panel.setScanning(true);
   if (!workspaceRoot) {
-    panel.setError('Открой папку workspace для полного аудита.');
+    panel.setError(t('panel.errNoWorkspaceAudit', currentReportLanguage()));
     if (activeAbortController === controller) activeAbortController = undefined;
     return { kind: 'done' };
   }
@@ -394,7 +395,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       writeAuditProgress(workspaceRoot, state);
     };
     persist();
-    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Полный аудит: файл', elapsedMs); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
@@ -406,7 +407,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         const seconds = Math.max(0, Math.round(((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) / 1000) * 10) / 10);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`), auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`));
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`), auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`), undefined, currentReportLanguage());
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -418,7 +419,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     } else {
       clearAuditProgress(workspaceRoot);
     }
-    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues);
+    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage());
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
     const resumeView = result.skippedFiles > 0 ? progressView(state) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
@@ -443,9 +444,10 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
 }
 
 async function runCustomReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, focusArg?: string, scopeArg?: string, globsArg?: string): Promise<void> {
+  const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
-    void vscode.window.showErrorMessage('Открой папку workspace, чтобы запустить своё ревью.');
+    void vscode.window.showErrorMessage(t('panel.errNoWorkspaceCustom', lang));
     return;
   }
   let focus = (focusArg ?? '').trim();
@@ -454,20 +456,20 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     ? []
     : (globsArg ?? '').split(',').map((glob) => glob.trim()).filter(Boolean);
   if (!focus) {
-    focus = (await vscode.window.showInputBox({ prompt: 'Что проверить? Опиши фокус ревью одной строкой', placeHolder: 'например: проверить обработку ошибок в сетевых вызовах' }))?.trim() ?? '';
+    focus = (await vscode.window.showInputBox({ prompt: t('custom.focusPrompt', lang), placeHolder: t('custom.focusPlaceholder', lang) }))?.trim() ?? '';
     if (!focus) return;
     const picked = await vscode.window.showQuickPick(
       [
-        { label: 'Все файлы проекта', value: 'all' },
-        { label: 'Только открытый файл', value: 'active' },
-        { label: 'Список файлов (глобы через запятую)', value: 'list' }
+        { label: t('form.scopeAll', lang), value: 'all' },
+        { label: t('form.scopeActive', lang), value: 'active' },
+        { label: t('form.scopeList', lang), value: 'list' }
       ],
-      { placeHolder: 'Какие файлы проверяем?' }
+      { placeHolder: t('custom.scopePlaceholder', lang) }
     );
     if (!picked) return;
     scope = picked.value;
     if (scope === 'list') {
-      const globsInput = await vscode.window.showInputBox({ prompt: 'Глобы файлов через запятую', placeHolder: 'src/**/*.ts, tests/*.py' });
+      const globsInput = await vscode.window.showInputBox({ prompt: t('custom.globsPrompt', lang), placeHolder: 'src/**/*.ts, tests/*.py' });
       globs.length = 0;
       globs.push(...(globsInput ?? '').split(',').map((glob) => glob.trim()).filter(Boolean));
     }
@@ -487,18 +489,18 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
     for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
     if (collection.files.length === 0) {
-      panel.setError(scope === 'list' ? `По глобам "${globs.join(', ')}" не подошло ни одного файла (проверь игнор-листы).` : 'Нет доступных файлов для ревью.');
+      panel.setError(scope === 'list' ? t('panel.errNoGlobMatch', lang, { globs: globs.join(', ') }) : t('panel.errNoFiles', lang));
       output.appendLine('Своё ревью не запущено: файлов для проверки не найдено.');
       return;
     }
     if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
-    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🎯 Своё ревью: файл', elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`));
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`), undefined, lang);
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
-    void vscode.window.showInformationMessage(`CodeScout: своё ревью завершено, найдено ${result.issues.length}`);
+    void vscode.window.showInformationMessage(t('notify.customDone', lang, { n: result.issues.length }));
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
@@ -511,13 +513,14 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
 }
 
 async function runSelectionReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, uri?: vscode.Uri): Promise<void> {
+  const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
-    void vscode.window.showErrorMessage('Открой папку workspace, чтобы проверить файл/папку.');
+    void vscode.window.showErrorMessage(t('panel.errNoWorkspaceReview', lang));
     return;
   }
   if (!uri) {
-    void vscode.window.showErrorMessage('CodeScout: проверять можно через контекстное меню проводника (ПКМ по файлу или папке).');
+    void vscode.window.showErrorMessage(t('panel.errUseExplorer', lang));
     return;
   }
   const target = uri.fsPath;
@@ -525,17 +528,17 @@ async function runSelectionReview(context: vscode.ExtensionContext, output: vsco
   try {
     isDirectory = statSync(target).isDirectory();
   } catch {
-    void vscode.window.showErrorMessage(`CodeScout: не удалось прочитать выбранный путь: ${target}`);
+    void vscode.window.showErrorMessage(t('panel.errPathUnreadable', lang, { path: target }));
     return;
   }
   const rel = relative(workspaceRoot, resolve(target)).replaceAll('\\', '/');
   if (!rel || rel.startsWith('..')) {
-    void vscode.window.showErrorMessage('CodeScout: выбранный путь вне workspace — проверяю только файлы проекта.');
+    void vscode.window.showErrorMessage(t('panel.errPathOutside', lang));
     return;
   }
   const globs = isDirectory ? `${rel}/**` : rel;
   // разовая проверка выбора: codescout.auditScope здесь сознательно игнорируется
-  await runCustomReview(context, output, panel, `Проверка выбора в проводнике: ${rel}`, 'list', globs);
+  await runCustomReview(context, output, panel, t('custom.explorerFocus', lang, { rel }), 'list', globs);
 }
 
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel, signal?: AbortSignal): Promise<void> {
@@ -551,7 +554,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, '🔎 Проверяю файл', elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -609,7 +612,7 @@ interface SettingsMessage {
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
 
 async function openOrCreateRules(workspaceRoot: string | undefined): Promise<string> {
-  if (!workspaceRoot) throw new Error('Открой папку workspace в VS Code');
+  if (!workspaceRoot) throw new Error(t('rules.errNoWorkspace', currentReportLanguage()));
   const directory = join(workspaceRoot, '.codescout');
   const rulesPath = join(directory, 'rules.md');
   if (!existsSync(rulesPath)) {
@@ -622,7 +625,7 @@ async function openOrCreateRules(workspaceRoot: string | undefined): Promise<str
 }
 
 function currentReportLanguage(): 'ru' | 'en' {
-  return vscode.workspace.getConfiguration('codescout').get<string>('reportLanguage') === 'en' ? 'en' : 'ru';
+  return vscode.workspace.getConfiguration('codescout').get<string>('language') === 'en' ? 'en' : 'ru';
 }
 
 function auditBannerEnabled(): boolean {
@@ -645,6 +648,20 @@ function readUiPrefs(): UiPrefs {
 
 let settingsPanel: vscode.WebviewPanel | undefined;
 let settingsConfigSubscription: vscode.Disposable | undefined;
+let rerenderSettings: () => void = () => {};
+
+async function migrateLanguageSetting(context: vscode.ExtensionContext): Promise<void> {
+  const config = vscode.workspace.getConfiguration('codescout');
+  const done = (await context.secrets.get('codescout.languageMigrated')) === 'true';
+  if (done) return;
+  const legacy = config.inspect<string>('reportLanguage');
+  const legacyValue = legacy?.globalValue ?? legacy?.workspaceValue;
+  const currentLang = config.inspect<string>('language');
+  const hasLang = Boolean(currentLang?.globalValue || currentLang?.workspaceValue);
+  if (legacyValue && !hasLang) await config.update('language', legacyValue === 'en' ? 'en' : 'ru', vscode.ConfigurationTarget.Global);
+  if (legacyValue) await config.update('reportLanguage', undefined, vscode.ConfigurationTarget.Global);
+  await context.secrets.store('codescout.languageMigrated', 'true');
+}
 
 async function fileIsDirectory(uri: vscode.Uri): Promise<boolean> {
   try {
@@ -689,6 +706,7 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
 }
 
 async function saveKeyProvider(context: vscode.ExtensionContext, message: SettingsMessage): Promise<string> {
+  const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
   const key = message.apiKey?.trim();
   const notes: string[] = [];
@@ -696,7 +714,7 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
   let model = selection.model;
   if (key) {
     await context.secrets.store(SECRET_KEY, key);
-    notes.push('ключ сохранён');
+    notes.push(t('center.noteKey', lang));
   }
   if (message.providerKey && message.providerKey !== 'auto') {
     provider = message.providerKey as ProviderName;
@@ -709,22 +727,22 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     if (detected) {
       provider = detected.provider;
       if (!selection.userChosenModel) model = detected.model;
-      notes.push(`провайдер определён автоматически: ${provider}`);
+      notes.push(t('center.noteProviderAuto', lang, { p: provider }));
     } else {
-      notes.push('префикс ключа не распознан — выбери провайдера вручную');
+      notes.push(t('center.noteProviderManual', lang));
     }
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
   const baseUrl = message.baseUrl?.trim() || '';
   await vscode.workspace.getConfiguration('codescout').update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
-  if (provider === 'custom' && !baseUrl) notes.push('custom без Base URL — заполни поле или env CODESCOUT_BASE_URL');
+  if (provider === 'custom' && !baseUrl) notes.push(t('center.noteCustomNoUrl', lang));
   const storedKey = key || (await context.secrets.get(SECRET_KEY));
   if (storedKey) {
     const validated = await validateDefaultModel(context, { provider, model, key: storedKey, baseUrl: baseUrl || selection.baseUrl }, true);
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `✅ Сохранено · ${provider} · ${model}${notes.length ? ` (${notes.join('; ')})` : ''}`;
+  return `${t('center.savedKey', lang, { p: provider, m: model })}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -743,25 +761,34 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
   };
   void syncKeyStatus();
+  void migrateLanguageSetting(context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
+    vscode.commands.registerCommand('codescout.toggleLanguage', async () => {
+      const config = vscode.workspace.getConfiguration('codescout');
+      const next = config.get<string>('language') === 'en' ? 'ru' : 'en';
+      await config.update('language', next, vscode.ConfigurationTarget.Global);
+      rerenderSettings();
+    }),
     vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {
       const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
         if (settingsPanel) {
+          settingsPanel.title = t('title.center', currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'codicon.css')).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets);
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets, currentReportLanguage());
         }
       };
+      rerenderSettings = () => { void render(); };
       if (!settingsPanel) {
-        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', 'CodeScout: Настройки', vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
+        settingsPanel = vscode.window.createWebviewPanel('codescout.settings', t('title.center', currentReportLanguage()), vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => {
           settingsConfigSubscription?.dispose();
           settingsConfigSubscription = undefined;
           settingsPanel = undefined;
         });
         settingsConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'reportLanguage', 'showAuditBanner'];
+          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'language', 'showAuditBanner'];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
         });
@@ -772,7 +799,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (message.command === 'pickScope') {
               const workspaceRoot = getWorkspaceRoot();
               if (!workspaceRoot) { await settingsPanel?.webview.postMessage({ type: 'scopePickResult', globs: [], outside: [], noWorkspace: true }); return; }
-              const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: 'Добавить в scope аудита' });
+              const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: t('dialog.addToScope', currentReportLanguage()) });
               const globs: string[] = [];
               const outside: string[] = [];
               for (const uri of picked ?? []) {
@@ -791,15 +818,15 @@ export function activate(context: vscode.ExtensionContext): void {
               const config = vscode.workspace.getConfiguration('codescout');
               const language = message.reportLanguage === 'en' ? 'en' : 'ru';
               const banner = message.showAuditBanner !== false;
-              await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
+              await config.update('language', language, vscode.ConfigurationTarget.Global);
               await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
-              await render(`✅ Сохранено · Язык отчётов: ${language.toUpperCase()} (применится к следующему ревью) · баннер аудита ${banner ? 'включён' : 'выключен'}`);
+              await render(t('center.savedLang', currentReportLanguage(), { L: language.toUpperCase(), B: t(banner ? 'center.on' : 'center.off', currentReportLanguage()) }));
             } else if (message.command === 'clearApiKey') {
               await vscode.commands.executeCommand('codescout.clearApiKey');
-              await render('✅ Ключ удалён из SecretStorage');
+              await render(t('center.keyCleared', currentReportLanguage()));
           } else if (message.command === 'chooseModel') {
             await vscode.commands.executeCommand('codescout.chooseModel');
-            await render('✅ Модель обновлена из живого списка');
+            await render(t('center.modelRefresh', currentReportLanguage()));
           } else if (message.command === 'saveDocLinks') {
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
             const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -821,7 +848,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('autoResumeMaxMinutes', autoResumeMaxMinutes, vscode.ConfigurationTarget.Global);
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
-            await render(`✅ Сохранено · Документация: ${links.length} ссылок, док ≤ ${maxKb}KB, ссылок в аудит ≤ ${maxLinks} · maxLines: ${maxLines === 0 ? 'без лимита (чанки по 800)' : `${maxLines} строк`} · кругов: ${auditPasses} · автономный режим ${autoResume ? `включён (${autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes).replace('Автономный режим: ВКЛ ', '')})` : 'выключен'} · scope: ${auditScope || 'все файлы'}`);
+            await render(t('center.savedProject', currentReportLanguage(), { n: links.length, kb: maxKb, max: maxLinks, ml: maxLines === 0 ? t('center.maxLinesNo', currentReportLanguage()) : t('center.maxLinesN', currentReportLanguage(), { n: maxLines }), p: auditPasses, ar: autoResume ? `${t('center.on', currentReportLanguage())} (${autoResumeBadgeDetail(autoResumeMaxAttempts, autoResumeMaxMinutes, currentReportLanguage())})` : t('center.off', currentReportLanguage()), sc: auditScope || t('center.scopeAll', currentReportLanguage()) }));
           } else if (message.command === 'saveAll') {
             const config = vscode.workspace.getConfiguration('codescout');
             const parts: string[] = [];
@@ -831,7 +858,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             const language = message.reportLanguage === 'en' ? 'en' : 'ru';
             const banner = message.showAuditBanner !== false;
-            await config.update('reportLanguage', language, vscode.ConfigurationTarget.Global);
+            await config.update('language', language, vscode.ConfigurationTarget.Global);
             await config.update('showAuditBanner', banner, vscode.ConfigurationTarget.Global);
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
             const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -874,7 +901,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('findingsSort', ui.findingsSort, vscode.ConfigurationTarget.Global);
             await config.update('reportTheme', ui.reportTheme, vscode.ConfigurationTarget.Global);
             await config.update('customColors', JSON.stringify(ui.customColors), vscode.ConfigurationTarget.Global);
-            parts.push(`✅ Сохранено · аудит: кругов ${auditPasses}, maxLines ${maxLines === 0 ? '∞' : maxLines}, maxFiles ${maxFiles}, авто-догон ${autoResume ? 'вкл' : 'выкл'} · проект: ${links.length} док(ов), scope ${auditScope || 'все'} · язык ${language.toUpperCase()} · вид: ${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}`);
+            parts.push(t('center.savedAll', currentReportLanguage(), { p: auditPasses, ml: maxLines === 0 ? '∞' : maxLines, f: maxFiles, ar: t(autoResume ? 'center.autoIn' : 'center.autoOut', currentReportLanguage()), n: links.length, sc: auditScope || t('center.scopeAll', currentReportLanguage()), L: language.toUpperCase(), ui: `${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}` }));
             await render(parts.join(' · '));
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();
@@ -883,13 +910,13 @@ export function activate(context: vscode.ExtensionContext): void {
           } else if (message.command === 'openRules') {
             try {
               await openOrCreateRules(getWorkspaceRoot());
-              await render('✅ Открыт .codescout/rules.md — правки подхватываются следующим ревью');
+              await render(t('center.rulesOpened', currentReportLanguage()));
             } catch (error) {
-              await render(`❌ Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
+              await render(t('center.error', currentReportLanguage(), { msg: error instanceof Error ? error.message : String(error) }), 'error');
             }
           }
           })().catch((error: unknown) => {
-            void render(`❌ Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
+            void render(t('center.error', currentReportLanguage(), { msg: error instanceof Error ? error.message : String(error) }), 'error');
           });
         });
       } else {
@@ -913,11 +940,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       const workspaceRoot = getWorkspaceRoot();
       if (workspaceRoot && existsSync(join(workspaceRoot, CONTEXT_FILE))) {
-        const answer = await vscode.window.showWarningMessage('Удалить сохранённый контекст проекта?', { modal: true }, 'Удалить');
-        if (answer === 'Удалить') unlinkSync(join(workspaceRoot, CONTEXT_FILE));
+        const answer = await vscode.window.showWarningMessage(t('onboarding.resetConfirm', currentReportLanguage()), { modal: true }, t('common.delete', currentReportLanguage()));
+        if (answer === t('common.delete', currentReportLanguage())) unlinkSync(join(workspaceRoot, CONTEXT_FILE));
       }
       if (workspaceRoot) panel.setWelcomeBanner(true, 'new');
-      void vscode.window.showInformationMessage('✅ Онбординг сброшен');
+      void vscode.window.showInformationMessage(t('onboarding.resetDone', currentReportLanguage()));
     }),
     vscode.commands.registerCommand('codescout.cancelScan', () => {
       autoResumeCancelled = true;
@@ -927,12 +954,13 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('Scan cancelled by user');
     }),
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
-      const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: 'Вставьте API-ключ провайдера — провайдер определится автоматически' });
+      const lang = currentReportLanguage();
+      const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('key.inputPrompt', lang) });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
       let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
       if (!selection) {
-        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'custom'], { placeHolder: 'Выбери провайдер' });
+        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'custom'], { placeHolder: t('key.pickProvider', lang) });
         if (!picked) return;
         selection = { provider: picked as ProviderName, model: defaultModel(picked) };
       }
@@ -943,16 +971,16 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.store(SECRET_MODEL, selection.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
-      const source = detected ? 'определено автоматически' : 'выбрано вручную';
-      void vscode.window.showInformationMessage(`✅ Ключ сохранён. Провайдер: ${selection.provider}, модель: ${selection.model} (${source})`);
+      const source = detected ? t('key.sourceAuto', lang) : t('key.sourceManual', lang);
+      void vscode.window.showInformationMessage(t('key.savedNotify', lang, { p: selection.provider, m: selection.model, s: source }));
     }),
     vscode.commands.registerCommand('codescout.chooseModel', async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
-        void vscode.window.showErrorMessage('Сначала сохрани API-ключ через CodeScout: set API key.');
+        void vscode.window.showErrorMessage(t('key.needFirst', currentReportLanguage()));
         return;
       }
-      const chosen = await chooseLiveModel(current, 'Выбери доступную модель');
+      const chosen = await chooseLiveModel(current, t('model.pickTitleShort', currentReportLanguage()));
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
       panel.setKey(maskApiKey(current.key), current.provider, chosen.model);
@@ -964,14 +992,15 @@ export function activate(context: vscode.ExtensionContext): void {
       });
     }),
     vscode.commands.registerCommand('codescout.clearApiKey', async () => {
-      const answer = await vscode.window.showWarningMessage('Удалить сохранённый API-ключ CodeScout?', { modal: true }, 'Удалить');
-      if (answer !== 'Удалить') return;
+      const lang = currentReportLanguage();
+      const answer = await vscode.window.showWarningMessage(t('key.deleteConfirm', lang), { modal: true }, t('common.delete', lang));
+      if (answer !== t('common.delete', lang)) return;
       await context.secrets.delete(SECRET_KEY);
       await context.secrets.delete(SECRET_PROVIDER);
       await context.secrets.delete(SECRET_MODEL);
       await context.secrets.delete(SECRET_MODEL_CHOSEN);
       panel.setKey(undefined);
-      void vscode.window.showInformationMessage('Ключ удалён из защищённого хранилища');
+      void vscode.window.showInformationMessage(t('key.deletedNotify', lang));
     })
   );
   void (async () => {

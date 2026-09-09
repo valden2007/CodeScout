@@ -6,6 +6,7 @@ import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets } from './reportHtml';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
+import { normalizeLang, t, type Lang } from '../../src/i18n';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 
 interface ScanMessage {
@@ -72,6 +73,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private autoResumeMaxAttempts = 0;
   private autoResumeMaxMinutes = 0;
   private uiPrefs: UiPrefs = DEFAULT_UI_PREFS;
+  private language: Lang = 'ru';
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -93,6 +95,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       reportTheme: config.get<string>('reportTheme', 'auto') as UiPrefs['reportTheme'],
       customColors: config.get<string>('customColors', '')
     });
+    this.language = normalizeLang(config.get<string>('language', 'ru'));
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -108,7 +111,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     this.refreshAutoResumeSettings();
     this.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-      const watched = ['autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors'];
+      const watched = ['autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'language'];
       if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
       this.refreshAutoResumeSettings();
       this.render();
@@ -138,6 +141,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.openSettings');
       } else if (message.command === 'openSettingsPage') {
         void vscode.commands.executeCommand('codescout.openSettingsPage', message.anchor ?? '');
+      } else if (message.command === 'toggleLanguage') {
+        void vscode.commands.executeCommand('codescout.toggleLanguage');
       } else if (message.command === 'customReview') {
         void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {
@@ -156,7 +161,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         const requestedUri = vscode.Uri.file(resolve(message.file));
         const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
         if (!root) {
-          void vscode.window.showErrorMessage('Открой папку workspace, чтобы перейти к файлу.');
+          void vscode.window.showErrorMessage(t('panel.errOpenFileNoWorkspace', this.language));
           return;
         }
         // Fallback joinPath-контракт: vscode.Uri.joinPath(root.uri, message.file) даёт тот же candidate для относительных путей
@@ -166,7 +171,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         const inside = relative(realRoot, realCandidate);
         const outsideWorkspace = inside === '' || inside.startsWith('..') || isAbsolute(inside);
         if (outsideWorkspace) {
-          void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
+          void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file }));
           return;
         }
         const fileUri = vscode.Uri.file(realCandidate);
@@ -180,7 +185,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
             editor.selection = new vscode.Selection(position, position);
           });
         }, () => {
-          void vscode.window.showErrorMessage(`Файл не найден в workspace: ${message.file}`);
+          void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file ?? '' }));
         });
       }
     }, undefined, []);
@@ -195,7 +200,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       await webview.postMessage({ type: 'scopePickResult', globs: [], outside: [], noWorkspace: true });
       return;
     }
-    const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: 'Добавить в scope аудита' });
+    const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode.Uri.file(workspaceRoot), openLabel: t('dialog.addToScope', this.language) });
     const globs: string[] = [];
     const outside: string[] = [];
     for (const uri of picked ?? []) {
@@ -259,9 +264,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     return this.view && this.scanning ? this.view.webview : undefined;
   }
 
-  setProgress(index: number, total: number, filename: string, label = '🔎 Проверяю файл', elapsedMs = 0): void {
+  setProgress(index: number, total: number, filename: string, label?: string, elapsedMs = 0): void {
     this.scanning = true;
-    this.progressMessage = `${label} ${index}/${total}: ${filename}... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
+    this.progressMessage = t('progress.fileLine', this.language, { label: label ?? t('progress.file.check', this.language), index, total, file: filename, s: Math.floor(elapsedMs / 1000) });
     const webview = this.liveWebview();
     if (webview) {
       safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs });
@@ -272,7 +277,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
 
   setModelThinking(elapsedMs = 0): void {
     this.scanning = true;
-    this.progressMessage = `🤖 Модель думает... · ⏱ ${Math.floor(elapsedMs / 1000)}с`;
+    this.progressMessage = t('status.thinking', this.language, { s: Math.floor(elapsedMs / 1000) });
     const webview = this.liveWebview();
     if (webview) {
       safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs });
@@ -284,7 +289,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   setRetry(event: RetryEvent, model = 'model'): void {
     this.scanning = true;
     this.statusKind = 'retry';
-    this.statusMessage = `⏳ Rate limit у ${model}, ожидание ${event.waitSeconds}с (попытка ${event.attempt}/${event.maxRetries})...`;
+    this.statusMessage = t('status.retry', this.language, { model, s: event.waitSeconds, a: event.attempt, m: event.maxRetries });
     const webview = this.liveWebview();
     if (webview) {
       safePost(webview, { type: 'status', message: this.statusMessage, kind: 'retry' });
@@ -309,7 +314,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.progressMessage = '';
     this.autoResumeView = undefined;
     this.statusKind = 'error';
-    this.statusMessage = '⛔ Сканирование остановлено пользователем';
+    this.statusMessage = t('status.cancelled', this.language);
     this.render();
   }
 
@@ -348,7 +353,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     };
     const nonce = randomBytes(16).toString('hex');
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language);
   }
 }

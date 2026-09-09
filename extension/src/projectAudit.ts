@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileS
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
+import { t, type Lang } from '../../src/i18n';
 
 function controlSafe(value: string): string {
   return value
@@ -522,6 +523,13 @@ export function autoResumeBadgeText(maxAttempts: number, maxMinutes: number): st
   return 'Автономный режим: ВКЛ (без лимита)';
 }
 
+export function autoResumeBadgeDetail(maxAttempts: number, maxMinutes: number, lang: Lang = 'ru'): string {
+  if (maxAttempts > 0 && maxMinutes > 0) return t('badge.autoDetailBoth', lang, { a: maxAttempts, m: maxMinutes });
+  if (maxAttempts > 0) return t('badge.autoDetailAttempts', lang, { n: maxAttempts });
+  if (maxMinutes > 0) return t('badge.autoDetailMinutes', lang, { n: maxMinutes });
+  return t('badge.autoDetailNone', lang);
+}
+
 export type ReviewScope = 'all' | 'active' | 'list';
 
 export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0, onWarn: (message: string) => void = () => {}): AuditCollection {
@@ -613,13 +621,13 @@ export function readFindingsHistory(workspaceRoot: string): FindingsHistory | un
   }
 }
 
-export function buildFindingsDiff(previous: FindingsHistory | undefined, issues: ReviewIssue[]): FindingsDiffView | undefined {
+export function buildFindingsDiff(previous: FindingsHistory | undefined, issues: ReviewIssue[], lang: Lang = 'ru'): FindingsDiffView | undefined {
   if (!previous) return undefined;
   const currentKeys = new Set(issues.map(findingKey));
   const previousKeys = new Set(previous.findings.map(findingKey));
   const newOnes = issues.filter((issue) => !previousKeys.has(findingKey(issue)));
   const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
-  const summary = `🆕 новых: ${newOnes.length} · ✅ починено: ${fixed.length} · 🔁 осталось: ${issues.length - newOnes.length}`;
+  const summary = t('diff.summary', lang, { n: newOnes.length, f: fixed.length, s: issues.length - newOnes.length });
   return { summary, newKeys: newOnes.map(findingKey), fixed };
 }
 

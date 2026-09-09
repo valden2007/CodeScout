@@ -1,4 +1,5 @@
 import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type CustomColors } from './uiPrefs';
+import { t, type Lang } from '../../src/i18n';
 
 export interface SettingsState {
   keyMask: string;
@@ -39,29 +40,29 @@ const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custo
 
 const REPO_URL = 'https://github.com/valden2007/CodeScout';
 
-const colorFields: { key: keyof CustomColors; label: string }[] = [
-  { key: 'bg', label: 'Фон страницы' },
-  { key: 'card', label: 'Фон карточки' },
-  { key: 'fg', label: 'Текст' },
-  { key: 'desc', label: 'Приглушённый текст' },
-  { key: 'border', label: 'Границы' },
-  { key: 'accent', label: 'Акцент' },
-  { key: 'btnBg', label: 'Кнопка: фон' },
-  { key: 'btnFg', label: 'Кнопка: текст' },
-  { key: 'btnHover', label: 'Кнопка: hover' },
-  { key: 'inputBg', label: 'Инпут: фон' },
-  { key: 'inputFg', label: 'Инпут: текст' },
-  { key: 'error', label: 'Severity: error' },
-  { key: 'warn', label: 'Severity: warning' },
-  { key: 'pass', label: 'Severity: pass' },
-  { key: 'chipBg', label: 'Чипы: фон' },
-  { key: 'chipFg', label: 'Чипы: текст' }
+const colorFields: { key: keyof CustomColors }[] = [
+  { key: 'bg' },
+  { key: 'card' },
+  { key: 'fg' },
+  { key: 'desc' },
+  { key: 'border' },
+  { key: 'accent' },
+  { key: 'btnBg' },
+  { key: 'btnFg' },
+  { key: 'btnHover' },
+  { key: 'inputBg' },
+  { key: 'inputFg' },
+  { key: 'error' },
+  { key: 'warn' },
+  { key: 'pass' },
+  { key: 'chipBg' },
+  { key: 'chipFg' }
 ];
 
-const geometryFields: { key: keyof CustomColors; label: string; min: number; max: number }[] = [
-  { key: 'btnRadius', label: 'Радиус кнопок (px)', min: 2, max: 12 },
-  { key: 'btnHeight', label: 'Высота кнопок (px)', min: 24, max: 40 },
-  { key: 'cardRadius', label: 'Радиус карточек (px)', min: 0, max: 16 }
+const geometryFields: { key: keyof CustomColors; min: number; max: number }[] = [
+  { key: 'btnRadius', min: 2, max: 12 },
+  { key: 'btnHeight', min: 24, max: 40 },
+  { key: 'cardRadius', min: 0, max: 16 }
 ];
 
 function escapeHtml(value: string): string {
@@ -85,7 +86,8 @@ export function mergeScopeGlobs(existing: string, added: string[]): string {
   return [...new Set([...splitScopeGlobs(existing), ...added.map((glob) => glob.trim()).filter(Boolean)])].join(', ');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets): string {
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets, lang: Lang = 'ru'): string {
+  const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const csp = assets
@@ -94,12 +96,12 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
   const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : '';
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   const providerOptions = providerValues
-    .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? 'auto — по ключу' : value}</option>`)
+    .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? T('center.providerAuto') : value}</option>`)
     .join('');
   const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
   return `<!DOCTYPE html>
-<html lang="ru">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -168,177 +170,179 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
-<div class="brand"><span class="brand-mark">${icon('search')}</span> CodeScout: Настройки</div>
+<div class="brand"><span class="brand-mark">${icon('search')}</span> ${T('title.center')}</div>
 <div class="layout">
 <nav class="sidebar" id="sidebar">
-  <a class="nav-link active" href="#sec-key" data-target="sec-key">${icon('key')}<span>Ключ и модель</span></a>
-  <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>Аудит</span></a>
-  <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>Проект</span></a>
-  <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>Внешний вид</span></a>
-  <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>О расширении</span></a>
+  <a class="nav-link active" href="#sec-key" data-target="sec-key">${icon('key')}<span>${T('sec.key')}</span></a>
+  <a class="nav-link" href="#sec-audit" data-target="sec-audit">${icon('sync')}<span>${T('sec.audit')}</span></a>
+  <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>${T('sec.project')}</span></a>
+  <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>${T('sec.appearance')}</span></a>
+  <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>${T('sec.about')}</span></a>
 </nav>
 <div class="content">
 <div class="status${statusKind === 'error' ? ' error' : ''}" id="status">${escapeHtml(statusMessage)}</div>
 <main>
 <section id="sec-key">
-  <h2>${icon('key')} Ключ и модель</h2>
-  <label for="provider">Провайдер</label>
+  <h2>${icon('key')} ${T('sec.key')}</h2>
+  <label for="provider">${T('center.provider')}</label>
   <select id="provider">${providerOptions}</select>
-  <label for="apiKey">API-ключ ( SecretStorage )</label>
-  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? 'пустое поле = оставить текущий ключ' : 'вставь ключ — провайдер определится сам'}">
-  <label class="checkbox"><input id="revealKey" type="checkbox"> показать введённый ключ</label>
+  <label for="apiKey">${T('center.apiKeyLabel')}</label>
+  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? T('center.keyKeep') : T('center.keyPaste')}">
+  <label class="checkbox"><input id="revealKey" type="checkbox"> ${T('center.reveal')}</label>
   <div id="baseUrlRow" class="${state.provider === 'custom' ? '' : 'hidden'}">
-    <label for="baseUrl">Base URL (OpenAI-совместимый эндпоинт)</label>
+    <label for="baseUrl">${T('center.baseUrl')}</label>
     <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml(state.baseUrl)}">
-    <p class="hint">Нужен для custom: Ollama, LM Studio, свой прокси. Приоритет: эта настройка &gt; env CODESCOUT_BASE_URL.</p>
+    <p class="hint">${T('center.baseUrlHint')}</p>
   </div>
-  <div class="current-key">сейчас: ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : 'ключ не настроен'}</div>
+  <div class="current-key">${T('center.now')} ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : T('center.nowNone')}</div>
   <div class="row">
-    <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>Живые модели…</span></button>
-    <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>Забыть ключ</span></button>
+    <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>${T('center.liveModels')}</span></button>
+    <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
-  <p class="hint">auto = groq-ключ → groq, AIza… → gemini, sk-or-… → openrouter, ghp_… → github.</p>
+  <p class="hint">${T('center.prefixHint')}</p>
 </section>
 <section id="sec-audit">
-  <h2>${icon('sync')} Аудит</h2>
-  <label for="auditPasses">Кругов проверки на файл (1-3)</label>
+  <h2>${icon('sync')} ${T('sec.audit')}</h2>
+  <label for="auditPasses">${T('audit.passes')}</label>
   <input id="auditPasses" type="number" min="1" max="3" step="1" value="${state.auditPasses}">
-  <label for="maxLines">Макс. строк на файл (0 = без лимита)</label>
+  <label for="maxLines">${T('audit.maxLines')}</label>
   <input id="maxLines" type="number" min="0" max="100000" step="1" value="${state.maxLines}">
-  <label for="maxFiles">Макс. файлов на аудит</label>
+  <label for="maxFiles">${T('audit.maxFiles')}</label>
   <input id="maxFiles" type="number" min="1" max="10000" step="1" value="${state.maxFiles}">
-  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> ${icon('robot')}<span>Автономный режим (авто-догон)</span></label>
-  <label for="autoResumeMaxAttempts">Авто-догон: макс. попыток (0 = без лимита)</label>
+  <label class="checkbox"><input id="autoResume" type="checkbox"${state.autoResume ? ' checked' : ''}> ${icon('robot')}<span>${T('audit.autoResume')}</span></label>
+  <label for="autoResumeMaxAttempts">${T('audit.autoMaxAttempts')}</label>
   <input id="autoResumeMaxAttempts" type="number" min="0" max="1000" step="1" value="${state.autoResumeMaxAttempts}">
-  <label for="autoResumeMaxMinutes">Авто-догон: макс. минут (0 = без лимита)</label>
+  <label for="autoResumeMaxMinutes">${T('audit.autoMaxMinutes')}</label>
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
-  <label for="rateLimitPauses">Паузы при rate-limit на файл (0-5, 0 = скип сразу)</label>
+  <label for="rateLimitPauses">${T('audit.rateLimitPauses')}</label>
   <input id="rateLimitPauses" type="number" min="0" max="5" step="1" value="${state.rateLimitPauses ?? 3}">
-  <label for="findingsSort">Сортировка находок</label>
+  <label for="findingsSort">${T('audit.findingsSort')}</label>
   <select id="findingsSort">
-    <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>по важности</option>
-    <option value="file"${state.findingsSort === 'file' ? ' selected' : ''}>по файлу</option>
-    <option value="line"${state.findingsSort === 'line' ? ' selected' : ''}>по строке</option>
+    <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>${T('audit.sortSeverity')}</option>
+    <option value="file"${state.findingsSort === 'file' ? ' selected' : ''}>${T('audit.sortFile')}</option>
+    <option value="line"${state.findingsSort === 'line' ? ' selected' : ''}>${T('audit.sortLine')}</option>
   </select>
-  <p class="hint">maxLines = 0: лимита нет, файлы &gt;800 строк режутся чанками с перекрытием 50 строк; N &gt; 0: файлы длиннее N скипаются. Авто-догон возобновляет прерванный аудит из чекпоинта с backoff 30с→60с→2мин→5мин.</p>
+  <p class="hint">${T('audit.hint')}</p>
 </section>
 <section id="sec-project">
-  <h2>${icon('folder')} Проект</h2>
-  <label for="docLinks">Ссылки на документацию (одна в строке)</label>
+  <h2>${icon('folder')} ${T('sec.project')}</h2>
+  <label for="docLinks">${T('project.docLinks')}</label>
   <textarea id="docLinks" rows="4" spellcheck="false" placeholder="https://docs.example.com/api&#10;https://wiki.internal/architecture">${escapeHtml(state.docLinks.join('\n'))}</textarea>
-  <label for="docMaxKb">Макс. размер дока в промт (KB)</label>
+  <label for="docMaxKb">${T('project.docMaxKb')}</label>
   <input id="docMaxKb" type="number" min="1" max="2048" step="1" value="${state.docMaxKb}">
-  <label for="docMaxLinks">Макс. число ссылок на аудит</label>
+  <label for="docMaxLinks">${T('project.docMaxLinks')}</label>
   <input id="docMaxLinks" type="number" min="1" max="50" step="1" value="${state.docMaxLinks}">
-  <label for="auditScope">Scope аудита (glob через запятую, пусто = все)</label>
+  <label for="auditScope">${T('project.auditScope')}</label>
   <input id="auditScope" type="text" spellcheck="false" placeholder="src/**, extension/src/**" value="${escapeHtml(state.auditScope)}">
   <div class="row">
-    <button id="pickScope" type="button" class="secondary">${icon('folder-opened')}<span>Выбрать файлы/папки</span></button>
-    <button id="openRules" type="button" class="secondary">${icon('file')}<span>Открыть rules.md</span></button>
+    <button id="pickScope" type="button" class="secondary">${icon('folder-opened')}<span>${T('project.pickFiles')}</span></button>
+    <button id="openRules" type="button" class="secondary">${icon('file')}<span>${T('project.openRules')}</span></button>
   </div>
   <div class="scope-chips" id="scopeChips"></div>
   <p class="scope-warn hidden" id="scopeWarn"></p>
-  <p class="hint">rules.md подмешивается в каждый промт. Документация докачивается (таймаут 5с, oversized усекается с сохранением начала), кэшируется в .codescout/docs-cache.json на 24ч. Scope ограничивает полный аудит; ПКМ-проверка его игнорирует.</p>
+  <p class="hint">${T('project.hint')}</p>
 </section>
 <section id="sec-appearance">
-  <h2>${icon('symbol-color')} Внешний вид</h2>
+  <h2>${icon('symbol-color')} ${T('sec.appearance')}</h2>
   <div class="subtabs">
-    <button type="button" class="subtab-btn active" data-subtab="subtab-basic">Базовые</button>
-    <button type="button" class="subtab-btn" data-subtab="subtab-custom">Кастомизация</button>
+    <button type="button" class="subtab-btn active" data-subtab="subtab-basic">${T('subtab.basic')}</button>
+    <button type="button" class="subtab-btn" data-subtab="subtab-custom">${T('subtab.custom')}</button>
   </div>
   <div class="subtab" id="subtab-basic">
-    <label for="reportLanguage">Язык отчётов</label>
+    <label for="reportLanguage">${T('appear.language')}</label>
     <select id="reportLanguage">
-      <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>RU — по-русски</option>
-      <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>EN — English</option>
+      <option value="ru"${state.reportLanguage === 'ru' ? ' selected' : ''}>${T('appear.langRu')}</option>
+      <option value="en"${state.reportLanguage === 'en' ? ' selected' : ''}>${T('appear.langEn')}</option>
     </select>
-    <label for="uiTheme">Тема интерфейса</label>
+    <label for="uiTheme">${T('appear.uiTheme')}</label>
     <select id="uiTheme">
-      <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>auto — как в VS Code</option>
-      <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>dark — фиксированная тёмная</option>
-      <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>light — фиксированная светлая</option>
-      <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>custom — своя палитра</option>
+      <option value="auto"${state.uiTheme === 'auto' ? ' selected' : ''}>${T('appear.themeAuto')}</option>
+      <option value="dark"${state.uiTheme === 'dark' ? ' selected' : ''}>${T('appear.themeDark')}</option>
+      <option value="light"${state.uiTheme === 'light' ? ' selected' : ''}>${T('appear.themeLight')}</option>
+      <option value="custom"${state.uiTheme === 'custom' ? ' selected' : ''}>${T('appear.themeCustom')}</option>
     </select>
     <div class="row">
-      <button id="openThemeEditor" type="button" class="secondary">${icon('symbol-color')}<span>Theme Editor</span></button>
+      <button id="openThemeEditor" type="button" class="secondary">${icon('symbol-color')}<span>${T('appear.themeEditor')}</span></button>
     </div>
-    <label for="accentColor">Акцентный цвет</label>
+    <label for="accentColor">${T('appear.accent')}</label>
     <select id="accentColor">
-      <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>auto — кнопка VS Code</option>
+      <option value="auto"${state.accentColor === 'auto' ? ' selected' : ''}>${T('appear.accentAuto')}</option>
       <option value="blue"${state.accentColor === 'blue' ? ' selected' : ''}>blue</option>
       <option value="purple"${state.accentColor === 'purple' ? ' selected' : ''}>purple</option>
       <option value="green"${state.accentColor === 'green' ? ' selected' : ''}>green</option>
       <option value="orange"${state.accentColor === 'orange' ? ' selected' : ''}>orange</option>
       <option value="pink"${state.accentColor === 'pink' ? ' selected' : ''}>pink</option>
     </select>
-    <label for="uiDensity">Плотность</label>
+    <label for="uiDensity">${T('appear.density')}</label>
     <select id="uiDensity">
-      <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>standard</option>
-      <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>compact</option>
+      <option value="standard"${state.uiDensity === 'standard' ? ' selected' : ''}>${T('appear.densityStandard')}</option>
+      <option value="compact"${state.uiDensity === 'compact' ? ' selected' : ''}>${T('appear.densityCompact')}</option>
     </select>
-    <label for="reportTheme">Тема экспортируемого отчёта</label>
+    <label for="reportTheme">${T('appear.reportTheme')}</label>
     <select id="reportTheme">
-      <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>auto</option>
-      <option value="dark"${state.reportTheme === 'dark' ? ' selected' : ''}>dark</option>
-      <option value="light"${state.reportTheme === 'light' ? ' selected' : ''}>light</option>
+      <option value="auto"${state.reportTheme === 'auto' ? ' selected' : ''}>${T('appear.rtAuto')}</option>
+      <option value="dark"${state.reportTheme === 'dark' ? ' selected' : ''}>${T('appear.rtDark')}</option>
+      <option value="light"${state.reportTheme === 'light' ? ' selected' : ''}>${T('appear.rtLight')}</option>
     </select>
-    <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> Показывать % уверенности у находок</label>
-    <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> Баннер «запустить полный аудит» при старте</label>
+    <label class="checkbox"><input id="showConfidence" type="checkbox"${state.showConfidence ? ' checked' : ''}> ${T('appear.showConfidence')}</label>
+    <label class="checkbox"><input id="showBanner" type="checkbox"${state.showAuditBanner ? ' checked' : ''}> ${T('appear.showBanner')}</label>
   </div>
   <div class="subtab hidden" id="subtab-custom">
-    <p class="theme-inactive${state.uiTheme === 'custom' ? ' hidden' : ''}" id="themeInactiveHint">Изменения ниже автоматически включат тему custom.
-      <button id="enableCustom" type="button" class="secondary">${icon('wand')}<span>Включить custom сейчас</span></button>
+    <p class="theme-inactive${state.uiTheme === 'custom' ? ' hidden' : ''}" id="themeInactiveHint">${T('appear.customHint')}
+      <button id="enableCustom" type="button" class="secondary">${icon('wand')}<span>${T('appear.enableCustom')}</span></button>
     </p>
     <div id="themeEditor">
-      <h3>ЦВЕТА</h3>
+      <h3>${T('palette.colors')}</h3>
       ${colorFields.map((f) => `
       <div class="palette-row">
-        <label for="cc-${f.key}">${f.label}</label>
+        <label for="cc-${f.key}">${T('cc.' + f.key)}</label>
         <input id="cc-${f.key}" class="cc-color" type="color" data-key="${f.key}" value="${escapeHtml(String(cc[f.key]))}">
         <input class="cc-hex" type="text" data-key="${f.key}" spellcheck="false" maxlength="7" value="${escapeHtml(String(cc[f.key]))}">
       </div>`).join('')}
-      <h3>ГЕОМЕТРИЯ</h3>
+      <h3>${T('palette.geometry')}</h3>
       ${geometryFields.map((f) => `
       <div class="palette-row">
-        <label for="cg-${f.key}">${f.label}</label>
+        <label for="cg-${f.key}">${T('geom.' + f.key)}</label>
         <input id="cg-${f.key}" class="cc-num" type="number" data-key="${f.key}" min="${f.min}" max="${f.max}" step="1" value="${cc[f.key]}">
         <span></span>
       </div>`).join('')}
-      <h3>ТИПОГРАФИКА</h3>
-      <label for="uiFontSize">Размер шрифта</label>
+      <h3>${T('palette.typography')}</h3>
+      <label for="uiFontSize">${T('palette.fontSize')}</label>
       <select id="uiFontSize">
-        <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>s — мелкий</option>
-        <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>m — обычный</option>
-        <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>l — крупный</option>
+        <option value="s"${state.uiFontSize === 's' ? ' selected' : ''}>${T('palette.fontS')}</option>
+        <option value="m"${state.uiFontSize === 'm' ? ' selected' : ''}>${T('palette.fontM')}</option>
+        <option value="l"${state.uiFontSize === 'l' ? ' selected' : ''}>${T('palette.fontL')}</option>
       </select>
       <div class="row">
-        <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>Сбросить палитру</span></button>
-        <button id="copyTheme" type="button" class="secondary">${icon('clippy')}<span>Копировать JSON темы</span></button>
-        <button id="applyTheme" type="button" class="secondary">${icon('desktop-download')}<span>Применить из JSON</span></button>
+        <button id="resetPalette" type="button" class="secondary">${icon('discard')}<span>${T('palette.reset')}</span></button>
+        <button id="copyTheme" type="button" class="secondary">${icon('clippy')}<span>${T('palette.copy')}</span></button>
+        <button id="applyTheme" type="button" class="secondary">${icon('desktop-download')}<span>${T('palette.apply')}</span></button>
       </div>
       <textarea id="themeJson" rows="4" spellcheck="false" placeholder='{"bg":"#…","btnRadius":4,…}'></textarea>
-      <p class="contrast-hint hidden" id="contrastHint">низкий контраст — текст может быть нечитаем</p>
+      <p class="contrast-hint hidden" id="contrastHint">${T('palette.contrastHint')}</p>
     </div>
   </div>
 </section>
 <section id="sec-about">
-  <h2>${icon('info')} О расширении</h2>
-  <div class="about-line">Версия: <strong>${escapeHtml(state.version)}</strong></div>
+  <h2>${icon('info')} ${T('sec.about')}</h2>
+  <div class="about-line">${T('about.version')} <strong>${escapeHtml(state.version)}</strong></div>
   <div class="row">
-    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">${icon('book')}<span>README</span></button>
-    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon('repo')}<span>Репозиторий</span></button>
-    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">${icon('report')}<span>Сообщить о проблеме</span></button>
+    <button id="openReadme" type="button" class="secondary" data-url="${REPO_URL}#readme">${icon('book')}<span>${T('about.readme')}</span></button>
+    <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon('repo')}<span>${T('about.repo')}</span></button>
+    <button id="reportIssue" type="button" class="secondary" data-url="${REPO_URL}/issues">${icon('report')}<span>${T('about.issue')}</span></button>
   </div>
 </section>
 </main>
 </div>
 </div>
 <div class="savebar">
-  <button id="saveAll" type="button" disabled><span class="dirty-dot"></span>${icon('save')}<span>Сохранить</span></button>
-  <span class="dirty" id="dirtyHint">нет несохранённых изменений</span>
+  <button id="saveAll" type="button" disabled><span class="dirty-dot"></span>${icon('save')}<span>${T('save.save')}</span></button>
+  <span class="dirty" id="dirtyHint">${T('save.clean')}</span>
 </div>
 <script${nonceAttr}>
 const vscode = acquireVsCodeApi();
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
 const baseUrlInput = document.getElementById('baseUrl');
@@ -481,7 +485,7 @@ function refreshDirty() {
   const dirty = snapshot() !== initial;
   saveAllBtn.disabled = !dirty;
   saveAllBtn.classList.toggle('is-dirty', dirty);
-  dirtyHint.textContent = dirty ? 'есть несохранённые изменения' : 'нет несохранённых изменений';
+  dirtyHint.textContent = dirty ? L('save.dirty') : L('save.clean');
 }
 document.querySelectorAll('input, select, textarea').forEach((el) => {
   el.addEventListener('input', refreshDirty);
@@ -494,7 +498,7 @@ saveAllBtn.addEventListener('click', () => {
   saveAllBtn.disabled = true;
   saveAllBtn.classList.remove('is-dirty');
   const label = saveAllBtn.querySelector('span:last-child');
-  if (label) label.textContent = 'Сохраняю…';
+  if (label) label.textContent = L('save.saving');
   vscode.postMessage({
     command: 'saveAll',
     providerKey: providerSelect.value,
@@ -544,7 +548,7 @@ function renderChips() {
     text.textContent = glob;
     const remove = document.createElement('button');
     remove.type = 'button';
-    remove.title = 'Убрать из scope';
+    remove.title = L('chip.removeTip');
     remove.innerHTML = '<i class="codicon codicon-close" aria-hidden="true"></i>';
     remove.addEventListener('click', () => {
       auditScopeInput.value = splitGlobs(auditScopeInput.value).filter((g) => g !== glob).join(', ');
@@ -567,8 +571,8 @@ window.addEventListener('message', (event) => {
   refreshDirty();
   if (scopeWarn) {
     const outside = data.outside || [];
-    if (data.noWorkspace) { scopeWarn.textContent = 'Нет открытой папки — выбор недоступен'; scopeWarn.classList.remove('hidden'); }
-    else if (outside.length) { scopeWarn.textContent = 'вне workspace, не добавлено: ' + outside.join(', '); scopeWarn.classList.remove('hidden'); }
+    if (data.noWorkspace) { scopeWarn.textContent = L('form.pickNoWorkspace'); scopeWarn.classList.remove('hidden'); }
+    else if (outside.length) { scopeWarn.textContent = L('form.pickOutside') + ' ' + outside.join(', '); scopeWarn.classList.remove('hidden'); }
     else { scopeWarn.textContent = ''; scopeWarn.classList.add('hidden'); }
   }
 });

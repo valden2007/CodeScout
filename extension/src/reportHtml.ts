@@ -1,7 +1,7 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
-import { autoResumeBadgeText } from './projectAudit';
 import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefsInput } from './uiPrefs';
+import { t, type Lang } from '../../src/i18n';
 
 export interface AutoResumeIndicator {
   done: number;
@@ -59,13 +59,12 @@ function severityClass(severity: ReviewIssue['severity']): string {
   return severity;
 }
 
-function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true): string {
+function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true, lang: Lang = 'ru'): string {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : '';
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon('arrow-right')} <span>${escapeHtml(issue.suggestion)}</span></div>` : '';
-  const confidence = showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : '';
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} новая</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${confidence}</div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} ${t('issue.new', lang)}</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ''}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
@@ -73,10 +72,17 @@ function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true): st
 </article>`;
 }
 
-function autoLineHtml(autoResume?: AutoResumeIndicator): string {
+function autoBadgeText(lang: Lang, maxAttempts: number, maxMinutes: number): string {
+  if (maxAttempts > 0 && maxMinutes > 0) return t('badge.autoBoth', lang, { a: maxAttempts, m: maxMinutes });
+  if (maxAttempts > 0) return t('badge.autoAttempts', lang, { n: maxAttempts });
+  if (maxMinutes > 0) return t('badge.autoMinutes', lang, { n: maxMinutes });
+  return t('badge.auto', lang);
+}
+
+function autoLineHtml(autoResume?: AutoResumeIndicator, lang: Lang = 'ru'): string {
   if (!autoResume) return '<div class="auto-line hidden" id="autoLine"></div>';
-  const attemptLabel = autoResume.maxAttempts > 0 ? `попытка ${autoResume.attempt}/${autoResume.maxAttempts}` : `попытка ${autoResume.attempt}`;
-  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">${icon('robot')} авто-догон: ${autoResume.done}/${autoResume.total}, ${attemptLabel} через ${autoResume.secondsLeft}с</div>`;
+  const attemptLabel = autoResume.maxAttempts > 0 ? t('auto.attemptOf', lang, { a: autoResume.attempt, m: autoResume.maxAttempts }) : t('auto.attempt', lang, { a: autoResume.attempt });
+  return `<div class="auto-line" id="autoLine" data-done="${autoResume.done}" data-total="${autoResume.total}" data-attempt="${autoResume.attempt}" data-max="${autoResume.maxAttempts}" data-seconds="${autoResume.secondsLeft}">${icon('robot')} ${escapeHtml(t('auto.line', lang, { done: autoResume.done, total: autoResume.total, attemptLabel, seconds: autoResume.secondsLeft }))}</div>`;
 }
 
 function headHtml(assets?: WebviewAssets, nonce = ''): string {
@@ -98,6 +104,9 @@ body { margin: 0; padding: var(--cs-space-4) 14px 24px; color: var(--cs-fg); bac
 .header { position: sticky; top: calc(-1 * var(--cs-space-4)); z-index: 2; margin: calc(-1 * var(--cs-space-4)) -14px 0; padding: var(--cs-space-4) 14px var(--cs-space-3); border-bottom: 1px solid var(--cs-border); background: var(--cs-editor-bg); }
 .brand { display: flex; align-items: center; gap: var(--cs-space-2); font-size: var(--cs-font-4); font-weight: 700; letter-spacing: -0.2px; }
 .brand-settings { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 400; text-align: center; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
+.brand-lang { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 400; text-align: center; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
+.brand-lang:hover { background: var(--cs-btn2-hover); }
+.brand-settings + .brand-lang, .brand-lang + .brand-settings { margin-left: var(--cs-space-2); }
 .brand-settings:hover { background: var(--cs-btn2-hover); }
 .brand-mark { color: var(--cs-accent); display: inline-flex; }
 .cs-btn { display: inline-flex; align-items: center; gap: var(--cs-space-2); }
@@ -187,7 +196,8 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </head>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru'): string {
+  const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
     if (ui.findingsSort === 'file') return a.file.localeCompare(b.file) || a.line - b.line || severityOrder[a.severity] - severityOrder[b.severity];
@@ -197,65 +207,68 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   const newKeys = new Set(findingsDiff?.newKeys ?? []);
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of sorted) grouped.set(issue.file, [...(grouped.get(issue.file) ?? []), issue]);
-  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`), ui.showConfidence)).join('')}</section>`).join('');
+  const sections = [...grouped.entries()].map(([file, fileIssues]) => `<section class="file-section"><h2>${escapeHtml(file)}</h2>${fileIssues.map((issue) => issueCard(issue, newKeys.has(`${issue.file}:${issue.line}:${issue.category}`), ui.showConfidence, lang)).join('')}</section>`).join('');
   const diffSummary = findingsDiff ? `<div class="diff-summary">${icon('diff-added')}${escapeHtml(findingsDiff.summary)}</div>` : '';
-  const customBanner = customFocus ? `<div class="diff-summary custom">${icon('target')} Кастомное ревью: ${escapeHtml(customFocus.slice(0, 160))}</div>` : '';
+  const customBanner = customFocus ? `<div class="diff-summary custom">${icon('target')} ${T('customBanner.label')} ${escapeHtml(customFocus.slice(0, 160))}</div>` : '';
   const fixedBlock = findingsDiff?.fixed?.length
-    ? `<details class="fixed-block"><summary>${icon('check')} Починено с прошлого скана (${findingsDiff.fixed.length})</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
+    ? `<details class="fixed-block"><summary>${icon('check')} ${T('fixed.title', { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
     : '';
   const body = sections || (emptyState && !keyConfigured
-    ? `<div class="onboarding"><div class="empty-icon">${icon('account')}</div><h1>Привет! Это CodeScout</h1><p><strong>Шаг 1.</strong> Получите API-ключ провайдера в <a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">Открыть Google AI Studio</a>.</p><p><strong>Шаг 2.</strong> Нажми кнопку ниже и вставь ключ.</p><button class="primary-action cs-btn" type="button" data-command="setApiKey">${icon('key')}<span>Вставить ключ — провайдер определится сам</span></button><p><strong>Шаг 3.</strong> Готово — кнопки выше заработают.</p></div>`
+    ? `<div class="onboarding"><div class="empty-icon">${icon('account')}</div><h1>${T('empty.onboardTitle')}</h1><p><strong>${T('empty.stepLabel1')}</strong> ${T('empty.step1Prefix')}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T('empty.step1Link')}</a>.</p><p><strong>${T('empty.stepLabel2')}</strong> ${T('empty.step2')}</p><button class="primary-action cs-btn" type="button" data-command="setApiKey">${icon('key')}<span>${T('empty.insertKey')}</span></button><p><strong>${T('empty.stepLabel3')}</strong> ${T('empty.step3')}</p></div>`
     : emptyState
-      ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>CodeScout готов к работе</strong><small>Нажмите одну из кнопок выше, чтобы начать ревью.</small></div>`
+      ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>${T('empty.readyTitle')}</strong><small>${T('empty.readyHint')}</small></div>`
       : testMode
-        ? `<div class="empty"><div class="empty-icon">${icon('beaker')}</div><strong>ТЕСТ</strong><small>Проверка завершена на встроенном примере.</small></div>`
-        : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>Проверено файлов: ${stats.files} — проблем не найдено</strong><small>Сомневаешься? Проверь, как CodeScout ловит баги:</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>Тест на примере</span></button></div>`);
+        ? `<div class="empty"><div class="empty-icon">${icon('beaker')}</div><strong>${T('empty.testTitle')}</strong><small>${T('empty.testHint')}</small></div>`
+        : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button></div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
+  const clientDict = JSON.stringify(['actions.customReview', 'actions.customReviewCollapse', 'auto.line', 'auto.lineRetry', 'auto.attemptOf', 'auto.attempt', 'status.model404', 'form.pickOutside', 'form.pickNoWorkspace'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>));
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 ${headHtml(assets, nonce)}
 <body ${uiBodyAttrs(ui)}>
   <header class="header">
-    ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${welcomeReason === 'stale' ? 'Модель изменилась — контекст мог устареть. Обновить полным аудитом?' : 'CodeScout может изучить проект целиком — ревью станет точнее. Запустить полный аудит?'}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === 'stale' ? 'sync' : 'play')}<span>${welcomeReason === 'stale' ? 'Обновить' : 'Запустить аудит'}</span></button><button type="button" data-command="dismissWelcome">Позже</button></div></div></div></div>` : ''}
-    <div class="brand"><span class="brand-mark">${icon('search')}</span> CodeScout <button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="Открыть настройки CodeScout">${icon('settings-gear')}<span>Настройки</span></button></div>
-    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `${icon('pass')} ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (защищённо)` : `${icon('error')} Ключ не настроен`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>Ключ и модель</span></button></div>
-    ${testMode ? `<span class="test-badge">${icon('beaker')} ТЕСТ</span>` : ''}
-    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404/i.test(statusMessage) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>Выбрать доступную модель</span></button>` : ''}</div>` : ''}</div>
-    ${auditResume ? `<div class="audit-resume"><strong>${icon('debug-alt')} Аудит оборвался: проверено ${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))} файлов (${escapeHtml(auditResume.model)})</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>Продолжить (${escapeHtml(String(auditResume.done))} из ${escapeHtml(String(auditResume.total))})</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>Начать заново</span></button></div></div>` : ''}
+    ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${T(welcomeReason === 'stale' ? 'banner.welcomeStale' : 'banner.welcomeNew')}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === 'stale' ? 'sync' : 'play')}<span>${T(welcomeReason === 'stale' ? 'banner.update' : 'banner.startAudit')}</span></button><button type="button" data-command="dismissWelcome">${T('banner.later')}</button></div></div></div></div>` : ''}
+    <div class="brand"><span class="brand-mark">${icon('search')}</span> ${T('brand.name')} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T('brand.toggleLang')}">${icon('globe')}<span>${lang === 'en' ? 'EN' : 'RU'}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T('brand.settingsTip')}">${icon('settings-gear')}<span>${T('brand.settings')}</span></button></div>
+    <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `${icon('pass')} ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (${T('key.ready')})` : `${icon('error')} ${T('key.missing')}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('key.andModel')}</span></button></div>
+    ${testMode ? `<span class="test-badge">${icon('beaker')} ${T('testBadge')}</span>` : ''}
+    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404/i.test(statusMessage) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>${T('status.model404')}</span></button>` : ''}</div>` : ''}</div>
+    ${auditResume ? `<div class="audit-resume"><strong>${icon('debug-alt')} ${T('resume.title', { done: auditResume.done, total: auditResume.total, model: escapeHtml(auditResume.model) })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continue', { done: auditResume.done, total: auditResume.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>` : ''}
     <div class="actions">
-      <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>Проверить последний коммит</span></button>
-      <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('diff')}<span>Проверить изменения до коммита</span></button>
-      <button type="button" class="cs-btn" data-command="scanFull" ${isScanning ? 'disabled' : ''}>${icon('telescope')}<span>Полный аудит проекта</span></button>
-      <button type="button" class="cs-btn" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>${icon('beaker')}<span>Своё ревью</span></button>
+      <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>
+      <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('diff')}<span>${T('actions.scanUncommitted')}</span></button>
+      <button type="button" class="cs-btn" data-command="scanFull" ${isScanning ? 'disabled' : ''}>${icon('telescope')}<span>${T('actions.scanFull')}</span></button>
+      <button type="button" class="cs-btn" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>${icon('beaker')}<span>${T('actions.customReview')}</span></button>
     </div>
-    ${autoResumeEnabled ? `<div class="auto-badge" title="Полный аудит сам догонит прерванное с backoff (codescout.autoResume)">${icon('robot')}<span>${escapeHtml(autoResumeBadgeText(autoResumeMaxAttempts, autoResumeMaxMinutes))}</span></div>` : ''}
+    ${autoResumeEnabled ? `<div class="auto-badge" title="${T('badge.autoTitle')}">${icon('robot')}<span>${escapeHtml(autoBadgeText(lang, autoResumeMaxAttempts, autoResumeMaxMinutes))}</span></div>` : ''}
     <div class="custom-form hidden" id="customForm">
-      <label for="customFocusText">Что проверить?</label>
-      <textarea id="customFocusText" rows="3" placeholder="например: все ли обращения к БД внутри транзакций?"></textarea>
+      <label for="customFocusText">${T('form.focusLabel')}</label>
+      <textarea id="customFocusText" rows="3" placeholder="${T('form.focusPlaceholder')}"></textarea>
       <div class="custom-scope">
         <select id="customScope">
-          <option value="all">все файлы проекта</option>
-          <option value="active">только открытый файл</option>
-          <option value="list">список файлов (глобы через запятую)</option>
+          <option value="all">${T('form.scopeAll')}</option>
+          <option value="active">${T('form.scopeActive')}</option>
+          <option value="list">${T('form.scopeList')}</option>
         </select>
         <input id="customGlobs" type="text" class="hidden custom-globs" placeholder="src/**/*.ts, tests/*.py" autocomplete="off">
-        <button type="button" class="cs-btn secondary hidden" id="pickScopeForm">${icon('folder-opened')}<span>Выбрать файлы/папки</span></button>
+        <button type="button" class="cs-btn secondary hidden" id="pickScopeForm">${icon('folder-opened')}<span>${T('form.pickFiles')}</span></button>
       </div>
       <p class="custom-warn hidden" id="customScopeWarn"></p>
       <div class="custom-actions">
-        <button type="button" class="cs-btn" id="startCustomReview">${icon('beaker')}<span>Запустить своё ревью</span></button>
+        <button type="button" class="cs-btn" id="startCustomReview">${icon('beaker')}<span>${T('form.start')}</span></button>
       </div>
     </div>
-    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || 'Запускаю проверку…')}</div>` : ''}
-    ${autoLineHtml(autoResume)}
-    ${isScanning ? `<button class="cancel-action cs-btn" type="button" data-command="cancelScan">${icon('debug-stop')}<span>Остановить</span></button>` : ''}
-    <div class="stats"><strong>${issues.length} issues</strong> · ${stats.files} files · ${stats.seconds.toFixed(1)}s</div>
+    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || T('progress.startup'))}</div>` : ''}
+    ${autoLineHtml(autoResume, lang)}
+    ${isScanning ? `<button class="cancel-action cs-btn" type="button" data-command="cancelScan">${icon('debug-stop')}<span>${T('actions.cancel')}</span></button>` : ''}
+    <div class="stats"><strong>${T('stats.issues', { n: issues.length })}</strong> · ${T('stats.files', { n: stats.files })} · ${T('stats.seconds', { n: stats.seconds.toFixed(1) })}</div>
     <div class="pills"><span class="pill critical">${icon('error')} ${stats.critical}</span><span class="pill medium">${icon('warning')} ${stats.medium}</span><span class="pill low">${icon('pass')} ${stats.low}</span></div>
   </header>
-  ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="поиск файла…" autocomplete="off" spellcheck="false"></div>` : ''}
+  ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T('search.placeholder')}" autocomplete="off" spellcheck="false"></div>` : ''}
   <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
+    const UI = ${clientDict};
+    function L(key, vars) { let s = UI[key] || key; if (vars) { for (const k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } } return s; }
     const overlay = document.querySelector('.welcome-overlay');
     if (overlay) {
       document.body.classList.add('modal');
@@ -303,16 +316,18 @@ ${headHtml(assets, nonce)}
         fix.type = 'button';
         fix.className = 'cs-btn';
         fix.dataset.command = 'chooseModel';
-        fix.innerHTML = '<i class="codicon codicon-sync" aria-hidden="true"></i><span>Выбрать доступную модель</span>';
+        fix.innerHTML = '<i class="codicon codicon-sync" aria-hidden="true"></i><span>' + L('status.model404') + '</span>';
         banner.appendChild(fix);
       }
       slot.appendChild(banner);
     }
-    const live = { text: '', elapsed: 0, tick: false };
+    const live = { text: '', elapsed: 0, unit: '\\u0441', tick: false };
     const progressLine = document.getElementById('progressLine');
     if (progressLine) {
       live.text = progressLine.textContent;
-      live.elapsed = Number((live.text.match(/(\\d+)с[^\\d]*$/) || [])[1] || 0);
+      const secMatch = live.text.match(/(\\d+)([\\u0441s])[^\\d]*$/);
+      live.elapsed = Number(secMatch ? secMatch[1] : 0);
+      live.unit = secMatch ? secMatch[2] : '\\u0441';
       live.tick = progressLine.dataset.live === 'true';
     }
     const auto = { on: false, done: 0, total: 0, attempt: 0, max: 0, seconds: 0 };
@@ -321,8 +336,9 @@ ${headHtml(assets, nonce)}
       if (!autoLine) return;
       if (!auto.on) { autoLine.classList.add('hidden'); return; }
       autoLine.classList.remove('hidden');
-      const attemptLabel = auto.max > 0 ? 'попытка ' + auto.attempt + '/' + auto.max : 'попытка ' + auto.attempt;
-      autoLine.innerHTML = '<i class="codicon codicon-robot" aria-hidden="true"></i> авто-догон: ' + auto.done + '/' + auto.total + ', ' + attemptLabel + (auto.seconds > 0 ? ' через ' + auto.seconds + 'с' : ' — пробую снова…');
+      const attemptLabel = auto.max > 0 ? L('auto.attemptOf', { a: auto.attempt, m: auto.max }) : L('auto.attempt', { a: auto.attempt });
+      const text = auto.seconds > 0 ? L('auto.line', { done: auto.done, total: auto.total, attemptLabel, seconds: auto.seconds }) : L('auto.lineRetry', { done: auto.done, total: auto.total, attemptLabel });
+      autoLine.innerHTML = '<i class="codicon codicon-robot" aria-hidden="true"></i> ' + text;
     }
     if (autoLine && !autoLine.classList.contains('hidden')) {
       auto.on = true;
@@ -346,6 +362,8 @@ ${headHtml(assets, nonce)}
       if (data.type === 'progress') {
         live.text = String(data.text || '');
         live.elapsed = Math.floor(Number(data.elapsedMs || 0) / 1000);
+        const um = live.text.match(/(\\d+)([\\u0441s])[^\\d]*$/);
+        if (um) live.unit = um[2];
         live.tick = true;
         applyProgressText(live.text);
       } else if (data.type === 'status') {
@@ -371,8 +389,8 @@ ${headHtml(assets, nonce)}
         }
         if (warn) {
           const outside = data.outside || [];
-          if (data.noWorkspace) { warn.textContent = 'Нет открытой папки — выбор недоступен'; warn.classList.remove('hidden'); }
-          else if (outside.length) { warn.textContent = 'вне workspace, не добавлено: ' + outside.join(', '); warn.classList.remove('hidden'); }
+          if (data.noWorkspace) { warn.textContent = L('form.pickNoWorkspace'); warn.classList.remove('hidden'); }
+          else if (outside.length) { warn.textContent = L('form.pickOutside') + ' ' + outside.join(', '); warn.classList.remove('hidden'); }
           else if ((data.globs || []).length) { warn.textContent = ''; warn.classList.add('hidden'); }
         }
       }
@@ -380,7 +398,7 @@ ${headHtml(assets, nonce)}
     setInterval(() => {
       if (!live.tick) return;
       live.elapsed += 1;
-      live.text = live.text.replace(/\\d+с[^\\d]*$/, live.elapsed + 'с');
+      live.text = live.text.replace(/\\d+[\\u0441s][^\\d]*$/, live.elapsed + live.unit);
       applyProgressText(live.text);
     }, 1000);
     setInterval(() => {
@@ -398,7 +416,7 @@ ${headHtml(assets, nonce)}
           form.classList.toggle('hidden');
           const label = toggle.querySelector('span');
           const glyph = toggle.querySelector('.codicon');
-          if (label) label.textContent = form.classList.contains('hidden') ? 'Своё ревью' : 'Свернуть';
+          if (label) label.textContent = form.classList.contains('hidden') ? L('actions.customReview') : L('actions.customReviewCollapse');
           if (glyph) glyph.className = 'codicon ' + (form.classList.contains('hidden') ? 'codicon-beaker' : 'codicon-close');
         }
         return;
@@ -447,6 +465,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru'): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang);
 }
