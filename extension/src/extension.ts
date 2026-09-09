@@ -13,7 +13,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -295,7 +295,9 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     }
     lastAttempt = decision.attempt;
     output.appendLine(`🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ''})`);
-    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts });
+    const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
+    const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
+    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
     const waitController = new AbortController();
     activeAbortController?.abort();
     activeAbortController = waitController;
@@ -320,7 +322,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
   const workspaceRoot = getWorkspaceRoot();
   output.clear();
   output.show(true);
-  panel.setScanning(true);
+  panel.setScanning(true, resume);
   if (!workspaceRoot) {
     panel.setError(t('panel.errNoWorkspaceAudit', currentReportLanguage()));
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -389,13 +391,15 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const chunkProgress = new Map<string, { done: number; issues: ReviewIssue[] }>();
     const loggedStart = new Set<string>();
     const fileStartedAt = new Map<string, number>();
+    const pauseByFile = new Map<string, number>();
+    const auditEta = (): number | null => auditEtaSeconds(panel.getFileDurations(), Math.max(0, planFiles.length - doneNames.size));
     if (auditPasses > 1) output.appendLine(`🔁 Мульти-пасс аудит: ${auditPasses} круга на файл (codescout.auditPasses)`);
     const persist = (): void => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
     };
     persist();
-    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
@@ -404,10 +408,15 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         doneNames.add(filename);
         state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
         persist();
-        const seconds = Math.max(0, Math.round(((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) / 1000) * 10) / 10);
+        // В медиану ETA попадает ЧИСТАЯ длительность файла: время пауз
+        // rate-limit вычитается и учитывается отдельно (лестница в ETA).
+        const pausedMs = (pauseByFile.get(filename) ?? 0) * 1000;
+        pauseByFile.delete(filename);
+        const seconds = Math.max(0, Math.round((((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) - pausedMs) / 1000) * 10) / 10);
+        panel.recordFileDuration(seconds);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`), auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`), undefined, currentReportLanguage());
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`); }, undefined, currentReportLanguage());
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -421,6 +430,8 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage());
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
+    panel.setFirstAuditDone(true);
+    panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
     const resumeView = result.skippedFiles > 0 ? progressView(state) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -762,9 +773,20 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   void syncKeyStatus();
   void migrateLanguageSetting(context).catch(() => {});
+  panel.setOnboardingHidden(context.globalState.get<boolean>('codescout.onboardingDismissed') === true);
+  const activateRoot = getWorkspaceRoot();
+  panel.setFirstAuditDone(activateRoot ? existsSync(join(activateRoot, CONTEXT_FILE)) : undefined);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('codescout.panel', panel),
     vscode.commands.registerCommand('codescout.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'codescout')),
+    vscode.commands.registerCommand('codescout.dismissOnboarding', async () => {
+      await context.globalState.update('codescout.onboardingDismissed', true);
+      panel.setOnboardingHidden(true);
+    }),
+    vscode.commands.registerCommand('codescout.openAuditReport', async () => {
+      output.show(true);
+      await vscode.commands.executeCommand('codescout.panel.focus');
+    }),
     vscode.commands.registerCommand('codescout.toggleLanguage', async () => {
       const config = vscode.workspace.getConfiguration('codescout');
       const next = config.get<string>('language') === 'en' ? 'ru' : 'en';
@@ -942,11 +964,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri)),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
+      await context.globalState.update('codescout.onboardingDismissed', undefined);
+      panel.setOnboardingHidden(false);
       const workspaceRoot = getWorkspaceRoot();
       if (workspaceRoot && existsSync(join(workspaceRoot, CONTEXT_FILE))) {
         const answer = await vscode.window.showWarningMessage(t('onboarding.resetConfirm', currentReportLanguage()), { modal: true }, t('common.delete', currentReportLanguage()));
         if (answer === t('common.delete', currentReportLanguage())) unlinkSync(join(workspaceRoot, CONTEXT_FILE));
       }
+      if (workspaceRoot) panel.setFirstAuditDone(existsSync(join(workspaceRoot, CONTEXT_FILE)));
       if (workspaceRoot) panel.setWelcomeBanner(true, 'new');
       void vscode.window.showInformationMessage(t('onboarding.resetDone', currentReportLanguage()));
     }),

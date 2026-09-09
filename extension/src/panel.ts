@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets, type PanelUx } from './reportHtml';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
@@ -74,6 +74,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private autoResumeMaxMinutes = 0;
   private uiPrefs: UiPrefs = DEFAULT_UI_PREFS;
   private language: Lang = 'ru';
+  private onboardingHidden = false;
+  private firstAuditDone: boolean | undefined;
+  private progressInfo?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
+  private auditSummary?: { issues: number; files: number; seconds: number };
+  private auditDurations: number[] = [];
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
 
@@ -143,6 +148,12 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.openSettingsPage', message.anchor ?? '');
       } else if (message.command === 'toggleLanguage') {
         void vscode.commands.executeCommand('codescout.toggleLanguage');
+      } else if (message.command === 'dismissOnboarding') {
+        void vscode.commands.executeCommand('codescout.dismissOnboarding');
+      } else if (message.command === 'openReport') {
+        void vscode.commands.executeCommand('codescout.openAuditReport');
+      } else if (message.command === 'runAgain') {
+        void vscode.commands.executeCommand('codescout.scanFull');
       } else if (message.command === 'customReview') {
         void vscode.commands.executeCommand('codescout.customReview', message.focus ?? '', message.scope ?? 'all', message.globs ?? '');
       } else if (message.command === 'clearApiKey') {
@@ -227,6 +238,33 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  setOnboardingHidden(hidden: boolean): void {
+    this.onboardingHidden = hidden;
+    this.render();
+  }
+
+  setFirstAuditDone(done: boolean | undefined): void {
+    this.firstAuditDone = done;
+    this.render();
+  }
+
+  showAuditSummary(summary: { issues: number; files: number; seconds: number } | undefined): void {
+    this.auditSummary = summary;
+    this.render();
+  }
+
+  recordFileDuration(seconds: number): void {
+    if (Number.isFinite(seconds) && seconds >= 0) this.auditDurations.push(seconds);
+  }
+
+  getFileDurations(): number[] {
+    return [...this.auditDurations];
+  }
+
+  setAuditPass(pass: number, totalPasses: number): void {
+    if (this.progressInfo) this.progressInfo = { ...this.progressInfo, pass, totalPasses };
+  }
+
   setWelcomeBanner(visible: boolean, reason: 'new' | 'stale' = 'new'): void {
     this.welcomeBanner = visible;
     this.welcomeReason = reason;
@@ -251,7 +289,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setScanning(scanning: boolean): void {
+  setScanning(scanning: boolean, keepAuditStats = false): void {
     this.scanning = scanning;
     if (scanning) {
       this.statusMessage = '';
@@ -261,6 +299,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.customFocus = '';
       this.auditResume = undefined;
       this.autoResumeView = undefined;
+      this.progressInfo = undefined;
+      this.auditSummary = undefined;
+      if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
   }
@@ -269,12 +310,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     return this.view && this.scanning ? this.view.webview : undefined;
   }
 
-  setProgress(index: number, total: number, filename: string, label?: string, elapsedMs = 0): void {
+  setProgress(index: number, total: number, filename: string, label?: string, elapsedMs = 0, etaSeconds?: number | null): void {
     this.scanning = true;
     this.progressMessage = t('progress.fileLine', this.language, { label: label ?? t('progress.file.check', this.language), index, total, file: filename, s: Math.floor(elapsedMs / 1000) });
+    this.progressInfo = { checked: index, total, etaSeconds, pass: this.progressInfo?.pass, totalPasses: this.progressInfo?.totalPasses };
     const webview = this.liveWebview();
     if (webview) {
-      safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs });
+      safePost(webview, { type: 'progress', text: this.progressMessage, elapsedMs, checked: index, total, etaSeconds, pass: this.progressInfo.pass, totalPasses: this.progressInfo.totalPasses });
       return;
     }
     this.render();
@@ -357,8 +399,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       cspSource: webview.cspSource
     };
     const nonce = randomBytes(16).toString('hex');
+    const ux: PanelUx = {
+      onboarding: !this.keyConfigured && !this.onboardingHidden,
+      firstAudit: this.keyConfigured && this.firstAuditDone === false,
+      progress: this.progressInfo ? { ...this.progressInfo } : undefined,
+      summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
+    };
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 }

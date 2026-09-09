@@ -14,7 +14,7 @@ import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, listAuditSourceFiles, loadIgnorePatterns, mergeCheckpointIssues, passFindingsSummary, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS } from '../extension/src/projectAudit';
 import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
 import { t, keysOf, normalizeLang } from '../src/i18n';
 import { ReviewIssue } from '../src/types';
@@ -302,12 +302,21 @@ describe('E5 onboarding and secure keys', () => {
     expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', {})).toBe('legacy-key');
   });
 
-  it('renders onboarding link and key button when no key is configured', () => {
-    const html = buildEmptyReportHtml('', false);
+  it('renders the 3-step welcome card when no key is configured', () => {
+    const html = buildEmptyReportHtml('', false, 'gemini', 'gemini-2.5-flash', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', { onboarding: true });
     expect(html).toContain('Привет! Это CodeScout');
+    expect(html).toContain('Первый запуск CodeScout');
     expect(html).toContain('https://aistudio.google.com/apikey');
-    expect(html).toContain('data-command="setApiKey"');
     expect(html).toContain('data-command="openKeyLink"');
+    expect(html).toContain('data-command="openSettingsPage" data-anchor="sec-key"');
+    expect(html).toContain('Добавить ключ');
+    expect(html).toContain('data-command="chooseModel"');
+    expect(html).toContain('data-command="scanFull"');
+    expect(html).toContain('data-command="dismissOnboarding"');
+    expect(html).toContain('Не показывать снова');
+    const hidden = buildEmptyReportHtml('', false, 'gemini', 'gemini-2.5-flash', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', { onboarding: false });
+    expect(hidden).not.toContain('data-command="dismissOnboarding"');
+    expect(hidden).toContain('CodeScout готов к работе');
   });
 
   it('masks API keys while preserving only the last three characters', () => {
@@ -1282,7 +1291,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes'");
     expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
-    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -2987,7 +2996,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("const language = message.reportLanguage === 'en' ? 'en' : 'ru'");
     expect(extension).toContain("await config.update('language', language, vscode.ConfigurationTarget.Global)");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('this.uiPrefs, this.language)');
+    expect(panel).toContain('this.uiPrefs, this.language, ux)');
   });
 
   it('manifest nls: every %token% resolves, default file is English, ru file is Russian', () => {
@@ -3088,5 +3097,99 @@ describe('v1.4b-11 «Язык» section (moved out of Базовые)', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'toggleLanguage'");
     expect(panel).toContain("executeCommand('codescout.toggleLanguage')");
+  });
+});
+
+describe('v1.4b-12 onboarding + ETA', () => {
+  const CYRILLIC = /[\u0400-\u04FF]/;
+  const stats = { files: 2, seconds: 3.5, critical: 1, medium: 0, low: 1 };
+
+  it('firstAudit short card renders for a keyed user with no audit and EN stays clean', () => {
+    const ru = buildEmptyReportHtml('AIza****1234', true, 'gemini', 'm', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', { firstAudit: true });
+    expect(ru).toContain('Запусти первый аудит');
+    expect(ru).toContain('автономный режим');
+    expect(ru).toContain('data-command="scanFull"');
+    expect(ru).not.toContain('CodeScout готов к работе');
+    const en = buildEmptyReportHtml('AIza****1234', true, 'gemini', 'm', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'en', { firstAudit: true });
+    expect(en).toContain('Run your first audit');
+    expect(en).not.toMatch(CYRILLIC);
+    const off = buildEmptyReportHtml('AIza****1234', true, 'gemini', 'm', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', {});
+    expect(off).toContain('CodeScout готов к работе');
+  });
+
+  it('welcome card host wiring: globalState flag gates the card and dismiss hides it forever', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("context.globalState.get<boolean>('codescout.onboardingDismissed')");
+    expect(extension).toContain("registerCommand('codescout.dismissOnboarding'");
+    expect(extension).toContain("await context.globalState.update('codescout.onboardingDismissed', true)");
+    expect(extension).toContain('panel.setOnboardingHidden(true)');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'dismissOnboarding'");
+    expect(panel).toContain('onboarding: !this.keyConfigured && !this.onboardingHidden');
+    expect(panel).toContain('firstAudit: this.keyConfigured && this.firstAuditDone === false');
+    expect(extension).toContain("panel.setFirstAuditDone(activateRoot ? existsSync(join(activateRoot, CONTEXT_FILE)) : undefined)");
+  });
+
+  it('ETA math: median of completed files × remaining, pending <2, pauses via the ladder', () => {
+    expect(medianSeconds([10, 30, 20])).toBe(20);
+    expect(medianSeconds([10, 20])).toBe(15);
+    expect(medianSeconds([])).toBeNull();
+    expect(auditEtaSeconds([10, 20], 3)).toBe(45);
+    expect(auditEtaSeconds([10], 3)).toBeNull();
+    expect(auditEtaSeconds([], 5)).toBeNull();
+    expect(auditEtaSeconds([10, 20], 0)).toBe(0);
+    expect(auditEtaSeconds([10, 20], 2, 90, 480)).toBe(600);
+    expect(ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, 0)).toBe(0);
+    expect(ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, 1)).toBe(480);
+    expect(ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, 4)).toBe(0);
+  });
+
+  it('audit records clean durations: rate-limit pauses excluded from the median, wired into auto-catchup ETA', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('panel.recordFileDuration(seconds)');
+    expect(extension).toContain('const pausedMs = (pauseByFile.get(filename) ?? 0) * 1000;');
+    expect(extension).toContain('pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds)');
+    expect(extension).toContain('const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt))');
+    expect(extension).toContain('maxAttempts, etaSeconds }');
+    expect(extension).toContain('panel.setScanning(true, resume)');
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('if (!keepAuditStats) this.auditDurations = [];');
+    expect(panel).toContain('checked: index, total, etaSeconds');
+    expect(extension).not.toMatch(/appendLine\([^)]*ETA/);
+  });
+
+  it('progress bar with checked/total, pass and ETA renders and live-patches', () => {
+    const html = buildReportHtml([], stats, true, false, '', 'retry', 'k', true, 'g', 'm', false, '🔎 файл 3/10', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n1', undefined, 'ru', { progress: { checked: 3, total: 10, etaSeconds: 125, pass: 2, totalPasses: 3 } });
+    expect(html).toContain('id="barFill" style="width:30%"');
+    expect(html).toContain('3/10 файлов');
+    expect(html).toContain('круг 2/3');
+    expect(html).toContain('осталось ≈ 2:05');
+    expect(html).toContain('applyProgressMeta');
+    const pending = buildReportHtml([], stats, true, false, '', 'retry', 'k', true, 'g', 'm', false, 'x', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n2', undefined, 'ru', { progress: { checked: 1, total: 4, etaSeconds: null } });
+    expect(pending).toContain('осталось …');
+    const en = buildReportHtml([], stats, true, false, '', 'retry', 'k', true, 'g', 'm', false, 'x', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n3', undefined, 'en', { progress: { checked: 3, total: 10, etaSeconds: 125 } });
+    expect(en).toContain('≈ 2:05 left');
+    expect(en).not.toMatch(CYRILLIC);
+    const noEta = buildReportHtml([], stats, true, false, '', 'retry', 'k', true, 'g', 'm', false, 'x', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n4', undefined, 'ru', { progress: { checked: 1, total: 2 } });
+    expect(noEta).toContain('<span id="etaLine"></span>');
+  });
+
+  it('summary card: N findings · M files · time + Open report / Run again', () => {
+    const html = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n5', undefined, 'ru', { summary: { issues: 7, files: 12, seconds: 75 } });
+    expect(html).toContain('Аудит завершён');
+    expect(html).toContain('Находок: 7 · Файлов: 12 · Время: 1:15');
+    expect(html).toContain('data-command="openReport"');
+    expect(html).toContain('data-command="runAgain"');
+    const en = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n6', undefined, 'en', { summary: { issues: 7, files: 12, seconds: 75 } });
+    expect(en).toContain('7 findings · 12 files · 1:15 total');
+    expect(en).toContain('Open report');
+    expect(en).not.toMatch(CYRILLIC);
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain("message.command === 'openReport'");
+    expect(panel).toContain("message.command === 'runAgain'");
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("registerCommand('codescout.openAuditReport'");
+    expect(extension).toContain('panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 })');
+    expect(extension).toContain('panel.setFirstAuditDone(true)');
   });
 });

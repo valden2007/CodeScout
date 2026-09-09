@@ -851,6 +851,25 @@ var ru_default = {
   "form.pickOutside": "\u0432\u043D\u0435 workspace, \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E:",
   "form.pickNoWorkspace": "\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u043F\u0430\u043F\u043A\u0438 \u2014 \u0432\u044B\u0431\u043E\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D",
   "progress.startup": "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026",
+  "progress.eta": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2248 {t}",
+  "progress.etaPending": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2026",
+  "progress.pass": "\u043A\u0440\u0443\u0433 {p}/{tp}",
+  "progress.filesDone": "{d}/{t} \u0444\u0430\u0439\u043B\u043E\u0432",
+  "onboard.title": "\u041F\u0435\u0440\u0432\u044B\u0439 \u0437\u0430\u043F\u0443\u0441\u043A CodeScout",
+  "onboard.step1": "\u0414\u043E\u0431\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C.",
+  "onboard.step1Btn": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447",
+  "onboard.step2": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439, \u0441 \u0432\u0430\u043B\u0438\u0434\u0430\u0446\u0438\u0435\u0439.",
+  "onboard.step2Btn": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
+  "onboard.step3": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u043E\u043D \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C.",
+  "onboard.step3Btn": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
+  "onboard.dontShow": "\u041D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "onboard.firstTitle": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
+  "onboard.firstBody": "\u0410\u0443\u0434\u0438\u0442 \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0438 \u043F\u043E\u0434\u043C\u0435\u0448\u0430\u0435\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0432 \u043A\u0430\u0436\u0434\u043E\u0435 \u0440\u0435\u0432\u044C\u044E \u2014 \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0441\u0442\u0430\u043D\u0443\u0442 \u0442\u043E\u0447\u043D\u0435\u0435.",
+  "onboard.autoHint": "\u041F\u0440\u0435\u0440\u044B\u0432\u0430\u043D\u0438\u044F \u0430\u0443\u0434\u0438\u0442 \u0434\u043E\u0433\u043E\u043D\u044F\u0435\u0442 \u0441\u0430\u043C \u2014 \u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C.",
+  "summary.title": "\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
+  "summary.meta": "\u041D\u0430\u0445\u043E\u0434\u043E\u043A: {i} \xB7 \u0424\u0430\u0439\u043B\u043E\u0432: {f} \xB7 \u0412\u0440\u0435\u043C\u044F: {t}",
+  "summary.open": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043E\u0442\u0447\u0451\u0442",
+  "summary.again": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
   "search.placeholder": "\u043F\u043E\u0438\u0441\u043A \u0444\u0430\u0439\u043B\u0430\u2026",
   "customBanner.label": "\u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E:",
   "stats.issues": "{n} issues",
@@ -861,12 +880,9 @@ var ru_default = {
   "empty.onboardTitle": "\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout",
   "empty.step1Prefix": "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 ",
   "empty.step1Link": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio",
-  "empty.step2": "\u041D\u0430\u0436\u043C\u0438 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435 \u0438 \u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447.",
-  "empty.step3": "\u0413\u043E\u0442\u043E\u0432\u043E \u2014 \u043A\u043D\u043E\u043F\u043A\u0438 \u0432\u044B\u0448\u0435 \u0437\u0430\u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.",
   "empty.stepLabel1": "\u0428\u0430\u0433 1.",
   "empty.stepLabel2": "\u0428\u0430\u0433 2.",
   "empty.stepLabel3": "\u0428\u0430\u0433 3.",
-  "empty.insertKey": "\u0412\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C",
   "empty.readyTitle": "CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435",
   "empty.readyHint": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.",
   "empty.testTitle": "\u0422\u0415\u0421\u0422",
@@ -1097,6 +1113,25 @@ var en_default = {
   "form.pickOutside": "outside workspace, not added:",
   "form.pickNoWorkspace": "No open folder \u2014 picking is unavailable",
   "progress.startup": "Starting check\u2026",
+  "progress.eta": "\u2248 {t} left",
+  "progress.etaPending": "ETA \u2026",
+  "progress.pass": "pass {p}/{tp}",
+  "progress.filesDone": "{d}/{t} files",
+  "onboard.title": "First run of CodeScout",
+  "onboard.step1": "Add an API key \u2014 the provider is detected automatically.",
+  "onboard.step1Btn": "Add key",
+  "onboard.step2": "Pick a model \u2014 the list is live and validated.",
+  "onboard.step2Btn": "Choose model",
+  "onboard.step3": "Run a full audit \u2014 it studies the whole project.",
+  "onboard.step3Btn": "Run first audit",
+  "onboard.dontShow": "Don't show again",
+  "onboard.firstTitle": "Run your first audit",
+  "onboard.firstBody": "The audit studies the project and mixes context into every review \u2014 findings get sharper.",
+  "onboard.autoHint": "Interruptions catch up on their own \u2014 \u{1F916} autonomous mode.",
+  "summary.title": "Audit finished",
+  "summary.meta": "{i} findings \xB7 {f} files \xB7 {t} total",
+  "summary.open": "Open report",
+  "summary.again": "Run again",
   "search.placeholder": "search file\u2026",
   "customBanner.label": "Custom review:",
   "stats.issues": "{n} issues",
@@ -1107,12 +1142,9 @@ var en_default = {
   "empty.onboardTitle": "Hi! This is CodeScout",
   "empty.step1Prefix": "Get a provider API key at ",
   "empty.step1Link": "Open Google AI Studio",
-  "empty.step2": "Click the button below and paste a key.",
-  "empty.step3": "Done \u2014 the buttons above will work.",
   "empty.stepLabel1": "Step 1.",
   "empty.stepLabel2": "Step 2.",
   "empty.stepLabel3": "Step 3.",
-  "empty.insertKey": "Paste key \u2014 the provider is detected automatically",
   "empty.readyTitle": "CodeScout is ready",
   "empty.readyHint": "Click one of the buttons above to start a review.",
   "empty.testTitle": "TEST",
@@ -1310,6 +1342,14 @@ function t(key, lang, vars) {
 }
 
 // src/reportHtml.ts
+function formatEtaSeconds(total) {
+  const sec = Math.max(0, Math.round(total));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor(sec % 3600 / 60);
+  const s = sec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
 var severityOrder = {
   critical: 0,
   high: 1,
@@ -1417,6 +1457,23 @@ button:disabled { opacity: 0.65; cursor: default; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
 .progress-line { margin-top: 7px; color: var(--cs-desc); font-size: var(--cs-font-2); }
+.scan-progress { margin-top: 7px; }
+.scan-progress .progress-line { margin-top: var(--cs-space-1); }
+.bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--cs-accent) 16%, transparent); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--cs-accent); transition: width 0.4s ease; }
+.bar-meta { display: flex; justify-content: space-between; gap: var(--cs-space-2); margin-top: 4px; color: var(--cs-desc); font-size: var(--cs-font-1); }
+.bar-meta .codicon { font-size: var(--cs-font-1); vertical-align: -2px; }
+.onboard-sub { margin: -8px 0 var(--cs-space-4); color: var(--cs-desc); font-size: var(--cs-font-2); }
+.onboard-steps { list-style: none; margin: 0 auto; padding: 0; max-width: 420px; text-align: left; }
+.onboard-step { display: flex; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-3); }
+.onboard-num { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--cs-accent) 18%, transparent); color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
+.onboard-body { flex: 1 1 auto; min-width: 0; }
+.onboard-body p { margin: 0 0 var(--cs-space-1); }
+.onboard-body button { width: auto; margin: 2px 0 0; }
+.onboard-auto { display: block; margin-top: var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.summary-card { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
+.summary-head { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-pass); }
+.summary-meta { margin: var(--cs-space-1) 0 var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-2); }
 .stats { margin-top: 9px; color: var(--cs-desc); font-size: var(--cs-font-2); }
 .pills { display: flex; gap: 6px; margin-top: var(--cs-space-3); flex-wrap: wrap; }
 .pill, .badge { border-radius: 999px; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
@@ -1465,7 +1522,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -1480,12 +1537,19 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const diffSummary = findingsDiff ? `<div class="diff-summary">${icon("diff-added")}${escapeHtml(findingsDiff.summary)}</div>` : "";
   const customBanner = customFocus ? `<div class="diff-summary custom">${icon("target")} ${T("customBanner.label")} ${escapeHtml(customFocus.slice(0, 160))}</div>` : "";
   const fixedBlock = findingsDiff?.fixed?.length ? `<details class="fixed-block"><summary>${icon("check")} ${T("fixed.title", { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
-  const body = sections || (emptyState && !keyConfigured ? `<div class="onboarding"><div class="empty-icon">${icon("account")}</div><h1>${T("empty.onboardTitle")}</h1><p><strong>${T("empty.stepLabel1")}</strong> ${T("empty.step1Prefix")}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T("empty.step1Link")}</a>.</p><p><strong>${T("empty.stepLabel2")}</strong> ${T("empty.step2")}</p><button class="primary-action cs-btn" type="button" data-command="setApiKey">${icon("key")}<span>${T("empty.insertKey")}</span></button><p><strong>${T("empty.stepLabel3")}</strong> ${T("empty.step3")}</p></div>` : emptyState ? `<div class="empty"><div class="empty-icon">${icon("search")}</div><strong>${T("empty.readyTitle")}</strong><small>${T("empty.readyHint")}</small></div>` : testMode ? `<div class="empty"><div class="empty-icon">${icon("beaker")}</div><strong>${T("empty.testTitle")}</strong><small>${T("empty.testHint")}</small></div>` : `<div class="empty"><div class="empty-icon">${icon("pass")}</div><strong>${T("empty.cleanTitle", { n: stats.files })}</strong><small>${T("empty.cleanHint")}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon("beaker")}<span>${T("empty.testSample")}</span></button></div>`);
+  const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon("account")}</div><h1>${T("empty.onboardTitle")}</h1><div class="onboard-sub">${T("onboard.title")}</div><ol class="onboard-steps">
+  <li class="onboard-step"><span class="onboard-num">1</span><div class="onboard-body"><p><strong>${T("empty.stepLabel1")}</strong> ${T("onboard.step1")} ${T("empty.step1Prefix")}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T("empty.step1Link")}</a></p><button class="primary-action cs-btn" type="button" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("onboard.step1Btn")}</span></button></div></li>
+  <li class="onboard-step"><span class="onboard-num">2</span><div class="onboard-body"><p><strong>${T("empty.stepLabel2")}</strong> ${T("onboard.step2")}</p><button class="cs-btn secondary" type="button" data-command="chooseModel">${icon("rocket")}<span>${T("onboard.step2Btn")}</span></button></div></li>
+  <li class="onboard-step"><span class="onboard-num">3</span><div class="onboard-body"><p><strong>${T("empty.stepLabel3")}</strong> ${T("onboard.step3")}</p><button class="cs-btn secondary" type="button" data-command="scanFull">${icon("telescope")}<span>${T("onboard.step3Btn")}</span></button></div></li>
+</ol><button class="link-button" type="button" data-command="dismissOnboarding">${T("onboard.dontShow")}</button></div>`;
+  const firstAuditCard = `<div class="onboarding"><div class="empty-icon">${icon("telescope")}</div><h1>${T("onboard.firstTitle")}</h1><p>${T("onboard.firstBody")}</p><button class="primary-action cs-btn" type="button" data-command="scanFull">${icon("play")}<span>${T("onboard.step3Btn")}</span></button><small class="onboard-auto">${icon("robot")} ${T("onboard.autoHint")}</small></div>`;
+  const body = sections || (emptyState && ux.onboarding ? onboardCard : emptyState && ux.firstAudit ? firstAuditCard : emptyState ? `<div class="empty"><div class="empty-icon">${icon("search")}</div><strong>${T("empty.readyTitle")}</strong><small>${T("empty.readyHint")}</small></div>` : testMode ? `<div class="empty"><div class="empty-icon">${icon("beaker")}</div><strong>${T("empty.testTitle")}</strong><small>${T("empty.testHint")}</small></div>` : `<div class="empty"><div class="empty-icon">${icon("pass")}</div><strong>${T("empty.cleanTitle", { n: stats.files })}</strong><small>${T("empty.cleanHint")}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon("beaker")}<span>${T("empty.testSample")}</span></button></div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
-  const clientDict = JSON.stringify(["actions.customReview", "actions.customReviewCollapse", "auto.line", "auto.lineRetry", "auto.attemptOf", "auto.attempt", "status.model404", "form.pickOutside", "form.pickNoWorkspace"].reduce((acc, k) => {
+  const clientDict = JSON.stringify(["actions.customReview", "actions.customReviewCollapse", "auto.line", "auto.lineRetry", "auto.attemptOf", "auto.attempt", "status.model404", "form.pickOutside", "form.pickNoWorkspace", "progress.eta", "progress.etaPending", "progress.filesDone", "progress.pass"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}));
+  const summaryCard = ux.summary ? `<div class="summary-card"><div class="summary-head">${icon("check")} <strong>${T("summary.title")}</strong></div><div class="summary-meta">${escapeHtml(T("summary.meta", { i: ux.summary.issues, f: ux.summary.files, t: formatEtaSeconds(ux.summary.seconds) }))}</div><div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon("output")}<span>${T("summary.open")}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon("refresh")}<span>${T("summary.again")}</span></button></div></div>` : "";
   return `<!DOCTYPE html>
 <html lang="${lang}">
 ${headHtml(assets, nonce)}
@@ -1521,14 +1585,17 @@ ${headHtml(assets, nonce)}
         <button type="button" class="cs-btn" id="startCustomReview">${icon("beaker")}<span>${T("form.start")}</span></button>
       </div>
     </div>
-    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || T("progress.startup"))}</div>` : ""}
+    ${isScanning || progressMessage ? `<div class="scan-progress">
+    ${ux.progress ? `<div class="bar" role="progressbar" aria-valuenow="${ux.progress.checked}" aria-valuemin="0" aria-valuemax="${ux.progress.total}"><div class="bar-fill" id="barFill" style="width:${ux.progress.total > 0 ? Math.round(ux.progress.checked / ux.progress.total * 100) : 0}%"></div></div><div class="bar-meta"><span id="barCount">${icon("checklist")} ${T("progress.filesDone", { d: ux.progress.checked, t: ux.progress.total })}${ux.progress.pass !== void 0 && ux.progress.totalPasses !== void 0 && ux.progress.totalPasses > 1 ? ` \xB7 ${T("progress.pass", { p: ux.progress.pass, tp: ux.progress.totalPasses })}` : ""}</span><span id="etaLine">${ux.progress.etaSeconds === void 0 ? "" : ux.progress.etaSeconds === null ? escapeHtml(T("progress.etaPending")) : escapeHtml(T("progress.eta", { t: formatEtaSeconds(ux.progress.etaSeconds) }))}</span></div>` : ""}
+    <div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || T("progress.startup"))}</div>
+    </div>` : ""}
     ${autoLineHtml(autoResume, lang)}
     ${isScanning ? `<button class="cancel-action cs-btn" type="button" data-command="cancelScan">${icon("debug-stop")}<span>${T("actions.cancel")}</span></button>` : ""}
     <div class="stats"><strong>${T("stats.issues", { n: issues.length })}</strong> \xB7 ${T("stats.files", { n: stats.files })} \xB7 ${T("stats.seconds", { n: stats.seconds.toFixed(1) })}</div>
     <div class="pills"><span class="pill critical">${icon("error")} ${stats.critical}</span><span class="pill medium">${icon("warning")} ${stats.medium}</span><span class="pill low">${icon("pass")} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T("search.placeholder")}" autocomplete="off" spellcheck="false"></div>` : ""}
-  <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};
@@ -1559,6 +1626,26 @@ ${headHtml(assets, nonce)}
     function applyProgressText(text) {
       const line = document.getElementById('progressLine');
       if (line) line.textContent = text;
+    }
+    function fmtEta(total) {
+      const s = Math.max(0, Math.round(total));
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      return h > 0 ? h + ':' + pad(m) + ':' + pad(sec) : m + ':' + pad(sec);
+    }
+    function applyProgressMeta(data) {
+      const fill = document.getElementById('barFill');
+      const count = document.getElementById('barCount');
+      const eta = document.getElementById('etaLine');
+      if (typeof data.checked === 'number' && typeof data.total === 'number' && count) {
+        if (fill) fill.style.width = (data.total > 0 ? Math.round(data.checked / data.total * 100) : 0) + '%';
+        let label = L('progress.filesDone', { d: data.checked, t: data.total });
+        if (typeof data.pass === 'number' && typeof data.totalPasses === 'number' && data.totalPasses > 1) label += ' \xB7 ' + L('progress.pass', { p: data.pass, tp: data.totalPasses });
+        count.textContent = label;
+      }
+      if (eta && data.etaSeconds !== undefined) {
+        eta.textContent = data.etaSeconds === null ? L('progress.etaPending') : L('progress.eta', { t: fmtEta(data.etaSeconds) });
+      }
     }
     function applyStatus(message, kind) {
       const slot = document.getElementById('statusSlot');
@@ -1630,6 +1717,7 @@ ${headHtml(assets, nonce)}
         if (um) live.unit = um[2];
         live.tick = true;
         applyProgressText(live.text);
+        applyProgressMeta(data);
       } else if (data.type === 'status') {
         applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : data.kind === 'test' ? 'test' : data.kind === 'success' ? 'success' : 'retry');
       } else if (data.type === 'auto') {
@@ -1643,6 +1731,7 @@ ${headHtml(assets, nonce)}
           auto.seconds = Number(data.secondsLeft || 0);
         }
         renderAuto();
+        if (!data.off) applyProgressMeta({ checked: data.done, total: data.total, etaSeconds: data.etaSeconds });
       } else if (data.type === 'scopePickResult') {
         const globsEl = document.getElementById('customGlobs');
         const warn = document.getElementById('customScopeWarn');
@@ -1728,8 +1817,8 @@ ${headHtml(assets, nonce)}
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru") {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux);
 }
 
 // src/panel.ts
@@ -1786,6 +1875,11 @@ var CodeScoutPanel = class {
   autoResumeMaxMinutes = 0;
   uiPrefs = DEFAULT_UI_PREFS;
   language = "ru";
+  onboardingHidden = false;
+  firstAuditDone;
+  progressInfo;
+  auditSummary;
+  auditDurations = [];
   onWelcomeStart;
   onWelcomeDismiss;
   messageSubscription;
@@ -1852,6 +1946,12 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.openSettingsPage", message.anchor ?? "");
       } else if (message.command === "toggleLanguage") {
         void vscode.commands.executeCommand("codescout.toggleLanguage");
+      } else if (message.command === "dismissOnboarding") {
+        void vscode.commands.executeCommand("codescout.dismissOnboarding");
+      } else if (message.command === "openReport") {
+        void vscode.commands.executeCommand("codescout.openAuditReport");
+      } else if (message.command === "runAgain") {
+        void vscode.commands.executeCommand("codescout.scanFull");
       } else if (message.command === "customReview") {
         void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
       } else if (message.command === "clearApiKey") {
@@ -1934,6 +2034,27 @@ var CodeScoutPanel = class {
     this.refreshAutoResumeSettings();
     this.render();
   }
+  setOnboardingHidden(hidden) {
+    this.onboardingHidden = hidden;
+    this.render();
+  }
+  setFirstAuditDone(done) {
+    this.firstAuditDone = done;
+    this.render();
+  }
+  showAuditSummary(summary) {
+    this.auditSummary = summary;
+    this.render();
+  }
+  recordFileDuration(seconds) {
+    if (Number.isFinite(seconds) && seconds >= 0) this.auditDurations.push(seconds);
+  }
+  getFileDurations() {
+    return [...this.auditDurations];
+  }
+  setAuditPass(pass, totalPasses) {
+    if (this.progressInfo) this.progressInfo = { ...this.progressInfo, pass, totalPasses };
+  }
   setWelcomeBanner(visible, reason = "new") {
     this.welcomeBanner = visible;
     this.welcomeReason = reason;
@@ -1955,7 +2076,7 @@ var CodeScoutPanel = class {
     this.model = model;
     this.render();
   }
-  setScanning(scanning) {
+  setScanning(scanning, keepAuditStats = false) {
     this.scanning = scanning;
     if (scanning) {
       this.statusMessage = "";
@@ -1965,18 +2086,22 @@ var CodeScoutPanel = class {
       this.customFocus = "";
       this.auditResume = void 0;
       this.autoResumeView = void 0;
+      this.progressInfo = void 0;
+      this.auditSummary = void 0;
+      if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
   }
   liveWebview() {
     return this.view && this.scanning ? this.view.webview : void 0;
   }
-  setProgress(index, total, filename, label, elapsedMs = 0) {
+  setProgress(index, total, filename, label, elapsedMs = 0, etaSeconds) {
     this.scanning = true;
     this.progressMessage = t("progress.fileLine", this.language, { label: label ?? t("progress.file.check", this.language), index, total, file: filename, s: Math.floor(elapsedMs / 1e3) });
+    this.progressInfo = { checked: index, total, etaSeconds, pass: this.progressInfo?.pass, totalPasses: this.progressInfo?.totalPasses };
     const webview = this.liveWebview();
     if (webview) {
-      safePost(webview, { type: "progress", text: this.progressMessage, elapsedMs });
+      safePost(webview, { type: "progress", text: this.progressMessage, elapsedMs, checked: index, total, etaSeconds, pass: this.progressInfo.pass, totalPasses: this.progressInfo.totalPasses });
       return;
     }
     this.render();
@@ -2052,7 +2177,13 @@ var CodeScoutPanel = class {
       cspSource: webview.cspSource
     };
     const nonce = (0, import_node_crypto.randomBytes)(16).toString("hex");
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language);
+    const ux = {
+      onboarding: !this.keyConfigured && !this.onboardingHidden,
+      firstAudit: this.keyConfigured && this.firstAuditDone === false,
+      progress: this.progressInfo ? { ...this.progressInfo } : void 0,
+      summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
+    };
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 };
 
@@ -2487,6 +2618,24 @@ function autoResumeLimitFromSetting(value, max) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.min(max, n);
+}
+function medianSeconds(values) {
+  const sorted = values.filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function ladderRemainingSeconds(ladder, stepsUsed) {
+  if (stepsUsed <= 0) return 0;
+  return ladder.slice(Math.min(stepsUsed, ladder.length)).reduce((sum, step) => sum + step, 0);
+}
+function auditEtaSeconds(durations, remainingFiles, waitSeconds = 0, ladderRemaining = 0) {
+  if (remainingFiles <= 0) return 0;
+  const valid = durations.filter((value) => Number.isFinite(value) && value >= 0);
+  if (valid.length < 2) return null;
+  const median = medianSeconds(valid);
+  if (median === null) return null;
+  return Math.max(0, Math.round(median * remainingFiles + waitSeconds + ladderRemaining));
 }
 function autoResumeBadgeDetail(maxAttempts, maxMinutes, lang = "ru") {
   if (maxAttempts > 0 && maxMinutes > 0) return t("badge.autoDetailBoth", lang, { a: maxAttempts, m: maxMinutes });
@@ -3479,7 +3628,9 @@ async function runFullAudit(context, output, panel, resume = false) {
     }
     lastAttempt = decision.attempt;
     output.appendLine(`\u{1F916} rate-limit:_resume \u0447\u0435\u0440\u0435\u0437 ${decision.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ""})`);
-    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts });
+    const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
+    const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
+    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
     const waitController = new AbortController();
     activeAbortController?.abort();
     activeAbortController = waitController;
@@ -3506,7 +3657,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
   const workspaceRoot = getWorkspaceRoot();
   output.clear();
   output.show(true);
-  panel.setScanning(true);
+  panel.setScanning(true, resume);
   if (!workspaceRoot) {
     panel.setError(t("panel.errNoWorkspaceAudit", currentReportLanguage()));
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -3575,6 +3726,8 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const chunkProgress = /* @__PURE__ */ new Map();
     const loggedStart = /* @__PURE__ */ new Set();
     const fileStartedAt = /* @__PURE__ */ new Map();
+    const pauseByFile = /* @__PURE__ */ new Map();
+    const auditEta = () => auditEtaSeconds(panel.getFileDurations(), Math.max(0, planFiles.length - doneNames.size));
     if (auditPasses > 1) output.appendLine(`\u{1F501} \u041C\u0443\u043B\u044C\u0442\u0438-\u043F\u0430\u0441\u0441 \u0430\u0443\u0434\u0438\u0442: ${auditPasses} \u043A\u0440\u0443\u0433\u0430 \u043D\u0430 \u0444\u0430\u0439\u043B (codescout.auditPasses)`);
     const persist = () => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
@@ -3582,7 +3735,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     };
     persist();
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
-      panel.setProgress(index, total, filename, t("progress.file.audit", currentReportLanguage()), elapsedMs);
+      panel.setProgress(index, total, filename, t("progress.file.audit", currentReportLanguage()), elapsedMs, auditEta());
       if (!loggedStart.has(filename)) {
         loggedStart.add(filename);
         fileStartedAt.set(filename, Date.now());
@@ -3597,10 +3750,19 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         doneNames.add(filename);
         state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
         persist();
-        const seconds = Math.max(0, Math.round((Date.now() - (fileStartedAt.get(filename) ?? Date.now())) / 1e3 * 10) / 10);
+        const pausedMs = (pauseByFile.get(filename) ?? 0) * 1e3;
+        pauseByFile.delete(filename);
+        const seconds = Math.max(0, Math.round((Date.now() - (fileStartedAt.get(filename) ?? Date.now()) - pausedMs) / 1e3 * 10) / 10);
+        panel.recordFileDuration(seconds);
         output.appendLine(`\u2705 \u0444\u0430\u0439\u043B ${doneNames.size}/${planFiles.length}: ${filename} \u2014 \u0433\u043E\u0442\u043E\u0432\u043E \u0437\u0430 ${seconds}\u0441`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => output.appendLine(`\u{1F504} \u043A\u0440\u0443\u0433 ${pass}/${totalPasses}: \u0444\u0430\u0439\u043B ${filename}`), auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`), void 0, currentReportLanguage());
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => {
+      panel.setAuditPass(pass, totalPasses);
+      output.appendLine(`\u{1F504} \u043A\u0440\u0443\u0433 ${pass}/${totalPasses}: \u0444\u0430\u0439\u043B ${filename}`);
+    }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => {
+      pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds);
+      output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`);
+    }, void 0, currentReportLanguage());
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -3614,6 +3776,8 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage());
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
+    panel.setFirstAuditDone(true);
+    panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
     const resumeView = result.skippedFiles > 0 ? progressView(state) : void 0;
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -3921,9 +4085,20 @@ function activate(context) {
   void syncKeyStatus();
   void migrateLanguageSetting(context).catch(() => {
   });
+  panel.setOnboardingHidden(context.globalState.get("codescout.onboardingDismissed") === true);
+  const activateRoot = getWorkspaceRoot();
+  panel.setFirstAuditDone(activateRoot ? (0, import_node_fs5.existsSync)((0, import_node_path4.join)(activateRoot, CONTEXT_FILE)) : void 0);
   context.subscriptions.push(
     vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
     vscode2.commands.registerCommand("codescout.openSettings", () => vscode2.commands.executeCommand("workbench.action.openSettings", "codescout")),
+    vscode2.commands.registerCommand("codescout.dismissOnboarding", async () => {
+      await context.globalState.update("codescout.onboardingDismissed", true);
+      panel.setOnboardingHidden(true);
+    }),
+    vscode2.commands.registerCommand("codescout.openAuditReport", async () => {
+      output.show(true);
+      await vscode2.commands.executeCommand("codescout.panel.focus");
+    }),
     vscode2.commands.registerCommand("codescout.toggleLanguage", async () => {
       const config = vscode2.workspace.getConfiguration("codescout");
       const next = config.get("language") === "en" ? "ru" : "en";
@@ -4112,11 +4287,14 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runSelectionReview(context, output, panel, uri)),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
+      await context.globalState.update("codescout.onboardingDismissed", void 0);
+      panel.setOnboardingHidden(false);
       const workspaceRoot = getWorkspaceRoot();
       if (workspaceRoot && (0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
         const answer = await vscode2.window.showWarningMessage(t("onboarding.resetConfirm", currentReportLanguage()), { modal: true }, t("common.delete", currentReportLanguage()));
         if (answer === t("common.delete", currentReportLanguage())) (0, import_node_fs5.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
       }
+      if (workspaceRoot) panel.setFirstAuditDone((0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE)));
       if (workspaceRoot) panel.setWelcomeBanner(true, "new");
       void vscode2.window.showInformationMessage(t("onboarding.resetDone", currentReportLanguage()));
     }),

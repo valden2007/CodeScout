@@ -514,6 +514,32 @@ export function autoResumeLimitFromSetting(value: number | undefined, max: numbe
   return Math.min(max, n);
 }
 
+export function medianSeconds(values: number[]): number | null {
+  const sorted = values.filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Сумма ещё не использованных ступеней лестницы пауз (ladder[stepsUsed..]).
+export function ladderRemainingSeconds(ladder: number[], stepsUsed: number): number {
+  if (stepsUsed <= 0) return 0;
+  return ladder.slice(Math.min(stepsUsed, ladder.length)).reduce((sum, step) => sum + step, 0);
+}
+
+// ETA = медиана чистых длительностей завершённых файлов × осталось
+// + текущая пауза (авто-догон) + сумма оставшихся ступеней лестницы.
+// Длительности файлов должны записываться БЕЗ времени пауз, чтобы медиана
+// не искажалась; <2 завершённых — медианы нет, ETA неизвестна (null).
+export function auditEtaSeconds(durations: number[], remainingFiles: number, waitSeconds = 0, ladderRemaining = 0): number | null {
+  if (remainingFiles <= 0) return 0;
+  const valid = durations.filter((value) => Number.isFinite(value) && value >= 0);
+  if (valid.length < 2) return null;
+  const median = medianSeconds(valid);
+  if (median === null) return null;
+  return Math.max(0, Math.round(median * remainingFiles + waitSeconds + ladderRemaining));
+}
+
 export function autoResumeBadgeText(maxAttempts: number, maxMinutes: number): string {
   const hasAttempts = maxAttempts > 0;
   const hasMinutes = maxMinutes > 0;

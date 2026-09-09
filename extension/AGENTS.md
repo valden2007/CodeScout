@@ -389,6 +389,29 @@ pre-design now.
     setting (single source of truth, synced with the section select;
     one switch drives UI dict + review prompt + model answer language).
     Tests: 240.
+ 20. Onboarding + ETA (v1.4b-12): PanelUx {onboarding, firstAudit,
+    progress{checked,total,etaSeconds,pass,totalPasses}, summary} is the
+    single ux channel of buildReportHtml/buildEmptyReportHtml. FIRST RUN
+    (no key, globalState flag codescout.onboardingDismissed unset):
+    3-step welcome card instead of the empty state — 1 key →
+    openSettingsPage sec-key, 2 chooseModel, 3 scanFull + «Не показывать
+    снова» (codescout.dismissOnboarding command writes globalState).
+    KEY BUT NO AUDIT (.codescout/context.json missing): short
+    «Запусти первый аудит» card + 🤖 autonomous-mode hint; the panel
+    learns firstAuditDone from the host at activation, after a finished
+    audit and via resetOnboarding. PROGRESS: bar (checked/total %) +
+    file/pass («круг p/t») + ETA — median of clean per-file durations ×
+    remaining; «…» while <2 files; rate-limit pauses are SUBTRACTED
+    from recorded durations (median stays clean) and enter the ETA
+    separately: during auto-catchup wait = secondsLeft + sum of unused
+    AUTO_RESUME_LADDER steps (ladderRemainingSeconds). auditEtaSeconds/
+    medianSeconds/ladderRemainingSeconds are pure (projectAudit).
+    Durations survive auto-resume via setScanning(true, keepAuditStats).
+    No duplicate Output line (bar is the ETA surface). FINISHED AUDIT:
+    summary card «N находок · M файлов · время» + openReport
+    (codescout.openAuditReport → output.show + panel.focus) and runAgain
+    (scanFull). All strings in both dicts; e2e: dismissOnboarding click
+    hides the card forever (vscode-stub globalState). Tests: 247.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

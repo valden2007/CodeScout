@@ -9,6 +9,7 @@ export interface AutoResumeIndicator {
   secondsLeft: number;
   attempt: number;
   maxAttempts: number;
+  etaSeconds?: number | null;
 }
 
 export interface ReportStats {
@@ -22,6 +23,24 @@ export interface ReportStats {
 export interface WebviewAssets {
   codiconCss: string;
   cspSource: string;
+}
+
+// UX-состояния панели (v1.4b-12): какие карточки показывать и что рисовать
+// в прогресс-баре. etaSeconds: null = неизвестен («…»), undefined = не показывать.
+export interface PanelUx {
+  onboarding?: boolean;
+  firstAudit?: boolean;
+  progress?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
+  summary?: { issues: number; files: number; seconds: number };
+}
+
+export function formatEtaSeconds(total: number): string {
+  const sec = Math.max(0, Math.round(total));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 const severityOrder: Record<ReviewIssue['severity'], number> = {
@@ -147,6 +166,23 @@ button:disabled { opacity: 0.65; cursor: default; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
 .progress-line { margin-top: 7px; color: var(--cs-desc); font-size: var(--cs-font-2); }
+.scan-progress { margin-top: 7px; }
+.scan-progress .progress-line { margin-top: var(--cs-space-1); }
+.bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--cs-accent) 16%, transparent); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--cs-accent); transition: width 0.4s ease; }
+.bar-meta { display: flex; justify-content: space-between; gap: var(--cs-space-2); margin-top: 4px; color: var(--cs-desc); font-size: var(--cs-font-1); }
+.bar-meta .codicon { font-size: var(--cs-font-1); vertical-align: -2px; }
+.onboard-sub { margin: -8px 0 var(--cs-space-4); color: var(--cs-desc); font-size: var(--cs-font-2); }
+.onboard-steps { list-style: none; margin: 0 auto; padding: 0; max-width: 420px; text-align: left; }
+.onboard-step { display: flex; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-3); }
+.onboard-num { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--cs-accent) 18%, transparent); color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
+.onboard-body { flex: 1 1 auto; min-width: 0; }
+.onboard-body p { margin: 0 0 var(--cs-space-1); }
+.onboard-body button { width: auto; margin: 2px 0 0; }
+.onboard-auto { display: block; margin-top: var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.summary-card { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-3); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
+.summary-head { display: flex; align-items: center; gap: var(--cs-space-2); color: var(--cs-pass); }
+.summary-meta { margin: var(--cs-space-1) 0 var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-2); }
 .stats { margin-top: 9px; color: var(--cs-desc); font-size: var(--cs-font-2); }
 .pills { display: flex; gap: 6px; margin-top: var(--cs-space-3); flex-wrap: wrap; }
 .pill, .badge { border-radius: 999px; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
@@ -196,7 +232,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </head>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru'): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -213,15 +249,24 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   const fixedBlock = findingsDiff?.fixed?.length
     ? `<details class="fixed-block"><summary>${icon('check')} ${T('fixed.title', { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
     : '';
-  const body = sections || (emptyState && !keyConfigured
-    ? `<div class="onboarding"><div class="empty-icon">${icon('account')}</div><h1>${T('empty.onboardTitle')}</h1><p><strong>${T('empty.stepLabel1')}</strong> ${T('empty.step1Prefix')}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T('empty.step1Link')}</a>.</p><p><strong>${T('empty.stepLabel2')}</strong> ${T('empty.step2')}</p><button class="primary-action cs-btn" type="button" data-command="setApiKey">${icon('key')}<span>${T('empty.insertKey')}</span></button><p><strong>${T('empty.stepLabel3')}</strong> ${T('empty.step3')}</p></div>`
-    : emptyState
-      ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>${T('empty.readyTitle')}</strong><small>${T('empty.readyHint')}</small></div>`
-      : testMode
-        ? `<div class="empty"><div class="empty-icon">${icon('beaker')}</div><strong>${T('empty.testTitle')}</strong><small>${T('empty.testHint')}</small></div>`
-        : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button></div>`);
+  const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon('account')}</div><h1>${T('empty.onboardTitle')}</h1><div class="onboard-sub">${T('onboard.title')}</div><ol class="onboard-steps">
+  <li class="onboard-step"><span class="onboard-num">1</span><div class="onboard-body"><p><strong>${T('empty.stepLabel1')}</strong> ${T('onboard.step1')} ${T('empty.step1Prefix')}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T('empty.step1Link')}</a></p><button class="primary-action cs-btn" type="button" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('onboard.step1Btn')}</span></button></div></li>
+  <li class="onboard-step"><span class="onboard-num">2</span><div class="onboard-body"><p><strong>${T('empty.stepLabel2')}</strong> ${T('onboard.step2')}</p><button class="cs-btn secondary" type="button" data-command="chooseModel">${icon('rocket')}<span>${T('onboard.step2Btn')}</span></button></div></li>
+  <li class="onboard-step"><span class="onboard-num">3</span><div class="onboard-body"><p><strong>${T('empty.stepLabel3')}</strong> ${T('onboard.step3')}</p><button class="cs-btn secondary" type="button" data-command="scanFull">${icon('telescope')}<span>${T('onboard.step3Btn')}</span></button></div></li>
+</ol><button class="link-button" type="button" data-command="dismissOnboarding">${T('onboard.dontShow')}</button></div>`;
+  const firstAuditCard = `<div class="onboarding"><div class="empty-icon">${icon('telescope')}</div><h1>${T('onboard.firstTitle')}</h1><p>${T('onboard.firstBody')}</p><button class="primary-action cs-btn" type="button" data-command="scanFull">${icon('play')}<span>${T('onboard.step3Btn')}</span></button><small class="onboard-auto">${icon('robot')} ${T('onboard.autoHint')}</small></div>`;
+  const body = sections || (emptyState && ux.onboarding
+    ? onboardCard
+    : emptyState && ux.firstAudit
+      ? firstAuditCard
+      : emptyState
+        ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>${T('empty.readyTitle')}</strong><small>${T('empty.readyHint')}</small></div>`
+        : testMode
+          ? `<div class="empty"><div class="empty-icon">${icon('beaker')}</div><strong>${T('empty.testTitle')}</strong><small>${T('empty.testHint')}</small></div>`
+          : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button></div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  const clientDict = JSON.stringify(['actions.customReview', 'actions.customReviewCollapse', 'auto.line', 'auto.lineRetry', 'auto.attemptOf', 'auto.attempt', 'status.model404', 'form.pickOutside', 'form.pickNoWorkspace'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>));
+  const clientDict = JSON.stringify(['actions.customReview', 'actions.customReviewCollapse', 'auto.line', 'auto.lineRetry', 'auto.attemptOf', 'auto.attempt', 'status.model404', 'form.pickOutside', 'form.pickNoWorkspace', 'progress.eta', 'progress.etaPending', 'progress.filesDone', 'progress.pass'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>));
+  const summaryCard = ux.summary ? `<div class="summary-card"><div class="summary-head">${icon('check')} <strong>${T('summary.title')}</strong></div><div class="summary-meta">${escapeHtml(T('summary.meta', { i: ux.summary.issues, f: ux.summary.files, t: formatEtaSeconds(ux.summary.seconds) }))}</div><div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon('output')}<span>${T('summary.open')}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon('refresh')}<span>${T('summary.again')}</span></button></div></div>` : '';
   return `<!DOCTYPE html>
 <html lang="${lang}">
 ${headHtml(assets, nonce)}
@@ -257,14 +302,17 @@ ${headHtml(assets, nonce)}
         <button type="button" class="cs-btn" id="startCustomReview">${icon('beaker')}<span>${T('form.start')}</span></button>
       </div>
     </div>
-    ${isScanning || progressMessage ? `<div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || T('progress.startup'))}</div>` : ''}
+    ${(isScanning || progressMessage) ? `<div class="scan-progress">
+    ${ux.progress ? `<div class="bar" role="progressbar" aria-valuenow="${ux.progress.checked}" aria-valuemin="0" aria-valuemax="${ux.progress.total}"><div class="bar-fill" id="barFill" style="width:${ux.progress.total > 0 ? Math.round(ux.progress.checked / ux.progress.total * 100) : 0}%"></div></div><div class="bar-meta"><span id="barCount">${icon('checklist')} ${T('progress.filesDone', { d: ux.progress.checked, t: ux.progress.total })}${ux.progress.pass !== undefined && ux.progress.totalPasses !== undefined && ux.progress.totalPasses > 1 ? ` · ${T('progress.pass', { p: ux.progress.pass, tp: ux.progress.totalPasses })}` : ''}</span><span id="etaLine">${ux.progress.etaSeconds === undefined ? '' : ux.progress.etaSeconds === null ? escapeHtml(T('progress.etaPending')) : escapeHtml(T('progress.eta', { t: formatEtaSeconds(ux.progress.etaSeconds) }))}</span></div>` : ''}
+    <div class="progress-line" id="progressLine" data-live="${isScanning}">${escapeHtml(progressMessage || T('progress.startup'))}</div>
+    </div>` : ''}
     ${autoLineHtml(autoResume, lang)}
     ${isScanning ? `<button class="cancel-action cs-btn" type="button" data-command="cancelScan">${icon('debug-stop')}<span>${T('actions.cancel')}</span></button>` : ''}
     <div class="stats"><strong>${T('stats.issues', { n: issues.length })}</strong> · ${T('stats.files', { n: stats.files })} · ${T('stats.seconds', { n: stats.seconds.toFixed(1) })}</div>
     <div class="pills"><span class="pill critical">${icon('error')} ${stats.critical}</span><span class="pill medium">${icon('warning')} ${stats.medium}</span><span class="pill low">${icon('pass')} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T('search.placeholder')}" autocomplete="off" spellcheck="false"></div>` : ''}
-  <main>${customBanner}${diffSummary}${body}${fixedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};
@@ -295,6 +343,26 @@ ${headHtml(assets, nonce)}
     function applyProgressText(text) {
       const line = document.getElementById('progressLine');
       if (line) line.textContent = text;
+    }
+    function fmtEta(total) {
+      const s = Math.max(0, Math.round(total));
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      return h > 0 ? h + ':' + pad(m) + ':' + pad(sec) : m + ':' + pad(sec);
+    }
+    function applyProgressMeta(data) {
+      const fill = document.getElementById('barFill');
+      const count = document.getElementById('barCount');
+      const eta = document.getElementById('etaLine');
+      if (typeof data.checked === 'number' && typeof data.total === 'number' && count) {
+        if (fill) fill.style.width = (data.total > 0 ? Math.round(data.checked / data.total * 100) : 0) + '%';
+        let label = L('progress.filesDone', { d: data.checked, t: data.total });
+        if (typeof data.pass === 'number' && typeof data.totalPasses === 'number' && data.totalPasses > 1) label += ' · ' + L('progress.pass', { p: data.pass, tp: data.totalPasses });
+        count.textContent = label;
+      }
+      if (eta && data.etaSeconds !== undefined) {
+        eta.textContent = data.etaSeconds === null ? L('progress.etaPending') : L('progress.eta', { t: fmtEta(data.etaSeconds) });
+      }
     }
     function applyStatus(message, kind) {
       const slot = document.getElementById('statusSlot');
@@ -366,6 +434,7 @@ ${headHtml(assets, nonce)}
         if (um) live.unit = um[2];
         live.tick = true;
         applyProgressText(live.text);
+        applyProgressMeta(data);
       } else if (data.type === 'status') {
         applyStatus(String(data.message || ''), data.kind === 'error' ? 'error' : data.kind === 'test' ? 'test' : data.kind === 'success' ? 'success' : 'retry');
       } else if (data.type === 'auto') {
@@ -379,6 +448,7 @@ ${headHtml(assets, nonce)}
           auto.seconds = Number(data.secondsLeft || 0);
         }
         renderAuto();
+        if (!data.off) applyProgressMeta({ checked: data.done, total: data.total, etaSeconds: data.etaSeconds });
       } else if (data.type === 'scopePickResult') {
         const globsEl = document.getElementById('customGlobs');
         const warn = document.getElementById('customScopeWarn');
@@ -465,6 +535,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru'): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux);
 }

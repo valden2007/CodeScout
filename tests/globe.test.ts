@@ -66,4 +66,17 @@ describe('v1.4b-11 globe click e2e (mock webview → host → config → re-rend
     expect(view.webview.html).toContain('Полный аудит проекта');
     expect(center.webview.html).toContain('Язык интерфейса, отчётов и ответов модели');
   });
+
+  it('first run: welcome card renders and dismissOnboarding hides it via globalState', async () => {
+    const { view, receive } = activateAndResolve();
+    expect(view.webview.html).toContain('Первый запуск CodeScout');
+    expect(view.webview.html).toContain('data-command="openSettingsPage" data-anchor="sec-key"');
+    expect(view.webview.html).toContain('data-command="dismissOnboarding"');
+
+    receive({ command: 'dismissOnboarding' });
+    await flush();
+    expect(state.globalState.get('codescout.onboardingDismissed')).toBe(true);
+    expect(view.webview.html).not.toContain('Первый запуск CodeScout');
+    expect(view.webview.html).toContain('data-command="scanLastCommit"');
+  });
 });

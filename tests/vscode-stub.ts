@@ -16,6 +16,7 @@ class StubState {
   providers = new Map<string, unknown>();
   panels: StubWebviewPanel[] = [];
   secrets = new Map<string, string>();
+  globalState = new Map<string, unknown>();
   outputLines: string[] = [];
 
   reset(): void {
@@ -25,6 +26,7 @@ class StubState {
     this.providers.clear();
     this.panels = [];
     this.secrets.clear();
+    this.globalState.clear();
     this.outputLines = [];
   }
 
@@ -161,9 +163,16 @@ export { Position, Range, Selection };
 
 export function makeFakeContext(extensionFolder = '/tmp/ext'): unknown {
   return {
-    extensionUri: new Uri('file', extensionFolder),
+    extensionUri: new UriClass('file', extensionFolder),
     extensionPath: extensionFolder,
     subscriptions: { push: (..._items: unknown[]): number => 0 },
+    globalState: {
+      get(key: string): unknown { return state.globalState.get(key); },
+      async update(key: string, value: unknown): Promise<void> {
+        if (value === undefined) state.globalState.delete(key);
+        else state.globalState.set(key, value);
+      }
+    },
     secrets: {
       async get(key: string): Promise<string | undefined> { return state.secrets.get(key); },
       async store(key: string, value: string): Promise<void> { state.secrets.set(key, value); },
