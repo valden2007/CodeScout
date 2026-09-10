@@ -2797,10 +2797,10 @@ describe('G8 rate-limit pause + hardening', () => {
     expect(between).toContain('&lt;div&gt;');
   });
 
-  it('reviewFiles retries the same file on 429 with a 60/120/300 pause ladder; 0 = old behavior', () => {
+  it('reviewFiles retries the same file on 429 with a 120/300/600 pause ladder; 0 = old behavior', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('RATE_LIMIT_PAUSE_LADDER = [60, 120, 300]');
-    expect(extension).toContain('error instanceof RateLimitError || isNetworkError(error)');
+    expect(extension).toContain('RATE_LIMIT_PAUSE_LADDER = [120, 300, 600]');
+    expect(extension).toContain('error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error)');
     expect(extension).toContain('pauses < rateLimitPauses');
     expect(extension).toContain('⏸ rate-limit: пауза ${waitSeconds}с, ретри файл');
     expect(extension).toContain('rateLimitPauses === 0 && quickRetries < 1');

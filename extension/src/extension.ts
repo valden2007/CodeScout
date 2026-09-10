@@ -152,11 +152,51 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   };
 }
 
-const RATE_LIMIT_PAUSE_LADDER = [60, 120, 300];
+// Агрессивные лимиты free-агрегаторов (B.AI и т.п.) не проходятся короткими
+// паузами: лестница удлинена до 2/5/10 минут.
+export const RATE_LIMIT_PAUSE_LADDER = [120, 300, 600];
+// Cooldown между файлами даже БЕЗ rate-limit: бережёт бакет токенов/запросов.
+export const FILE_COOLDOWN_DEFAULT_SECONDS = 5;
+export const FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS = 10;
+export const FILE_COOLDOWN_MAX_SECONDS = 30;
+// Пауза между кругами одного файла в мульти-пассе: защита от abuse,
+// не настраивается сознательно.
+export const PASS_BETWEEN_SECONDS = 15;
+const RATE_LIMIT_HIT_WINDOW_MS = 5 * 60_000;
+const rateLimitHitTimes: number[] = [];
+
+export function recordRateLimitHit(now = Date.now()): void {
+  rateLimitHitTimes.push(now);
+}
+
+export function rateLimitHitsLast5min(now = Date.now()): number {
+  while (rateLimitHitTimes.length && now - rateLimitHitTimes[0] > RATE_LIMIT_HIT_WINDOW_MS) rateLimitHitTimes.shift();
+  return rateLimitHitTimes.length;
+}
+
+export function resetRateLimitHits(): void {
+  rateLimitHitTimes.length = 0;
+}
+
+export function fileCooldownSecondsFromSetting(value: unknown, auditPasses: number): number {
+  const fallback = auditPasses >= 2 ? FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS : FILE_COOLDOWN_DEFAULT_SECONDS;
+  const n = Math.round(Number(value));
+  if (value === undefined || value === null || value === '' || !Number.isFinite(n)) return fallback;
+  return Math.min(FILE_COOLDOWN_MAX_SECONDS, Math.max(0, n));
+}
 
 function isNetworkError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   return /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND|socket hang up|EAI_AGAIN/i.test(msg);
+}
+
+// Ключевой фикс пропуска файлов: агрегаторы отдают перелимит НЕ только как
+// 429/RateLimitError — текст 'too many requests'/'overloaded'/'quota' часто
+// прилетает обычным Error (HTTP 502/503 или текст в 200-теле). Раньше такие
+// ошибки не считались retriable и файл скипался СРАЗУ, без пауз лестницы.
+function isRateLimitText(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /rate.?limit|too many requests|overloaded|quota|exceeded|\b429\b|\b503\b/i.test(msg);
 }
 
 function rateLimitPausesFromSetting(value: unknown): number {
@@ -165,7 +205,7 @@ function rateLimitPausesFromSetting(value: unknown): number {
   return Math.min(5, n);
 }
 
-async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru'): Promise<ScanResult> {
+export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -177,6 +217,11 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
   let skippedFiles = 0;
   for (const [fileIndex, file] of files.entries()) {
+    if (fileIndex > 0 && fileCooldown > 0) {
+      if (signal?.aborted) throw abortError();
+      onFileCooldown?.(fileCooldown);
+      await sleeper(fileCooldown * 1000, signal);
+    }
     let completed = false;
     let lastError: unknown;
     let pauses = 0;
@@ -187,7 +232,11 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
         const importsLine = importsResolver?.(file.filename) ?? '';
         for (let pass = 1; pass <= passes; pass++) {
           const passLine = pass > 1 ? passFindingsSummary(dedupeIssues(fileIssues)) : '';
-          if (pass > 1) onPass?.(file.filename, pass, passes);
+          if (pass > 1) {
+            onPass?.(file.filename, pass, passes);
+            // abuse-guard: круги одного файла разнесены фиксированно
+            await sleeper(PASS_BETWEEN_SECONDS * 1000, signal);
+          }
           for (const chunk of splitPatch(file.patch, 45_000)) {
             if (signal?.aborted) throw abortError();
             const elapsedMs = Date.now() - startedAt;
@@ -206,7 +255,7 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
-        const retriable = error instanceof RateLimitError || isNetworkError(error);
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
           pauses += 1;
@@ -230,11 +279,11 @@ async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ file
   return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
 }
 
-async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT): Promise<ScanResult> {
+async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown?: (seconds: number) => void): Promise<ScanResult> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error(t('panel.errNoGit', currentReportLanguage()));
   if (signal?.aborted) throw abortError();
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, undefined, undefined, (filename) => importsContextLine(workspaceRoot, filename));
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, undefined, undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, 0, undefined, undefined, currentReportLanguage(), fileCooldown, onFileCooldown);
 }
 
 let activeAbortController: AbortController | undefined;
@@ -420,7 +469,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         panel.recordFileDuration(seconds);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`); }, undefined, currentReportLanguage());
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`));
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -512,7 +561,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
-    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses})`), undefined, lang);
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`));
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
@@ -571,7 +620,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -644,6 +693,11 @@ async function openOrCreateRules(workspaceRoot: string | undefined): Promise<str
 
 function currentReportLanguage(): 'ru' | 'en' {
   return vscode.workspace.getConfiguration('codescout').get<string>('language') === 'en' ? 'en' : 'ru';
+}
+
+function effectiveFileCooldownSeconds(auditPasses: number): number {
+  const explicit = vscode.workspace.getConfiguration('codescout').inspect<number>('fileCooldownSeconds')?.globalValue;
+  return fileCooldownSecondsFromSetting(explicit, auditPasses);
 }
 
 function auditBannerEnabled(): boolean {

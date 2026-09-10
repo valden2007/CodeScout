@@ -207,6 +207,13 @@
           "maximum": 5,
           "description": "%rateLimitPauses.description%"
         },
+        "codescout.fileCooldownSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 30,
+          "description": "%fileCooldown.description%"
+        },
         "codescout.autoResume": {
           "type": "boolean",
           "default": false,

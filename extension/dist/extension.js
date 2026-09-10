@@ -30,8 +30,18 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/extension.ts
 var extension_exports = {};
 __export(extension_exports, {
+  FILE_COOLDOWN_DEFAULT_SECONDS: () => FILE_COOLDOWN_DEFAULT_SECONDS,
+  FILE_COOLDOWN_MAX_SECONDS: () => FILE_COOLDOWN_MAX_SECONDS,
+  FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS: () => FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS,
+  PASS_BETWEEN_SECONDS: () => PASS_BETWEEN_SECONDS,
+  RATE_LIMIT_PAUSE_LADDER: () => RATE_LIMIT_PAUSE_LADDER,
   activate: () => activate,
-  deactivate: () => deactivate
+  deactivate: () => deactivate,
+  fileCooldownSecondsFromSetting: () => fileCooldownSecondsFromSetting,
+  rateLimitHitsLast5min: () => rateLimitHitsLast5min,
+  recordRateLimitHit: () => recordRateLimitHit,
+  resetRateLimitHits: () => resetRateLimitHits,
+  reviewFiles: () => reviewFiles
 });
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
@@ -3560,17 +3570,43 @@ async function resolveExtensionSelection(context) {
     userChosenModel
   };
 }
-var RATE_LIMIT_PAUSE_LADDER = [60, 120, 300];
+var RATE_LIMIT_PAUSE_LADDER = [120, 300, 600];
+var FILE_COOLDOWN_DEFAULT_SECONDS = 5;
+var FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS = 10;
+var FILE_COOLDOWN_MAX_SECONDS = 30;
+var PASS_BETWEEN_SECONDS = 15;
+var RATE_LIMIT_HIT_WINDOW_MS = 5 * 6e4;
+var rateLimitHitTimes = [];
+function recordRateLimitHit(now = Date.now()) {
+  rateLimitHitTimes.push(now);
+}
+function rateLimitHitsLast5min(now = Date.now()) {
+  while (rateLimitHitTimes.length && now - rateLimitHitTimes[0] > RATE_LIMIT_HIT_WINDOW_MS) rateLimitHitTimes.shift();
+  return rateLimitHitTimes.length;
+}
+function resetRateLimitHits() {
+  rateLimitHitTimes.length = 0;
+}
+function fileCooldownSecondsFromSetting(value, auditPasses) {
+  const fallback = auditPasses >= 2 ? FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS : FILE_COOLDOWN_DEFAULT_SECONDS;
+  const n = Math.round(Number(value));
+  if (value === void 0 || value === null || value === "" || !Number.isFinite(n)) return fallback;
+  return Math.min(FILE_COOLDOWN_MAX_SECONDS, Math.max(0, n));
+}
 function isNetworkError(error) {
   const msg = error instanceof Error ? error.message : String(error);
   return /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND|socket hang up|EAI_AGAIN/i.test(msg);
+}
+function isRateLimitText(error) {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /rate.?limit|too many requests|overloaded|quota|exceeded|\b429\b|\b503\b/i.test(msg);
 }
 function rateLimitPausesFromSetting(value) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru") {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -3581,6 +3617,11 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   const issues = [];
   let skippedFiles = 0;
   for (const [fileIndex, file] of files.entries()) {
+    if (fileIndex > 0 && fileCooldown > 0) {
+      if (signal?.aborted) throw abortError();
+      onFileCooldown?.(fileCooldown);
+      await sleeper(fileCooldown * 1e3, signal);
+    }
     let completed = false;
     let lastError;
     let pauses = 0;
@@ -3591,7 +3632,10 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
         const importsLine = importsResolver?.(file.filename) ?? "";
         for (let pass = 1; pass <= passes; pass++) {
           const passLine = pass > 1 ? passFindingsSummary(dedupeIssues(fileIssues)) : "";
-          if (pass > 1) onPass?.(file.filename, pass, passes);
+          if (pass > 1) {
+            onPass?.(file.filename, pass, passes);
+            await sleeper(PASS_BETWEEN_SECONDS * 1e3, signal);
+          }
           for (const chunk of splitPatch(file.patch, 45e3)) {
             if (signal?.aborted) throw abortError();
             const elapsedMs = Date.now() - startedAt;
@@ -3610,7 +3654,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
-        const retriable = error instanceof RateLimitError || isNetworkError(error);
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
           pauses += 1;
@@ -3633,11 +3677,11 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   }
   return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
 }
-async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT) {
+async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error(t("panel.errNoGit", currentReportLanguage()));
   if (signal?.aborted) throw abortError();
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, void 0, void 0, (filename) => importsContextLine(workspaceRoot, filename));
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, void 0, void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, 0, void 0, void 0, currentReportLanguage(), fileCooldown, onFileCooldown);
 }
 var activeAbortController;
 var lastScanError;
@@ -3837,8 +3881,10 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       output.appendLine(`\u{1F504} \u043A\u0440\u0443\u0433 ${pass}/${totalPasses}: \u0444\u0430\u0439\u043B ${filename}`);
     }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => {
       pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds);
-      output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`);
-    }, void 0, currentReportLanguage());
+      recordRateLimitHit();
+      const hits = rateLimitHitsLast5min();
+      output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
+    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -3933,7 +3979,11 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.custom", lang), elapsedMs);
       output.appendLine(`\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses})`), void 0, lang);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => {
+      recordRateLimitHit();
+      const hits = rateLimitHitsLast5min();
+      output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
+    }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
@@ -3995,7 +4045,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.check", currentReportLanguage()), elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
     const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
     panel.update(result.issues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -4036,6 +4086,10 @@ async function openOrCreateRules(workspaceRoot) {
 }
 function currentReportLanguage() {
   return vscode2.workspace.getConfiguration("codescout").get("language") === "en" ? "en" : "ru";
+}
+function effectiveFileCooldownSeconds(auditPasses) {
+  const explicit = vscode2.workspace.getConfiguration("codescout").inspect("fileCooldownSeconds")?.globalValue;
+  return fileCooldownSecondsFromSetting(explicit, auditPasses);
 }
 function auditBannerEnabled() {
   return vscode2.workspace.getConfiguration("codescout").get("showAuditBanner", true);
@@ -4492,7 +4546,17 @@ function deactivate() {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  FILE_COOLDOWN_DEFAULT_SECONDS,
+  FILE_COOLDOWN_MAX_SECONDS,
+  FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS,
+  PASS_BETWEEN_SECONDS,
+  RATE_LIMIT_PAUSE_LADDER,
   activate,
-  deactivate
+  deactivate,
+  fileCooldownSecondsFromSetting,
+  rateLimitHitsLast5min,
+  recordRateLimitHit,
+  resetRateLimitHits,
+  reviewFiles
 });
 //# sourceMappingURL=extension.js.map

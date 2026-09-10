@@ -434,6 +434,24 @@ pre-design now.
     http://localhost:11434/v1, LM Studio, code never leaves the machine)
     and «How to report a bug»; MIT verified in LICENSE (2026) +
     "license":"MIT" in both manifests (locked by test). Tests: 256.
+ 22. Aggressive pauses + file cooldown (v1.4b-14): the skip-after-2-3-
+    attempts was mostly NOT the short ladder — providers like B.AI return
+    over-limit as plain Error('too many requests'/'overloaded'/'quota')
+    on HTTP 502/503 or 200-text, which failed the
+    RateLimitError||isNetworkError gate → file skipped INSTANTLY, the
+    ladder never ran. isRateLimitText added to the retriable gate;
+    RATE_LIMIT_PAUSE_LADDER doubled to [120,300,600]; new setting
+    codescout.fileCooldownSeconds (0-30, manifest) = pause between files
+    even without errors — explicit value wins, defaults 5s (1 pass) /
+    10s (multi-pass, fileCooldownSecondsFromSetting; 0 = off for Ollama
+    etc.); hard PASS_BETWEEN_SECONDS=15 abuse-gap between passes of one
+    file (not configurable by design); every 429/overload logs
+    «· 429 за 5 мин: N» via recordRateLimitHit/rateLimitHitsLast5min
+    (⚠️ hour-rest hint when >10). Cooldown/pass sleeps run through the
+    injectable sleeper and honor cancel; audit keeps pauseByFile so the
+    ETA median stays clean. reviewFiles is now exported; functional
+    tests in tests/rate-limits.test.ts (fake fetch+sleeper; note the
+    provider's internal 2s min-interval pacing adds real time). Tests: 263.
  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
