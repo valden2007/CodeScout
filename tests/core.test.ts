@@ -1025,7 +1025,7 @@ describe('E1.3a audit checkpoints', () => {
     expect(pruned.remaining).toEqual(['src/b.ts']);
     expect(mergeCheckpointIssues(pruned)).toHaveLength(1);
     const view = progressView(pruned);
-    expect(view).toEqual({ done: 1, total: 2, model: 'groq/llama', startedAt: 7 });
+    expect(view).toEqual({ done: 1, total: 2, model: 'groq/llama', startedAt: 7, findings: 1 });
     expect(progressView({ startedAt: 1, model: 'm', checked: [], remaining: [] })).toBeUndefined();
   });
 
@@ -1936,8 +1936,9 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain("get<number>('autoResumeMaxAttempts')");
     expect(extension).toContain("get<number>('autoResumeMaxMinutes')");
     expect(extension).toContain("get<boolean>('autoResume', false)");
-    const startup = extension.slice(extension.indexOf('const savedProgress = progressView'), extension.indexOf('if (!auditBannerEnabled())'));
+    const startup = extension.slice(extension.indexOf('const savedCheckpoint = readAuditProgress'), extension.indexOf('if (!auditBannerEnabled())'));
     expect(startup).toContain('panel.setAuditResume(savedProgress)');
+    expect(startup).toContain('panel.restoreAuditResults(savedResults.findings');
     expect(startup).not.toContain('runFullAudit');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('setAutoResume(view: AutoResumeIndicator | undefined)');

@@ -13,7 +13,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeFindingsHistory, writeProjectContext, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, defaultDocFetcher, dedupeIssues, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -434,6 +434,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       }
     } else {
       clearAuditProgress(workspaceRoot);
+      clearAuditResults(workspaceRoot);
     }
     progress = initial;
     const state = initial;
@@ -450,6 +451,10 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const persist = (): void => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
+      // Персистентный частичный отчёт после КАЖДОГО завершённого файла:
+      // атомарно (temp+rename), переживёт reload/выключение; панель на
+      // старте рисует именно эти findings (единый источник).
+      writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
@@ -475,6 +480,8 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
     writeFindingsHistory(workspaceRoot, mergedIssues, 'full-audit', auditMeta);
+    // Финальный отчёт = единый источник для панели (task 5).
+    writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
     if (result.skippedFiles > 0) {
       persist();
       output.appendLine(`ℹ️ Скипнуто ${result.skippedFiles} файлов (rate-limit/ошибки) — чекпоинт сохранён, можно догнать кнопкой «▶️ Продолжить»`);
@@ -1054,9 +1061,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
     vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
     vscode.commands.registerCommand('codescout.resumeAudit', () => runFullAudit(context, output, panel, true)),
-    vscode.commands.registerCommand('codescout.restartAudit', () => {
+    vscode.commands.registerCommand('codescout.restartAudit', async () => {
+      const lang = currentReportLanguage();
+      const answer = await vscode.window.showWarningMessage(t('restart.confirm', lang), { modal: true }, t('restart.confirmBtn', lang));
+      if (answer !== t('restart.confirmBtn', lang)) return;
       const root = getWorkspaceRoot();
-      if (root) clearAuditProgress(root);
+      if (root) {
+        clearAuditProgress(root);
+        clearAuditResults(root);
+      }
+      panel.setAuditResume(undefined);
       return runFullAudit(context, output, panel);
     }),
     vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runCustomReview(context, output, panel, focus, scope, globs)),
@@ -1138,8 +1152,15 @@ export function activate(context: vscode.ExtensionContext): void {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) === 'true';
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
-    const savedProgress = progressView(readAuditProgress(workspaceRoot));
-    if (savedProgress) panel.setAuditResume(savedProgress);
+    const savedCheckpoint = readAuditProgress(workspaceRoot);
+    const savedProgress = progressView(savedCheckpoint);
+    const savedResults = readAuditResults(workspaceRoot);
+    if (savedResults) {
+      const complete = savedResults.checkedFiles >= savedResults.total;
+      const resume = complete ? undefined : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
+      const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
+      panel.restoreAuditResults(savedResults.findings, buildStats(savedResults.findings, savedResults.checkedFiles, elapsedMs), resume);
+    } else if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');
     else if (stale) panel.setWelcomeBanner(true, 'stale');

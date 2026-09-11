@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
@@ -662,6 +662,7 @@ export interface AuditResumeView {
   total: number;
   model: string;
   startedAt: number;
+  findings?: number;
 }
 
 export interface AuditCheckpoint {
@@ -721,7 +722,78 @@ export function progressView(progress: AuditCheckpoint | undefined): AuditResume
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return undefined;
-  return { done, total, model: progress.model, startedAt: progress.startedAt };
+  return { done, total, model: progress.model, startedAt: progress.startedAt, findings: mergeCheckpointIssues(progress).length };
+}
+
+export interface AuditResults {
+  findings: ReviewIssue[];
+  checkedFiles: number;
+  total: number;
+  model: string;
+  updatedAt: number;
+}
+
+const AUDIT_RESULTS_FILE = 'audit-results.json';
+
+// Атомарная запись: пишем в temp в том же каталоге и переименовываем.
+// rename внутри одного тома атомарен, поэтому перечитать можно либо
+// старый, либо новый файл — никогда не наполовину записанный.
+function writeJsonAtomic(directory: string, fileName: string, data: unknown): void {
+  const target = join(directory, fileName);
+  const temp = join(directory, `${fileName}.${process.pid}.tmp`);
+  writeFileSync(temp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  renameSync(temp, target);
+}
+
+export function auditResultsPath(workspaceRoot: string): string {
+  return join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
+}
+
+export function writeAuditResults(workspaceRoot: string, results: AuditResults): void {
+  const directory = join(workspaceRoot, '.codescout');
+  mkdirSync(directory, { recursive: true });
+  writeJsonAtomic(directory, AUDIT_RESULTS_FILE, results);
+}
+
+export function writeAuditResultsFromCheckpoint(workspaceRoot: string, progress: AuditCheckpoint, total: number): void {
+  writeAuditResults(workspaceRoot, {
+    findings: dedupeIssues(mergeCheckpointIssues(progress)),
+    checkedFiles: progress.checked.length,
+    total,
+    model: progress.model,
+    updatedAt: Date.now()
+  });
+}
+
+export function readAuditResults(workspaceRoot: string): AuditResults | undefined {
+  const path = join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as AuditResults;
+    if (!parsed || typeof parsed.model !== 'string' || !Array.isArray(parsed.findings)) return undefined;
+    const checkedFiles = Number.isFinite(parsed.checkedFiles) ? parsed.checkedFiles : 0;
+    const total = Number.isFinite(parsed.total) && parsed.total > 0 ? parsed.total : checkedFiles;
+    return {
+      findings: parsed.findings.filter((entry) => entry && typeof entry.file === 'string' && Number.isFinite(Number(entry.line))),
+      checkedFiles,
+      total,
+      model: parsed.model,
+      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearAuditResults(workspaceRoot: string): void {
+  const path = join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
+  if (existsSync(path)) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // файл мог уже исчезнуть
+    }
+  }
 }
 
 export function resolveAuditFile(workspaceRoot: string, filename: string): string {

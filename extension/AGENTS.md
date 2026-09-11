@@ -451,8 +451,28 @@ pre-design now.
     injectable sleeper and honor cancel; audit keeps pauseByFile so the
     ETA median stays clean. reviewFiles is now exported; functional
     tests in tests/rate-limits.test.ts (fake fetch+sleeper; note the
-    provider's internal 2s min-interval pacing adds real time). Tests: 263.
- 9. Auto-resume + selective review (1.3g+h): codescout.autoResume
+     provider's internal 2s min-interval pacing adds real time). Tests: 263.
+  23. Persistent partial audit results (v1.4b-15): results lived only in
+     memory — after a VS Code/PC restart the panel showed «0 issues ·
+     0 files» while the checkpoint remembered 35/42. After EVERY finished
+     file persist() now also writes .codescout/audit-results.json
+     {findings, checkedFiles, total, model, updatedAt} ATOMICALLY
+     (writeJsonAtomic: temp in the same dir + renameSync — never a half
+     file); on clean/interrupted completion runFullAuditOnce writes the
+     final report there (single source). At activation, if results exist
+     and checkedFiles < total the panel renders them as a normal report
+     (panel.restoreAuditResults sets hasRun + stats + resume banner
+     «Аудит оборвался: X из Y · находок N» with Продолжить/Начать заново;
+     complete runs restore findings WITHOUT the banner). restartAudit is
+     now a modal confirm («Удалить и начать заново») — only after yes it
+     clearAuditProgress + clearAuditResults (and a fresh run recreates
+     them empty). progressView/AuditResumeView carry findings count;
+     resume.findings key in both dicts. auditResultsPath/read/write/
+     clear helpers in projectAudit; .codescout stays git-ignored.
+     e2e in tests/audit-results.test.ts drives a real interrupted audit
+     (c.ts errors) through the stub → re-activate → findings+banner.
+     Tests: 267.
+  9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
     network) it auto-resumes from the checkpoint with a backoff

@@ -19,6 +19,8 @@ class StubState {
   globalState = new Map<string, unknown>();
   openedUris: unknown[] = [];
   outputLines: string[] = [];
+  workspaceRoot: string | undefined;
+  warningAnswers: unknown[] = [];
 
   reset(): void {
     this.config.clear();
@@ -30,6 +32,8 @@ class StubState {
     this.globalState.clear();
     this.openedUris = [];
     this.outputLines = [];
+    this.workspaceRoot = undefined;
+    this.warningAnswers = [];
   }
 
   set(sectionKey: string, value: unknown): void {
@@ -101,7 +105,7 @@ export const window = {
   },
   async showErrorMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showInformationMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
-  async showWarningMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
+  async showWarningMessage(..._args: unknown[]): Promise<unknown> { return state.warningAnswers.shift(); },
   async showInputBox(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showQuickPick(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showOpenDialog(..._args: unknown[]): Promise<undefined> { return undefined; },
@@ -129,7 +133,9 @@ export class StubWebviewPanel {
 }
 
 export const workspace = {
-  workspaceFolders: undefined as unknown,
+  get workspaceFolders(): unknown {
+    return state.workspaceRoot ? [{ uri: { fsPath: state.workspaceRoot } }] : undefined;
+  },
   getWorkspaceFolder(): undefined { return undefined; },
   getConfiguration(section: string): unknown {
     return {

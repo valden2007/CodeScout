@@ -278,6 +278,23 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
+  // панель рисует находки с диска как обычный отчёт + resume-баннер.
+  restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined): void {
+    this.issues = issues;
+    this.stats = stats;
+    this.hasRun = true;
+    this.scanning = false;
+    this.testMode = false;
+    this.progressMessage = '';
+    this.statusMessage = '';
+    this.findingsDiff = undefined;
+    this.customFocus = '';
+    this.auditSummary = undefined;
+    this.auditResume = resume;
+    this.render();
+  }
+
   setKey(keyMaskOrStatus: string | boolean | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
     if (typeof keyMaskOrStatus === 'string') {
       this.keyMask = keyMaskOrStatus;

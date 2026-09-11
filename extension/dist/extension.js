@@ -844,8 +844,11 @@ var ru_default = {
   "banner.update": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C",
   "banner.later": "\u041F\u043E\u0437\u0436\u0435",
   "resume.title": "\u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E {done} \u0438\u0437 {total} \u0444\u0430\u0439\u043B\u043E\u0432 ({model})",
+  "resume.findings": "\xB7 \u043D\u0430\u0445\u043E\u0434\u043E\u043A {n}",
   "resume.continue": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C ({done} \u0438\u0437 {total})",
   "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
+  "restart.confirm": "\u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A \u0430\u0443\u0434\u0438\u0442\u0430 \u0443\u0434\u0430\u043B\u0438\u0442 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
+  "restart.confirmBtn": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0438 \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
   "auto.line": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u0447\u0435\u0440\u0435\u0437 {seconds}\u0441",
   "auto.lineRetry": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026",
   "auto.attemptOf": "\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m}",
@@ -1118,8 +1121,11 @@ var en_default = {
   "banner.update": "Refresh",
   "banner.later": "Later",
   "resume.title": "Audit interrupted: checked {done} of {total} files ({model})",
+  "resume.findings": "\xB7 {n} findings",
   "resume.continue": "Continue ({done} of {total})",
   "resume.restart": "Start over",
+  "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",
+  "restart.confirmBtn": "Delete and restart",
   "auto.line": "auto-catch-up: {done}/{total}, {attemptLabel} in {seconds}s",
   "auto.lineRetry": "auto-catch-up: {done}/{total}, {attemptLabel} \u2014 retrying\u2026",
   "auto.attemptOf": "attempt {a}/{m}",
@@ -1594,7 +1600,7 @@ ${headHtml(assets, nonce)}
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404/i.test(statusMessage) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}</div>` : ""}</div>
-    ${auditResume ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: auditResume.done, total: auditResume.total, model: escapeHtml(auditResume.model) })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: auditResume.done, total: auditResume.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    ${auditResume ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: auditResume.done, total: auditResume.total, model: escapeHtml(auditResume.model) })}${auditResume.findings !== void 0 ? ` ${T("resume.findings", { n: auditResume.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: auditResume.done, total: auditResume.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -2097,6 +2103,22 @@ var CodeScoutPanel = class {
     this.render();
   }
   setAuditResume(resume) {
+    this.auditResume = resume;
+    this.render();
+  }
+  // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
+  // панель рисует находки с диска как обычный отчёт + resume-баннер.
+  restoreAuditResults(issues, stats, resume) {
+    this.issues = issues;
+    this.stats = stats;
+    this.hasRun = true;
+    this.scanning = false;
+    this.testMode = false;
+    this.progressMessage = "";
+    this.statusMessage = "";
+    this.findingsDiff = void 0;
+    this.customFocus = "";
+    this.auditSummary = void 0;
     this.auditResume = resume;
     this.render();
   }
@@ -2812,7 +2834,57 @@ function progressView(progress) {
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return void 0;
-  return { done, total, model: progress.model, startedAt: progress.startedAt };
+  return { done, total, model: progress.model, startedAt: progress.startedAt, findings: mergeCheckpointIssues(progress).length };
+}
+var AUDIT_RESULTS_FILE = "audit-results.json";
+function writeJsonAtomic(directory, fileName, data) {
+  const target = (0, import_node_path3.join)(directory, fileName);
+  const temp = (0, import_node_path3.join)(directory, `${fileName}.${process.pid}.tmp`);
+  (0, import_node_fs4.writeFileSync)(temp, `${JSON.stringify(data, null, 2)}
+`, "utf8");
+  (0, import_node_fs4.renameSync)(temp, target);
+}
+function writeAuditResults(workspaceRoot, results) {
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  writeJsonAtomic(directory, AUDIT_RESULTS_FILE, results);
+}
+function writeAuditResultsFromCheckpoint(workspaceRoot, progress, total) {
+  writeAuditResults(workspaceRoot, {
+    findings: dedupeIssues(mergeCheckpointIssues(progress)),
+    checkedFiles: progress.checked.length,
+    total,
+    model: progress.model,
+    updatedAt: Date.now()
+  });
+}
+function readAuditResults(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE);
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
+  try {
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
+    if (!parsed || typeof parsed.model !== "string" || !Array.isArray(parsed.findings)) return void 0;
+    const checkedFiles = Number.isFinite(parsed.checkedFiles) ? parsed.checkedFiles : 0;
+    const total = Number.isFinite(parsed.total) && parsed.total > 0 ? parsed.total : checkedFiles;
+    return {
+      findings: parsed.findings.filter((entry) => entry && typeof entry.file === "string" && Number.isFinite(Number(entry.line))),
+      checkedFiles,
+      total,
+      model: parsed.model,
+      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
+    };
+  } catch {
+    return void 0;
+  }
+}
+function clearAuditResults(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE);
+  if ((0, import_node_fs4.existsSync)(path)) {
+    try {
+      (0, import_node_fs4.unlinkSync)(path);
+    } catch {
+    }
+  }
 }
 function resolveAuditFile(workspaceRoot, filename) {
   const absolute = (0, import_node_path3.resolve)(workspaceRoot, filename);
@@ -3836,6 +3908,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       }
     } else {
       clearAuditProgress(workspaceRoot);
+      clearAuditResults(workspaceRoot);
     }
     progress = initial;
     const state = initial;
@@ -3852,6 +3925,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const persist = () => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
+      writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
@@ -3890,6 +3964,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
     writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
+    writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
     if (result.skippedFiles > 0) {
       persist();
       output.appendLine(`\u2139\uFE0F \u0421\u043A\u0438\u043F\u043D\u0443\u0442\u043E ${result.skippedFiles} \u0444\u0430\u0439\u043B\u043E\u0432 (rate-limit/\u043E\u0448\u0438\u0431\u043A\u0438) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D, \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u0433\u043D\u0430\u0442\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB`);
@@ -4447,9 +4522,16 @@ function activate(context) {
     vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
     vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
     vscode2.commands.registerCommand("codescout.resumeAudit", () => runFullAudit(context, output, panel, true)),
-    vscode2.commands.registerCommand("codescout.restartAudit", () => {
+    vscode2.commands.registerCommand("codescout.restartAudit", async () => {
+      const lang = currentReportLanguage();
+      const answer = await vscode2.window.showWarningMessage(t("restart.confirm", lang), { modal: true }, t("restart.confirmBtn", lang));
+      if (answer !== t("restart.confirmBtn", lang)) return;
       const root = getWorkspaceRoot();
-      if (root) clearAuditProgress(root);
+      if (root) {
+        clearAuditProgress(root);
+        clearAuditResults(root);
+      }
+      panel.setAuditResume(void 0);
       return runFullAudit(context, output, panel);
     }),
     vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runCustomReview(context, output, panel, focus, scope, globs)),
@@ -4531,8 +4613,15 @@ function activate(context) {
     const selection = await resolveExtensionSelection(context);
     const choiceStored = await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) === "true";
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
-    const savedProgress = progressView(readAuditProgress(workspaceRoot));
-    if (savedProgress) panel.setAuditResume(savedProgress);
+    const savedCheckpoint = readAuditProgress(workspaceRoot);
+    const savedProgress = progressView(savedCheckpoint);
+    const savedResults = readAuditResults(workspaceRoot);
+    if (savedResults) {
+      const complete = savedResults.checkedFiles >= savedResults.total;
+      const resume = complete ? void 0 : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
+      const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
+      panel.restoreAuditResults(savedResults.findings, buildStats(savedResults.findings, savedResults.checkedFiles, elapsedMs), resume);
+    } else if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
     else if (stale) panel.setWelcomeBanner(true, "stale");
