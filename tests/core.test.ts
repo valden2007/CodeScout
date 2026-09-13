@@ -2225,7 +2225,7 @@ describe('G6 fix batch security and robustness', () => {
     expect(panel).toContain('Number.isInteger(rawLine) && rawLine >= 1');
     const report = readFileSync('extension/src/reportHtml.ts', 'utf8');
     expect(report).toContain("T('resume.title'");
-    expect(report).toContain('escapeHtml(auditResume.model)');
+    expect(report).toContain('escapeHtml(resumeView.model)');
   });
 
   it('neutralizeFences survives reassembled nested markers', () => {
@@ -3306,5 +3306,37 @@ describe('v1.4b-13 reportIssue + open-source wrapper', () => {
     const license = readFileSync('LICENSE', 'utf8');
     expect(license).toContain('MIT License');
     expect(license).toMatch(/Copyright \(c\) \d{4} CodeScout/);
+  });
+});
+
+describe('v1.4b-16 banner priority', () => {
+  const stats = { files: 1, seconds: 1, critical: 0, medium: 1, low: 0 };
+  const resume = { done: 3, total: 9, model: 'gemini/x', startedAt: 1, findings: 2 };
+
+  it('banner priority: scan > interrupted > stopped > empty; exactly one banner', () => {
+    const html = buildReportHtml([], stats, false, false, '⛔ Сканирование остановлено пользователем', 'error', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', resume);
+    expect(html).toContain('resumeAudit');
+    expect(html).not.toContain('Сканирование остановлено');
+    const scanningHtml = buildReportHtml([], stats, true, false, '⏳ Rate limit', 'retry', 'k', true, 'g', 'm', false, 'идёт скан', false, 'new', undefined, '', resume);
+    expect(scanningHtml).toContain('data-command="cancelScan"');
+    expect(scanningHtml).toContain('Rate limit');
+    expect(scanningHtml).not.toContain('data-command="resumeAudit"');
+    const stoppedOnly = buildReportHtml([], stats, false, false, '⛔ Сканирование остановлено пользователем', 'error', 'k', true, 'g', 'm');
+    expect(stoppedOnly).toContain('Сканирование остановлено');
+    const clean = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'g', 'm');
+    expect(clean).not.toContain('<div class="status-banner');
+    expect(clean).not.toContain('<div class="audit-resume">');
+  });
+
+  it('panel: restoreAuditResults is a no-op while the host is scanning; setScanning resets the stopped flag', () => {
+    const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    expect(panel).toContain('if (this.scanning) return;');
+    expect(panel).toContain('isScanRunning(): boolean');
+    const scanBlock = panel.slice(panel.indexOf('setScanning(scanning: boolean'), panel.indexOf('liveWebview()'));
+    expect(scanBlock).toContain("this.statusMessage = '';");
+    expect(scanBlock).toContain('if (!keepAuditStats) this.auditDurations = [];');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('panel.setScanning(true, true);');
+    expect(extension.indexOf('panel.setScanning(true, true);')).toBeLessThan(extension.indexOf('panel.setAutoResume({ done: outcome.view.done'));
   });
 });

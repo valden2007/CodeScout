@@ -350,6 +350,10 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     output.appendLine(`🤖 rate-limit:_resume через ${decision.waitSeconds}с (попытка ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ''})`);
     const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
     const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
+    // Хост — единственный источник правды: пауза авто-догона — часть живого
+    // скана, поэтому панель переводится в скан-режим ДО ухода в sleep
+    // (Стоп кликабелен, «остановлено»/resume-баннеры скрыты, прогресс/ETA видны).
+    panel.setScanning(true, true);
     panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
     const waitController = new AbortController();
     activeAbortController?.abort();

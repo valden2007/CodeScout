@@ -280,7 +280,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
 
   // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
   // панель рисует находки с диска как обычный отчёт + resume-баннер.
+  // Единственный источник правды о скане — хост; во время живого скана
+  // рестору нечего делать (иначе он сбил бы скан-UI).
   restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined): void {
+    if (this.scanning) return;
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
@@ -323,6 +326,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
+  }
+
+  isScanRunning(): boolean {
+    return this.scanning;
   }
 
   private liveWebview(): vscode.Webview | undefined {

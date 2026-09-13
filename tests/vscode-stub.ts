@@ -83,6 +83,7 @@ export const commands = {
     return noopDisposable();
   },
   async executeCommand(id: string, ...args: unknown[]): Promise<unknown> {
+    if (id === 'codescout.panel.focus' || id === 'workbench.action.openSettings') return undefined;
     const handler = state.commands.get(id);
     if (!handler) throw new Error(`command not found: ${id}`);
     return await handler(...args);

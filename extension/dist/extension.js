@@ -1585,6 +1585,9 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const firstAuditCard = `<div class="onboarding"><div class="empty-icon">${icon("telescope")}</div><h1>${T("onboard.firstTitle")}</h1><p>${T("onboard.firstBody")}</p><button class="primary-action cs-btn" type="button" data-command="scanFull">${icon("play")}<span>${T("onboard.step3Btn")}</span></button><small class="onboard-auto">${icon("robot")} ${T("onboard.autoHint")}</small></div>`;
   const body = sections || (emptyState && ux.onboarding ? onboardCard : emptyState && ux.firstAudit ? firstAuditCard : emptyState ? `<div class="empty"><div class="empty-icon">${icon("search")}</div><strong>${T("empty.readyTitle")}</strong><small>${T("empty.readyHint")}</small></div>` : testMode ? `<div class="empty"><div class="empty-icon">${icon("beaker")}</div><strong>${T("empty.testTitle")}</strong><small>${T("empty.testHint")}</small></div>` : `<div class="empty"><div class="empty-icon">${icon("pass")}</div><strong>${T("empty.cleanTitle", { n: stats.files })}</strong><small>${T("empty.cleanHint")}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon("beaker")}<span>${T("empty.testSample")}</span></button></div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
+  const resumeView = !isScanning && auditResume ? auditResume : void 0;
+  const showResume = Boolean(resumeView);
+  const showStatus = showResume ? "" : statusMessage;
   const clientDict = JSON.stringify(["actions.customReview", "actions.customReviewCollapse", "auto.line", "auto.lineRetry", "auto.attemptOf", "auto.attempt", "status.model404", "form.pickOutside", "form.pickNoWorkspace", "progress.eta", "progress.etaPending", "progress.filesDone", "progress.pass"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
@@ -1599,8 +1602,8 @@ ${headHtml(assets, nonce)}
     <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
-    <div id="statusSlot">${statusMessage ? `<div class="status-banner ${statusKind}">${escapeHtml(statusMessage)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404/i.test(statusMessage) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}</div>` : ""}</div>
-    ${auditResume ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: auditResume.done, total: auditResume.total, model: escapeHtml(auditResume.model) })}${auditResume.findings !== void 0 ? ` ${T("resume.findings", { n: auditResume.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: auditResume.done, total: auditResume.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}</div>` : ""}</div>
+    ${resumeView ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -2108,7 +2111,10 @@ var CodeScoutPanel = class {
   }
   // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
   // панель рисует находки с диска как обычный отчёт + resume-баннер.
+  // Единственный источник правды о скане — хост; во время живого скана
+  // рестору нечего делать (иначе он сбил бы скан-UI).
   restoreAuditResults(issues, stats, resume) {
+    if (this.scanning) return;
     this.issues = issues;
     this.stats = stats;
     this.hasRun = true;
@@ -2149,6 +2155,9 @@ var CodeScoutPanel = class {
       if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
+  }
+  isScanRunning() {
+    return this.scanning;
   }
   liveWebview() {
     return this.view && this.scanning ? this.view.webview : void 0;
@@ -2307,6 +2316,50 @@ function readProjectContext(workspaceRoot) {
     return void 0;
   }
 }
+var DOC_CHUNK_SIZE = 3072;
+var DOC_CHUNK_OVERLAP = 200;
+var DOC_HEADING_RE = /^(#{1,3})\s+(.{1,120}?)\s*$/;
+function chunkDocText(text, size = DOC_CHUNK_SIZE, overlap = DOC_CHUNK_OVERLAP) {
+  const clean = text.trim();
+  if (!clean) return [];
+  if (clean.length <= size) return [{ heading: "", body: clean }];
+  const step = Math.max(1, size - overlap);
+  const chunks = [];
+  for (let start = 0; start < clean.length; start += step) {
+    const body = clean.slice(start, start + size).trim();
+    if (body) chunks.push({ heading: "", body });
+    if (start + size >= clean.length) break;
+  }
+  return chunks;
+}
+function splitDocSections(text) {
+  const lines = text.split(/\r?\n/);
+  const found = [];
+  const pre = [];
+  let current = null;
+  for (const line of lines) {
+    const match = DOC_HEADING_RE.exec(line);
+    if (match) {
+      current = { heading: match[2], lines: [line] };
+      found.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    } else {
+      pre.push(line);
+    }
+  }
+  if (!found.length) return chunkDocText(text);
+  const sections = found.map((part) => ({ heading: part.heading, body: part.lines.join("\n").trim() })).filter((section) => section.body);
+  const preamble = pre.join("\n").trim();
+  if (preamble) sections.unshift({ heading: "", body: preamble });
+  return sections;
+}
+function sanitizeDocLines(raw, maxBytes = DOC_MAX_BYTES_DEFAULT) {
+  const plain = raw.trimStart().startsWith("<") ? htmlToText(raw) : raw;
+  const safe = neutralizeFences2(controlSafe2(plain));
+  const collapsed = safe.split(/\r?\n/).map((line) => line.replace(/[ \t]+/g, " ").trim()).join("\n");
+  return utf8Slice(collapsed.replace(/\n{3,}/g, "\n\n").trim(), maxBytes);
+}
 var DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
 var DOC_FETCH_TIMEOUT_MS = 5e3;
 var DOC_MAX_BYTES_DEFAULT = 50 * 1024;
@@ -2326,7 +2379,8 @@ function readDocCache(workspaceRoot) {
     for (const [url, entry] of Object.entries(parsed)) {
       const candidate = entry;
       if (candidate && typeof candidate.fetchedAt === "number" && typeof candidate.text === "string") {
-        cache[url] = { fetchedAt: candidate.fetchedAt, text: candidate.text };
+        const sections = Array.isArray(candidate.sections) ? candidate.sections.filter((section) => Boolean(section) && typeof section.heading === "string" && typeof section.body === "string") : void 0;
+        cache[url] = sections && sections.length ? { fetchedAt: candidate.fetchedAt, text: candidate.text, sections } : { fetchedAt: candidate.fetchedAt, text: candidate.text };
       }
     }
     return cache;
@@ -2434,6 +2488,8 @@ async function fetchDocsForPrompt(workspaceRoot, docLinks, fetcher = defaultDocF
   const now = Date.now();
   let cacheDirty = false;
   const parts = [];
+  const allSections = [];
+  const sectionsOf = (entry) => entry.sections?.length ? entry.sections : splitDocSections(entry.text);
   let fetched = 0;
   let fromCache = 0;
   let failed = 0;
@@ -2454,6 +2510,7 @@ async function fetchDocsForPrompt(workspaceRoot, docLinks, fetcher = defaultDocF
     if (fresh && cached.text.trim()) {
       parts.push(`${link}
 ${cached.text}`);
+      allSections.push(...sectionsOf(cached));
       fromCache++;
       continue;
     }
@@ -2461,10 +2518,11 @@ ${cached.text}`);
       const raw = await fetcher(link, { maxBytes: limits.maxBytes, timeoutMs: limits.timeoutMs });
       const text = sanitizeDocText(raw, limits.maxBytes);
       if (Buffer.byteLength(raw, "utf8") > limits.maxBytes) onWarn(`\u26A0\uFE0F \u0414\u043E\u043A ${link} \u0443\u0441\u0435\u0447\u0451\u043D \u0434\u043E ${Math.floor(limits.maxBytes / 1024)}KB \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E`);
-      cache[link] = { fetchedAt: now, text };
+      cache[link] = { fetchedAt: now, text, sections: splitDocSections(sanitizeDocLines(raw, limits.maxBytes)) };
       cacheDirty = true;
       if (text) parts.push(`${link}
 ${text}`);
+      allSections.push(...sectionsOf(cache[link]));
       fetched++;
     } catch (error) {
       failed++;
@@ -2472,6 +2530,7 @@ ${text}`);
       if (cached?.text.trim()) {
         parts.push(`${link}
 ${cached.text}`);
+        allSections.push(...sectionsOf(cached));
         onWarn(`\u26A0\uFE0F \u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0434\u043E\u043A ${link} (${reason}) \u2014 \u0431\u0435\u0440\u0443 \u043A\u044D\u0448 \u043E\u0442 ${new Date(cached.fetchedAt).toISOString().slice(0, 16).replace("T", " ")}`);
       } else {
         onWarn(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0441\u043A\u0430\u044E \u0434\u043E\u043A ${link}: ${reason}`);
@@ -2485,7 +2544,7 @@ ${DOCS_FENCE_END}` : "";
   if (parts.length && Buffer.byteLength(section, "utf8") > DOC_DENSE_TOTAL_BYTES) {
     onWarn(`\u{1F534} \u043F\u043B\u043E\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u0438 \u2014 ${(Buffer.byteLength(section, "utf8") / 1024).toFixed(0)}KB \u0441\u0443\u043C\u043C\u0430\u0440\u043D\u043E; \u0434\u043B\u044F \u0441\u0438\u043B\u044C\u043D\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439`);
   }
-  return { section, fetched, fromCache, failed };
+  return { section, fetched, fromCache, failed, sections: allSections };
 }
 function buildProjectSystemPrompt(basePrompt, workspaceRoot, docLinks = [], docsSection = "") {
   const rules = loadProjectRules(workspaceRoot);
@@ -3822,6 +3881,7 @@ async function runFullAudit(context, output, panel, resume = false) {
     output.appendLine(`\u{1F916} rate-limit:_resume \u0447\u0435\u0440\u0435\u0437 ${decision.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ""})`);
     const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
     const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
+    panel.setScanning(true, true);
     panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
     const waitController = new AbortController();
     activeAbortController?.abort();
