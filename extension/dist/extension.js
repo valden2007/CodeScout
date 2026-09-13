@@ -2762,6 +2762,60 @@ function listAuditSourceFiles(workspaceRoot, onWarn = () => {
 }
 var AUDIT_CHUNK_LINES = 800;
 var AUDIT_CHUNK_OVERLAP = 50;
+var CHUNK_LINES_MIN = 200;
+var CHUNK_LINES_MAX = 800;
+var MAX_REQUEST_K_TOKENS_MIN = 4;
+var MAX_REQUEST_K_TOKENS_MAX = 32;
+var MAX_REQUEST_K_TOKENS_DEFAULT = 12;
+var ADAPTIVE_MIN_CHUNK_LINES = 200;
+var QUARANTINE_CYCLES_PER_ROUND = 3;
+var QUARANTINE_MAX_ROUNDS = 3;
+function chunkLinesFromSetting(value) {
+  if (value === void 0 || value === null || value === "") return AUDIT_CHUNK_LINES;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return AUDIT_CHUNK_LINES;
+  return Math.min(CHUNK_LINES_MAX, Math.max(CHUNK_LINES_MIN, n));
+}
+function maxRequestKTokensFromSetting(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return MAX_REQUEST_K_TOKENS_DEFAULT;
+  return Math.min(MAX_REQUEST_K_TOKENS_MAX, Math.max(MAX_REQUEST_K_TOKENS_MIN, n));
+}
+function estimateRequestTokens(promptChars, chunkChars) {
+  return Math.ceil((promptChars + chunkChars) / 3.5);
+}
+var AUDIT_HUNK_RE = /^@@ -0,0 \+(\d+),(\d+) @@$/;
+function chunkLineCount(patch) {
+  const lines = patch.split("\n");
+  for (const line of lines) {
+    const match = AUDIT_HUNK_RE.exec(line);
+    if (match) return Number(match[2]);
+  }
+  return -1;
+}
+function splitAuditChunk(patch, overlap = AUDIT_CHUNK_OVERLAP, minLines = ADAPTIVE_MIN_CHUNK_LINES) {
+  const lines = patch.split("\n");
+  if (lines.length < 4 || !lines[0].startsWith("--- ") || !lines[1].startsWith("+++ ")) return void 0;
+  const match = AUDIT_HUNK_RE.exec(lines[2]);
+  if (!match) return void 0;
+  const start = Number(match[1]);
+  const count = Number(match[2]);
+  const body = lines.slice(3);
+  if (body.length !== count || count < minLines * 2) return void 0;
+  if (!body.every((line) => line.startsWith("+"))) return void 0;
+  const mid = Math.ceil(count / 2);
+  const secondStart = Math.max(0, mid - Math.min(overlap, mid));
+  const header = `${lines[0]}
+${lines[1]}`;
+  const first = `${header}
+@@ -0,0 +${start},${mid} @@
+${body.slice(0, mid).join("\n")}`;
+  const secondBody = body.slice(secondStart);
+  const second = `${header}
+@@ -0,0 +${start + secondStart},${secondBody.length} @@
+${secondBody.join("\n")}`;
+  return [first, second];
+}
 function auditDiff(filename, lines, start, count) {
   const slice = lines.slice(start, start + count);
   return { filename, status: "audit", additions: slice.length, deletions: 0, patch: `--- /dev/null
@@ -2769,17 +2823,18 @@ function auditDiff(filename, lines, start, count) {
 @@ -0,0 +${start + 1},${slice.length} @@
 ${slice.map((line) => `+${line}`).join("\n")}` };
 }
-function buildFileEntries(filename, lines) {
-  if (lines.length <= AUDIT_CHUNK_LINES) return [auditDiff(filename, lines, 0, lines.length)];
-  const step = Math.max(1, AUDIT_CHUNK_LINES - AUDIT_CHUNK_OVERLAP);
+function buildFileEntries(filename, lines, chunkLines = AUDIT_CHUNK_LINES) {
+  const size = Math.max(CHUNK_LINES_MIN, chunkLines);
+  if (lines.length <= size) return [auditDiff(filename, lines, 0, lines.length)];
+  const step = Math.max(1, size - AUDIT_CHUNK_OVERLAP);
   const entries = [];
   for (let start = 0; start < lines.length; start += step) {
-    entries.push(auditDiff(filename, lines, start, AUDIT_CHUNK_LINES));
-    if (start + AUDIT_CHUNK_LINES >= lines.length) break;
+    entries.push(auditDiff(filename, lines, start, size));
+    if (start + size >= lines.length) break;
   }
   return entries;
 }
-function readAuditEntries(workspaceRoot, sortedPaths, maxFiles, maxLines, ignored) {
+function readAuditEntries(workspaceRoot, sortedPaths, maxFiles, maxLines, ignored, chunkLines = AUDIT_CHUNK_LINES) {
   const files = [];
   const skippedLarge = [];
   const skippedUnreadable = [];
@@ -2798,7 +2853,7 @@ function readAuditEntries(workspaceRoot, sortedPaths, maxFiles, maxLines, ignore
       skippedLarge.push(filename);
       continue;
     }
-    const entries = buildFileEntries(filename, lines);
+    const entries = buildFileEntries(filename, lines, chunkLines);
     if (entries.length > 1) chunked.push({ file: filename, chunks: entries.length });
     files.push(...entries);
   }
@@ -2825,11 +2880,11 @@ function passFindingsSummary(issues) {
   return issues.map((issue) => `\u0441\u0442\u0440\u043E\u043A\u0430 ${issue.line} [${issue.severity}/${issue.category}] ${issue.description}`).join("; ");
 }
 function collectAuditFiles(workspaceRoot, maxFiles = 100, maxLines = 0, scopeGlobsText = "", onWarn = () => {
-}) {
+}, chunkLines = AUDIT_CHUNK_LINES) {
   const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const patterns = parseScopeGlobs(scopeGlobsText);
   const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
-  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
+  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored, chunkLines);
 }
 function parseScopeGlobs(text) {
   return [...new Set((text ?? "").split(",").map((glob) => glob.trim()).filter(Boolean))];
@@ -2872,8 +2927,8 @@ function autoResumeBadgeDetail(maxAttempts, maxMinutes, lang = "ru") {
   return t("badge.autoDetailNone", lang);
 }
 function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxFiles = 100, maxLines = 0, onWarn = () => {
-}) {
-  if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines, "", onWarn);
+}, chunkLines = AUDIT_CHUNK_LINES) {
+  if (scope === "all") return collectAuditFiles(workspaceRoot, maxFiles, maxLines, "", onWarn, chunkLines);
   if (scope === "active") {
     const requested = activeFile?.trim();
     if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
@@ -2882,7 +2937,7 @@ function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxF
     try {
       const lines = (0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, relativePath), "utf8").split(/\r?\n/);
       if (maxLines > 0 && lines.length > maxLines) return { files: [], skippedLarge: [relativePath], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
-      const entries = buildFileEntries(relativePath, lines);
+      const entries = buildFileEntries(relativePath, lines, chunkLines);
       return { files: entries, skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: entries.length > 1 ? [{ file: relativePath, chunks: entries.length }] : [] };
     } catch {
       return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
@@ -2891,7 +2946,7 @@ function collectFilesForScope(workspaceRoot, scope, globs = [], activeFile, maxF
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
   const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
-  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
+  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored, chunkLines);
 }
 function projectStack(workspaceRoot) {
   const packagePath = (0, import_node_path3.join)(workspaceRoot, "package.json");
@@ -3848,7 +3903,7 @@ function rateLimitPausesFromSetting(value) {
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -3858,13 +3913,20 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues = [];
   let skippedFiles = 0;
-  for (const [fileIndex, file] of files.entries()) {
-    if (fileIndex > 0 && fileCooldown > 0) {
+  const queue = files.map((_file, index) => index);
+  const ladderCycles = /* @__PURE__ */ new Map();
+  let processedCount = 0;
+  while (queue.length > 0) {
+    const fileIndex = queue.shift();
+    const file = files[fileIndex];
+    if (processedCount > 0 && fileCooldown > 0) {
       if (signal?.aborted) throw abortError();
       onFileCooldown?.(fileCooldown);
       await sleeper(fileCooldown * 1e3, signal);
     }
+    processedCount += 1;
     let completed = false;
+    let quarantined = false;
     let lastError;
     let pauses = 0;
     let quickRetries = 0;
@@ -3872,6 +3934,33 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
     const fileSystemPrompt = docPick?.section ? `${systemPrompt}
 
 ${docPick.section}` : systemPrompt;
+    const reviewChunk = async (chunk, importsLine, passLine) => {
+      if (signal?.aborted) throw abortError();
+      const preBudget = adaptive.preSplitTokens ?? 0;
+      if (preBudget > 0 && estimateRequestTokens(fileSystemPrompt.length + importsLine.length + passLine.length, chunk.length) > preBudget) {
+        const pre = splitAuditChunk(chunk);
+        if (pre) {
+          adaptive.onPreSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(pre[0]));
+          return [...await reviewChunk(pre[0], importsLine, passLine), ...await reviewChunk(pre[1], importsLine, passLine)];
+        }
+      }
+      try {
+        const elapsedMs = Date.now() - startedAt;
+        onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
+        onThinking?.(elapsedMs);
+        const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
+        return parseReviewResponse(raw, file.filename).issues;
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        const halves = retriable ? splitAuditChunk(chunk) : void 0;
+        if (halves) {
+          adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
+          return [...await reviewChunk(halves[0], importsLine, passLine), ...await reviewChunk(halves[1], importsLine, passLine)];
+        }
+        throw error;
+      }
+    };
     for (; ; ) {
       const fileIssues = [];
       try {
@@ -3883,13 +3972,8 @@ ${docPick.section}` : systemPrompt;
             await sleeper(PASS_BETWEEN_SECONDS * 1e3, signal);
           }
           for (const chunk of splitPatch(file.patch, 45e3)) {
-            if (signal?.aborted) throw abortError();
-            const elapsedMs = Date.now() - startedAt;
-            onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
-            onThinking?.(elapsedMs);
-            const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
-            const parsed = parseReviewResponse(raw, file.filename);
-            fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+            const found = await reviewChunk(chunk, importsLine, passLine);
+            fileIssues.push(...found.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
           }
         }
         const deduped = dedupeIssues(fileIssues);
@@ -3912,9 +3996,22 @@ ${docPick.section}` : systemPrompt;
           quickRetries += 1;
           continue;
         }
+        if (retriable && adaptive.quarantine && rateLimitPauses > 0 && continueOnFileError) {
+          const cycles = (ladderCycles.get(fileIndex) ?? 0) + 1;
+          ladderCycles.set(fileIndex, cycles);
+          const rounds = Math.ceil(cycles / QUARANTINE_CYCLES_PER_ROUND);
+          if (rounds > QUARANTINE_MAX_ROUNDS) {
+            adaptive.onQuarantineSkip?.(file.filename);
+          } else {
+            quarantined = true;
+            queue.push(fileIndex);
+          }
+          break;
+        }
         break;
       }
     }
+    if (quarantined) continue;
     if (!completed) {
       if (!continueOnFileError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
       skippedFiles++;
@@ -4039,10 +4136,18 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const auditMaxLines = auditConfig.get("maxLines", 0);
     const auditPasses = auditPassesFromSetting(auditConfig.get("auditPasses"));
     const auditRateLimitPauses = rateLimitPausesFromSetting(auditConfig.get("rateLimitPauses"));
+    const auditChunkLines = chunkLinesFromSetting(auditConfig.get("chunkLines"));
+    const adaptive = {
+      preSplitTokens: maxRequestKTokensFromSetting(auditConfig.get("maxRequestKTokens")) * 1e3,
+      quarantine: true,
+      onAdaptiveSplit: (filename, from, to) => output.appendLine(`\u{1FAB6} \u0447\u0430\u043D\u043A \u0442\u044F\u0436\u0451\u043B: \u0434\u0435\u043B\u044E ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename}`),
+      onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`),
+      onQuarantineSkip: (filename) => output.appendLine(`\u26F3 \u0444\u0430\u0439\u043B \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0442\u044F\u0436\u0451\u043B: \u0441\u043D\u0438\u0437\u044C chunkLines \u0438\u043B\u0438 maxRequestKTokens (${filename})`)
+    };
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get("auditScope") ?? "";
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message));
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message), auditChunkLines);
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`\u{1F52C} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${planFiles.length} \u0444\u0430\u0439\u043B\u043E\u0432.`);
     const scopeGlobs = parseScopeGlobs(auditScopeText);
@@ -4135,7 +4240,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
-    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile);
+    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive);
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -4218,7 +4323,13 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const maxFiles = reviewConfig.get("maxFiles", 100);
     const maxLines = reviewConfig.get("maxLines", 0);
     const customPauses = rateLimitPausesFromSetting(reviewConfig.get("rateLimitPauses"));
-    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
+    const customChunkLines = chunkLinesFromSetting(reviewConfig.get("chunkLines"));
+    const customAdaptive = {
+      preSplitTokens: maxRequestKTokensFromSetting(reviewConfig.get("maxRequestKTokens")) * 1e3,
+      onAdaptiveSplit: (filename, from, to) => output.appendLine(`\u{1FAB6} \u0447\u0430\u043D\u043A \u0442\u044F\u0436\u0451\u043B: \u0434\u0435\u043B\u044E ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename}`),
+      onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`)
+    };
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
       panel.setError(scope === "list" ? t("panel.errNoGlobMatch", lang, { globs: globs.join(", ") }) : t("panel.errNoFiles", lang));
@@ -4235,7 +4346,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
-    }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
+    }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), void 0, customAdaptive);
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);

@@ -507,6 +507,26 @@ pre-design now.
      learned docsResolver and injects the fenced section into the
      SYSTEM prompt per file only when it matched. Output logs stay RU
      (not UI). Tests: 281.
+ 26. Adaptive chunks (v1.4b-17): free-бакеты агрегаторов не пропускают
+     10-15k-токенные запросы, а «неделимый» 800-строчный чанк съедал
+     весь карантин. chunkLines (200-800, дефолт 800, манифест+nls) —
+     базовый размер чанка для buildFileEntries (аудит/scope/своё ревью,
+     collectAuditFiles и collectFilesForScope принимают chunkLines);
+     адаптивное деление: RateLimitError/текстовый перелимит внутри чанка →
+     splitAuditChunk рекурсивно делит ПОПОЛАМ этот чанк (минимум 200 строк,
+     только pure-addition аудит-чанки; git-диффы не делим) и ретрит
+     половинки, Output «🪶 чанк тяжёл: делю 800→400 строк, файл X»,
+     находки половинок склеиваются через dedupeIssues. Пред-оценка:
+     estimateRequestTokens = (символы чанка + промпта с доками)/3.5 >
+     maxRequestKTokens (4-32, дефолт 12) → деление ДО первой отправки
+     («📏 пред-деление…»). Перекрытие 50 строк и абсолюты в @@ -0,0 +S,L
+     сохраняются на всех уровнях. Карантин: каждые 3 полных цикла лестницы
+     = круг карантина, файл уезжает в конец FIFO-очереди (лёгкие не
+     блокируются), после 3 кругов (10-й цикл) — скип с подсказкой
+     «файл слишком тяжёл: снизь chunkLines или maxRequestKTokens»; только
+     для continueOnFileError-сканов. AdaptiveChunkOptions — последним
+     аргументом reviewFiles. e2e: tests/adaptive-chunks.test.ts.
+     Tests: 289.
   9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

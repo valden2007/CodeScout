@@ -13,7 +13,7 @@ import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, makeDocsResolver, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, makeDocsResolver, maxRequestKTokensFromSetting, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, splitAuditChunk, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -185,6 +185,18 @@ export function fileCooldownSecondsFromSetting(value: unknown, auditPasses: numb
   return Math.min(FILE_COOLDOWN_MAX_SECONDS, Math.max(0, n));
 }
 
+// Адаптивные чанки (v1.4b-17): preSplitTokens — бюджет токенов на запрос
+// (maxRequestKTokens*1000); onPreSplit/onAdaptiveSplit/onQuarantineSkip —
+// Output-логи (RU, не UI); quarantine — включать перекладывание в конец
+// очереди (только для аудитов, которые не бросают на первой ошибке).
+export interface AdaptiveChunkOptions {
+  preSplitTokens?: number;
+  quarantine?: boolean;
+  onAdaptiveSplit?: (filename: string, fromLines: number, toLines: number) => void;
+  onPreSplit?: (filename: string, fromLines: number, toLines: number) => void;
+  onQuarantineSkip?: (filename: string) => void;
+}
+
 function isNetworkError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   return /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND|socket hang up|EAI_AGAIN/i.test(msg);
@@ -205,7 +217,7 @@ function rateLimitPausesFromSetting(value: unknown): number {
   return Math.min(5, n);
 }
 
-export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void, docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }): Promise<ScanResult> {
+export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -216,18 +228,57 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   const issues: ReviewIssue[] = [];
   // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
   let skippedFiles = 0;
-  for (const [fileIndex, file] of files.entries()) {
-    if (fileIndex > 0 && fileCooldown > 0) {
+  // Очередь вместо простого прохода: карантин перекладывает тяжёлый файл
+  // в конец, чтобы лёгкие не ждали его 30 пауз.
+  const queue = files.map((_file, index) => index);
+  const ladderCycles = new Map<number, number>();
+  let processedCount = 0;
+  while (queue.length > 0) {
+    const fileIndex = queue.shift() as number;
+    const file = files[fileIndex];
+    if (processedCount > 0 && fileCooldown > 0) {
       if (signal?.aborted) throw abortError();
       onFileCooldown?.(fileCooldown);
       await sleeper(fileCooldown * 1000, signal);
     }
+    processedCount += 1;
     let completed = false;
+    let quarantined = false;
     let lastError: unknown;
     let pauses = 0;
     let quickRetries = 0;
     const docPick = docsResolver?.(file.filename, file.patch);
     const fileSystemPrompt = docPick?.section ? `${systemPrompt}\n\n${docPick.section}` : systemPrompt;
+    // Рекурсивный обзор чанка: перелимит → делим этот чанк пополам (min 200
+    // строк, overlap 50, абсолютные номера сохраняются) и ретрим половинки;
+    // пред-оценка по токенам делит ещё ДО первой отправки.
+    const reviewChunk = async (chunk: string, importsLine: string, passLine: string): Promise<ReviewIssue[]> => {
+      if (signal?.aborted) throw abortError();
+      const preBudget = adaptive.preSplitTokens ?? 0;
+      if (preBudget > 0 && estimateRequestTokens(fileSystemPrompt.length + importsLine.length + passLine.length, chunk.length) > preBudget) {
+        const pre = splitAuditChunk(chunk);
+        if (pre) {
+          adaptive.onPreSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(pre[0]));
+          return [...await reviewChunk(pre[0], importsLine, passLine), ...await reviewChunk(pre[1], importsLine, passLine)];
+        }
+      }
+      try {
+        const elapsedMs = Date.now() - startedAt;
+        onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
+        onThinking?.(elapsedMs);
+        const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
+        return parseReviewResponse(raw, file.filename).issues;
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        const halves = retriable ? splitAuditChunk(chunk) : undefined;
+        if (halves) {
+          adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
+          return [...await reviewChunk(halves[0], importsLine, passLine), ...await reviewChunk(halves[1], importsLine, passLine)];
+        }
+        throw error;
+      }
+    };
     for (;;) {
       const fileIssues: ReviewIssue[] = [];
       try {
@@ -240,13 +291,8 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
             await sleeper(PASS_BETWEEN_SECONDS * 1000, signal);
           }
           for (const chunk of splitPatch(file.patch, 45_000)) {
-            if (signal?.aborted) throw abortError();
-            const elapsedMs = Date.now() - startedAt;
-            onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
-            onThinking?.(elapsedMs);
-            const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
-            const parsed = parseReviewResponse(raw, file.filename);
-            fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
+            const found = await reviewChunk(chunk, importsLine, passLine);
+            fileIssues.push(...found.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
           }
         }
         const deduped = dedupeIssues(fileIssues);
@@ -269,9 +315,25 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
           quickRetries += 1;
           continue;
         }
+        // Карантин: ladder-цикл = один полный проход пауз (rateLimitPauses).
+        // Каждые 3 цикла = круг карантина (файл едет в конец очереди); после
+        // 3 кругов (9 циклов) на 10-м цикле — скип с подсказкой.
+        if (retriable && adaptive.quarantine && rateLimitPauses > 0 && continueOnFileError) {
+          const cycles = (ladderCycles.get(fileIndex) ?? 0) + 1;
+          ladderCycles.set(fileIndex, cycles);
+          const rounds = Math.ceil(cycles / QUARANTINE_CYCLES_PER_ROUND);
+          if (rounds > QUARANTINE_MAX_ROUNDS) {
+            adaptive.onQuarantineSkip?.(file.filename);
+          } else {
+            quarantined = true;
+            queue.push(fileIndex);
+          }
+          break;
+        }
         break;
       }
     }
+    if (quarantined) continue;
     if (!completed) {
       if (!continueOnFileError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
       skippedFiles++;
@@ -396,10 +458,18 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const auditMaxLines = auditConfig.get<number>('maxLines', 0);
     const auditPasses = auditPassesFromSetting(auditConfig.get<number>('auditPasses'));
     const auditRateLimitPauses = rateLimitPausesFromSetting(auditConfig.get<number>('rateLimitPauses'));
+    const auditChunkLines = chunkLinesFromSetting(auditConfig.get<number>('chunkLines'));
+    const adaptive: AdaptiveChunkOptions = {
+      preSplitTokens: maxRequestKTokensFromSetting(auditConfig.get<number>('maxRequestKTokens')) * 1000,
+      quarantine: true,
+      onAdaptiveSplit: (filename, from, to) => output.appendLine(`🪶 чанк тяжёл: делю ${from}→${to} строк, файл ${filename}`),
+      onPreSplit: (filename, from, to) => output.appendLine(`📏 пред-деление: чанк ${from}→${to} по бюджету токенов`),
+      onQuarantineSkip: (filename) => output.appendLine(`⛳ файл слишком тяжёл: снизь chunkLines или maxRequestKTokens (${filename})`)
+    };
     const auditSelection = await resolveExtensionSelection(context);
     const previousHistory = readFindingsHistory(workspaceRoot);
     const auditScopeText = auditConfig.get<string>('auditScope') ?? '';
-    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message));
+    const audit = collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message), auditChunkLines);
     planFiles = [...new Set(audit.files.map((file) => file.filename))];
     output.appendLine(`🔬 Полный аудит: найдено ${planFiles.length} файлов.`);
     const scopeGlobs = parseScopeGlobs(auditScopeText);
@@ -485,7 +555,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         panel.recordFileDuration(seconds);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile);
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive);
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -569,7 +639,13 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const maxFiles = reviewConfig.get<number>('maxFiles', 100);
     const maxLines = reviewConfig.get<number>('maxLines', 0);
     const customPauses = rateLimitPausesFromSetting(reviewConfig.get<number>('rateLimitPauses'));
-    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message));
+    const customChunkLines = chunkLinesFromSetting(reviewConfig.get<number>('chunkLines'));
+    const customAdaptive: AdaptiveChunkOptions = {
+      preSplitTokens: maxRequestKTokensFromSetting(reviewConfig.get<number>('maxRequestKTokens')) * 1000,
+      onAdaptiveSplit: (filename, from, to) => output.appendLine(`🪶 чанк тяжёл: делю ${from}→${to} строк, файл ${filename}`),
+      onPreSplit: (filename, from, to) => output.appendLine(`📏 пред-деление: чанк ${from}→${to} по бюджету токенов`)
+    };
+    const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
     for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);
     if (collection.files.length === 0) {
       panel.setError(scope === 'list' ? t('panel.errNoGlobMatch', lang, { globs: globs.join(', ') }) : t('panel.errNoFiles', lang));
@@ -579,7 +655,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
-    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`));
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
     panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);

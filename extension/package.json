@@ -189,6 +189,20 @@
           "maximum": 128,
           "description": "%docBudgetKb.description%"
         },
+        "codescout.chunkLines": {
+          "type": "number",
+          "default": 800,
+          "minimum": 200,
+          "maximum": 800,
+          "description": "%chunkLines.description%"
+        },
+        "codescout.maxRequestKTokens": {
+          "type": "number",
+          "default": 12,
+          "minimum": 4,
+          "maximum": 32,
+          "description": "%maxRequestKTokens.description%"
+        },
         "codescout.maxLines": {
           "type": "number",
           "default": 0,

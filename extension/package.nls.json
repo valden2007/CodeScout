@@ -9,6 +9,8 @@
   "docMaxKb.description": "Maximum size of one documentation file injected into the prompt (KB). Larger docs are truncated to the limit (the head is kept).",
   "docMaxLinks.description": "Maximum number of documentation links fetched per full audit.",
   "docBudgetKb.description": "Documentation context budget per file (KB, 8-128). The audit picks the top doc sections that share the most words with the file and injects them until this budget is spent.",
+  "chunkLines.description": "Base chunk size in lines for big files (200-800) used by the full audit, scope and custom review. On rate limits the chunk is adaptively halved down to 200 lines, so smaller files fit the free-tier request budget.",
+  "maxRequestKTokens.description": "Rough per-request token budget (thousands, 4-32). Estimated as (chunk + docs + system prompt characters)/3.5; above it a chunk is pre-split in halves before the first send.",
   "maxLines.description": "Maximum lines per file in an audit. 0 = no limit: files longer than 800 lines are chunked with a 50-line overlap, findings are deduplicated. N > 0 = files longer than N are skipped (for weak models).",
   "auditScope.description": "Full-audit scope: comma-separated glob patterns (e.g. src/**, extension/src/**). Empty = all files. The right-click context review ignores it.",
   "auditPasses.description": "How many review passes to run per file in a full audit (1-3). From the 2nd pass the prompt includes previous findings with an instruction to look for missed ones; findings from all passes are merged with dedupe.",

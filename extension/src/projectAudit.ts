@@ -567,19 +567,83 @@ export function listAuditSourceFiles(workspaceRoot: string, onWarn: (message: st
 
 export const AUDIT_CHUNK_LINES = 800;
 export const AUDIT_CHUNK_OVERLAP = 50;
+export const CHUNK_LINES_MIN = 200;
+export const CHUNK_LINES_MAX = 800;
+export const MAX_REQUEST_K_TOKENS_MIN = 4;
+export const MAX_REQUEST_K_TOKENS_MAX = 32;
+export const MAX_REQUEST_K_TOKENS_DEFAULT = 12;
+// Ни один уровень адаптивного деления не уходит ниже 200 строк.
+export const ADAPTIVE_MIN_CHUNK_LINES = 200;
+// Карантин: каждые 3 полных цикла лестницы = круг карантина (файл в конец
+// очереди); после 3 кругов (12-й цикл) — скип с подсказкой.
+export const QUARANTINE_CYCLES_PER_ROUND = 3;
+export const QUARANTINE_MAX_ROUNDS = 3;
+
+export function chunkLinesFromSetting(value: unknown): number {
+  if (value === undefined || value === null || value === '') return AUDIT_CHUNK_LINES;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return AUDIT_CHUNK_LINES;
+  return Math.min(CHUNK_LINES_MAX, Math.max(CHUNK_LINES_MIN, n));
+}
+
+export function maxRequestKTokensFromSetting(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return MAX_REQUEST_K_TOKENS_DEFAULT;
+  return Math.min(MAX_REQUEST_K_TOKENS_MAX, Math.max(MAX_REQUEST_K_TOKENS_MIN, n));
+}
+
+// Грубая оценка токенов запроса: символы промпта+чанка / 3.5.
+export function estimateRequestTokens(promptChars: number, chunkChars: number): number {
+  return Math.ceil((promptChars + chunkChars) / 3.5);
+}
+
+const AUDIT_HUNK_RE = /^@@ -0,0 \+(\d+),(\d+) @@$/;
+
+export function chunkLineCount(patch: string): number {
+  const lines = patch.split('\n');
+  for (const line of lines) {
+    const match = AUDIT_HUNK_RE.exec(line);
+    if (match) return Number(match[2]);
+  }
+  return -1;
+}
+
+// Делит пополам ТОЛЬКО pure-addition чанк аудита ('+++ b/f', '@@ -0,0 +S,L',
+// строки только '+'): левая половина [0,m), правая [m-overlap,L) — перекрытие
+// 50 строк и абсолютные номера сохраняются на всех уровнях. Git-диффы со
+// «контекстом»/удалениями не делим (undefined → работает лестница).
+export function splitAuditChunk(patch: string, overlap = AUDIT_CHUNK_OVERLAP, minLines = ADAPTIVE_MIN_CHUNK_LINES): [string, string] | undefined {
+  const lines = patch.split('\n');
+  if (lines.length < 4 || !lines[0].startsWith('--- ') || !lines[1].startsWith('+++ ')) return undefined;
+  const match = AUDIT_HUNK_RE.exec(lines[2]);
+  if (!match) return undefined;
+  const start = Number(match[1]);
+  const count = Number(match[2]);
+  const body = lines.slice(3);
+  if (body.length !== count || count < minLines * 2) return undefined;
+  if (!body.every((line) => line.startsWith('+'))) return undefined;
+  const mid = Math.ceil(count / 2);
+  const secondStart = Math.max(0, mid - Math.min(overlap, mid));
+  const header = `${lines[0]}\n${lines[1]}`;
+  const first = `${header}\n@@ -0,0 +${start},${mid} @@\n${body.slice(0, mid).join('\n')}`;
+  const secondBody = body.slice(secondStart);
+  const second = `${header}\n@@ -0,0 +${start + secondStart},${secondBody.length} @@\n${secondBody.join('\n')}`;
+  return [first, second];
+}
 
 function auditDiff(filename: string, lines: string[], start: number, count: number): LocalDiffFile {
   const slice = lines.slice(start, start + count);
   return { filename, status: 'audit', additions: slice.length, deletions: 0, patch: `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +${start + 1},${slice.length} @@\n${slice.map((line) => `+${line}`).join('\n')}` };
 }
 
-function buildFileEntries(filename: string, lines: string[]): LocalDiffFile[] {
-  if (lines.length <= AUDIT_CHUNK_LINES) return [auditDiff(filename, lines, 0, lines.length)];
-  const step = Math.max(1, AUDIT_CHUNK_LINES - AUDIT_CHUNK_OVERLAP);
+function buildFileEntries(filename: string, lines: string[], chunkLines = AUDIT_CHUNK_LINES): LocalDiffFile[] {
+  const size = Math.max(CHUNK_LINES_MIN, chunkLines);
+  if (lines.length <= size) return [auditDiff(filename, lines, 0, lines.length)];
+  const step = Math.max(1, size - AUDIT_CHUNK_OVERLAP);
   const entries: LocalDiffFile[] = [];
   for (let start = 0; start < lines.length; start += step) {
-    entries.push(auditDiff(filename, lines, start, AUDIT_CHUNK_LINES));
-    if (start + AUDIT_CHUNK_LINES >= lines.length) break;
+    entries.push(auditDiff(filename, lines, start, size));
+    if (start + size >= lines.length) break;
   }
   return entries;
 }
@@ -590,7 +654,7 @@ function sourceFileDiff(workspaceRoot: string, filename: string): LocalDiffFile 
   return auditDiff(filename, lines, 0, lines.length);
 }
 
-function readAuditEntries(workspaceRoot: string, sortedPaths: string[], maxFiles: number, maxLines: number, ignored: string[]): AuditCollection {
+function readAuditEntries(workspaceRoot: string, sortedPaths: string[], maxFiles: number, maxLines: number, ignored: string[], chunkLines = AUDIT_CHUNK_LINES): AuditCollection {
   const files: LocalDiffFile[] = [];
   const skippedLarge: string[] = [];
   const skippedUnreadable: string[] = [];
@@ -609,7 +673,7 @@ function readAuditEntries(workspaceRoot: string, sortedPaths: string[], maxFiles
       skippedLarge.push(filename);
       continue;
     }
-    const entries = buildFileEntries(filename, lines);
+    const entries = buildFileEntries(filename, lines, chunkLines);
     if (entries.length > 1) chunked.push({ file: filename, chunks: entries.length });
     files.push(...entries);
   }
@@ -640,11 +704,11 @@ export function passFindingsSummary(issues: ReviewIssue[]): string {
   return issues.map((issue) => `строка ${issue.line} [${issue.severity}/${issue.category}] ${issue.description}`).join('; ');
 }
 
-export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = '', onWarn: (message: string) => void = () => {}): AuditCollection {
+export function collectAuditFiles(workspaceRoot: string, maxFiles = 100, maxLines = 0, scopeGlobsText = '', onWarn: (message: string) => void = () => {}, chunkLines = AUDIT_CHUNK_LINES): AuditCollection {
   const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const patterns = parseScopeGlobs(scopeGlobsText);
   const scoped = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : pool.files;
-  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored);
+  return readAuditEntries(workspaceRoot, scoped, maxFiles, maxLines, pool.ignored, chunkLines);
 }
 
 export function parseScopeGlobs(text: string): string[] {
@@ -716,8 +780,8 @@ export function autoResumeBadgeDetail(maxAttempts: number, maxMinutes: number, l
 
 export type ReviewScope = 'all' | 'active' | 'list';
 
-export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0, onWarn: (message: string) => void = () => {}): AuditCollection {
-  if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines, '', onWarn);
+export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, globs: string[] = [], activeFile?: string, maxFiles = 100, maxLines = 0, onWarn: (message: string) => void = () => {}, chunkLines = AUDIT_CHUNK_LINES): AuditCollection {
+  if (scope === 'all') return collectAuditFiles(workspaceRoot, maxFiles, maxLines, '', onWarn, chunkLines);
   if (scope === 'active') {
     const requested = activeFile?.trim();
     if (!requested) return { files: [], skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
@@ -726,7 +790,7 @@ export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, 
     try {
       const lines = readFileSync(join(workspaceRoot, relativePath), 'utf8').split(/\r?\n/);
       if (maxLines > 0 && lines.length > maxLines) return { files: [], skippedLarge: [relativePath], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: [] };
-      const entries = buildFileEntries(relativePath, lines);
+      const entries = buildFileEntries(relativePath, lines, chunkLines);
       return { files: entries, skippedLarge: [], skippedUnreadable: [], ignored: [], skippedLimit: 0, chunked: entries.length > 1 ? [{ file: relativePath, chunks: entries.length }] : [] };
     } catch {
       return { files: [], skippedLarge: [], skippedUnreadable: [relativePath], ignored: [], skippedLimit: 0, chunked: [] };
@@ -735,7 +799,7 @@ export function collectFilesForScope(workspaceRoot: string, scope: ReviewScope, 
   const patterns = globs.map((glob) => glob.trim()).filter(Boolean);
   const pool = listAuditSourceFiles(workspaceRoot, onWarn);
   const candidates = patterns.length ? pool.files.filter((file) => patterns.some((glob) => isIgnoredAuditPath(file, [glob]))) : [];
-  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored);
+  return readAuditEntries(workspaceRoot, candidates, maxFiles, maxLines, pool.ignored, chunkLines);
 }
 
 function projectStack(workspaceRoot: string): string[] {

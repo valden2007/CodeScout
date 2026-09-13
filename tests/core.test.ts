@@ -15,7 +15,7 @@ import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { buildIssueBody, redactSecrets, reportIssueUrl, CODESCOUT_REPO_URL, type IssueReportInput } from '../extension/src/reportIssue';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, chunkDocText, dedupeIssues, docBudgetBytesFromSetting, docSectionScore, docWords, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, makeDocsResolver, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pickDocSections, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocLines, sanitizeDocText, splitDocSections, topDocWords, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS, DOC_CHUNK_SIZE, DOC_CHUNK_OVERLAP } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, chunkDocText, chunkLineCount, chunkLinesFromSetting, dedupeIssues, docBudgetBytesFromSetting, docSectionScore, docWords, estimateRequestTokens, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, makeDocsResolver, maxRequestKTokensFromSetting, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pickDocSections, pruneAuditCheckpoint, progressView, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocLines, sanitizeDocText, splitAuditChunk, splitDocSections, topDocWords, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS, DOC_CHUNK_SIZE, DOC_CHUNK_OVERLAP } from '../extension/src/projectAudit';
 import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
 import { t, keysOf, normalizeLang } from '../src/i18n';
 import { ReviewIssue } from '../src/types';
@@ -1988,7 +1988,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri))");
     expect(extension).toContain('isDirectory ? `${rel}/**` : rel');
     expect(extension).toContain("runCustomReview(context, output, panel, t('custom.explorerFocus', lang, { rel }), 'list', globs)");
-    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message))");
+    expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines)");
   });
 
   it('settings page renders autonomous checkbox and scope field wired to save', () => {
@@ -3461,7 +3461,7 @@ describe('v1.4b-16 секционный RAG', () => {
     expect(extension).toContain('makeDocsResolver(docs.sections ?? [], docBudgetBytes');
     expect(extension).toContain('const docPick = docsResolver?.(file.filename, file.patch)');
     expect(extension).toContain('provider.review(fileSystemPrompt');
-    expect(extension).toContain('docsForFile);');
+    expect(extension).toContain('docsForFile, adaptive);');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('"codescout.docBudgetKb"');
     expect(manifest).toContain('%docBudgetKb.description%');
@@ -3470,5 +3470,95 @@ describe('v1.4b-16 секционный RAG', () => {
     const nlsRu = JSON.parse(readFileSync('extension/package.nls.ru.json', 'utf8'));
     expect(nlsEn['docBudgetKb.description']).toContain('8-128');
     expect(nlsRu['docBudgetKb.description']).toContain('Бюджет контекста документации');
+  });
+});
+
+describe('v1.4b-17 адаптивные чанки: чистые хелперы', () => {
+  function makeAuditChunk(filename: string, start: number, count: number): string {
+    const body = Array.from({ length: count }, (_, i) => `+const l${start + i} = ${start + i};`).join('\n');
+    return `--- /dev/null\n+++ b/${filename}\n@@ -0,0 +${start},${count} @@\n${body}`;
+  }
+
+  it('клампы настроек: chunkLines 200-800 (дефолт 800), maxRequestKTokens 4-32 (дефолт 12)', () => {
+    expect(chunkLinesFromSetting(undefined)).toBe(800);
+    expect(chunkLinesFromSetting('')).toBe(800);
+    expect(chunkLinesFromSetting('abc')).toBe(800);
+    expect(chunkLinesFromSetting('450')).toBe(450);
+    expect(chunkLinesFromSetting(50)).toBe(200);
+    expect(chunkLinesFromSetting(9999)).toBe(800);
+    expect(maxRequestKTokensFromSetting(undefined)).toBe(12);
+    expect(maxRequestKTokensFromSetting(0)).toBe(12);
+    expect(maxRequestKTokensFromSetting('16')).toBe(16);
+    expect(maxRequestKTokensFromSetting(1)).toBe(4);
+    expect(maxRequestKTokensFromSetting(99)).toBe(32);
+  });
+
+  it('оценка токенов = символы/3.5', () => {
+    expect(estimateRequestTokens(1000, 1000)).toBe(572);
+    expect(estimateRequestTokens(0, 0)).toBe(0);
+  });
+
+  it('splitAuditChunk: пополам с перекрытием 50 и абсолютными номерами; <2×200 и git-диффы не делим', () => {
+    const chunk = makeAuditChunk('big.ts', 1, 800);
+    expect(chunkLineCount(chunk)).toBe(800);
+    const halves = splitAuditChunk(chunk);
+    expect(halves).toBeDefined();
+    const [first, second] = halves!;
+    expect(first).toContain('@@ -0,0 +1,400 @@');
+    expect(second).toContain('@@ -0,0 +351,450 @@');
+    expect(first).toContain('+const l400 = 400;');
+    expect(second).toContain('+const l351 = 351;');
+    expect(second).toContain('+const l800 = 800;');
+    // рекурсия: половину тоже делим, перекрытие не теряется
+    const quarters = splitAuditChunk(first);
+    expect(quarters).toBeDefined();
+    expect(quarters![0]).toContain('@@ -0,0 +1,200 @@');
+    expect(quarters![1]).toContain('@@ -0,0 +151,250 @@');
+    // слишком маленький чанк не делим
+    expect(splitAuditChunk(makeAuditChunk('small.ts', 1, 300))).toBeUndefined();
+    // git-дифф с контекстом не делим
+    const gitDiff = '--- a/x.ts\n+++ b/x.ts\n@@ -0,0 +1,400 @@\n+const a = 1;\n const ctx = 2;\n-const old = 3;';
+    expect(gitDiff.split('\n').length).toBeGreaterThan(3);
+    expect(chunkLineCount(gitDiff)).toBe(400);
+    expect(splitAuditChunk(gitDiff)).toBeUndefined();
+  });
+
+  it('buildFileEntries режет по chunkLines; overlap 50; константы карантина 3×3', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cs-chunklines-'));
+    try {
+      mkdirSync(join(root, 'src'));
+      writeFileSync(join(root, 'src', 'a.ts'), Array.from({ length: 600 }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n', 'utf8');
+      const chunks = collectAuditFiles(root, 100, 0, '', () => {}, 250);
+      expect(chunks.files.length).toBe(3);
+      expect(chunks.files.map((entry) => entry.filename)).toEqual(['src/a.ts', 'src/a.ts', 'src/a.ts']);
+      expect(chunks.files[0].patch).toContain('@@ -0,0 +1,250 @@');
+      expect(chunks.files[1].patch).toContain('@@ -0,0 +201,250 @@');
+      expect(chunks.files[2].patch).toContain('@@ -0,0 +401,201 @@');
+      expect(chunks.chunked).toEqual([{ file: 'src/a.ts', chunks: 3 }]);
+      expect(QUARANTINE_CYCLES_PER_ROUND).toBe(3);
+      expect(QUARANTINE_MAX_ROUNDS).toBe(3);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('настройки в манифесте+nls, Output-строки деления/карантина на месте', () => {
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('"codescout.chunkLines"');
+    expect(manifest).toContain('%chunkLines.description%');
+    expect(manifest).toContain('"codescout.maxRequestKTokens"');
+    expect(manifest).toContain('%maxRequestKTokens.description%');
+    const props = JSON.parse(manifest).contributes.configuration.properties;
+    expect(props['codescout.chunkLines']).toMatchObject({ default: 800, minimum: 200, maximum: 800 });
+    expect(props['codescout.maxRequestKTokens']).toMatchObject({ default: 12, minimum: 4, maximum: 32 });
+    const nlsEn = JSON.parse(readFileSync('extension/package.nls.json', 'utf8'));
+    expect(nlsEn['chunkLines.description']).toContain('200-800');
+    expect(nlsEn['maxRequestKTokens.description']).toContain('3.5');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('🪶 чанк тяжёл: делю ${from}→${to} строк, файл ${filename}');
+    expect(extension).toContain('📏 пред-деление: чанк ${from}→${to} по бюджету токенов');
+    expect(extension).toContain('файл слишком тяжёл: снизь chunkLines или maxRequestKTokens');
+    expect(extension).toContain('collectAuditFiles(workspaceRoot, auditMaxFiles, auditMaxLines, auditScopeText, (message) => output.appendLine(message), auditChunkLines)');
+    expect(extension).toContain('QUARANTINE_MAX_ROUNDS');
   });
 });
