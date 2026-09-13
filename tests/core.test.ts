@@ -15,7 +15,7 @@ import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
 import { buildIssueBody, redactSecrets, reportIssueUrl, CODESCOUT_REPO_URL, type IssueReportInput } from '../extension/src/reportIssue';
 import { SAMPLE_DIFF, SAMPLE_FILE, sampleTestSummary } from '../extension/src/sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, dedupeIssues, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocText, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS } from '../extension/src/projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, collectAuditFiles, collectFilesForScope, AUDIT_PASSES_MAX, AUDIT_WALK_MAX_DEPTH, auditPassesFromSetting, auditEtaSeconds, chunkDocText, dedupeIssues, docBudgetBytesFromSetting, docSectionScore, docWords, extractRelativeImports, fetchDocsForPrompt, importsContextLine, isBlockedDocHost, isIgnoredAuditPath, ladderRemainingSeconds, listAuditSourceFiles, loadIgnorePatterns, makeDocsResolver, medianSeconds, mergeCheckpointIssues, passFindingsSummary, pickDocSections, pruneAuditCheckpoint, progressView, readAuditProgress, readDocCache, readFindingsHistory, readProjectContext, resolveAuditFile, sanitizeDocLines, sanitizeDocText, splitDocSections, topDocWords, writeAuditProgress, writeFindingsHistory, writeProjectContext, AUTO_RESUME_LADDER_SECONDS, DOC_CHUNK_SIZE, DOC_CHUNK_OVERLAP } from '../extension/src/projectAudit';
 import { buildReviewPrompt, SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
 import { t, keysOf, normalizeLang } from '../src/i18n';
 import { ReviewIssue } from '../src/types';
@@ -3338,5 +3338,137 @@ describe('v1.4b-16 banner priority', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('panel.setScanning(true, true);');
     expect(extension.indexOf('panel.setScanning(true, true);')).toBeLessThan(extension.indexOf('panel.setAutoResume({ done: outcome.view.done'));
+  });
+});
+
+describe('v1.4b-16 секционный RAG', () => {
+  it('splitDocSections режет по #/##/### с заголовками; preamble отдельной секцией', () => {
+    const md = 'Intro preamble text here\n\n# Alpha\nalpha body one\n\n## Beta\nbeta body two\n\n### Gamma\ngamma body three';
+    const sections = splitDocSections(md);
+    expect(sections.map((section) => section.heading)).toEqual(['', 'Alpha', 'Beta', 'Gamma']);
+    expect(sections[1].body).toContain('# Alpha');
+    expect(sections[1].body).toContain('alpha body one');
+    const noHeadings = 'word '.repeat(5000);
+    expect(splitDocSections(noHeadings).length).toBeGreaterThan(1);
+    expect(splitDocSections(noHeadings).every((section) => section.heading === '')).toBe(true);
+  });
+
+  it('chunkDocText: fallback-чанки 3KB с перекрытием 200', () => {
+    expect(DOC_CHUNK_SIZE).toBe(3072);
+    expect(DOC_CHUNK_OVERLAP).toBe(200);
+    const text = Array.from({ length: 250 }, (_, i) => String(i % 10)).join('');
+    const chunks = chunkDocText(text, 100, 20);
+    expect(chunks.length).toBe(3);
+    expect(chunks[0].body).toBe(text.slice(0, 100));
+    expect(chunks[1].body).toBe(text.slice(80, 180));
+    expect(chunks[2].body).toBe(text.slice(160));
+    const big = chunkDocText('x'.repeat(7000));
+    expect(big[0].body.length).toBe(3072);
+    expect(big[1].body.length).toBeLessThanOrEqual(3072);
+  });
+
+  it('токены: >3 букв, lowercase, без стоп-слов; топ-100 по частоте', () => {
+    const words = docWords('The quick brown foxes jumped across API endpoints — эти методы endpoints');
+    expect(words).toContain('quick');
+    expect(words).toContain('endpoints');
+    expect(words).toContain('методы');
+    expect(words).not.toContain('the');
+    expect(words).not.toContain('api');
+    expect(words).not.toContain('этот');
+    const top = topDocWords('alphaWidget '.repeat(40) + 'betaModule '.repeat(20) + Array.from({ length: 150 }, (_, i) => `filler${i}`).join(' '), 100);
+    expect(top.has('alphawidget')).toBe(true);
+    expect(top.has('betamodule')).toBe(true);
+    expect(top.size).toBeLessThanOrEqual(100);
+  });
+
+  it('pickDocSections: score = пересечение с топ-100 слов файла; zero → пусто; бюджет ограничивает', () => {
+    const sections = [
+      { heading: 'Beta', body: '## Beta\nquantum chroniton prose nothing related here at all' },
+      { heading: 'Alpha', body: '## Alpha\nwidget flux capacitor protocol handler details' },
+      { heading: 'Gamma', body: '## Gamma\nwidget protocol handler flux' }
+    ];
+    const fileTop = topDocWords('export const widget flux capacitor protocol handler module');
+    expect(docSectionScore(sections[1], fileTop)).toBeGreaterThan(docSectionScore(sections[2], fileTop));
+    expect(docSectionScore(sections[0], fileTop)).toBe(0);
+    const all = pickDocSections(sections, fileTop, 10_000);
+    expect(all.map((section) => section.heading)).toEqual(['Alpha', 'Gamma']);
+    const tight = pickDocSections(sections, fileTop, Buffer.byteLength(sections[1].body, 'utf8') + 2);
+    expect(tight.map((section) => section.heading)).toEqual(['Alpha']);
+    expect(pickDocSections(sections, topDocWords('zephyr quartz divergent markup'), 10_000)).toEqual([]);
+  });
+
+  it('makeDocsResolver: fence + label + логи релевантности и нуля', () => {
+    const sections = [
+      { heading: 'Alpha', body: '## Alpha\nwidget flux capacitor protocol handler details' },
+      { heading: 'Beta', body: '## Beta\nquantum chroniton unrelated prose' }
+    ];
+    const logs: string[] = [];
+    const resolver = makeDocsResolver(sections, 8 * 1024, (message) => logs.push(message));
+    const hit = resolver('src/widget.ts', 'const widget = fluxCapacitor(protocol) + handler;');
+    expect(hit.used).toBe(1);
+    expect(hit.section).toContain('<<<CODESCOUT_DOCS_BEGIN>>>');
+    expect(hit.section).toContain('widget flux capacitor protocol handler details');
+    expect(hit.section).not.toContain('quantum chroniton');
+    expect(logs[0]).toMatch(/^📄 доки: 1 секций, \d+KB для файла src\/widget\.ts$/);
+    const miss = resolver('src/other.ts', 'completely divergent source markup at all');
+    expect(miss.section).toBe('');
+    expect(miss.used).toBe(0);
+    expect(logs[1]).toBe('📄 доки: нет релевантных секций для файла src/other.ts');
+  });
+
+  it('docBudgetKb: clamp 8-128, дефолт 24, 0 = дефолт', () => {
+    expect(docBudgetBytesFromSetting(undefined)).toBe(24 * 1024);
+    expect(docBudgetBytesFromSetting(0)).toBe(24 * 1024);
+    expect(docBudgetBytesFromSetting('32')).toBe(32 * 1024);
+    expect(docBudgetBytesFromSetting(2)).toBe(8 * 1024);
+    expect(docBudgetBytesFromSetting(999)).toBe(128 * 1024);
+  });
+
+  it('sanitizeDocLines сохраняет строки (заголовки различимы), а sanitizeDocText — нет', () => {
+    const lines = sanitizeDocLines('# Setup\ninstall   steps\n\n\n\n# Deploy\ndeploy steps');
+    expect(lines).toContain('\n# Deploy\n');
+    expect(lines).toContain('install steps');
+    expect(sanitizeDocText('# Setup\ninstall steps').includes('\n')).toBe(false);
+  });
+
+  it('секции едут в docs-cache.json и возвращаются из кэша', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cs-docsections-'));
+    try {
+      const url = 'https://docs.example/guide';
+      const md = '# Setup\ninstall the widget flux capacitor\n\n# Deploy\ndeploy the gizmo chroniton';
+      let calls = 0;
+      const first = await fetchDocsForPrompt(root, [url], async () => { calls++; return md; });
+      expect(calls).toBe(1);
+      expect((first.sections ?? []).map((section) => section.heading)).toEqual(['Setup', 'Deploy']);
+      const cache = readDocCache(root);
+      expect(cache[url].sections?.map((section) => section.heading)).toEqual(['Setup', 'Deploy']);
+      const second = await fetchDocsForPrompt(root, [url], async () => { calls++; throw new Error('network'); });
+      expect(calls).toBe(1);
+      expect((second.sections ?? []).length).toBe(2);
+      // старый кэш без секций → фолбэк-чанкинг на лету
+      writeFileSync(join(root, '.codescout', 'docs-cache.json'), JSON.stringify({ 'https://legacy.example': { fetchedAt: Date.now(), text: 'plain cached doc text without any headings' } }), 'utf8');
+      const legacy = await fetchDocsForPrompt(root, ['https://legacy.example'], async () => 'never');
+      expect(legacy.sections?.length).toBe(1);
+      expect(legacy.sections?.[0].heading).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('wire-up: аудит больше не льёт весь док в системник,Resolver встроен, настройка в манифесте+nls', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain("buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, docLinks, '')");
+    expect(extension).toContain('makeDocsResolver(docs.sections ?? [], docBudgetBytes');
+    expect(extension).toContain('const docPick = docsResolver?.(file.filename, file.patch)');
+    expect(extension).toContain('provider.review(fileSystemPrompt');
+    expect(extension).toContain('docsForFile);');
+    const manifest = readFileSync('extension/package.json', 'utf8');
+    expect(manifest).toContain('"codescout.docBudgetKb"');
+    expect(manifest).toContain('%docBudgetKb.description%');
+    expect(manifest).toContain('"default": 24');
+    const nlsEn = JSON.parse(readFileSync('extension/package.nls.json', 'utf8'));
+    const nlsRu = JSON.parse(readFileSync('extension/package.nls.ru.json', 'utf8'));
+    expect(nlsEn['docBudgetKb.description']).toContain('8-128');
+    expect(nlsRu['docBudgetKb.description']).toContain('Бюджет контекста документации');
   });
 });

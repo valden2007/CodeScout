@@ -182,6 +182,13 @@
           "maximum": 50,
           "description": "%docMaxLinks.description%"
         },
+        "codescout.docBudgetKb": {
+          "type": "number",
+          "default": 24,
+          "minimum": 8,
+          "maximum": 128,
+          "description": "%docBudgetKb.description%"
+        },
         "codescout.maxLines": {
           "type": "number",
           "default": 0,

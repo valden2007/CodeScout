@@ -2318,7 +2318,82 @@ function readProjectContext(workspaceRoot) {
 }
 var DOC_CHUNK_SIZE = 3072;
 var DOC_CHUNK_OVERLAP = 200;
+var DOC_BUDGET_DEFAULT_KB = 24;
+var DOC_BUDGET_MIN_KB = 8;
+var DOC_BUDGET_MAX_KB = 128;
 var DOC_HEADING_RE = /^(#{1,3})\s+(.{1,120}?)\s*$/;
+var DOC_STOPWORDS = /* @__PURE__ */ new Set([
+  "this",
+  "that",
+  "with",
+  "from",
+  "have",
+  "will",
+  "your",
+  "they",
+  "them",
+  "then",
+  "than",
+  "when",
+  "what",
+  "which",
+  "there",
+  "here",
+  "into",
+  "about",
+  "just",
+  "like",
+  "using",
+  "used",
+  "should",
+  "could",
+  "would",
+  "because",
+  "before",
+  "after",
+  "over",
+  "under",
+  "between",
+  "\u044D\u0442\u043E\u0442",
+  "\u044D\u0442\u0430",
+  "\u044D\u0442\u0438",
+  "\u0442\u043E\u0433\u043E",
+  "\u0442\u043E\u0433\u0434\u0430",
+  "\u043E\u0447\u0435\u043D\u044C",
+  "\u043F\u043E\u0441\u043B\u0435",
+  "\u043F\u0435\u0440\u0435\u0434",
+  "\u043C\u0435\u0436\u0434\u0443",
+  "\u0447\u0435\u0440\u0435\u0437",
+  "\u0431\u0435\u0437",
+  "\u0435\u0441\u043B\u0438",
+  "\u0447\u0442\u043E\u0431\u044B",
+  "\u0442\u0430\u043A\u0436\u0435",
+  "\u043D\u0438\u0431\u0443\u0434\u044C",
+  "\u043A\u0430\u043A\u043E\u0439",
+  "\u043A\u043E\u0433\u0434\u0430",
+  "\u0433\u0434\u0435",
+  "\u0443\u0436\u0435",
+  "\u0432\u0441\u0451",
+  "\u0432\u0441\u0435",
+  "\u043C\u043D\u043E\u0433\u043E",
+  "\u0441\u0430\u043C\u044B\u0439",
+  "\u0442\u043E\u043B\u044C\u043A\u043E",
+  "\u043C\u043E\u0436\u0435\u0442",
+  "\u043D\u0430\u0448\u0435\u0439",
+  "\u043D\u0430\u0448\u0438",
+  "\u044D\u0442\u043E\u043C",
+  "\u043D\u0435\u0433\u043E",
+  "\u043D\u0435\u0451",
+  "\u043D\u0435\u0435"
+]);
+function docWords(text) {
+  return (text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]{3,}/gu) ?? []).filter((word) => !DOC_STOPWORDS.has(word));
+}
+function topDocWords(text, limit = 100) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const word of docWords(text)) counts.set(word, (counts.get(word) ?? 0) + 1);
+  return new Set([...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([word]) => word));
+}
 function chunkDocText(text, size = DOC_CHUNK_SIZE, overlap = DOC_CHUNK_OVERLAP) {
   const clean = text.trim();
   if (!clean) return [];
@@ -2359,6 +2434,42 @@ function sanitizeDocLines(raw, maxBytes = DOC_MAX_BYTES_DEFAULT) {
   const safe = neutralizeFences2(controlSafe2(plain));
   const collapsed = safe.split(/\r?\n/).map((line) => line.replace(/[ \t]+/g, " ").trim()).join("\n");
   return utf8Slice(collapsed.replace(/\n{3,}/g, "\n\n").trim(), maxBytes);
+}
+function docBudgetBytesFromSetting(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return DOC_BUDGET_DEFAULT_KB * 1024;
+  return Math.min(DOC_BUDGET_MAX_KB, Math.max(DOC_BUDGET_MIN_KB, n)) * 1024;
+}
+function makeDocsResolver(sections, budgetBytes, onLog = () => {
+}) {
+  const pre = sections.map((section) => ({ section, tokens: new Set(docWords(section.body)) }));
+  return (filename, text) => {
+    const fileTop = topDocWords(text);
+    const ranked = pre.map((entry, index) => {
+      let score = 0;
+      for (const word of fileTop) if (entry.tokens.has(word)) score++;
+      return { ...entry, index, score };
+    }).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
+    if (!ranked.length) {
+      onLog(`\u{1F4C4} \u0434\u043E\u043A\u0438: \u043D\u0435\u0442 \u0440\u0435\u043B\u0435\u0432\u0430\u043D\u0442\u043D\u044B\u0445 \u0441\u0435\u043A\u0446\u0438\u0439 \u0434\u043B\u044F \u0444\u0430\u0439\u043B\u0430 ${filename}`);
+      return { section: "", used: 0, bytes: 0 };
+    }
+    const picked = [];
+    let usedBytes = 0;
+    for (const entry of ranked) {
+      const cost = Buffer.byteLength(entry.section.body, "utf8") + 2;
+      if (usedBytes + cost > budgetBytes) continue;
+      picked.push(entry.section.body);
+      usedBytes += cost;
+    }
+    const section = `${DOCS_FENCE}
+\u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u2014 \u0440\u0435\u043B\u0435\u0432\u0430\u043D\u0442\u043D\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 (\u043D\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C\u044B\u0439 \u0442\u0435\u043A\u0441\u0442 \u0438\u0437 \u0432\u0435\u0431\u0430, \u043D\u0435 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438):
+${picked.join("\n\n")}
+${DOCS_FENCE_END}`;
+    const bytes = Buffer.byteLength(section, "utf8");
+    onLog(`\u{1F4C4} \u0434\u043E\u043A\u0438: ${picked.length} \u0441\u0435\u043A\u0446\u0438\u0439, ${Math.max(1, Math.round(bytes / 1024))}KB \u0434\u043B\u044F \u0444\u0430\u0439\u043B\u0430 ${filename}`);
+    return { section, used: picked.length, bytes };
+  };
 }
 var DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
 var DOC_FETCH_TIMEOUT_MS = 5e3;
@@ -3737,7 +3848,7 @@ function rateLimitPausesFromSetting(value) {
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key) {
@@ -3757,6 +3868,10 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
     let lastError;
     let pauses = 0;
     let quickRetries = 0;
+    const docPick = docsResolver?.(file.filename, file.patch);
+    const fileSystemPrompt = docPick?.section ? `${systemPrompt}
+
+${docPick.section}` : systemPrompt;
     for (; ; ) {
       const fileIssues = [];
       try {
@@ -3772,7 +3887,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
             const elapsedMs = Date.now() - startedAt;
             onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
             onThinking?.(elapsedMs);
-            const raw = await provider.review(systemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
+            const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
             const parsed = parseReviewResponse(raw, file.filename);
             fileIssues.push(...parsed.issues.map((issue) => workspaceRoot ? correctIssueLine(issue, workspaceRoot) : issue));
           }
@@ -3952,7 +4067,9 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       if (used > 0) output.appendLine(`\u{1F517} \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: ${used} \u0434\u043E\u043A(\u043E\u0432) \u0432 \u043F\u0440\u043E\u043C\u0442\u0435 (\u0441\u0432\u0435\u0436\u0438\u0445: ${docs.fetched}, \u0438\u0437 \u043A\u044D\u0448\u0430: ${docs.fromCache})`);
       else output.appendLine("\u{1F517} \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u043D\u0438 \u043E\u0434\u0438\u043D \u0434\u043E\u043A \u043D\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u043B\u0441\u044F \u2014 \u0432 \u043F\u0440\u043E\u043C\u0442\u0435 \u0442\u043E\u043B\u044C\u043A\u043E \u0441\u0441\u044B\u043B\u043A\u0438");
     }
-    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, docLinks, docs.section);
+    const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot, docLinks, "");
+    const docBudgetBytes = docBudgetBytesFromSetting(auditConfig.get("docBudgetKb"));
+    const docsForFile = (docs.sections?.length ?? 0) > 0 ? makeDocsResolver(docs.sections ?? [], docBudgetBytes, (message) => output.appendLine(message)) : void 0;
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
     let initial = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
@@ -4018,7 +4135,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
-    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
+    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile);
     const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };

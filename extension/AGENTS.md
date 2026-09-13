@@ -469,9 +469,44 @@ pre-design now.
      them empty). progressView/AuditResumeView carry findings count;
      resume.findings key in both dicts. auditResultsPath/read/write/
      clear helpers in projectAudit; .codescout stays git-ignored.
-     e2e in tests/audit-results.test.ts drives a real interrupted audit
-     (c.ts errors) through the stub → re-activate → findings+banner.
+    e2e in tests/audit-results.test.ts drives a real interrupted audit
+    (c.ts errors) through the stub → re-activate → findings+banner.
      Tests: 267.
+ 24. Scan-state sync (v1.4b-16a): the host is the ONLY source of truth
+     about scanning — every start path (buttons, resume, auto-catchup)
+     puts the panel into scan mode BEFORE the first request, and the
+     catch-up WAIT itself now calls panel.setScanning(true, true) before
+     setAutoResume, so the Stop button is visible during пауза and
+     cancelScan (autoResumeCancelled+abort) kills manual scans AND the
+     catch-up loop (previously the panel sat idle with resume/stopped
+     banners while the host kept running → un-stoppable scan).
+     resolveWebviewView renders scanning=true instantly → reopened panel
+     during a live scan is in scan mode; restoreAuditResults is a no-op
+     while scanning (guard). Banner priority in reportHtml: scan >
+     прерван (resumeView hidden when isScanning; showResume hides
+     status) > остановлен > пусто — exactly one banner. setScanning(true)
+     resets the «остановлено» flag (already cleared status + now pinned
+     by tests). e2e: tests/scan-sync.test.ts (real activate+stub: 429 →
+     wait keeps scan UI; cancel works; resume leaves no stale banner;
+     re-resolve during a hanging scan shows Stop; restore ignored).
+     Tests: 274.
+ 25. Sectional RAG (v1.4b-16b): docs-cache.json entries now carry
+     sections (DocSection {heading, body}); splitDocSections cuts by
+     #/##/### (heading line stays in the body — «заголовки всегда»),
+     docs without headings fall back to chunkDocText 3KB/200-overlap;
+     legacy caches without sections re-split from text on the fly.
+     makeDocsResolver(sections, budgetBytes, onLog) per file: tokens =
+     words >3 chars lowercased minus RU/EN stopwords; file side =
+     topDocWords(patch) top-100 by frequency; score = intersection;
+     sections sorted by score desc, packed greedily into
+     codescout.docBudgetKb (8-128, default 24, clamped — manifest+nls);
+     zero intersection → nothing injected + Output «📄 доки: нет
+    релевантных секций для файла X», else «📄 доки: N секций, XKB для
+     файла Y». buildProjectSystemPrompt no longer gets the whole doc
+     (only the links list; runFullAuditOnce passes '') — reviewFiles
+     learned docsResolver and injects the fenced section into the
+     SYSTEM prompt per file only when it matched. Output logs stay RU
+     (not UI). Tests: 281.
   9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/
