@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets, type PanelUx } from './reportHtml';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
@@ -46,6 +46,25 @@ function realExistingPath(path: string): string {
       current = parent;
     }
   }
+}
+
+// openFile принимает ТОЛЬКО workspace-относительные пути: абсолютные пути
+// (включая 'C:\...' на Windows и '\\server\share' на UNC) и побег наверх
+// через '..' в начале отсекаются до любой работы с файловой системой.
+function isWorkspaceRelativePath(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (isAbsolute(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('\\') || /^[a-zA-Z]:/.test(trimmed)) return false;
+  const slashed = trimmed.replaceAll('\\', '/');
+  if (slashed === '..' || slashed.startsWith('../')) return false;
+  return true;
+}
+
+// Windows/macOS — case-insensitive ФС: сравнение префикса с учётом регистра.
+function pathInsideRoot(realRoot: string, realCandidate: string): boolean {
+  const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
+  const fold = (p: string) => (caseInsensitive ? p.toLowerCase() : p);
+  return fold(realCandidate).startsWith(fold(realRoot) + sep);
 }
 
 export class CodeScoutPanel implements vscode.WebviewViewProvider {
@@ -171,6 +190,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'pickScope') {
         void this.handlePickScope();
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
+        if (!isWorkspaceRelativePath(message.file)) {
+          void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file }));
+          return;
+        }
         const requestedUri = vscode.Uri.file(resolve(message.file));
         const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
         if (!root) {
@@ -182,7 +205,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         const realRoot = realExistingPath(root.uri.fsPath);
         const realCandidate = realExistingPath(candidate);
         const inside = relative(realRoot, realCandidate);
-        const outsideWorkspace = inside === '' || inside.startsWith('..') || isAbsolute(inside);
+        const outsideWorkspace = inside === '' || inside.startsWith('..') || isAbsolute(inside) || !pathInsideRoot(realRoot, realCandidate);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file }));
           return;

@@ -42,7 +42,7 @@ async function run(files: ChunkFile[], options: { fails?: (n: number) => boolean
 describe('v1.4b-17 адаптивные чанки e2e', () => {
   beforeEach(() => {
     state.reset();
-    state.secrets.set('codescout.apiKey', 'AIzaTESTKEY77777');
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
   });
   afterEach(() => { globalThis.fetch = realFetch; });
 

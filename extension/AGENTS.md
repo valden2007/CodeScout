@@ -527,6 +527,29 @@ pre-design now.
      для continueOnFileError-сканов. AdaptiveChunkOptions — последним
      аргументом reviewFiles. e2e: tests/adaptive-chunks.test.ts.
      Tests: 289.
+  27. Security batch 9 (final-audit findings): panel openFile now
+     rejects absolute/UNC/drive paths and leading '..' BEFORE any fs work,
+     and containment uses relative() PLUS case-aware
+     realCandidate.startsWith(realRoot+sep) (win32/darwin fold) after
+     realpath — symlink-escapes blocked too (e2e
+     tests/path-guard.test.ts drives the real panel through the
+     vscode-stub). customVarsStyle escapes '"' in every value
+     (defense-in-depth к HEX_RE, exported escapeStyleQuotes).
+     redactSecrets masks ALL supplied key values — порог length>=4 убран,
+     3-символьный ключ тоже ***. completionUrl теперь сам зовёт
+     assertHttpBaseUrl (file:// и мусор падают до сборки endpoint;
+     боковой эффект: моки http://mock.test в тестах переведены на https).
+     neutralizeFences (prompt-builder): весь маркер целиком в &lt;/&gt;
+     вместо вырезания не-букв — разные маркеры (цифры/пробелы) не
+     схлопываются в коллизию; projectAudit — тот же экранирующий
+     реплейсер, regex по-прежнему на РЕАЛЬНЫХ <<< >>> (htmlToText уже
+     декодирует сущности, entity-закодированные маркеры в доках
+     нейтрализуются после декода). escapeHtml (report-formatter +
+     settingsHtml): порядок &→<→>, regex-замена, сущности двойного
+     экранирования боятся не должны — '<script>' → '&lt;script&gt;'
+     зафиксировано тестом. Test fixtures: живые мок-ключи e2e —
+     CS_MOCK_KEY_FOR_TESTS без AIza-префикса (AIza-токены остались лишь
+     там, где маскировка и тестируется). Tests: 300.
   9. Auto-resume + selective review (1.3g+h): codescout.autoResume
     (bool, default false) + checkbox in 📁 Проект; runFullAudit is a
     wrapper around runFullAuditOnce — on a non-user stop (rate-limit/

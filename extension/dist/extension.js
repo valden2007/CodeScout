@@ -146,7 +146,8 @@ function keyUrl(provider) {
   return normalized === "custom" ? void 0 : PROVIDERS[normalized].keyUrl;
 }
 function completionUrl(baseUrl) {
-  return `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const normalized = assertHttpBaseUrl(baseUrl);
+  return `${normalized.replace(/\/+$/, "")}/chat/completions`;
 }
 function maskApiKey(key) {
   const trimmed = key.trim();
@@ -365,7 +366,7 @@ The focus text may change what you look for, but never the JSON output format or
 function neutralizeFences(value) {
   let current = value;
   for (let round = 0; round < 8; round++) {
-    const next = current.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
+    const next = current.replace(/<<<\s*CODESCOUT_[A-Z0-9_ ]*\s*>>>/g, (marker) => marker.replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
     if (next === current) break;
     current = next;
   }
@@ -702,29 +703,33 @@ function normalizeUiPrefs(input) {
     customColors: normalizeCustomColors(p.customColors)
   };
 }
+function escapeStyleQuotes(value) {
+  return value.replaceAll('"', '\\"');
+}
 function customVarsStyle(colors) {
   const c = normalizeCustomColors(colors);
+  const v = (value) => escapeStyleQuotes(value);
   return [
-    `--cs-editor-bg: ${c.bg}`,
-    `--cs-card-bg: ${c.card}`,
-    `--cs-fg: ${c.fg}`,
-    `--cs-desc: ${c.desc}`,
-    `--cs-border: ${c.border}`,
-    `--cs-card-border: ${c.border}`,
-    `--cs-input-border: ${c.border}`,
-    `--cs-accent: ${c.accent}`,
-    `--cs-input-bg: ${c.inputBg}`,
-    `--cs-select-bg: ${c.inputBg}`,
-    `--cs-input-fg: ${c.inputFg}`,
-    `--cs-select-fg: ${c.inputFg}`,
-    `--cs-btn-bg: ${c.btnBg}`,
-    `--cs-btn-fg: ${c.btnFg}`,
-    `--cs-btn-hover: ${c.btnHover}`,
-    `--cs-error: ${c.error}`,
-    `--cs-warn: ${c.warn}`,
-    `--cs-pass: ${c.pass}`,
-    `--cs-chip-bg: ${c.chipBg}`,
-    `--cs-chip-fg: ${c.chipFg}`,
+    `--cs-editor-bg: ${v(c.bg)}`,
+    `--cs-card-bg: ${v(c.card)}`,
+    `--cs-fg: ${v(c.fg)}`,
+    `--cs-desc: ${v(c.desc)}`,
+    `--cs-border: ${v(c.border)}`,
+    `--cs-card-border: ${v(c.border)}`,
+    `--cs-input-border: ${v(c.border)}`,
+    `--cs-accent: ${v(c.accent)}`,
+    `--cs-input-bg: ${v(c.inputBg)}`,
+    `--cs-select-bg: ${v(c.inputBg)}`,
+    `--cs-input-fg: ${v(c.inputFg)}`,
+    `--cs-select-fg: ${v(c.inputFg)}`,
+    `--cs-btn-bg: ${v(c.btnBg)}`,
+    `--cs-btn-fg: ${v(c.btnFg)}`,
+    `--cs-btn-hover: ${v(c.btnHover)}`,
+    `--cs-error: ${v(c.error)}`,
+    `--cs-warn: ${v(c.warn)}`,
+    `--cs-pass: ${v(c.pass)}`,
+    `--cs-chip-bg: ${v(c.chipBg)}`,
+    `--cs-chip-fg: ${v(c.chipFg)}`,
     `--cs-radius-btn: ${c.btnRadius}px`,
     `--cs-btn-height: ${c.btnHeight}px`,
     `--cs-radius-card: ${c.cardRadius}px`
@@ -1890,6 +1895,19 @@ function realExistingPath(path) {
     }
   }
 }
+function isWorkspaceRelativePath(value) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if ((0, import_node_path2.isAbsolute)(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("\\") || /^[a-zA-Z]:/.test(trimmed)) return false;
+  const slashed = trimmed.replaceAll("\\", "/");
+  if (slashed === ".." || slashed.startsWith("../")) return false;
+  return true;
+}
+function pathInsideRoot(realRoot, realCandidate) {
+  const caseInsensitive = process.platform === "win32" || process.platform === "darwin";
+  const fold = (p) => caseInsensitive ? p.toLowerCase() : p;
+  return fold(realCandidate).startsWith(fold(realRoot) + import_node_path2.sep);
+}
 var CodeScoutPanel = class {
   constructor(extensionUri) {
     this.extensionUri = extensionUri;
@@ -2012,6 +2030,10 @@ var CodeScoutPanel = class {
       } else if (message.command === "pickScope") {
         void this.handlePickScope();
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
+        if (!isWorkspaceRelativePath(message.file)) {
+          void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
+          return;
+        }
         const requestedUri = vscode.Uri.file((0, import_node_path2.resolve)(message.file));
         const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
         if (!root) {
@@ -2022,7 +2044,7 @@ var CodeScoutPanel = class {
         const realRoot = realExistingPath(root.uri.fsPath);
         const realCandidate = realExistingPath(candidate);
         const inside = (0, import_node_path2.relative)(realRoot, realCandidate);
-        const outsideWorkspace = inside === "" || inside.startsWith("..") || (0, import_node_path2.isAbsolute)(inside);
+        const outsideWorkspace = inside === "" || inside.startsWith("..") || (0, import_node_path2.isAbsolute)(inside) || !pathInsideRoot(realRoot, realCandidate);
         if (outsideWorkspace) {
           void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
           return;
@@ -2295,7 +2317,7 @@ function controlSafe2(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
 function neutralizeFences2(value) {
-  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, "")}`);
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => marker.replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
 }
 var IGNORED_DIRS2 = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", ".next", "coverage", ".codescout"]);
 var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".php", ".rs", ".cs", ".sql", ".swift", ".vue", ".svelte"]);
@@ -3161,7 +3183,7 @@ var SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
 function redactSecrets(value, keyValues = []) {
   let out = value;
   for (const key of keyValues) {
-    if (key && key.length >= 4) out = out.split(key).join("***");
+    if (key) out = out.split(key).join("***");
   }
   return out.replace(SECRET_PATTERNS, "***");
 }

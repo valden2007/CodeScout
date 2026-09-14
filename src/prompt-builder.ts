@@ -50,10 +50,14 @@ export function withFocusInstructions(prompt: string, focus: string): string {
   return `${prompt}\n\nFOCUS INSTRUCTIONS BEGIN (written by the user, highest priority on WHAT to inspect):\n${clean}\nFOCUS INSTRUCTIONS END\nThe focus text may change what you look for, but never the JSON output format or the reporting rules above.`;
 }
 
+// Маркер целиком экранируется (&lt;/&gt;) вместо «вырезания не-букв»:
+// разные маркеры (включая цифры/пробелы внутри) не схлопываются в одну
+// строку-коллизии, а после экранирования регулярка больше не матчится —
+// цикл за 2 прохода стабилизируется даже для рекурсивных конструкций.
 function neutralizeFences(value: string): string {
   let current = value;
   for (let round = 0; round < 8; round++) {
-    const next = current.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
+    const next = current.replace(/<<<\s*CODESCOUT_[A-Z0-9_ ]*\s*>>>/g, (marker) => marker.replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
     if (next === current) break;
     current = next;
   }

@@ -137,29 +137,36 @@ export function normalizeUiPrefs(input: UiPrefsInput | undefined): UiPrefs {
 
 // Пользовательская палитра → токены страниц. border/input* расходятся на
 // производные; геометрия правит радиусы/высоту кнопок и карточек.
+// Значения вставляются в style="..." — двойные кавычки экранируем, чтобы
+// значение не могло закрыть атрибут (defense-in-depth к HEX_RE).
+export function escapeStyleQuotes(value: string): string {
+  return value.replaceAll('"', '\\"');
+}
+
 export function customVarsStyle(colors: CustomColors): string {
   const c = normalizeCustomColors(colors);
+  const v = (value: string) => escapeStyleQuotes(value);
   return [
-    `--cs-editor-bg: ${c.bg}`,
-    `--cs-card-bg: ${c.card}`,
-    `--cs-fg: ${c.fg}`,
-    `--cs-desc: ${c.desc}`,
-    `--cs-border: ${c.border}`,
-    `--cs-card-border: ${c.border}`,
-    `--cs-input-border: ${c.border}`,
-    `--cs-accent: ${c.accent}`,
-    `--cs-input-bg: ${c.inputBg}`,
-    `--cs-select-bg: ${c.inputBg}`,
-    `--cs-input-fg: ${c.inputFg}`,
-    `--cs-select-fg: ${c.inputFg}`,
-    `--cs-btn-bg: ${c.btnBg}`,
-    `--cs-btn-fg: ${c.btnFg}`,
-    `--cs-btn-hover: ${c.btnHover}`,
-    `--cs-error: ${c.error}`,
-    `--cs-warn: ${c.warn}`,
-    `--cs-pass: ${c.pass}`,
-    `--cs-chip-bg: ${c.chipBg}`,
-    `--cs-chip-fg: ${c.chipFg}`,
+    `--cs-editor-bg: ${v(c.bg)}`,
+    `--cs-card-bg: ${v(c.card)}`,
+    `--cs-fg: ${v(c.fg)}`,
+    `--cs-desc: ${v(c.desc)}`,
+    `--cs-border: ${v(c.border)}`,
+    `--cs-card-border: ${v(c.border)}`,
+    `--cs-input-border: ${v(c.border)}`,
+    `--cs-accent: ${v(c.accent)}`,
+    `--cs-input-bg: ${v(c.inputBg)}`,
+    `--cs-select-bg: ${v(c.inputBg)}`,
+    `--cs-input-fg: ${v(c.inputFg)}`,
+    `--cs-select-fg: ${v(c.inputFg)}`,
+    `--cs-btn-bg: ${v(c.btnBg)}`,
+    `--cs-btn-fg: ${v(c.btnFg)}`,
+    `--cs-btn-hover: ${v(c.btnHover)}`,
+    `--cs-error: ${v(c.error)}`,
+    `--cs-warn: ${v(c.warn)}`,
+    `--cs-pass: ${v(c.pass)}`,
+    `--cs-chip-bg: ${v(c.chipBg)}`,
+    `--cs-chip-fg: ${v(c.chipFg)}`,
     `--cs-radius-btn: ${c.btnRadius}px`,
     `--cs-btn-height: ${c.btnHeight}px`,
     `--cs-radius-card: ${c.cardRadius}px`

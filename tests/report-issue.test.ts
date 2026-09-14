@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 
-const SECRET = 'AIzaSYNTHETICMODELKEY0123456789';
+const SECRET = 'CS_MOCK_KEY_FOR_TESTS';
 
 describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
   const realFetch = globalThis.fetch;
@@ -14,12 +14,14 @@ describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
 
   it('error scan then reportIssue opens issues/new with diagnostics and WITHOUT the key', async () => {
     state.secrets.set('codescout.apiKey', SECRET);
+    state.set('codescout.rateLimitPauses', 0);
+    // скан падает ошибкой, в тексте которой есть токены-префиксы провайдеров:
+    // именно они должны быть вычищены из тела issue
+    globalThis.fetch = (async () => { throw new Error('provider 429 rate limit gsk_MOCKPROVIDERTOKEN42 for sk-mocktoken42'); }) as typeof fetch;
     activate(makeFakeContext() as never);
-    // Реальный путь ошибки скана: нет workspace → reviewWorkspace бросает
-    // panel.errNoGit → lastScanError + хвост Output заполняются сами.
-    await (state.commands.get('codescout.scanUncommitted') as () => Promise<unknown>)();
+    await (state.commands.get('codescout.testSample') as () => Promise<unknown>)();
     await flush();
-    expect(state.outputLines.join('\n')).toContain('Error:');
+    expect(state.outputLines.join('\n')).toContain('Self-test error');
 
     await (state.commands.get('codescout.reportIssue') as () => Promise<unknown>)();
     await flush();
@@ -36,6 +38,8 @@ describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
     expect(body).toContain('```text');
     // секреты: ни значение ключа, ни префиксы провайдеров
     expect(body).not.toContain(SECRET);
+    expect(body).not.toContain('gsk_MOCKPROVIDERTOKEN42');
+    expect(body).not.toContain('sk-mocktoken42');
     for (const prefix of ['sk-', 'gsk_', 'ghp_', 'AIza']) expect(body).not.toContain(prefix);
   });
 });

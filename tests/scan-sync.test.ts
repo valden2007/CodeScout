@@ -61,7 +61,7 @@ describe('v1.4b-16 синхрон состояния скана', () => {
     state.reset();
     root = makeWorkspace(2);
     state.workspaceRoot = root;
-    state.secrets.set('codescout.apiKey', 'AIzaTESTKEY98765');
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
     state.set('codescout.fileCooldownSeconds', 0);
     state.set('codescout.rateLimitPauses', 0);
     state.set('codescout.autoResume', true);

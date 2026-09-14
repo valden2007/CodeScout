@@ -62,7 +62,7 @@ describe('v1.4b-15 персистентные частичные результ�
     state.reset();
     root = makeWorkspace();
     state.workspaceRoot = root;
-    state.secrets.set('codescout.apiKey', 'AIzaTEST123456');
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
     state.set('codescout.fileCooldownSeconds', 0);
     state.set('codescout.rateLimitPauses', 0);
   });

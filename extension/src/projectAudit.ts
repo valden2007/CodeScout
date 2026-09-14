@@ -10,8 +10,11 @@ function controlSafe(value: string): string {
     .replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, '');
 }
 
+// htmlToText уже декодировал сущности, поэтому ищем РЕАЛЬНЫЕ '<' '>'
+// (не '&lt;'). Маркер нейтрализуется целиком через экранирование углов:
+// разные маркеры не схлопываются в одну строку-коллизию.
 function neutralizeFences(value: string): string {
-  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => `CODESCOUT_NEUTRALIZED_${marker.replace(/[^A-Z_]/g, '')}`);
+  return value.replace(/<<<\s*CODESCOUT_[A-Z_]+\s*>>>/g, (marker) => marker.replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
 }
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage', '.codescout']);

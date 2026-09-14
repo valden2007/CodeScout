@@ -16,7 +16,7 @@ describe('v1.4b-16 секционный RAG e2e', () => {
     mkdirSync(join(root, 'src'));
     writeFileSync(join(root, 'src', 'w.ts'), 'export const x = 1;\n', 'utf8');
     state.workspaceRoot = root;
-    state.secrets.set('codescout.apiKey', 'AIzaTESTKEY55555');
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
   });
   afterEach(() => {
     globalThis.fetch = realFetch;

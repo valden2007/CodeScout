@@ -21,6 +21,8 @@ class StubState {
   outputLines: string[] = [];
   workspaceRoot: string | undefined;
   warningAnswers: unknown[] = [];
+  errorMessages: string[] = [];
+  openedDocuments: string[] = [];
 
   reset(): void {
     this.config.clear();
@@ -34,6 +36,8 @@ class StubState {
     this.outputLines = [];
     this.workspaceRoot = undefined;
     this.warningAnswers = [];
+    this.errorMessages = [];
+    this.openedDocuments = [];
   }
 
   set(sectionKey: string, value: unknown): void {
@@ -104,13 +108,13 @@ export const window = {
     state.panels.push(panel);
     return panel;
   },
-  async showErrorMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
+  async showErrorMessage(message?: unknown, ..._args: unknown[]): Promise<undefined> { state.errorMessages.push(String(message ?? '')); return undefined; },
   async showInformationMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showWarningMessage(..._args: unknown[]): Promise<unknown> { return state.warningAnswers.shift(); },
   async showInputBox(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showQuickPick(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showOpenDialog(..._args: unknown[]): Promise<undefined> { return undefined; },
-  async showTextDocument(): Promise<unknown> { return {}; }
+  async showTextDocument(document?: { __path?: string }): Promise<unknown> { return { revealRange: () => {}, selection: undefined, __path: document?.__path }; }
 };
 
 export class StubWebview {
@@ -158,7 +162,11 @@ export const workspace = {
     state.configListeners.push(listener);
     return noopDisposable();
   },
-  async openTextDocument(): Promise<unknown> { return { lineCount: 5 }; },
+  async openTextDocument(uri?: { fsPath?: string; toString(): string }): Promise<unknown> {
+    const path = uri?.fsPath ?? '';
+    state.openedDocuments.push(path);
+    return { lineCount: 5, __path: path };
+  },
   fs: { async stat(): Promise<{ type: number }> { return { type: 1 }; } }
 };
 

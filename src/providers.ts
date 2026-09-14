@@ -121,7 +121,10 @@ export function keyUrl(provider: string): string | undefined {
 }
 
 export function completionUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  // не полагаться на вызывающий код: file:// или мусор не должны
+  // превращаться в endpoint провайдера
+  const normalized = assertHttpBaseUrl(baseUrl);
+  return `${normalized.replace(/\/+$/, '')}/chat/completions`;
 }
 
 export function maskApiKey(key: string): string {

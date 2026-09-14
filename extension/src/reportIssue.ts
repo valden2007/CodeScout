@@ -25,7 +25,8 @@ const SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
 export function redactSecrets(value: string, keyValues: string[] = []): string {
   let out = value;
   for (const key of keyValues) {
-    if (key && key.length >= 4) out = out.split(key).join('***');
+    // все переданные ключи, любой длины: короткий ключ — всё ещё секрет
+    if (key) out = out.split(key).join('***');
   }
   return out.replace(SECRET_PATTERNS, '***');
 }

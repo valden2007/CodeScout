@@ -48,7 +48,7 @@ describe('v1.4b-14 агрессивные паузы + cooldown', () => {
   beforeEach(() => {
     state.reset();
     resetRateLimitHits();
-    state.secrets.set('codescout.apiKey', 'AIzaTESTKEY123456');
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
   });
   afterEach(() => { globalThis.fetch = realFetch; });
 
