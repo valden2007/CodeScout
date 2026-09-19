@@ -251,6 +251,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <div class="row">
     <button id="pickScope" type="button" class="secondary">${icon('folder-opened')}<span>${T('project.pickFiles')}</span></button>
     <button id="openRules" type="button" class="secondary">${icon('file')}<span>${T('project.openRules')}</span></button>
+    <button id="refreshContext" type="button" class="secondary">${icon('refresh')}<span>${T('project.refreshContext')}</span></button>
   </div>
   <div class="scope-chips" id="scopeChips"></div>
   <p class="scope-warn hidden" id="scopeWarn"></p>
@@ -539,6 +540,7 @@ saveAllBtn.addEventListener('click', () => {
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
+document.getElementById('refreshContext').addEventListener('click', () => vscode.postMessage({ command: 'refreshContext' }));
 document.getElementById('pickScope').addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
 const scopeChips = document.getElementById('scopeChips');
 const scopeWarn = document.getElementById('scopeWarn');

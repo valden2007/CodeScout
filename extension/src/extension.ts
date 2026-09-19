@@ -18,7 +18,7 @@ import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
 import { t } from '../../src/i18n';
-import { buildIssueBody, reportIssueUrl } from './reportIssue';
+import { buildIssueBody, redactSecrets, reportIssueUrl } from './reportIssue';
 import { platform, release } from 'node:os';
 
 const SECRET_KEY = 'codescout.apiKey';
@@ -27,7 +27,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -311,7 +311,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
           await sleeper(waitSeconds * 1000, signal);
           continue;
         }
-        if (rateLimitPauses === 0 && quickRetries < 1) {
+        if (retriable && rateLimitPauses === 0 && quickRetries < 1) {
           quickRetries += 1;
           continue;
         }
@@ -932,6 +932,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // 👋 Запустить полный аудит для контекста?
   panel.setWelcomeChoiceHandler(() => { void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true'); });
   let lastScanWasLastCommit = false;
+  let pendingScans = 0;
+  // Keep clearing blocked through preflight, auto-resume waits and abort cleanup.
+  const runScan = async (task: () => Promise<void>): Promise<void> => {
+    pendingScans++;
+    try { await task(); } finally { pendingScans--; }
+  };
   context.subscriptions.push(output);
   const syncKeyStatus = async (): Promise<void> => {
     const selection = await resolveExtensionSelection(context);
@@ -958,22 +964,25 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('codescout.reportIssue', async () => {
       const cfg = vscode.workspace.getConfiguration('codescout');
-      const secretKey = await context.secrets.get(SECRET_KEY);
+      const secretKey = await context.secrets.get(SECRET_KEY) ?? '';
+      const apiKey = cfg.get<string>('apiKey') ?? '';
+      const keyValues = [secretKey, apiKey].filter(Boolean);
+      const safe = (value: string) => redactSecrets(value, keyValues);
+      const preRedactedOutputTail = outputTail.map((line) => redactSecrets(line, keyValues));
+      const preRedactedLastScanError = lastScanError ? redactSecrets(lastScanError, keyValues) : undefined;
       const body = buildIssueBody(currentReportLanguage(), {
-        extVersion: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
-        vscodeVersion: vscode.version,
-        os: `${platform()} ${release()}`,
-        provider: cfg.get<string>('provider') || 'auto',
-        model: cfg.get<string>('model') || '',
-        language: currentReportLanguage(),
-        uiTheme: cfg.get<string>('uiTheme', 'auto'),
+        extVersion: safe(String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0')),
+        vscodeVersion: safe(vscode.version),
+        os: safe(`${platform()} ${release()}`),
+        provider: safe(cfg.get<string>('provider') || 'auto'),
+        model: safe(cfg.get<string>('model') || ''),
+        language: safe(currentReportLanguage()),
+        uiTheme: safe(cfg.get<string>('uiTheme', 'auto')),
         auditPasses: auditPassesFromSetting(cfg.get<number>('auditPasses')),
         rateLimitPauses: rateLimitPausesFromSetting(cfg.get<number>('rateLimitPauses')),
-        hasKey: Boolean(secretKey?.trim()),
-        // только для вычёркивания из body; само значение не попадает наружу
-        keyValues: [secretKey ?? '', cfg.get<string>('apiKey') ?? ''],
-        outputTail: [...outputTail],
-        lastScanError
+        hasKey: keyValues.some((key) => Boolean(key.trim())),
+        outputTail: preRedactedOutputTail,
+        lastScanError: preRedactedLastScanError
       });
       await vscode.env.openExternal(vscode.Uri.parse(reportIssueUrl(body)));
     }),
@@ -1012,6 +1021,25 @@ export function activate(context: vscode.ExtensionContext): void {
           if (!message || typeof message.command !== 'string') return;
           if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
+            if (message.command === 'refreshContext') {
+              const lang = currentReportLanguage();
+              if (pendingScans || activeAbortController || panel.isScanRunning()) {
+                await render(t('project.contextBusy', lang), 'error');
+                return;
+              }
+              const root = getWorkspaceRoot();
+              if (!root) {
+                await render(t('project.contextNoWorkspace', lang), 'error');
+                return;
+              }
+              clearAuditProgress(root);
+              clearAuditResults(root);
+              const contextPath = join(root, CONTEXT_FILE);
+              if (existsSync(contextPath)) unlinkSync(contextPath);
+              panel.clearProjectContext();
+              await render(t('project.contextCleared', lang));
+              return;
+            }
             if (message.command === 'pickScope') {
               const workspaceRoot = getWorkspaceRoot();
               if (!workspaceRoot) { await settingsPanel?.webview.postMessage({ type: 'scopePickResult', globs: [], outside: [], noWorkspace: true }); return; }
@@ -1143,11 +1171,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       await render();
     }),
-    vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runReview(context, false, output, panel); }),
-    vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runReview(context, true, output, panel); }),
-    vscode.commands.registerCommand('codescout.testSample', () => runSampleReview(context, output, panel)),
-    vscode.commands.registerCommand('codescout.scanFull', () => runFullAudit(context, output, panel)),
-    vscode.commands.registerCommand('codescout.resumeAudit', () => runFullAudit(context, output, panel, true)),
+    vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runScan(() => runReview(context, false, output, panel)); }),
+    vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runScan(() => runReview(context, true, output, panel)); }),
+    vscode.commands.registerCommand('codescout.testSample', () => runScan(() => runSampleReview(context, output, panel))),
+    vscode.commands.registerCommand('codescout.scanFull', () => runScan(() => runFullAudit(context, output, panel))),
+    vscode.commands.registerCommand('codescout.resumeAudit', () => runScan(() => runFullAudit(context, output, panel, true))),
     vscode.commands.registerCommand('codescout.restartAudit', async () => {
       const lang = currentReportLanguage();
       const answer = await vscode.window.showWarningMessage(t('restart.confirm', lang), { modal: true }, t('restart.confirmBtn', lang));
@@ -1158,10 +1186,10 @@ export function activate(context: vscode.ExtensionContext): void {
         clearAuditResults(root);
       }
       panel.setAuditResume(undefined);
-      return runFullAudit(context, output, panel);
+      return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runCustomReview(context, output, panel, focus, scope, globs)),
-    vscode.commands.registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri)),
+    vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runScan(() => runCustomReview(context, output, panel, focus, scope, globs))),
+    vscode.commands.registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       await context.globalState.update('codescout.onboardingDismissed', undefined);

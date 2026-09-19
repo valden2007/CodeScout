@@ -59,6 +59,24 @@ describe('v1.4b-14 агрессивные паузы + cooldown', () => {
     expect(FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS).toBe(10);
   });
 
+  it('does not quick-retry a nonretriable file error when rateLimitPauses is zero', async () => {
+    let calls = 0;
+    const sleeps: number[] = [];
+    globalThis.fetch = (async () => {
+      calls++;
+      throw new Error('invalid response schema');
+    }) as typeof fetch;
+    const result = await reviewFiles(
+      makeFakeContext() as never, fileSet(1), undefined, () => {}, undefined, undefined, undefined,
+      undefined, true, undefined, undefined, undefined,
+      1, undefined, 0, undefined, async (ms) => { sleeps.push(ms); }, 'en', 0
+    );
+    expect(calls).toBe(1);
+    expect(sleeps).toEqual([]);
+    expect(result.filesAnalyzed).toBe(0);
+    expect(result.skippedFiles).toBe(1);
+  });
+
   it('файл НЕ скипается на rate-limit текстом в обычном Error — ретри с паузой 120с', async () => {
     const { result, sleeps, pauses } = await runReview(1, { failFirst: true });
     expect(pauses).toEqual([{ file: 'src/f1.ts', wait: 120, pause: 1 }]);

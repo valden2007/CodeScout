@@ -1,6 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
+import * as reporting from '../extension/src/reportIssue';
 
 const SECRET = 'CS_MOCK_KEY_FOR_TESTS';
 
@@ -10,7 +11,45 @@ describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
     state.reset();
     globalThis.fetch = (async () => { throw new Error('offline in tests'); }) as typeof fetch;
   });
-  afterEach(() => { globalThis.fetch = realFetch; });
+  afterEach(() => { globalThis.fetch = realFetch; vi.restoreAllMocks(); });
+
+  it.each([
+    ['\\u0073\\u0065\\u0063\\u0072\\u0065\\u0074', ['secret']],
+    ['\\u0073\\u006b-mocktoken42', []],
+    ['g\\u0073k_MOCKPROVIDERTOKEN42', []],
+    ['\\u0043S_MOCK_KEY_FOR_TESTS', [SECRET]],
+    ['\\u0061\\u0062\\u0063', ['abc']],
+    ['\\u00e9-private', ['\u00e9-private']]
+  ])('normalizes Unicode escapes before redaction: %s', (value, keys) => {
+    expect(reporting.redactSecrets(value as string, keys as string[])).toBe('***');
+  });
+
+  it('passes only pre-redacted diagnostics and hasKey to the formatter', async () => {
+    const formatter = vi.spyOn(reporting, 'buildIssueBody');
+    state.secrets.set('codescout.apiKey', SECRET);
+    state.set('codescout.apiKey', 'CONFIG_PRIVATE_KEY');
+    state.set('codescout.provider', SECRET);
+    state.set('codescout.model', '\\u0043ONFIG_PRIVATE_KEY');
+    state.set('codescout.uiTheme', SECRET);
+    state.set('codescout.rateLimitPauses', 0);
+    const context = makeFakeContext() as { extension: { packageJSON: { version: string } } };
+    context.extension.packageJSON.version = SECRET;
+    globalThis.fetch = (async () => { throw new Error(`failure ${SECRET} \\u0043ONFIG_PRIVATE_KEY`); }) as typeof fetch;
+    activate(context as never);
+    await (state.commands.get('codescout.testSample') as () => Promise<unknown>)();
+    await (state.commands.get('codescout.reportIssue') as () => Promise<unknown>)();
+    const input = formatter.mock.calls[0][1];
+    expect(input).not.toHaveProperty('keyValues');
+    expect(input.hasKey).toBe(true);
+    expect(input.extVersion).toBe('***');
+    expect(input.provider).toBe('***');
+    expect(input.model).toBe('***');
+    expect(input.uiTheme).toBe('***');
+    expect(JSON.stringify(input)).not.toContain(SECRET);
+    expect(JSON.stringify(input)).not.toContain('CONFIG_PRIVATE_KEY');
+    expect(input.outputTail.length).toBeGreaterThan(0);
+    expect(input.lastScanError).toBeTruthy();
+  });
 
   it('error scan then reportIssue opens issues/new with diagnostics and WITHOUT the key', async () => {
     state.secrets.set('codescout.apiKey', SECRET);

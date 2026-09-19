@@ -949,6 +949,10 @@ var ru_default = {
   "project.auditScope": "Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)",
   "project.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
   "project.openRules": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md",
+  "project.refreshContext": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442",
+  "project.contextCleared": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043E\u0447\u0438\u0449\u0435\u043D. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0430\u0443\u0434\u0438\u0442 \u0441\u043D\u043E\u0432\u0430.",
+  "project.contextBusy": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0438 \u0434\u043E\u0436\u0434\u0438\u0442\u0435\u0441\u044C \u0435\u0433\u043E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0434 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435\u043C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
+  "project.contextNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043F\u0430\u043F\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
   "project.hint": "rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.",
   "lang.select": "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430, \u043E\u0442\u0447\u0451\u0442\u043E\u0432 \u0438 \u043E\u0442\u0432\u0435\u0442\u043E\u0432 \u043C\u043E\u0434\u0435\u043B\u0438",
   "lang.hint": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442 \u0432\u0441\u0451 \u0441\u0440\u0430\u0437\u0443: \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441, \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0438 \u043E\u0442\u0432\u0435\u0442\u044B \u043C\u043E\u0434\u0435\u043B\u0438. \u0413\u043B\u043E\u0431\u0443\u0441 \u0432 \u0448\u0430\u043F\u043A\u0435 \u043F\u0430\u043D\u0435\u043B\u0438 \u2014 \u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0442\u0443\u043C\u0431\u043B\u0435\u0440 \u0442\u043E\u0433\u043E \u0436\u0435.",
@@ -1226,6 +1230,10 @@ var en_default = {
   "project.auditScope": "Audit scope (globs, comma separated, empty = all)",
   "project.pickFiles": "Pick files/folders",
   "project.openRules": "Open rules.md",
+  "project.refreshContext": "Refresh context",
+  "project.contextCleared": "Context cleared. Run audit again.",
+  "project.contextBusy": "Stop the scan and wait for it to finish before refreshing context.",
+  "project.contextNoWorkspace": "Open a project folder to refresh context.",
   "project.hint": "rules.md is mixed into every prompt. Docs are fetched (5s timeout, oversized truncated keeping the head) and cached in .codescout/docs-cache.json for 24h. Scope limits the full audit; the right-click review ignores it.",
   "lang.select": "Interface, reports and model answers language",
   "lang.hint": "Switches everything at once: the UI, findings and model answers. The globe in the panel header is a quick toggle for the same setting.",
@@ -2131,6 +2139,24 @@ var CodeScoutPanel = class {
     this.auditResume = resume;
     this.render();
   }
+  clearProjectContext() {
+    this.issues = [];
+    this.stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
+    this.hasRun = false;
+    this.testMode = false;
+    this.statusMessage = "";
+    this.progressMessage = "";
+    this.findingsDiff = void 0;
+    this.customFocus = "";
+    this.auditResume = void 0;
+    this.autoResumeView = void 0;
+    this.progressInfo = void 0;
+    this.auditSummary = void 0;
+    this.auditDurations = [];
+    this.firstAuditDone = false;
+    this.welcomeBanner = false;
+    this.render();
+  }
   // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
   // панель рисует находки с диска как обычный отчёт + resume-баннер.
   // Единственный источник правды о скане — хост; во время живого скана
@@ -2313,6 +2339,10 @@ function sampleTestSummary(found, lang = "ru") {
 // src/projectAudit.ts
 var import_node_fs4 = require("node:fs");
 var import_node_path3 = require("node:path");
+var https = __toESM(require("node:https"));
+var http = __toESM(require("node:http"));
+var import_node_net = require("node:net");
+var import_node_string_decoder = require("node:string_decoder");
 function controlSafe2(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
@@ -2560,6 +2590,15 @@ function sanitizeDocText(raw, maxBytes = DOC_MAX_BYTES_DEFAULT) {
   const safe = neutralizeFences2(controlSafe2(plain)).replace(/\s+/g, " ").trim();
   return utf8Slice(safe, maxBytes);
 }
+var PinnedDnsAgent = class extends https.Agent {
+  constructor(address) {
+    const lookup = (_hostname, options, callback) => {
+      if (options.all) callback(null, [{ address, family: 4 }]);
+      else callback(null, address, 4);
+    };
+    super({ lookup, keepAlive: false, maxCachedSessions: 0 });
+  }
+};
 function isBlockedDocHost(hostname) {
   const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
   if (!host) return true;
@@ -2573,46 +2612,136 @@ function isBlockedDocHost(hostname) {
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 169 && b === 254) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    if (a >= 224) return true;
+    const c = Number(octets[3]);
+    if (a === 192 && (b === 0 || b === 88 && c === 99)) return true;
+    if (a === 198 && b === 51 && c === 100) return true;
+    if (a === 203 && b === 0 && c === 113) return true;
     return false;
   }
   if (host.includes(":")) return true;
   return false;
 }
-async function assertSafeDocUrl(url) {
+async function pinnedAgentFor(url, signal) {
   const parsed = new URL(url);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("SSRF: unsupported protocol");
   if (isBlockedDocHost(parsed.hostname)) throw new Error("SSRF-\u0431\u043B\u043E\u043A: \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0438\u043B\u0438 metadata-\u0430\u0434\u0440\u0435\u0441");
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)) {
-    let resolved;
+  let address = parsed.hostname;
+  if (!(0, import_node_net.isIP)(address)) {
     try {
       const { lookup } = await import("node:dns/promises");
-      resolved = await lookup(parsed.hostname);
+      address = (await lookup(parsed.hostname)).address;
     } catch {
       throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0440\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u0445\u043E\u0441\u0442 ${parsed.hostname} (fail-closed)`);
     }
-    if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u0434\u043E\u043C\u0435\u043D \u0440\u0435\u0437\u043E\u043B\u0432\u0438\u0442\u0441\u044F \u0432 ${resolved.address}`);
   }
+  signal.throwIfAborted();
+  if ((0, import_node_net.isIP)(address) !== 4 || isBlockedDocHost(address)) throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u0434\u043E\u043C\u0435\u043D \u0440\u0435\u0437\u043E\u043B\u0432\u0438\u0442\u0441\u044F \u0432 ${address}`);
+  const agent = new PinnedDnsAgent(address);
+  if (parsed.protocol === "https:") return agent;
+  const plainAgent = new http.Agent({ lookup: agent.options.lookup, keepAlive: false });
+  agent.destroy();
+  return plainAgent;
+}
+function requestDoc(url, agent, settings, signal) {
+  return new Promise((resolve5, reject) => {
+    let req;
+    let res;
+    let settled = false;
+    const chunks = [];
+    let bytes = 0;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve5({
+        status: res.statusCode ?? 0,
+        location: res.headers.location ?? null,
+        body: new import_node_string_decoder.StringDecoder("utf8").write(Buffer.concat(chunks, bytes))
+      });
+      res?.destroy();
+      req?.destroy();
+    };
+    const abort = () => finish(new Error("timeout"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    try {
+      const request3 = new URL(url).protocol === "https:" ? https.request : http.request;
+      req = request3(url, {
+        method: "GET",
+        agent,
+        timeout: settings.timeoutMs,
+        headers: { "user-agent": "CodeScout-RAG/1.3", accept: "text/html,text/plain,text/markdown,*/*" }
+      }, (response) => {
+        res = response;
+        res.on("error", finish);
+        res.on("aborted", () => finish(new Error("response aborted")));
+        res.on("close", () => {
+          if (!res.complete) finish(new Error("response closed prematurely"));
+        });
+        const status = res.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          finish();
+          return;
+        }
+        res.on("data", (chunk) => {
+          if (settled) return;
+          const part = chunk.subarray(0, Math.max(0, settings.maxBytes + 1 - bytes));
+          chunks.push(Buffer.from(part));
+          bytes += part.length;
+          if (bytes >= settings.maxBytes + 1) finish();
+        });
+        res.on("end", () => finish());
+      });
+      req.on("timeout", abort);
+      req.on("error", finish);
+      req.end();
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 var DOC_MAX_REDIRECTS = 5;
 async function defaultDocFetcher(url, settings = DEFAULT_DOC_LIMITS) {
-  let current = url;
-  for (let hop = 0; hop <= DOC_MAX_REDIRECTS; hop++) {
-    await assertSafeDocUrl(current);
-    const response = await fetch(current, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(settings.timeoutMs),
-      headers: { "user-agent": "CodeScout-RAG/1.3", accept: "text/html,text/plain,text/markdown,*/*" }
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) throw new Error(`\u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442 ${response.status} \u0431\u0435\u0437 Location`);
-      if (hop === DOC_MAX_REDIRECTS) throw new Error(`\u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0432 (>${DOC_MAX_REDIRECTS})`);
-      current = new URL(location, current).toString();
-      continue;
-    }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("timeout"));
+    }, settings.timeoutMs);
+  });
+  try {
+    return await Promise.race([timeout, (async () => {
+      let current = url;
+      for (let hop = 0; hop <= DOC_MAX_REDIRECTS; hop++) {
+        const agent = await pinnedAgentFor(current, controller.signal);
+        let response;
+        try {
+          response = await requestDoc(current, agent, settings, controller.signal);
+        } finally {
+          agent.destroy();
+        }
+        if (response.status >= 300 && response.status < 400) {
+          if (!response.location) throw new Error(`\u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442 ${response.status} \u0431\u0435\u0437 Location`);
+          if (hop === DOC_MAX_REDIRECTS) throw new Error(`\u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0432 (>${DOC_MAX_REDIRECTS})`);
+          current = new URL(response.location, current).toString();
+          continue;
+        }
+        if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+        return response.body;
+      }
+      throw new Error(`\u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0432 (>${DOC_MAX_REDIRECTS})`);
+    })()]);
+  } finally {
+    clearTimeout(timer);
   }
-  throw new Error(`\u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u0432 (>${DOC_MAX_REDIRECTS})`);
 }
 async function fetchDocsForPrompt(workspaceRoot, docLinks, fetcher = defaultDocFetcher, onWarn = () => {
 }, limits = DEFAULT_DOC_LIMITS) {
@@ -3181,7 +3310,8 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
 var CODESCOUT_REPO_URL = "https://github.com/valden2007/CodeScout";
 var SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
 function redactSecrets(value, keyValues = []) {
-  let out = value;
+  const normalized = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+  let out = normalized;
   for (const key of keyValues) {
     if (key) out = out.split(key).join("***");
   }
@@ -3192,9 +3322,8 @@ function reportIssueUrl(body) {
 }
 function buildIssueBody(lang, input) {
   const T = (key, vars) => t(key, lang, vars);
-  const safe = (value) => redactSecrets(value, input.keyValues);
   const lines = [
-    `**CodeScout ${input.extVersion} \xB7 VS Code ${input.vscodeVersion} \xB7 ${safe(input.os)}**`,
+    `**CodeScout ${input.extVersion} \xB7 VS Code ${input.vscodeVersion} \xB7 ${input.os}**`,
     "",
     `## ${T("issue.happened")}`,
     `_${T("issue.hint")}_`,
@@ -3207,20 +3336,20 @@ function buildIssueBody(lang, input) {
     `**${T("issue.actual")}:** `,
     "",
     `## ${T("issue.diag")}`,
-    `- provider: ${safe(input.provider)} \xB7 model: ${safe(input.model)} \xB7 language: ${input.language} \xB7 uiTheme: ${safe(input.uiTheme)} \xB7 auditPasses: ${input.auditPasses} \xB7 rateLimitPauses: ${input.rateLimitPauses}`,
+    `- provider: ${input.provider} \xB7 model: ${input.model} \xB7 language: ${input.language} \xB7 uiTheme: ${input.uiTheme} \xB7 auditPasses: ${input.auditPasses} \xB7 rateLimitPauses: ${input.rateLimitPauses}`,
     `- ${T(input.hasKey ? "issue.keyYes" : "issue.keyNo")}`,
-    `- ${input.lastScanError ? T("issue.lastError", { e: safe(input.lastScanError).slice(0, 300) }) : T("issue.noError")}`,
+    `- ${input.lastScanError ? T("issue.lastError", { e: input.lastScanError.slice(0, 300) }) : T("issue.noError")}`,
     "",
     `<details><summary>${T("issue.outputTail")}</summary>`,
     "",
     "```text",
-    ...input.outputTail.map((line) => safe(line).slice(0, 400)),
+    ...input.outputTail.map((line) => line.slice(0, 400)),
     "```",
     "",
     "</details>",
     ""
   ];
-  return safe(lines.join("\n"));
+  return lines.join("\n");
 }
 
 // src/settingsHtml.ts
@@ -3412,6 +3541,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <div class="row">
     <button id="pickScope" type="button" class="secondary">${icon2("folder-opened")}<span>${T("project.pickFiles")}</span></button>
     <button id="openRules" type="button" class="secondary">${icon2("file")}<span>${T("project.openRules")}</span></button>
+    <button id="refreshContext" type="button" class="secondary">${icon2("refresh")}<span>${T("project.refreshContext")}</span></button>
   </div>
   <div class="scope-chips" id="scopeChips"></div>
   <p class="scope-warn hidden" id="scopeWarn"></p>
@@ -3703,6 +3833,7 @@ saveAllBtn.addEventListener('click', () => {
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
+document.getElementById('refreshContext').addEventListener('click', () => vscode.postMessage({ command: 'refreshContext' }));
 document.getElementById('pickScope').addEventListener('click', () => vscode.postMessage({ command: 'pickScope' }));
 const scopeChips = document.getElementById('scopeChips');
 const scopeWarn = document.getElementById('scopeWarn');
@@ -3788,7 +3919,7 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -4014,7 +4145,7 @@ ${docPick.section}` : systemPrompt;
           await sleeper(waitSeconds * 1e3, signal);
           continue;
         }
-        if (rateLimitPauses === 0 && quickRetries < 1) {
+        if (retriable && rateLimitPauses === 0 && quickRetries < 1) {
           quickRetries += 1;
           continue;
         }
@@ -4606,6 +4737,15 @@ function activate(context) {
     void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
   });
   let lastScanWasLastCommit = false;
+  let pendingScans = 0;
+  const runScan = async (task) => {
+    pendingScans++;
+    try {
+      await task();
+    } finally {
+      pendingScans--;
+    }
+  };
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
     const selection = await resolveExtensionSelection(context);
@@ -4631,22 +4771,25 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.reportIssue", async () => {
       const cfg = vscode2.workspace.getConfiguration("codescout");
-      const secretKey = await context.secrets.get(SECRET_KEY);
+      const secretKey = await context.secrets.get(SECRET_KEY) ?? "";
+      const apiKey = cfg.get("apiKey") ?? "";
+      const keyValues = [secretKey, apiKey].filter(Boolean);
+      const safe = (value) => redactSecrets(value, keyValues);
+      const preRedactedOutputTail = outputTail.map((line) => redactSecrets(line, keyValues));
+      const preRedactedLastScanError = lastScanError ? redactSecrets(lastScanError, keyValues) : void 0;
       const body = buildIssueBody(currentReportLanguage(), {
-        extVersion: String(context.extension.packageJSON.version ?? "0.0.0"),
-        vscodeVersion: vscode2.version,
-        os: `${(0, import_node_os.platform)()} ${(0, import_node_os.release)()}`,
-        provider: cfg.get("provider") || "auto",
-        model: cfg.get("model") || "",
-        language: currentReportLanguage(),
-        uiTheme: cfg.get("uiTheme", "auto"),
+        extVersion: safe(String(context.extension.packageJSON.version ?? "0.0.0")),
+        vscodeVersion: safe(vscode2.version),
+        os: safe(`${(0, import_node_os.platform)()} ${(0, import_node_os.release)()}`),
+        provider: safe(cfg.get("provider") || "auto"),
+        model: safe(cfg.get("model") || ""),
+        language: safe(currentReportLanguage()),
+        uiTheme: safe(cfg.get("uiTheme", "auto")),
         auditPasses: auditPassesFromSetting(cfg.get("auditPasses")),
         rateLimitPauses: rateLimitPausesFromSetting(cfg.get("rateLimitPauses")),
-        hasKey: Boolean(secretKey?.trim()),
-        // только для вычёркивания из body; само значение не попадает наружу
-        keyValues: [secretKey ?? "", cfg.get("apiKey") ?? ""],
-        outputTail: [...outputTail],
-        lastScanError
+        hasKey: keyValues.some((key) => Boolean(key.trim())),
+        outputTail: preRedactedOutputTail,
+        lastScanError: preRedactedLastScanError
       });
       await vscode2.env.openExternal(vscode2.Uri.parse(reportIssueUrl(body)));
     }),
@@ -4684,6 +4827,25 @@ function activate(context) {
           if (!message || typeof message.command !== "string") return;
           if (!KNOWN_SETTINGS_COMMANDS.has(message.command)) return;
           void (async () => {
+            if (message.command === "refreshContext") {
+              const lang = currentReportLanguage();
+              if (pendingScans || activeAbortController || panel.isScanRunning()) {
+                await render(t("project.contextBusy", lang), "error");
+                return;
+              }
+              const root = getWorkspaceRoot();
+              if (!root) {
+                await render(t("project.contextNoWorkspace", lang), "error");
+                return;
+              }
+              clearAuditProgress(root);
+              clearAuditResults(root);
+              const contextPath = (0, import_node_path4.join)(root, CONTEXT_FILE);
+              if ((0, import_node_fs5.existsSync)(contextPath)) (0, import_node_fs5.unlinkSync)(contextPath);
+              panel.clearProjectContext();
+              await render(t("project.contextCleared", lang));
+              return;
+            }
             if (message.command === "pickScope") {
               const workspaceRoot = getWorkspaceRoot();
               if (!workspaceRoot) {
@@ -4823,15 +4985,15 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.scanUncommitted", () => {
       lastScanWasLastCommit = false;
-      return runReview(context, false, output, panel);
+      return runScan(() => runReview(context, false, output, panel));
     }),
     vscode2.commands.registerCommand("codescout.scanLastCommit", () => {
       lastScanWasLastCommit = true;
-      return runReview(context, true, output, panel);
+      return runScan(() => runReview(context, true, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.testSample", () => runSampleReview(context, output, panel)),
-    vscode2.commands.registerCommand("codescout.scanFull", () => runFullAudit(context, output, panel)),
-    vscode2.commands.registerCommand("codescout.resumeAudit", () => runFullAudit(context, output, panel, true)),
+    vscode2.commands.registerCommand("codescout.testSample", () => runScan(() => runSampleReview(context, output, panel))),
+    vscode2.commands.registerCommand("codescout.scanFull", () => runScan(() => runFullAudit(context, output, panel))),
+    vscode2.commands.registerCommand("codescout.resumeAudit", () => runScan(() => runFullAudit(context, output, panel, true))),
     vscode2.commands.registerCommand("codescout.restartAudit", async () => {
       const lang = currentReportLanguage();
       const answer = await vscode2.window.showWarningMessage(t("restart.confirm", lang), { modal: true }, t("restart.confirmBtn", lang));
@@ -4842,10 +5004,10 @@ function activate(context) {
         clearAuditResults(root);
       }
       panel.setAuditResume(void 0);
-      return runFullAudit(context, output, panel);
+      return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runCustomReview(context, output, panel, focus, scope, globs)),
-    vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runSelectionReview(context, output, panel, uri)),
+    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runScan(() => runCustomReview(context, output, panel, focus, scope, globs))),
+    vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       await context.globalState.update("codescout.onboardingDismissed", void 0);

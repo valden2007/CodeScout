@@ -13,9 +13,6 @@ export interface IssueReportInput {
   auditPasses: number;
   rateLimitPauses: number;
   hasKey: boolean;
-  // Реальные значения ключей используются ТОЛЬКО для вычёркивания из body
-  // и сами в body не попадают никогда.
-  keyValues: string[];
   outputTail: string[];
   lastScanError?: string;
 }
@@ -23,9 +20,9 @@ export interface IssueReportInput {
 const SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
 
 export function redactSecrets(value: string, keyValues: string[] = []): string {
-  let out = value;
+  const normalized = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+  let out = normalized;
   for (const key of keyValues) {
-    // все переданные ключи, любой длины: короткий ключ — всё ещё секрет
     if (key) out = out.split(key).join('***');
   }
   return out.replace(SECRET_PATTERNS, '***');
@@ -37,12 +34,11 @@ export function reportIssueUrl(body: string): string {
 
 // Markdown-шаблон issue на языке пользователя: что случилось / шаги /
 // ожидал-получил / диагностика (версии, настройки, наличие ключа,
-// последние строки Output, последняя ошибка). Секреты вычищаются redactSecrets.
+// последние строки Output, последняя ошибка). Caller must redact every string first.
 export function buildIssueBody(lang: Lang, input: IssueReportInput): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
-  const safe = (value: string) => redactSecrets(value, input.keyValues);
   const lines = [
-    `**CodeScout ${input.extVersion} · VS Code ${input.vscodeVersion} · ${safe(input.os)}**`,
+    `**CodeScout ${input.extVersion} · VS Code ${input.vscodeVersion} · ${input.os}**`,
     '',
     `## ${T('issue.happened')}`,
     `_${T('issue.hint')}_`,
@@ -55,18 +51,18 @@ export function buildIssueBody(lang: Lang, input: IssueReportInput): string {
     `**${T('issue.actual')}:** `,
     '',
     `## ${T('issue.diag')}`,
-    `- provider: ${safe(input.provider)} · model: ${safe(input.model)} · language: ${input.language} · uiTheme: ${safe(input.uiTheme)} · auditPasses: ${input.auditPasses} · rateLimitPauses: ${input.rateLimitPauses}`,
+    `- provider: ${input.provider} · model: ${input.model} · language: ${input.language} · uiTheme: ${input.uiTheme} · auditPasses: ${input.auditPasses} · rateLimitPauses: ${input.rateLimitPauses}`,
     `- ${T(input.hasKey ? 'issue.keyYes' : 'issue.keyNo')}`,
-    `- ${input.lastScanError ? T('issue.lastError', { e: safe(input.lastScanError).slice(0, 300) }) : T('issue.noError')}`,
+    `- ${input.lastScanError ? T('issue.lastError', { e: input.lastScanError.slice(0, 300) }) : T('issue.noError')}`,
     '',
     `<details><summary>${T('issue.outputTail')}</summary>`,
     '',
     '```text',
-    ...input.outputTail.map((line) => safe(line).slice(0, 400)),
+    ...input.outputTail.map((line) => line.slice(0, 400)),
     '```',
     '',
     '</details>',
     ''
   ];
-  return safe(lines.join('\n'));
+  return lines.join('\n');
 }

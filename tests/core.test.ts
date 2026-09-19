@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseUnifiedDiff, shouldReviewFile, splitPatch } from '../src/diff-parser';
 import { parseReviewResponse } from '../src/response-parser';
 import { GitHubClient } from '../src/github-client';
@@ -26,6 +26,16 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { EventEmitter } from 'node:events';
+
+vi.mock('node:https', async () => {
+  const actual = await vi.importActual<typeof import('node:https')>('node:https');
+  return { ...actual, request: vi.fn() };
+});
+vi.mock('node:dns/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:dns/promises')>('node:dns/promises');
+  return { ...actual, lookup: vi.fn(actual.lookup) };
+});
 
 const diff = `diff --git a/src/app.ts b/src/app.ts
 index 1111111..2222222 100644
@@ -1042,7 +1052,7 @@ describe('E1.3a audit checkpoints', () => {
 
   it('wires resume/restart through panel, extension and manifest', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("registerCommand('codescout.resumeAudit', () => runFullAudit(context, output, panel, true))");
+    expect(extension).toContain("registerCommand('codescout.resumeAudit', () => runScan(() => runFullAudit(context, output, panel, true)))");
     expect(extension).toContain("registerCommand('codescout.restartAudit'");
     expect(extension).toContain('panel.setAuditResume(savedProgress)');
     expect(extension).toContain('onFileChecked?.(file.filename, deduped)');
@@ -1187,7 +1197,9 @@ describe('E1.3b RAG docs with cache and import context', () => {
 
   it('wires timeout, cache path and warnings into the extension', () => {
     const audit = readFileSync('extension/src/projectAudit.ts', 'utf8');
-    expect(audit).toContain('AbortSignal.timeout(settings.timeoutMs)');
+    expect(audit).toContain('}, settings.timeoutMs)');
+    expect(audit).toContain('controller.abort()');
+    expect(audit).toContain('clearTimeout(timer!)');
     expect(audit).toContain('docs-cache.json');
     expect(audit).toContain('DOC_CACHE_TTL_MS = 24 * 60 * 60 * 1000');
     expect(audit).toContain('DOC_FETCH_TIMEOUT_MS = 5000');
@@ -1875,7 +1887,8 @@ describe('G5 fix batch performance and robustness', () => {
     expect(app).not.toContain('process.exitCode');
     expect(app).not.toContain('[apiKey, args, result.error');
     const cli = readFileSync('src/cli.ts', 'utf8');
-    expect(cli).toContain('onExit: (code: number) => { process.exitCode = code; if (code) process.exit(code); }');
+    expect(cli).toContain('onExit: (code: number) => { process.exitCode = code; }');
+    expect(cli).not.toMatch(/process\.exit\s*\(/);
   });
 
   it('diff parser counts in-hunk +++/--- lines and matches path segments only', () => {
@@ -1985,7 +1998,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(manifest).toContain('codescout.autoResume');
     expect(manifest).toContain('codescout.auditScope');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runSelectionReview(context, output, panel, uri))");
+    expect(extension).toContain("registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runScan(() => runSelectionReview(context, output, panel, uri)))");
     expect(extension).toContain('isDirectory ? `${rel}/**` : rel');
     expect(extension).toContain("runCustomReview(context, output, panel, t('custom.explorerFocus', lang, { rel }), 'list', globs)");
     expect(extension).toContain("collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines)");
@@ -2101,6 +2114,12 @@ describe('G6 fix batch security and robustness', () => {
     expect(isBlockedDocHost('8.8.8.8')).toBe(false);
     expect(isBlockedDocHost('docs.example.com')).toBe(false);
     expect(isBlockedDocHost('999.1.1.1')).toBe(true);
+    for (const host of ['100.64.0.1', '100.127.255.255', '198.18.0.1', '198.19.255.255', '224.0.0.1', '255.255.255.255', '192.0.2.1', '198.51.100.1', '203.0.113.1', '[fc00::1]', 'fe80::1', '::ffff:127.0.0.1']) {
+      expect(isBlockedDocHost(host), host).toBe(true);
+    }
+    for (const host of ['100.63.255.255', '100.128.0.0', '198.17.255.255', '198.20.0.0']) {
+      expect(isBlockedDocHost(host), host).toBe(false);
+    }
   });
 
   it('fetchDocsForPrompt skips blocked links with a warning and never fetches them', async () => {
@@ -2240,34 +2259,136 @@ describe('G6 fix batch security and robustness', () => {
 
 describe('G7 fix batch security and robustness', () => {
   it('blocks SSRF via redirect: Location to metadata is rejected before fetch', async () => {
+    const https = await import('node:https');
     const { defaultDocFetcher } = await import('../extension/src/projectAudit');
     const calls: string[] = [];
-    const original = globalThis.fetch;
-    globalThis.fetch = (async (url: string) => {
+    vi.mocked(https.request).mockImplementation((url: unknown, _opts: unknown, cb?: unknown) => {
       calls.push(String(url));
-      return { status: 302, ok: false, headers: { get: (h: string) => (h.toLowerCase() === 'location' ? 'http://169.254.169.254/latest/meta-data/' : null) }, text: async () => '' } as unknown as Response;
-    }) as typeof fetch;
+      const res = new EventEmitter() as any;
+      res.statusCode = 302;
+      res.headers = { location: 'http://169.254.169.254/latest/meta-data/' };
+      res.destroy = vi.fn();
+      const req = new EventEmitter() as any;
+      req.end = () => { (cb as (r: any) => void)(res); };
+      req.destroy = vi.fn();
+      return req;
+    });
     try {
       await expect(defaultDocFetcher('https://8.8.8.8/page')).rejects.toThrow(/SSRF-блок/);
       expect(calls).toEqual(['https://8.8.8.8/page']);
     } finally {
-      globalThis.fetch = original;
+      vi.mocked(https.request).mockReset();
     }
   });
 
   it('caps redirect hops and resolves Location relative to the current URL', async () => {
+    const https = await import('node:https');
     const { defaultDocFetcher } = await import('../extension/src/projectAudit');
-    const original = globalThis.fetch;
-    let hops = 0;
-    globalThis.fetch = (async () => {
-      hops += 1;
-      return { status: 302, ok: false, headers: { get: (h: string) => (h.toLowerCase() === 'location' ? '/next' : null) }, text: async () => '' } as unknown as Response;
-    }) as typeof fetch;
+    const calls: string[] = [];
+    const destroyed: ReturnType<typeof vi.fn>[] = [];
+    vi.mocked(https.request).mockImplementation((url: unknown, _opts: unknown, cb?: unknown) => {
+      calls.push(String(url));
+      const res = new EventEmitter() as any;
+      res.statusCode = 302;
+      res.headers = { location: '/next' };
+      res.destroy = vi.fn();
+      destroyed.push(res.destroy);
+      const req = new EventEmitter() as any;
+      req.end = () => { (cb as (r: any) => void)(res); };
+      req.destroy = vi.fn();
+      return req;
+    });
     try {
       await expect(defaultDocFetcher('https://8.8.8.8/a')).rejects.toThrow(/редиректов/);
-      expect(hops).toBe(6);
+      expect(calls).toEqual(['https://8.8.8.8/a', ...Array(5).fill('https://8.8.8.8/next')]);
+      expect(destroyed.every((destroy) => destroy.mock.calls.length === 1)).toBe(true);
     } finally {
-      globalThis.fetch = original;
+      vi.mocked(https.request).mockReset();
+    }
+  });
+
+  it('pins SSRF DNS lookup across rebinding and preserves the HTTPS hostname', async () => {
+    const https = await import('node:https');
+    const dns = await import('node:dns/promises');
+    const { defaultDocFetcher } = await import('../extension/src/projectAudit');
+    const lookup = vi.spyOn(dns, 'lookup')
+      .mockResolvedValueOnce({ address: '8.8.8.8', family: 4 } as any)
+      .mockResolvedValue({ address: '127.0.0.1', family: 4 } as any);
+    const destroy = vi.spyOn(https.Agent.prototype, 'destroy');
+    vi.mocked(https.request).mockImplementation((url: any, options: any, cb: any) => {
+      expect(String(url)).toBe('https://docs.example.com:8443/page');
+      expect(options.agent).toBeInstanceOf(https.Agent);
+      const one = vi.fn();
+      options.agent.options.lookup('docs.example.com', {}, one);
+      expect(one).toHaveBeenCalledWith(null, '8.8.8.8', 4);
+      const all = vi.fn();
+      options.agent.options.lookup('docs.example.com', { all: true }, all);
+      expect(all).toHaveBeenCalledWith(null, [{ address: '8.8.8.8', family: 4 }]);
+      const req = new EventEmitter() as any;
+      req.destroy = vi.fn();
+      req.end = () => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 200;
+        res.headers = {};
+        res.destroy = vi.fn();
+        cb(res);
+        res.emit('data', Buffer.from('public docs'));
+        res.emit('end');
+        return req;
+      };
+      return req;
+    });
+    try {
+      await expect(defaultDocFetcher('https://docs.example.com:8443/page')).resolves.toBe('public docs');
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(destroy).toHaveBeenCalled();
+      await expect(defaultDocFetcher('https://docs.example.com/page')).rejects.toThrow(/SSRF/);
+      expect(lookup).toHaveBeenCalledTimes(2);
+      expect(https.request).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.mockRestore();
+      destroy.mockRestore();
+      vi.mocked(https.request).mockReset();
+    }
+  });
+
+  it.each(['error', 'aborted', 'close', 'timeout', 'request error', 'limit', 'success', 'HTTP error'])('disposes SSRF transport on %s', async (event) => {
+    const https = await import('node:https');
+    const { defaultDocFetcher } = await import('../extension/src/projectAudit');
+    const req = new EventEmitter() as any;
+    const res = new EventEmitter() as any;
+    req.destroy = vi.fn();
+    res.destroy = vi.fn();
+    res.headers = {};
+    res.statusCode = event === 'HTTP error' ? 500 : 200;
+    const destroy = vi.spyOn(https.Agent.prototype, 'destroy');
+    vi.mocked(https.request).mockImplementation((_url: any, _options: any, cb: any) => {
+      req.end = () => {
+        cb(res);
+        if (event === 'timeout') return;
+        if (event === 'request error') req.emit('error', new Error('request failed'));
+        else if (event === 'limit') res.emit('data', Buffer.from('abcdef'.repeat(1000)));
+        else if (event === 'success') { res.emit('data', Buffer.from('abc')); res.emit('end'); }
+        else if (event !== 'HTTP error') res.emit(event, new Error('body failed'));
+      };
+      return req;
+    });
+    vi.useFakeTimers();
+    try {
+      const pending = defaultDocFetcher('https://8.8.8.8/doc', { maxBytes: 4, timeoutMs: 50 });
+      const assertion = event === 'limit' ? expect(pending).resolves.toBe('abcde')
+        : event === 'success' ? expect(pending).resolves.toBe('abc')
+        : expect(pending).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(50);
+      await assertion;
+      expect(req.destroy).toHaveBeenCalledTimes(1);
+      expect(res.destroy).toHaveBeenCalledTimes(1);
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      destroy.mockRestore();
+      vi.mocked(https.request).mockReset();
     }
   });
 
@@ -3197,10 +3318,24 @@ describe('v1.4b-12 onboarding + ETA', () => {
 });
 
 describe('v1.4b-13 reportIssue + open-source wrapper', () => {
+  it('batch 10: old escaping and CLI source contracts remain correct', () => {
+    for (const path of ['extension/src/settingsHtml.ts', 'src/report-formatter.ts']) {
+      const source = readFileSync(path, 'utf8');
+      expect(source).toContain(".replace(/</g, '&lt;')");
+      expect(source).toContain(".replace(/>/g, '&gt;')");
+    }
+    const prompt = readFileSync('src/prompt-builder.ts', 'utf8');
+    expect(prompt).toContain("marker.replaceAll('<', '&lt;').replaceAll('>', '&gt;')");
+    expect(prompt).toContain("return value.replaceAll('<', '&lt;').replaceAll('>', '&gt;')");
+    expect(prompt).not.toContain("replaceAll('&lt;', '<')");
+    const cli = readFileSync('src/cli.ts', 'utf8');
+    expect(cli).toContain('process.exitCode = code');
+    expect(cli).not.toMatch(/process\.exit\s*\(/);
+  });
   const base: IssueReportInput = {
     extVersion: '1.4.0', vscodeVersion: '1.85.0', os: 'win32 10.0.19045', provider: 'groq', model: 'llama-3.3-70b-versatile',
-    language: 'ru', uiTheme: 'auto', auditPasses: 2, rateLimitPauses: 3, hasKey: true, keyValues: ['real-secret-value-XYZ'],
-    outputTail: ['starting audit', 'real-secret-value-XYZ leaked here', 'gsk_live_abc123def456 is the key'], lastScanError: undefined
+    language: 'ru', uiTheme: 'auto', auditPasses: 2, rateLimitPauses: 3, hasKey: true,
+    outputTail: ['starting audit', 'real-secret-value-XYZ leaked here', 'gsk_live_abc123def456 is the key'].map(line => redactSecrets(line, ['real-secret-value-XYZ'])), lastScanError: undefined
   };
 
   it('RU and EN templates carry the four sections and diagnostics', () => {
@@ -3233,7 +3368,7 @@ describe('v1.4b-13 reportIssue + open-source wrapper', () => {
     expect(direct).not.toContain('ghp_TOKEN123456');
     expect(direct).not.toContain('AIzaSyD1234567890ABC');
     expect(direct).not.toContain('sk-or-v1.KEYKEY');
-    const keyLeak = buildIssueBody('en', { ...base, outputTail: ['AIzaSySECRETMODELKEY999'], lastScanError: 'boom' });
+    const keyLeak = buildIssueBody('en', { ...base, outputTail: [redactSecrets('AIzaSySECRETMODELKEY999')], lastScanError: 'boom' });
     expect(keyLeak).not.toContain('AIzaSySECRETMODELKEY999');
     expect(keyLeak).toContain('last scan error: boom');
   });
@@ -3252,9 +3387,11 @@ describe('v1.4b-13 reportIssue + open-source wrapper', () => {
     expect(extension).toContain('if (outputTail.length > 50) outputTail.splice(0, outputTail.length - 50)');
     expect(extension).toContain('lastScanError = message;');
     expect(extension).toContain('reportIssueUrl(body)');
-    expect(extension).toContain("hasKey: Boolean(secretKey?.trim())");
-    expect(extension).toContain('keyValues: [secretKey ?? \'\', cfg.get<string>(\'apiKey\') ?? \'\']');
-    expect(extension).toContain('const KNOWN_SETTINGS_COMMANDS = new Set([\'saveKeyProvider\', \'saveAppearance\', \'saveAll\', \'clearApiKey\', \'chooseModel\', \'saveDocLinks\', \'openRules\', \'openLink\', \'pickScope\', \'reportIssue\'])');
+    expect(extension).toContain('hasKey: keyValues.some((key) => Boolean(key.trim()))');
+    const bodyCall = extension.slice(extension.indexOf('const body = buildIssueBody'), extension.indexOf('reportIssueUrl(body)'));
+    expect(bodyCall).not.toMatch(/keyValues\s*:|secretKey/);
+    expect(bodyCall).toContain('outputTail: preRedactedOutputTail');
+    expect(extension).toContain("'reportIssue', 'refreshContext'");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'reportIssue'");
     expect(panel).toContain("executeCommand('codescout.reportIssue')");

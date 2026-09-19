@@ -1,5 +1,9 @@
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
+import * as https from 'node:https';
+import * as http from 'node:http';
+import { isIP, type LookupFunction } from 'node:net';
+import { StringDecoder } from 'node:string_decoder';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
 import { t, type Lang } from '../../src/i18n';
@@ -350,6 +354,17 @@ export function sanitizeDocText(raw: string, maxBytes = DOC_MAX_BYTES_DEFAULT): 
   return utf8Slice(safe, maxBytes);
 }
 
+// Pin DNS at the socket lookup boundary; keep the URL hostname for Host/SNI.
+class PinnedDnsAgent extends https.Agent {
+  constructor(address: string) {
+    const lookup: LookupFunction = (_hostname, options, callback) => {
+      if (options.all) callback(null, [{ address, family: 4 }]);
+      else callback(null, address, 4);
+    };
+    super({ lookup, keepAlive: false, maxCachedSessions: 0 });
+  }
+}
+
 export function isBlockedDocHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
   if (!host) return true;
@@ -363,49 +378,127 @@ export function isBlockedDocHost(hostname: string): boolean {
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 169 && b === 254) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    if (a >= 224) return true;
+    const c = Number(octets[3]);
+    if (a === 192 && (b === 0 || (b === 88 && c === 99))) return true;
+    if (a === 198 && b === 51 && c === 100) return true;
+    if (a === 203 && b === 0 && c === 113) return true;
     return false;
   }
   if (host.includes(':')) return true;
   return false;
 }
 
-async function assertSafeDocUrl(url: string): Promise<void> {
+// Резолвит DNS один раз, проверяет IP и возвращает агент, который привязывает
+// этот IP к соединению. hostname сохраняется для Host/SNI, но TCP-подключение
+// идёт на заранее проверенный адрес — DNS Rebinding между проверкой и
+// запросом больше не проходит.
+async function pinnedAgentFor(url: string, signal: AbortSignal): Promise<https.Agent | http.Agent> {
   const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('SSRF: unsupported protocol');
   if (isBlockedDocHost(parsed.hostname)) throw new Error('SSRF-блок: локальный или metadata-адрес');
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)) {
-    let resolved: { address: string };
-    try {
-      const { lookup } = await import('node:dns/promises');
-      resolved = await lookup(parsed.hostname);
-    } catch {
-      throw new Error(`SSRF-блок: не удалось разрешить хост ${parsed.hostname} (fail-closed)`);
-    }
-    if (isBlockedDocHost(resolved.address)) throw new Error(`SSRF-блок: домен резолвится в ${resolved.address}`);
+  let address = parsed.hostname;
+  if (!isIP(address)) {
+  try {
+    const { lookup } = await import('node:dns/promises');
+    address = (await lookup(parsed.hostname)).address;
+  } catch {
+    throw new Error(`SSRF-блок: не удалось разрешить хост ${parsed.hostname} (fail-closed)`);
   }
+  }
+  signal.throwIfAborted();
+  if (isIP(address) !== 4 || isBlockedDocHost(address)) throw new Error(`SSRF-блок: домен резолвится в ${address}`);
+  const agent = new PinnedDnsAgent(address);
+  if (parsed.protocol === 'https:') return agent;
+  const plainAgent = new http.Agent({ lookup: agent.options.lookup, keepAlive: false });
+  agent.destroy();
+  return plainAgent;
+}
+
+function requestDoc(url: string, agent: https.Agent | http.Agent, settings: DocFetcherSettings, signal: AbortSignal): Promise<{ status: number; location: string | null; body: string }> {
+  return new Promise((resolve, reject) => {
+    let req: http.ClientRequest | undefined;
+    let res: http.IncomingMessage | undefined;
+    let settled = false;
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      if (error) reject(error);
+      else resolve({ status: res!.statusCode ?? 0, location: res!.headers.location ?? null,
+        body: new StringDecoder('utf8').write(Buffer.concat(chunks, bytes)) });
+      res?.destroy();
+      req?.destroy();
+    };
+    const abort = () => finish(new Error('timeout'));
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) { abort(); return; }
+    try {
+    const request = new URL(url).protocol === 'https:' ? https.request : http.request;
+    req = request(url, {
+      method: 'GET',
+      agent,
+      timeout: settings.timeoutMs,
+      headers: { 'user-agent': 'CodeScout-RAG/1.3', accept: 'text/html,text/plain,text/markdown,*/*' }
+    }, (response) => {
+      res = response;
+      res.on('error', finish);
+      res.on('aborted', () => finish(new Error('response aborted')));
+      res.on('close', () => { if (!res!.complete) finish(new Error('response closed prematurely')); });
+      const status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) { finish(); return; }
+      res.on('data', (chunk: Buffer) => {
+        if (settled) return;
+        // One extra byte preserves the existing truncation warning contract.
+        const part = chunk.subarray(0, Math.max(0, settings.maxBytes + 1 - bytes));
+        chunks.push(Buffer.from(part));
+        bytes += part.length;
+        if (bytes >= settings.maxBytes + 1) finish();
+      });
+      res.on('end', () => finish());
+    });
+    req.on('timeout', abort);
+    req.on('error', finish);
+    req.end();
+    } catch (error) { finish(error as Error); }
+  });
 }
 
 const DOC_MAX_REDIRECTS = 5;
 
 export async function defaultDocFetcher(url: string, settings: DocFetcherSettings = DEFAULT_DOC_LIMITS): Promise<string> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('timeout'));
+    }, settings.timeoutMs);
+  });
+  try {
+  return await Promise.race([timeout, (async () => {
   let current = url;
   for (let hop = 0; hop <= DOC_MAX_REDIRECTS; hop++) {
-    await assertSafeDocUrl(current);
-    const response = await fetch(current, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(settings.timeoutMs),
-      headers: { 'user-agent': 'CodeScout-RAG/1.3', accept: 'text/html,text/plain,text/markdown,*/*' }
-    });
+    const agent = await pinnedAgentFor(current, controller.signal);
+    let response: Awaited<ReturnType<typeof requestDoc>>;
+    try { response = await requestDoc(current, agent, settings, controller.signal); }
+    finally { agent.destroy(); }
     if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) throw new Error(`редирект ${response.status} без Location`);
+      if (!response.location) throw new Error(`редирект ${response.status} без Location`);
       if (hop === DOC_MAX_REDIRECTS) throw new Error(`слишком много редиректов (>${DOC_MAX_REDIRECTS})`);
-      current = new URL(location, current).toString();
+      current = new URL(response.location, current).toString();
       continue;
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
+    if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+    return response.body;
   }
   throw new Error(`слишком много редиректов (>${DOC_MAX_REDIRECTS})`);
+  })()]);
+  } finally { clearTimeout(timer!); }
 }
 
 export async function fetchDocsForPrompt(workspaceRoot: string, docLinks: string[], fetcher: DocFetcher = defaultDocFetcher, onWarn: (message: string) => void = () => {}, limits: DocLimits = DEFAULT_DOC_LIMITS): Promise<DocsResult> {
