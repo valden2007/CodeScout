@@ -99,20 +99,26 @@ async function fetchModels(selection: ProviderSelection): Promise<string[]> {
   return fetchLiveModels(baseUrl, selection.key);
 }
 
-async function chooseLiveModel(selection: ProviderSelection, placeHolder: string): Promise<{ model: string; userChosen: boolean }> {
+// Возвращает undefined, если пользователь отменил выбор: отмена = возврат
+// без действия, модель не меняется (P0 Astra-3).
+async function chooseLiveModel(selection: ProviderSelection, placeHolder: string): Promise<{ model: string; userChosen: boolean } | undefined> {
   let models: string[] = [];
   try {
     models = await fetchModels(selection);
   } catch {
     const manual = await vscode.window.showInputBox({ prompt: t('model.inputFetchFailed', currentReportLanguage()), value: selection.model });
-    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+    if (manual === undefined) return undefined;
+    return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
   if (models.length === 0) {
     const manual = await vscode.window.showInputBox({ prompt: t('model.inputEmpty', currentReportLanguage()), value: selection.model });
-    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+    if (manual === undefined) return undefined;
+    return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
-  const picked = await vscode.window.showQuickPick([preferredLiveModel(models, selection.model), ...models.filter((model) => model !== preferredLiveModel(models, selection.model))], { placeHolder, matchOnDescription: true });
-  return { model: picked || preferredLiveModel(models, selection.model), userChosen: Boolean(picked) };
+  const preferred = preferredLiveModel(models, selection.model);
+  const picked = await vscode.window.showQuickPick([preferred, ...models.filter((model) => model !== preferred)], { placeHolder, matchOnDescription: true });
+  if (!picked) return undefined;
+  return { model: picked, userChosen: true };
 }
 
 async function validateDefaultModel(context: vscode.ExtensionContext, selection: ProviderSelection, persistCorrection = false): Promise<{ model: string; userChosen: boolean }> {
@@ -126,10 +132,50 @@ async function validateDefaultModel(context: vscode.ExtensionContext, selection:
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
       return { model: corrected, userChosen: false };
     }
-    return chooseLiveModel(selection, t('model.pickTitle', currentReportLanguage()));
+    return (await chooseLiveModel(selection, t('model.pickTitle', currentReportLanguage()))) ?? { model: selection.model, userChosen: false };
   } catch {
     return { model: selection.model, userChosen: false };
   }
+}
+
+const TRUSTED_BASE_URLS_KEY = 'codescout.trustedBaseUrls';
+
+function readBaseUrlInfo(config: vscode.WorkspaceConfiguration): { baseUrl: string; fromWorkspace: boolean } {
+  const envBaseUrl = process.env.CODESCOUT_BASE_URL?.trim() || '';
+  const inspected = config.inspect<string>('baseUrl');
+  const workspaceValue = typeof inspected?.workspaceValue === 'string' ? inspected.workspaceValue.trim() : '';
+  const effective = config.get<string>('baseUrl')?.trim() || '';
+  const fromWorkspace = Boolean(workspaceValue && effective === workspaceValue);
+  return { baseUrl: effective || envBaseUrl, fromWorkspace };
+}
+
+async function confirmWorkspaceBaseUrl(context: vscode.ExtensionContext, baseUrl: string): Promise<boolean> {
+  const trusted = (await context.globalState.get<string[]>(TRUSTED_BASE_URLS_KEY)) ?? [];
+  if (trusted.includes(baseUrl)) return true;
+  const lang = currentReportLanguage();
+  const answer = await vscode.window.showWarningMessage(
+    t('trust.prompt', lang, { url: baseUrl }),
+    { modal: true },
+    t('trust.accept', lang),
+    t('trust.reject', lang)
+  );
+  if (answer === t('trust.accept', lang)) {
+    await context.globalState.update(TRUSTED_BASE_URLS_KEY, [...trusted, baseUrl]);
+    return true;
+  }
+  return false;
+}
+
+// P0 Astra-1: ключ не должен улетать на origin, который пользователь не подтвердил.
+// Если baseUrl пришёл из workspace settings (а не user settings / SecretStorage /
+// явного выбора), требуем подтверждения; в untrusted workspace — отказ.
+async function resolveTrustedBaseUrl(context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration): Promise<string> {
+  const { baseUrl, fromWorkspace } = readBaseUrlInfo(config);
+  if (!baseUrl) return '';
+  if (!fromWorkspace) return baseUrl;
+  if (!vscode.workspace.isTrusted) throw new Error(t('trust.errUntrusted', currentReportLanguage()));
+  if (!(await confirmWorkspaceBaseUrl(context, baseUrl))) throw new Error(t('trust.errNotConfirmed', currentReportLanguage()));
+  return baseUrl;
 }
 
 async function resolveExtensionSelection(context: vscode.ExtensionContext): Promise<ProviderSelection> {
@@ -147,7 +193,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
     provider,
     model,
     key,
-    baseUrl: config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL,
+    baseUrl: await resolveTrustedBaseUrl(context, config),
     userChosenModel
   };
 }
@@ -569,7 +615,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     } else {
       clearAuditProgress(workspaceRoot);
     }
-    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage());
+    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
     panel.setFirstAuditDone(true);
     panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
@@ -597,6 +643,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
 }
 
 async function runCustomReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, focusArg?: string, scopeArg?: string, globsArg?: string): Promise<void> {
+  autoResumeCancelled = false;
   const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
@@ -702,7 +749,10 @@ async function runSelectionReview(context: vscode.ExtensionContext, output: vsco
 }
 
 async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, output: vscode.OutputChannel, panel: CodeScoutPanel, signal?: AbortSignal): Promise<void> {
-  if (autoResumeCancelled || signal?.aborted) return;
+  if (signal?.aborted) return;
+  // P0 Astra-2: «Стоп» ставит autoResumeCancelled, но он не должен блокировать
+  // последующие обычные ревью — сбрасываем при любом новом старте.
+  autoResumeCancelled = false;
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -940,11 +990,18 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   context.subscriptions.push(output);
   const syncKeyStatus = async (): Promise<void> => {
-    const selection = await resolveExtensionSelection(context);
-    const validated = selection.key && !selection.userChosenModel
-      ? await validateDefaultModel(context, selection, true)
-      : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
-    panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
+    try {
+      const selection = await resolveExtensionSelection(context);
+      const validated = selection.key && !selection.userChosenModel
+        ? await validateDefaultModel(context, selection, true)
+        : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
+      panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
+    } catch (error) {
+      // Ошибка доверия workspace baseUrl не должна ронять активацию расширения.
+      const message = error instanceof Error ? error.message : String(error);
+      output.appendLine(`Ключ/модель не загружены: ${message}`);
+      panel.setKey(undefined);
+    }
   };
   void syncKeyStatus();
   void migrateLanguageSetting(context).catch(() => {});
@@ -1231,6 +1288,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const source = detected ? t('key.sourceAuto', lang) : t('key.sourceManual', lang);
       void vscode.window.showInformationMessage(t('key.savedNotify', lang, { p: selection.provider, m: selection.model, s: source }));
     }),
+    // P0 Astra-3: выбор модели меняет ТОЛЬКО модель. Отмена = возврат без
+    // действия (модель прежняя, запрос не уходит). Сканирование — отдельной
+    // кнопкой «Повторить с этой моделью» (codescout.rerunWithModel).
     vscode.commands.registerCommand('codescout.chooseModel', async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
@@ -1238,16 +1298,12 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const chosen = await chooseLiveModel(current, t('model.pickTitleShort', currentReportLanguage()));
+      if (!chosen) return;
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
       panel.setKey(maskApiKey(current.key), current.provider, chosen.model);
-      const reviewController = new AbortController();
-      void runReview(context, lastScanWasLastCommit, output, panel, reviewController.signal).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        output.appendLine(`Error: ${message}`);
-        void vscode.window.showErrorMessage(`CodeScout: ${message}`);
-      });
     }),
+    vscode.commands.registerCommand('codescout.rerunWithModel', () => runScan(() => runReview(context, lastScanWasLastCommit, output, panel))),
     vscode.commands.registerCommand('codescout.clearApiKey', async () => {
       const lang = currentReportLanguage();
       const answer = await vscode.window.showWarningMessage(t('key.deleteConfirm', lang), { modal: true }, t('common.delete', lang));

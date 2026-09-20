@@ -66,6 +66,7 @@ export interface FindingsDiffView {
   summary: string;
   newKeys: string[];
   fixed: FindingsHistoryEntry[];
+  notRechecked: FindingsHistoryEntry[];
 }
 
 export function loadProjectRules(workspaceRoot: string): string | undefined {
@@ -965,14 +966,23 @@ export function readFindingsHistory(workspaceRoot: string): FindingsHistory | un
   }
 }
 
-export function buildFindingsDiff(previous: FindingsHistory | undefined, issues: ReviewIssue[], lang: Lang = 'ru'): FindingsDiffView | undefined {
+export function buildFindingsDiff(previous: FindingsHistory | undefined, issues: ReviewIssue[], lang: Lang = 'ru', checkedFiles: ReadonlySet<string> = new Set()): FindingsDiffView | undefined {
   if (!previous) return undefined;
   const currentKeys = new Set(issues.map(findingKey));
   const previousKeys = new Set(previous.findings.map(findingKey));
   const newOnes = issues.filter((issue) => !previousKeys.has(findingKey(issue)));
-  const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
-  const summary = t('diff.summary', lang, { n: newOnes.length, f: fixed.length, s: issues.length - newOnes.length });
-  return { summary, newKeys: newOnes.map(findingKey), fixed };
+  // P0 Astra-4: пропущенный файл ≠ исправленный. Старая находка в файле,
+  // который не вошёл в текущий checkedFiles, помечается «не перепроверено»
+  // (⏳), а не «исправлено» (✅).
+  const fixed: FindingsHistoryEntry[] = [];
+  const notRechecked: FindingsHistoryEntry[] = [];
+  for (const entry of previous.findings) {
+    if (currentKeys.has(findingKey(entry))) continue;
+    if (checkedFiles.has(entry.file)) fixed.push(entry);
+    else notRechecked.push(entry);
+  }
+  const summary = t('diff.summary', lang, { n: newOnes.length, f: fixed.length, r: notRechecked.length, s: issues.length - newOnes.length });
+  return { summary, newKeys: newOnes.map(findingKey), fixed, notRechecked };
 }
 
 export interface AuditResumeView {

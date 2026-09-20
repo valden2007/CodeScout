@@ -13,6 +13,7 @@
   "actions.customReview": "Своё ревью",
   "actions.customReviewCollapse": "Свернуть",
   "actions.cancel": "Остановить",
+  "actions.rerunWithModel": "Повторить с этой моделью",
   "status.model404": "Выбрать доступную модель",
   "badge.auto": "Автономный режим: ВКЛ (без лимита)",
   "badge.autoAttempts": "Автономный режим: ВКЛ (макс. {n} попыток)",
@@ -215,7 +216,8 @@
   "status.thinking": "🤖 Модель думает... · ⏱ {s}с",
   "status.retry": "⏳ Rate limit у {model}, ожидание {s}с (попытка {a}/{m})...",
   "status.cancelled": "⛔ Сканирование остановлено пользователем",
-  "diff.summary": "🆕 новых: {n} · ✅ починено: {f} · 🔁 осталось: {s}",
+  "diff.summary": "🆕 новых: {n} · ✅ починено: {f} · ⏳ не перепроверено: {r} · 🔁 осталось: {s}",
+  "notRechecked.title": "Не перепроверено в этом скане ({n})",
   "sample.summary": "Пример: ожидалось 2-3 бага, найдено {n}.",
   "sample.weak": "⚠️ Модель слишком слабая для ревью — смени модель кнопкой ⚙️",
   "sample.onlyOne": "Нашёл только 1 из 3 — ревьюер слабый, подумай сменить модель",
@@ -275,5 +277,10 @@
   "center.scopeAll": "все файлы",
   "center.savedAll": "✅ Сохранено · аудит: кругов {p}, maxLines {ml}, maxFiles {f}, авто-догон {ar} · проект: {n} док(ов), scope {sc} · язык {L} · вид: {ui}",
   "center.rulesOpened": "✅ Открыт .codescout/rules.md — правки подхватываются следующим ревью",
-  "center.error": "❌ Ошибка: {msg}"
+  "center.error": "❌ Ошибка: {msg}",
+  "trust.prompt": "Base URL пришёл из настроек рабочей области: {url}. Разрешить отправку кода и API-ключа на этот адрес?",
+  "trust.accept": "Доверять",
+  "trust.reject": "Отмена",
+  "trust.errUntrusted": "Base URL задан в настройках рабочей области, но рабочая область не доверенная. Подтвердите доверие или задайте baseUrl в user-настройках.",
+  "trust.errNotConfirmed": "Base URL из настроек рабочей области не подтверждён. Задайте baseUrl в user-настройках или подтвердите доверие."
 }

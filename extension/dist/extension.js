@@ -833,6 +833,7 @@ var ru_default = {
   "actions.customReview": "\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E",
   "actions.customReviewCollapse": "\u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C",
   "actions.cancel": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C",
+  "actions.rerunWithModel": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0441 \u044D\u0442\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u044C\u044E",
   "status.model404": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
   "badge.auto": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
   "badge.autoAttempts": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {n} \u043F\u043E\u043F\u044B\u0442\u043E\u043A)",
@@ -1035,7 +1036,8 @@ var ru_default = {
   "status.thinking": "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 {s}\u0441",
   "status.retry": "\u23F3 Rate limit \u0443 {model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m})...",
   "status.cancelled": "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C",
-  "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
+  "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u23F3 \u043D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: {r} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
+  "notRechecked.title": "\u041D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u0441\u043A\u0430\u043D\u0435 ({n})",
   "sample.summary": "\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}.",
   "sample.weak": "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F",
   "sample.onlyOne": "\u041D\u0430\u0448\u0451\u043B \u0442\u043E\u043B\u044C\u043A\u043E 1 \u0438\u0437 3 \u2014 \u0440\u0435\u0432\u044C\u044E\u0435\u0440 \u0441\u043B\u0430\u0431\u044B\u0439, \u043F\u043E\u0434\u0443\u043C\u0430\u0439 \u0441\u043C\u0435\u043D\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
@@ -1095,7 +1097,12 @@ var ru_default = {
   "center.scopeAll": "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B",
   "center.savedAll": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 {p}, maxLines {ml}, maxFiles {f}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D {ar} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: {n} \u0434\u043E\u043A(\u043E\u0432), scope {sc} \xB7 \u044F\u0437\u044B\u043A {L} \xB7 \u0432\u0438\u0434: {ui}",
   "center.rulesOpened": "\u2705 \u041E\u0442\u043A\u0440\u044B\u0442 .codescout/rules.md \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u043F\u043E\u0434\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0440\u0435\u0432\u044C\u044E",
-  "center.error": "\u274C \u041E\u0448\u0438\u0431\u043A\u0430: {msg}"
+  "center.error": "\u274C \u041E\u0448\u0438\u0431\u043A\u0430: {msg}",
+  "trust.prompt": "Base URL \u043F\u0440\u0438\u0448\u0451\u043B \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438: {url}. \u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443 \u043A\u043E\u0434\u0430 \u0438 API-\u043A\u043B\u044E\u0447\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0430\u0434\u0440\u0435\u0441?",
+  "trust.accept": "\u0414\u043E\u0432\u0435\u0440\u044F\u0442\u044C",
+  "trust.reject": "\u041E\u0442\u043C\u0435\u043D\u0430",
+  "trust.errUntrusted": "Base URL \u0437\u0430\u0434\u0430\u043D \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438, \u043D\u043E \u0440\u0430\u0431\u043E\u0447\u0430\u044F \u043E\u0431\u043B\u0430\u0441\u0442\u044C \u043D\u0435 \u0434\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u0430\u044F. \u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.",
+  "trust.errNotConfirmed": "Base URL \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438 \u043D\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D. \u0417\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0438\u043B\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435."
 };
 
 // ../src/i18n/en.json
@@ -1114,6 +1121,7 @@ var en_default = {
   "actions.customReview": "Custom review",
   "actions.customReviewCollapse": "Collapse",
   "actions.cancel": "Stop",
+  "actions.rerunWithModel": "Re-run with this model",
   "status.model404": "Choose an available model",
   "badge.auto": "Autonomous mode: ON (unlimited)",
   "badge.autoAttempts": "Autonomous mode: ON (max {n} attempts)",
@@ -1316,7 +1324,8 @@ var en_default = {
   "status.thinking": "\u{1F916} Model is thinking... \xB7 \u23F1 {s}s",
   "status.retry": "\u23F3 Rate limit from {model}, waiting {s}s (attempt {a}/{m})...",
   "status.cancelled": "\u26D4 Scan stopped by user",
-  "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u{1F501} unchanged: {s}",
+  "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u23F3 not rechecked: {r} \xB7 \u{1F501} unchanged: {s}",
+  "notRechecked.title": "Not rechecked in this scan ({n})",
   "sample.summary": "Sample: expected 2-3 bugs, found {n}.",
   "sample.weak": "\u26A0\uFE0F The model is too weak for review \u2014 switch the model via the \u2699\uFE0F button",
   "sample.onlyOne": "Only 1 of 3 found \u2014 the reviewer is weak, consider switching the model",
@@ -1376,7 +1385,12 @@ var en_default = {
   "center.scopeAll": "all files",
   "center.savedAll": "\u2705 Saved \xB7 audit: passes {p}, maxLines {ml}, maxFiles {f}, auto-catch-up {ar} \xB7 project: {n} docs, scope {sc} \xB7 language {L} \xB7 look: {ui}",
   "center.rulesOpened": "\u2705 Opened .codescout/rules.md \u2014 edits apply from the next review",
-  "center.error": "\u274C Error: {msg}"
+  "center.error": "\u274C Error: {msg}",
+  "trust.prompt": "Base URL comes from workspace settings: {url}. Allow sending code and API key to this address?",
+  "trust.accept": "Trust",
+  "trust.reject": "Cancel",
+  "trust.errUntrusted": "Base URL is set in workspace settings, but the workspace is not trusted. Confirm trust or set baseUrl in user settings.",
+  "trust.errNotConfirmed": "Base URL from workspace settings was not confirmed. Set baseUrl in user settings or confirm trust."
 };
 
 // ../src/i18n/index.ts
@@ -1590,6 +1604,7 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const diffSummary = findingsDiff ? `<div class="diff-summary">${icon("diff-added")}${escapeHtml(findingsDiff.summary)}</div>` : "";
   const customBanner = customFocus ? `<div class="diff-summary custom">${icon("target")} ${T("customBanner.label")} ${escapeHtml(customFocus.slice(0, 160))}</div>` : "";
   const fixedBlock = findingsDiff?.fixed?.length ? `<details class="fixed-block"><summary>${icon("check")} ${T("fixed.title", { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
+  const notRecheckedBlock = findingsDiff?.notRechecked?.length ? `<details class="fixed-block"><summary>${icon("history")} ${T("notRechecked.title", { n: findingsDiff.notRechecked.length })}</summary><ul>${findingsDiff.notRechecked.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
   const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon("account")}</div><h1>${T("empty.onboardTitle")}</h1><div class="onboard-sub">${T("onboard.title")}</div><ol class="onboard-steps">
   <li class="onboard-step"><span class="onboard-num">1</span><div class="onboard-body"><p><strong>${T("empty.stepLabel1")}</strong> ${T("onboard.step1")} ${T("empty.step1Prefix")}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T("empty.step1Link")}</a></p><button class="primary-action cs-btn" type="button" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("onboard.step1Btn")}</span></button></div></li>
   <li class="onboard-step"><span class="onboard-num">2</span><div class="onboard-body"><p><strong>${T("empty.stepLabel2")}</strong> ${T("onboard.step2")}</p><button class="cs-btn secondary" type="button" data-command="chooseModel">${icon("rocket")}<span>${T("onboard.step2Btn")}</span></button></div></li>
@@ -1621,6 +1636,7 @@ ${headHtml(assets, nonce)}
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
       <button type="button" class="cs-btn" data-command="scanFull" ${isScanning ? "disabled" : ""}>${icon("telescope")}<span>${T("actions.scanFull")}</span></button>
+      <button type="button" class="cs-btn" data-command="rerunWithModel" ${isScanning ? "disabled" : ""}>${icon("sync")}<span>${T("actions.rerunWithModel")}</span></button>
       <button type="button" class="cs-btn" id="toggleCustomForm" ${isScanning ? "disabled" : ""}>${icon("beaker")}<span>${T("actions.customReview")}</span></button>
     </div>
     ${autoResumeEnabled2 ? `<div class="auto-badge" title="${T("badge.autoTitle")}">${icon("robot")}<span>${escapeHtml(autoBadgeText(lang, autoResumeMaxAttempts, autoResumeMaxMinutes))}</span></div>` : ""}
@@ -1651,7 +1667,7 @@ ${headHtml(assets, nonce)}
     <div class="pills"><span class="pill critical">${icon("error")} ${stats.critical}</span><span class="pill medium">${icon("warning")} ${stats.medium}</span><span class="pill low">${icon("pass")} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T("search.placeholder")}" autocomplete="off" spellcheck="false"></div>` : ""}
-  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}${notRecheckedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};
@@ -2029,6 +2045,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.clearApiKey");
       } else if (message.command === "chooseModel") {
         void vscode.commands.executeCommand("codescout.chooseModel");
+      } else if (message.command === "rerunWithModel") {
+        void vscode.commands.executeCommand("codescout.rerunWithModel");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
       } else if (message.command === "testSample") {
@@ -3156,14 +3174,20 @@ function readFindingsHistory(workspaceRoot) {
     return void 0;
   }
 }
-function buildFindingsDiff(previous, issues, lang = "ru") {
+function buildFindingsDiff(previous, issues, lang = "ru", checkedFiles = /* @__PURE__ */ new Set()) {
   if (!previous) return void 0;
   const currentKeys = new Set(issues.map(findingKey));
   const previousKeys = new Set(previous.findings.map(findingKey));
   const newOnes = issues.filter((issue) => !previousKeys.has(findingKey(issue)));
-  const fixed = previous.findings.filter((entry) => !currentKeys.has(findingKey(entry)));
-  const summary = t("diff.summary", lang, { n: newOnes.length, f: fixed.length, s: issues.length - newOnes.length });
-  return { summary, newKeys: newOnes.map(findingKey), fixed };
+  const fixed = [];
+  const notRechecked = [];
+  for (const entry of previous.findings) {
+    if (currentKeys.has(findingKey(entry))) continue;
+    if (checkedFiles.has(entry.file)) fixed.push(entry);
+    else notRechecked.push(entry);
+  }
+  const summary = t("diff.summary", lang, { n: newOnes.length, f: fixed.length, r: notRechecked.length, s: issues.length - newOnes.length });
+  return { summary, newKeys: newOnes.map(findingKey), fixed, notRechecked };
 }
 function writeAuditProgress(workspaceRoot, progress) {
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
@@ -3976,14 +4000,18 @@ async function chooseLiveModel(selection, placeHolder) {
     models = await fetchModels(selection);
   } catch {
     const manual = await vscode2.window.showInputBox({ prompt: t("model.inputFetchFailed", currentReportLanguage()), value: selection.model });
-    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+    if (manual === void 0) return void 0;
+    return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
   if (models.length === 0) {
     const manual = await vscode2.window.showInputBox({ prompt: t("model.inputEmpty", currentReportLanguage()), value: selection.model });
-    return { model: manual?.trim() || selection.model, userChosen: Boolean(manual?.trim()) };
+    if (manual === void 0) return void 0;
+    return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
-  const picked = await vscode2.window.showQuickPick([preferredLiveModel(models, selection.model), ...models.filter((model) => model !== preferredLiveModel(models, selection.model))], { placeHolder, matchOnDescription: true });
-  return { model: picked || preferredLiveModel(models, selection.model), userChosen: Boolean(picked) };
+  const preferred = preferredLiveModel(models, selection.model);
+  const picked = await vscode2.window.showQuickPick([preferred, ...models.filter((model) => model !== preferred)], { placeHolder, matchOnDescription: true });
+  if (!picked) return void 0;
+  return { model: picked, userChosen: true };
 }
 async function validateDefaultModel(context, selection, persistCorrection = false) {
   try {
@@ -3996,10 +4024,43 @@ async function validateDefaultModel(context, selection, persistCorrection = fals
       await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
       return { model: corrected, userChosen: false };
     }
-    return chooseLiveModel(selection, t("model.pickTitle", currentReportLanguage()));
+    return await chooseLiveModel(selection, t("model.pickTitle", currentReportLanguage())) ?? { model: selection.model, userChosen: false };
   } catch {
     return { model: selection.model, userChosen: false };
   }
+}
+var TRUSTED_BASE_URLS_KEY = "codescout.trustedBaseUrls";
+function readBaseUrlInfo(config) {
+  const envBaseUrl = process.env.CODESCOUT_BASE_URL?.trim() || "";
+  const inspected = config.inspect("baseUrl");
+  const workspaceValue = typeof inspected?.workspaceValue === "string" ? inspected.workspaceValue.trim() : "";
+  const effective = config.get("baseUrl")?.trim() || "";
+  const fromWorkspace = Boolean(workspaceValue && effective === workspaceValue);
+  return { baseUrl: effective || envBaseUrl, fromWorkspace };
+}
+async function confirmWorkspaceBaseUrl(context, baseUrl) {
+  const trusted = await context.globalState.get(TRUSTED_BASE_URLS_KEY) ?? [];
+  if (trusted.includes(baseUrl)) return true;
+  const lang = currentReportLanguage();
+  const answer = await vscode2.window.showWarningMessage(
+    t("trust.prompt", lang, { url: baseUrl }),
+    { modal: true },
+    t("trust.accept", lang),
+    t("trust.reject", lang)
+  );
+  if (answer === t("trust.accept", lang)) {
+    await context.globalState.update(TRUSTED_BASE_URLS_KEY, [...trusted, baseUrl]);
+    return true;
+  }
+  return false;
+}
+async function resolveTrustedBaseUrl(context, config) {
+  const { baseUrl, fromWorkspace } = readBaseUrlInfo(config);
+  if (!baseUrl) return "";
+  if (!fromWorkspace) return baseUrl;
+  if (!vscode2.workspace.isTrusted) throw new Error(t("trust.errUntrusted", currentReportLanguage()));
+  if (!await confirmWorkspaceBaseUrl(context, baseUrl)) throw new Error(t("trust.errNotConfirmed", currentReportLanguage()));
+  return baseUrl;
 }
 async function resolveExtensionSelection(context) {
   const config = vscode2.workspace.getConfiguration("codescout");
@@ -4016,7 +4077,7 @@ async function resolveExtensionSelection(context) {
     provider,
     model,
     key,
-    baseUrl: config.get("baseUrl")?.trim() || process.env.CODESCOUT_BASE_URL,
+    baseUrl: await resolveTrustedBaseUrl(context, config),
     userChosenModel
   };
 }
@@ -4406,7 +4467,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     } else {
       clearAuditProgress(workspaceRoot);
     }
-    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage());
+    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
     panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
     panel.setFirstAuditDone(true);
     panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
@@ -4436,6 +4497,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
   }
 }
 async function runCustomReview(context, output, panel, focusArg, scopeArg, globsArg) {
+  autoResumeCancelled = false;
   const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
@@ -4546,7 +4608,8 @@ async function runSelectionReview(context, output, panel, uri) {
   await runCustomReview(context, output, panel, t("custom.explorerFocus", lang, { rel }), "list", globs);
 }
 async function runReview(context, lastCommit, output, panel, signal) {
-  if (autoResumeCancelled || signal?.aborted) return;
+  if (signal?.aborted) return;
+  autoResumeCancelled = false;
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
@@ -4748,9 +4811,15 @@ function activate(context) {
   };
   context.subscriptions.push(output);
   const syncKeyStatus = async () => {
-    const selection = await resolveExtensionSelection(context);
-    const validated = selection.key && !selection.userChosenModel ? await validateDefaultModel(context, selection, true) : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
-    panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
+    try {
+      const selection = await resolveExtensionSelection(context);
+      const validated = selection.key && !selection.userChosenModel ? await validateDefaultModel(context, selection, true) : { model: selection.model, userChosen: Boolean(selection.userChosenModel) };
+      panel.setKey(selection.key ? maskApiKey(selection.key) : false, selection.provider, validated.model);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      output.appendLine(`\u041A\u043B\u044E\u0447/\u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B: ${message}`);
+      panel.setKey(void 0);
+    }
   };
   void syncKeyStatus();
   void migrateLanguageSetting(context).catch(() => {
@@ -5049,6 +5118,9 @@ function activate(context) {
       const source = detected ? t("key.sourceAuto", lang) : t("key.sourceManual", lang);
       void vscode2.window.showInformationMessage(t("key.savedNotify", lang, { p: selection.provider, m: selection.model, s: source }));
     }),
+    // P0 Astra-3: выбор модели меняет ТОЛЬКО модель. Отмена = возврат без
+    // действия (модель прежняя, запрос не уходит). Сканирование — отдельной
+    // кнопкой «Повторить с этой моделью» (codescout.rerunWithModel).
     vscode2.commands.registerCommand("codescout.chooseModel", async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
@@ -5056,16 +5128,12 @@ function activate(context) {
         return;
       }
       const chosen = await chooseLiveModel(current, t("model.pickTitleShort", currentReportLanguage()));
+      if (!chosen) return;
       await context.secrets.store(SECRET_MODEL, chosen.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
       panel.setKey(maskApiKey(current.key), current.provider, chosen.model);
-      const reviewController = new AbortController();
-      void runReview(context, lastScanWasLastCommit, output, panel, reviewController.signal).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        output.appendLine(`Error: ${message}`);
-        void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
-      });
     }),
+    vscode2.commands.registerCommand("codescout.rerunWithModel", () => runScan(() => runReview(context, lastScanWasLastCommit, output, panel))),
     vscode2.commands.registerCommand("codescout.clearApiKey", async () => {
       const lang = currentReportLanguage();
       const answer = await vscode2.window.showWarningMessage(t("key.deleteConfirm", lang), { modal: true }, t("common.delete", lang));

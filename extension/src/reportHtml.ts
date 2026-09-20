@@ -249,6 +249,11 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   const fixedBlock = findingsDiff?.fixed?.length
     ? `<details class="fixed-block"><summary>${icon('check')} ${T('fixed.title', { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
     : '';
+  // P0 Astra-4: «не перепроверено» — старые находки в файлах, которые не были
+  // в текущем checkedFiles (rate-limit/ошибка), показываются отдельно от «исправлено».
+  const notRecheckedBlock = findingsDiff?.notRechecked?.length
+    ? `<details class="fixed-block"><summary>${icon('history')} ${T('notRechecked.title', { n: findingsDiff.notRechecked.length })}</summary><ul>${findingsDiff.notRechecked.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> · ${escapeHtml(entry.category)} — ${escapeHtml(entry.description.slice(0, 140))}</li>`).join('')}</ul></details>`
+    : '';
   const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon('account')}</div><h1>${T('empty.onboardTitle')}</h1><div class="onboard-sub">${T('onboard.title')}</div><ol class="onboard-steps">
   <li class="onboard-step"><span class="onboard-num">1</span><div class="onboard-body"><p><strong>${T('empty.stepLabel1')}</strong> ${T('onboard.step1')} ${T('empty.step1Prefix')}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T('empty.step1Link')}</a></p><button class="primary-action cs-btn" type="button" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('onboard.step1Btn')}</span></button></div></li>
   <li class="onboard-step"><span class="onboard-num">2</span><div class="onboard-body"><p><strong>${T('empty.stepLabel2')}</strong> ${T('onboard.step2')}</p><button class="cs-btn secondary" type="button" data-command="chooseModel">${icon('rocket')}<span>${T('onboard.step2Btn')}</span></button></div></li>
@@ -287,6 +292,7 @@ ${headHtml(assets, nonce)}
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('diff')}<span>${T('actions.scanUncommitted')}</span></button>
       <button type="button" class="cs-btn" data-command="scanFull" ${isScanning ? 'disabled' : ''}>${icon('telescope')}<span>${T('actions.scanFull')}</span></button>
+      <button type="button" class="cs-btn" data-command="rerunWithModel" ${isScanning ? 'disabled' : ''}>${icon('sync')}<span>${T('actions.rerunWithModel')}</span></button>
       <button type="button" class="cs-btn" id="toggleCustomForm" ${isScanning ? 'disabled' : ''}>${icon('beaker')}<span>${T('actions.customReview')}</span></button>
     </div>
     ${autoResumeEnabled ? `<div class="auto-badge" title="${T('badge.autoTitle')}">${icon('robot')}<span>${escapeHtml(autoBadgeText(lang, autoResumeMaxAttempts, autoResumeMaxMinutes))}</span></div>` : ''}
@@ -317,7 +323,7 @@ ${headHtml(assets, nonce)}
     <div class="pills"><span class="pill critical">${icon('error')} ${stats.critical}</span><span class="pill medium">${icon('warning')} ${stats.medium}</span><span class="pill low">${icon('pass')} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T('search.placeholder')}" autocomplete="off" spellcheck="false"></div>` : ''}
-  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}${notRecheckedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};

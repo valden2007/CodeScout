@@ -637,7 +637,8 @@ describe('E1.2a settings page (skeleton + keys)', () => {
     expect(() => resolveBaseUrl('groq', 'ftp://localhost:21')).toThrow('http(s)');
     expect(() => resolveBaseUrl('custom')).toThrow('CODESCOUT_BASE_URL');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("config.get<string>('baseUrl')?.trim() || process.env.CODESCOUT_BASE_URL");
+    expect(extension).toContain('resolveTrustedBaseUrl(context, config)');
+    expect(extension).toContain("config.get<string>('baseUrl')?.trim()");
     expect(extension).toContain("update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global)");
   });
 
@@ -763,25 +764,37 @@ describe('E1.2d findings diff and scan history', () => {
     { file: 'src/b.ts', line: 8, category: 'security', severity: 'critical', description: 'sql', confidence: 0.95 }
   ];
 
-  it('diffs issues against previous history keys and counts three buckets', () => {
-    const diff = buildFindingsDiff(previous, issues);
-    expect(diff?.summary).toBe('🆕 новых: 1 · ✅ починено: 0 · 🔁 осталось: 1');
+  it('diffs issues against previous history keys and counts four buckets', () => {
+    const diff = buildFindingsDiff(previous, issues, 'ru', new Set(['src/a.ts', 'src/b.ts']));
+    expect(diff?.summary).toBe('🆕 новых: 1 · ✅ починено: 0 · ⏳ не перепроверено: 0 · 🔁 осталось: 1');
     expect(diff?.newKeys).toEqual(['src/b.ts:8:security']);
     expect(diff?.fixed).toEqual([]);
-    const resolved = buildFindingsDiff(previous, []);
-    expect(resolved?.summary).toBe('🆕 новых: 0 · ✅ починено: 1 · 🔁 осталось: 0');
+    const resolved = buildFindingsDiff(previous, [], 'ru', new Set(['src/a.ts']));
+    expect(resolved?.summary).toBe('🆕 новых: 0 · ✅ починено: 1 · ⏳ не перепроверено: 0 · 🔁 осталось: 0');
     expect(resolved?.fixed[0].file).toBe('src/a.ts');
     expect(buildFindingsDiff(undefined, issues)).toBeUndefined();
   });
 
+  it('marks findings in files outside checkedFiles as not rechecked, not fixed', () => {
+    // P0 Astra-4: файл пропущен (rate-limit/ошибка) — его старые находки
+    // это НЕ «исправлено», а «не перепроверено» (⏳).
+    const diff = buildFindingsDiff(previous, [], 'ru', new Set(['src/other.ts']));
+    expect(diff?.summary).toBe('🆕 новых: 0 · ✅ починено: 0 · ⏳ не перепроверено: 1 · 🔁 осталось: 0');
+    expect(diff?.fixed).toEqual([]);
+    expect(diff?.notRechecked.map((entry) => entry.file)).toEqual(['src/a.ts']);
+    const html = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', diff);
+    expect(html).toContain('Не перепроверено в этом скане (1)');
+    expect(html).toContain('src/a.ts:5');
+  });
+
   it('renders diff summary line, new badges and a collapsed fixed block', () => {
-    const diff = buildFindingsDiff(previous, issues);
+    const diff = buildFindingsDiff(previous, issues, 'ru', new Set(['src/a.ts', 'src/b.ts']));
     const html = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', diff);
     expect(html).toContain('class="diff-summary"');
-    expect(html).toContain('🆕 новых: 1 · ✅ починено: 0 · 🔁 осталось: 1');
+    expect(html).toContain('🆕 новых: 1 · ✅ починено: 0 · ⏳ не перепроверено: 0 · 🔁 осталось: 1');
     expect(html).toContain('codicon-add'); expect(html).toContain('новая');
     expect(html).not.toContain('<details');
-    const resolvedHtml = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff(previous, []));
+    const resolvedHtml = buildReportHtml([], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff(previous, [], 'ru', new Set(['src/a.ts'])));
     expect(resolvedHtml).toContain('<details class="fixed-block"');
     expect(resolvedHtml).toContain('codicon-check'); expect(resolvedHtml).toContain('Починено с прошлого скана (1)');
     expect(resolvedHtml).toContain('src/a.ts:5');
@@ -1417,7 +1430,7 @@ describe('G2 fix batch security and crashes', () => {
       const history = readFindingsHistory(root);
       expect(history?.findings).toHaveLength(1);
       expect(history?.findings[0]).toMatchObject({ file: 'a.ts', line: 1, category: 'bug', severity: 'medium', description: '' });
-      const diffView = buildFindingsDiff(history, []);
+      const diffView = buildFindingsDiff(history, [], 'ru', new Set(['a.ts']));
       const html = buildReportHtml([], { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'm', false, '', false, 'new', diffView);
       expect(html).toContain('Починено с прошлого скана (1)');
     } finally {
@@ -2236,8 +2249,9 @@ describe('G6 fix batch security and robustness', () => {
     expect(reader).toContain('if (allowEmptyDiff && (error as { status?: number }).status === 1) return');
     expect(reader).toContain("runGit(['-c', 'color.ui=false', ...args], repoPath, true)");
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain('void runReview(context, lastScanWasLastCommit, output, panel, reviewController.signal).catch(');
-    expect(extension).toContain('})().catch((error: unknown) => {');
+    expect(extension).toContain("codescout.rerunWithModel");
+    expect(extension).toContain("runReview(context, lastScanWasLastCommit, output, panel)");
+    expect(extension).toContain('})().catch((error: unknown) => {');;
     expect(extension).toContain('Init error:');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("const rawLine = parseInt(String(message.line), 10);");
@@ -2439,11 +2453,16 @@ describe('G7 fix batch security and robustness', () => {
     expect(extension).not.toContain('panel.setKey(selection.key, selection.provider');
   });
 
-  it('runReview after chooseModel is cancellable and respects the cancel flag', () => {
+  it('P0 Astra-2/3: runReview сбрасывает autoResumeCancelled; chooseModel не запускает скан', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('panel: CodeScoutPanel, signal?: AbortSignal)');
-    expect(extension).toContain('if (autoResumeCancelled || signal?.aborted) return;');
-    expect(extension).toContain('const reviewController = new AbortController();');
+    // P0-2: любой новый старт сбрасывает autoResumeCancelled (не silent no-op после Стоп)
+    expect(extension).toContain('if (signal?.aborted) return;');
+    expect(extension).toContain('autoResumeCancelled = false;');
+    // P0-3: chooseModel меняет только модель; сканирование — отдельной кнопкой
+    expect(extension).not.toContain("if (autoResumeCancelled || signal?.aborted) return;");
+    expect(extension).not.toContain('const reviewController = new AbortController();');
+    expect(extension).toContain("vscode.commands.registerCommand('codescout.rerunWithModel'");
   });
 
   it('status banner is built with textContent/createElement and a 404 regex', () => {
@@ -3056,7 +3075,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(centerRu).toContain('Фон страницы');
     const panelRu = buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'src/app.ts', line: 12, category: 'bug', severity: 'critical', description: 'same' }] }, issues), '', undefined, undefined, false, 0, 0, undefined, 'nonce5', undefined, 'ru');
     expect(panelRu).toContain('Полный аудит проекта');
-    expect(panelRu).toContain('🆕 новых: 0 · ✅ починено: 0 · 🔁 осталось: 1');
+    expect(panelRu).toContain('🆕 новых: 0 · ✅ починено: 0 · ⏳ не перепроверено: 0 · 🔁 осталось: 1');
   });
 
   it('reportLanguage migrates to language once and the old key is dropped', () => {
@@ -3142,8 +3161,8 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(sampleTestSummary(0)).toContain('слишком слабая');
     expect(sampleTestSummary(3, 'en')).toBe('Sample: expected 2-3 bugs, found 3. Reviewer is alive!');
     expect(sampleTestSummary(0, 'en')).toContain('too weak');
-    const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'a.ts', line: 1, category: 'bug', severity: 'low', description: 'x' }] }, [{ file: 'b.ts', line: 2, category: 'bug', severity: 'low', description: 'y', code: '', confidence: 0.5 }], 'en');
-    expect(diff?.summary).toBe('🆕 new: 1 · ✅ fixed: 1 · 🔁 unchanged: 0');
+    const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'a.ts', line: 1, category: 'bug', severity: 'low', description: 'x' }] }, [{ file: 'b.ts', line: 2, category: 'bug', severity: 'low', description: 'y', code: '', confidence: 0.5 }], 'en', new Set(['a.ts']));
+    expect(diff?.summary).toBe('🆕 new: 1 · ✅ fixed: 1 · ⏳ not rechecked: 0 · 🔁 unchanged: 0');
   });
 });
 

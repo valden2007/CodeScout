@@ -13,6 +13,7 @@
   "actions.customReview": "Custom review",
   "actions.customReviewCollapse": "Collapse",
   "actions.cancel": "Stop",
+  "actions.rerunWithModel": "Re-run with this model",
   "status.model404": "Choose an available model",
   "badge.auto": "Autonomous mode: ON (unlimited)",
   "badge.autoAttempts": "Autonomous mode: ON (max {n} attempts)",
@@ -215,7 +216,8 @@
   "status.thinking": "🤖 Model is thinking... · ⏱ {s}s",
   "status.retry": "⏳ Rate limit from {model}, waiting {s}s (attempt {a}/{m})...",
   "status.cancelled": "⛔ Scan stopped by user",
-  "diff.summary": "🆕 new: {n} · ✅ fixed: {f} · 🔁 unchanged: {s}",
+  "diff.summary": "🆕 new: {n} · ✅ fixed: {f} · ⏳ not rechecked: {r} · 🔁 unchanged: {s}",
+  "notRechecked.title": "Not rechecked in this scan ({n})",
   "sample.summary": "Sample: expected 2-3 bugs, found {n}.",
   "sample.weak": "⚠️ The model is too weak for review — switch the model via the ⚙️ button",
   "sample.onlyOne": "Only 1 of 3 found — the reviewer is weak, consider switching the model",
@@ -275,5 +277,10 @@
   "center.scopeAll": "all files",
   "center.savedAll": "✅ Saved · audit: passes {p}, maxLines {ml}, maxFiles {f}, auto-catch-up {ar} · project: {n} docs, scope {sc} · language {L} · look: {ui}",
   "center.rulesOpened": "✅ Opened .codescout/rules.md — edits apply from the next review",
-  "center.error": "❌ Error: {msg}"
+  "center.error": "❌ Error: {msg}",
+  "trust.prompt": "Base URL comes from workspace settings: {url}. Allow sending code and API key to this address?",
+  "trust.accept": "Trust",
+  "trust.reject": "Cancel",
+  "trust.errUntrusted": "Base URL is set in workspace settings, but the workspace is not trusted. Confirm trust or set baseUrl in user settings.",
+  "trust.errNotConfirmed": "Base URL from workspace settings was not confirmed. Set baseUrl in user settings or confirm trust."
 }

@@ -23,6 +23,8 @@ class StubState {
   warningAnswers: unknown[] = [];
   errorMessages: string[] = [];
   openedDocuments: string[] = [];
+  isTrusted = true;
+  quickPickAnswers: unknown[] = [];
 
   reset(): void {
     this.config.clear();
@@ -38,12 +40,24 @@ class StubState {
     this.warningAnswers = [];
     this.errorMessages = [];
     this.openedDocuments = [];
+    this.isTrusted = true;
+    this.quickPickAnswers = [];
   }
 
   set(sectionKey: string, value: unknown): void {
     const entry = this.config.get(sectionKey) ?? {};
     entry.globalValue = value;
     this.config.set(sectionKey, entry);
+  }
+
+  setWorkspace(sectionKey: string, value: unknown): void {
+    const entry = this.config.get(sectionKey) ?? {};
+    entry.workspaceValue = value;
+    this.config.set(sectionKey, entry);
+  }
+
+  setTrusted(value: boolean): void {
+    this.isTrusted = value;
   }
 
   fire(section: string, key: string): void {
@@ -112,7 +126,7 @@ export const window = {
   async showInformationMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showWarningMessage(..._args: unknown[]): Promise<unknown> { return state.warningAnswers.shift(); },
   async showInputBox(..._args: unknown[]): Promise<undefined> { return undefined; },
-  async showQuickPick(..._args: unknown[]): Promise<undefined> { return undefined; },
+  async showQuickPick(..._args: unknown[]): Promise<unknown> { return state.quickPickAnswers.shift(); },
   async showOpenDialog(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showTextDocument(document?: { __path?: string }): Promise<unknown> { return { revealRange: () => {}, selection: undefined, __path: document?.__path }; }
 };
@@ -138,6 +152,7 @@ export class StubWebviewPanel {
 }
 
 export const workspace = {
+  get isTrusted(): boolean { return state.isTrusted; },
   get workspaceFolders(): unknown {
     return state.workspaceRoot ? [{ uri: { fsPath: state.workspaceRoot } }] : undefined;
   },
