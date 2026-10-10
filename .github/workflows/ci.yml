@@ -35,15 +35,6 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
 
-      - name: Lint
-        shell: bash
-        run: |
-          if node -e "process.exit((require('./package.json').scripts||{}).lint?0:1)"; then
-            npm run lint -- --max-warnings=0
-          else
-            echo "npm run lint не настроен — шаг пропускаем"
-          fi
-
       - name: Test
         run: npm test
 

@@ -1,7 +1,7 @@
 {
   "name": "codescout",
   "version": "1.1.2",
-  "description": "AI-powered code review for GitHub pull requests and local CLI diffs with Groq BYOK support",
+  "description": "AI code review for VS Code, CLI and GitHub Actions with any OpenAI-compatible provider (BYOK)",
   "keywords": [
     "code-review",
     "ai",
