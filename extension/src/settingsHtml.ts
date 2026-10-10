@@ -85,7 +85,7 @@ export function mergeScopeGlobs(existing: string, added: string[]): string {
   return [...new Set([...splitScopeGlobs(existing), ...added.map((glob) => glob.trim()).filter(Boolean)])].join(', ');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets, lang: Lang = 'ru'): string {
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' | 'retry' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets, lang: Lang = 'ru'): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
@@ -201,7 +201,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <label for="provider">${T('center.provider')}</label>
   <select id="provider">${providerOptions}</select>
   <label for="apiKey">${T('center.apiKeyLabel')}</label>
-  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? T('center.keyKeep') : T('center.keyPaste')}">
+  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? T('center.keyKeep') : (state.provider === 'custom' && state.baseUrl && state.baseUrl.startsWith('http://localhost') ? T('center.keyLocalHint') : T('center.keyPaste'))}">
   <label class="checkbox"><input id="revealKey" type="checkbox"> ${T('center.reveal')}</label>
   <div id="baseUrlRow" class="${state.provider === 'custom' ? '' : 'hidden'}">
     <label for="baseUrl">${T('center.baseUrl')}</label>
@@ -211,6 +211,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <div class="current-key">${T('center.now')} ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : T('center.nowNone')}</div>
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>${T('center.liveModels')}</span></button>
+    <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
   <p class="hint">${T('center.prefixHint')}</p>
@@ -351,7 +352,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </div>
 <script${nonceAttr}>
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -538,6 +539,13 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+const testConnBtn = document.getElementById('testConnection');
+testConnBtn.addEventListener('click', () => {
+  testConnBtn.disabled = true;
+  const label = testConnBtn.querySelector('span:last-child');
+  if (label) label.textContent = L('center.connecting');
+  vscode.postMessage({ command: 'testConnection' });
+});
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 document.getElementById('refreshContext').addEventListener('click', () => vscode.postMessage({ command: 'refreshContext' }));
@@ -574,6 +582,20 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  if (data.type === 'connResult') {
+    const btn = document.getElementById('testConnection');
+    if (btn) {
+      btn.disabled = false;
+      const label = btn.querySelector('span:last-child');
+      if (label) label.textContent = L('center.retry');
+    }
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = data.message || '';
+      status.classList.toggle('error', data.ok === false);
+    }
+    return;
+  }
   if (data.type !== 'scopePickResult') return;
   const merged = [];
   for (const g of [...splitGlobs(auditScopeInput.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }

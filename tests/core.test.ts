@@ -247,7 +247,7 @@ describe('E5.9 combined UX fixes', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("await context.secrets.store(SECRET_MODEL, corrected)");
     expect(extension).toContain("await context.secrets.store(SECRET_MODEL_CHOSEN, 'false')");
-    expect(extension).toContain('createProvider(selection.provider, selection.key, selection.model');
+    expect(extension).toContain("createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model");
     expect(extension).toContain('await resolveExtensionSelection(context)');
   });
 
@@ -313,21 +313,19 @@ describe('E5 onboarding and secure keys', () => {
     expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', {})).toBe('legacy-key');
   });
 
-  it('renders the 3-step welcome card when no key is configured', () => {
+  it('renders the onboarding wizard when no key is configured', () => {
     const html = buildEmptyReportHtml('', false, 'gemini', 'gemini-2.5-flash', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', { onboarding: true });
-    expect(html).toContain('Привет! Это CodeScout');
-    expect(html).toContain('Первый запуск CodeScout');
-    expect(html).toContain('https://aistudio.google.com/apikey');
-    expect(html).toContain('data-command="openKeyLink"');
-    expect(html).toContain('data-command="openSettingsPage" data-anchor="sec-key"');
-    expect(html).toContain('Добавить ключ');
-    expect(html).toContain('data-command="chooseModel"');
-    expect(html).toContain('data-command="scanFull"');
-    expect(html).toContain('data-command="dismissOnboarding"');
-    expect(html).toContain('Не показывать снова');
+    expect(html).toContain(t('empty.onboardTitle', 'ru'));
+    expect(html).toContain(t('wizard.subtitle', 'ru'));
+    expect(html).toContain(t('wizard.cloud', 'ru'));
+    expect(html).toContain(t('wizard.local', 'ru'));
+    expect(html).toContain(t('wizard.skip', 'ru'));
+    expect(html).toContain('data-command="onboardCloud"');
+    expect(html).toContain('data-command="onboardLocal"');
+    expect(html).toContain('data-command="onboardSkip"');
     const hidden = buildEmptyReportHtml('', false, 'gemini', 'gemini-2.5-flash', false, 'new', undefined, false, 0, 0, undefined, '', undefined, 'ru', { onboarding: false });
-    expect(hidden).not.toContain('data-command="dismissOnboarding"');
-    expect(hidden).toContain('CodeScout готов к работе');
+    expect(hidden).not.toContain('data-command="onboardSkip"');
+    expect(hidden).toContain(t('empty.readyTitle', 'ru'));
   });
 
   it('masks API keys while preserving only the last three characters', () => {
@@ -410,7 +408,7 @@ describe('Groq retry handling', () => {
 
   it('rejects with empty response when status 200 body is not JSON', async () => {
     const provider = new GroqProvider('key', 'model', async () => new Response('<html>ok?</html>', { status: 200 }), async () => undefined);
-    await expect(provider.review('system', 'user')).rejects.toThrow('empty response');
+    await expect(provider.review('system', 'user')).rejects.toThrow('Модель вернула некорректный формат: пустой ответ');
   });
 });
 

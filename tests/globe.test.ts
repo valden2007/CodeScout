@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
+import { t } from '../src/i18n';
 
 interface CapturedView {
   webview: {
@@ -67,16 +68,18 @@ describe('v1.4b-11 globe click e2e (mock webview → host → config → re-rend
     expect(center.webview.html).toContain('Язык интерфейса, отчётов и ответов модели');
   });
 
-  it('first run: welcome card renders and dismissOnboarding hides it via globalState', async () => {
+  it('first run: wizard card renders and onboardSkip hides it via globalState', async () => {
     const { view, receive } = activateAndResolve();
-    expect(view.webview.html).toContain('Первый запуск CodeScout');
-    expect(view.webview.html).toContain('data-command="openSettingsPage" data-anchor="sec-key"');
-    expect(view.webview.html).toContain('data-command="dismissOnboarding"');
+    expect(view.webview.html).toContain(t('empty.onboardTitle', 'ru'));
+    expect(view.webview.html).toContain(t('wizard.subtitle', 'ru'));
+    expect(view.webview.html).toContain('data-command="onboardCloud"');
+    expect(view.webview.html).toContain('data-command="onboardLocal"');
+    expect(view.webview.html).toContain('data-command="onboardSkip"');
 
-    receive({ command: 'dismissOnboarding' });
+    receive({ command: 'onboardSkip' });
     await flush();
     expect(state.globalState.get('codescout.onboardingDismissed')).toBe(true);
-    expect(view.webview.html).not.toContain('Первый запуск CodeScout');
+    expect(view.webview.html).not.toContain('data-command="onboardSkip"');
     expect(view.webview.html).toContain('data-command="scanLastCommit"');
   });
 });

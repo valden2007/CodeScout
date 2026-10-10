@@ -60,9 +60,67 @@ function notFoundMessage(model: string): string {
   return `⚠️ 404: эндпоинт или модель ${model} не найдены. Проверь provider/model.`;
 }
 
+// Батч 13, п.4: лимит больше не описывается всегда как «tokens per day» —
+// точная причина остаётся в details, UI показывает категорию «Лимит провайдера».
 function finalRateLimitMessage(model: string, waitSeconds?: number): string {
-  const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
-  return `⚠️ Превышен лимит модели ${model}.\nПопробуйте через ${minutes} минут или используйте другую модель.\nТекущий лимит: tokens per day`;
+  const wait = waitSeconds ?? 60;
+  return `⚠️ Превышен лимит модели ${model}.\nПовторите через ${wait} сек или используйте другую модель.`;
+}
+
+// Категории ошибок для UI (батч 13, п.4): понятная причина + техническая
+// диагностика в раскрывающемся блоке.
+export type FriendlyErrorKind = 'auth' | 'notFound' | 'rateLimit' | 'timeout' | 'badResponse' | 'other';
+
+// HTTP-статус от провайдера (401/403/404/429/…): дальше не ретраится,
+// но классифицируется по статусу.
+export class ProviderHttpError extends Error {
+  readonly status: number;
+  readonly details: string;
+
+  constructor(status: number, message: string, details = '') {
+    super(message);
+    this.name = 'ProviderHttpError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
+// Модель отдала не-JSON (HTML-страницу прокси/гейта) или пустой content.
+export class BadResponseError extends Error {
+  readonly details: string;
+
+  constructor(message: string, details = '') {
+    super(message);
+    this.name = 'BadResponseError';
+    this.details = details;
+  }
+}
+
+export interface FriendlyError {
+  kind: FriendlyErrorKind;
+  title: string;
+  details?: string;
+  waitSeconds?: number;
+}
+
+function isTimeoutError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : '';
+  const msg = error instanceof Error ? error.message : String(error);
+  return name === 'TimeoutError' || /ETIMEDOUT|socket hang up|timed?\s*out|EAI_AGAIN/i.test(msg);
+}
+
+export function classifyError(error: unknown): FriendlyError {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (error instanceof RateLimitError) return { kind: 'rateLimit', title: raw, details: error.details || raw, waitSeconds: error.waitSeconds };
+  if (error instanceof ProviderHttpError) {
+    if (error.status === 401 || error.status === 403) return { kind: 'auth', title: raw, details: error.details };
+    if (error.status === 404) return { kind: 'notFound', title: raw, details: error.details };
+    if (error.status === 429) return { kind: 'rateLimit', title: raw, details: error.details };
+    return { kind: 'other', title: raw, details: error.details };
+  }
+  if (error instanceof BadResponseError) return { kind: 'badResponse', title: raw, details: error.details };
+  if (isTimeoutError(error)) return { kind: 'timeout', title: raw, details: raw };
+  return { kind: 'other', title: raw, details: undefined };
 }
 
 export class OpenAICompatibleProvider implements LLMProvider {
@@ -110,11 +168,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
-          if (response.status === 404) throw new Error(notFoundMessage(this.model));
+          if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
+          // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
+          if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
-        if (!content) throw new Error('LLM returned an empty response');
+        if (!content) throw new BadResponseError('Модель вернула некорректный формат: пустой ответ', text.trim().slice(0, 300));
         return content;
       } catch (error) {
         if (isAbortError(error)) throw error;

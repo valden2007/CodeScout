@@ -97,6 +97,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private firstAuditDone: boolean | undefined;
   private progressInfo?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
   private auditSummary?: { issues: number; files: number; seconds: number };
+  private diagnosticDetails?: string;
   private auditDurations: number[] = [];
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
@@ -183,6 +184,12 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.chooseModel');
       } else if (message.command === 'rerunWithModel') {
         void vscode.commands.executeCommand('codescout.rerunWithModel');
+      } else if (message.command === 'onboardCloud') {
+        void vscode.commands.executeCommand('codescout.onboardCloud');
+      } else if (message.command === 'onboardLocal') {
+        void vscode.commands.executeCommand('codescout.onboardLocal');
+      } else if (message.command === 'onboardSkip') {
+        void vscode.commands.executeCommand('codescout.onboardSkip');
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
       } else if (message.command === 'testSample') {
@@ -435,13 +442,14 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setError(message: string): void {
+  setError(message: string, details?: string): void {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
     this.progressMessage = '';
     this.statusKind = 'error';
     this.statusMessage = message;
+    this.diagnosticDetails = details;
     this.render();
   }
 
@@ -476,7 +484,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 }

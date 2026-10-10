@@ -28,14 +28,68 @@ export function assertHttpBaseUrl(url: string): string {
   return url;
 }
 
-export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<string[]> {
+export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000): Promise<string[]> {
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
   const response = await fetcher(`${safeBase}/models`, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` }
+    headers: { Authorization: `Bearer ${apiKey}` },
+    // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+    signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
   return parseLiveModels(await response.json());
+}
+
+// Локальный режим (батч 13, п.2): localhost-серверы (Ollama, LM Studio) не
+// требуют ключа — код не покидает машину, аутентификации нет.
+export function isLocalBaseUrl(url: string | undefined): boolean {
+  const value = url?.trim() || '';
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(value);
+}
+
+export function parseOllamaTags(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const models = (payload as { models?: unknown }).models;
+  if (!Array.isArray(models)) return [];
+  return models
+    .map((item) => (item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string' ? (item as { name: string }).name : ''))
+    .filter((name): name is string => Boolean(name));
+}
+
+export type ProbeStatus = 'ok' | 'noAnswer' | 'error';
+
+export interface LocalProbeResult {
+  ok: boolean;
+  status: ProbeStatus;
+  /** Нормализованный OpenAI-совместимый base URL (всегда с /v1 при успехе). */
+  baseUrl: string;
+  models: string[];
+  message: string;
+}
+
+// Проверка доступности локального OpenAI-совместимого сервера (батч 13, п.2):
+// Ollama отдаёт список моделей нативно через /api/tags, LM Studio — через /v1/models.
+export async function probeLocalServer(rawUrl: string, fetcher: typeof fetch = fetch, timeoutMs = 5000): Promise<LocalProbeResult> {
+  const base = rawUrl.trim().replace(/\/+$/, '');
+  if (!base) return { ok: false, status: 'error', baseUrl: '', models: [], message: 'URL не задан' };
+  const openAiUrl = base.endsWith('/v1') ? base : `${base}/v1`;
+  const ollamaTagsUrl = base.endsWith('/v1') ? `${base.slice(0, -3)}/api/tags` : `${base}/api/tags`;
+  const probe = async (url: string): Promise<Response> => fetcher(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+  try {
+    // LM Studio / OpenAI-совместимые: GET {base}/models
+    const direct = await probe(`${openAiUrl}/models`);
+    if (direct.ok) return { ok: true, status: 'ok', baseUrl: openAiUrl, models: parseLiveModels(await direct.json()), message: '' };
+    // Ollama native: GET {base}/api/tags → {models:[{name}]}
+    const tags = await probe(`${base}/api/tags`);
+    if (tags.ok) {
+      const models = parseOllamaTags(await tags.json());
+      return { ok: true, status: 'ok', baseUrl: openAiUrl, models, message: '' };
+    }
+    return { ok: false, status: 'error', baseUrl: openAiUrl, models: [], message: `HTTP ${direct.status}/${tags.status}` };
+  } catch (error) {
+    // таймаут (TimeoutError), отказ в соединении, DNS — сервер не ответил
+    return { ok: false, status: 'noAnswer', baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export interface ProviderDefinition {

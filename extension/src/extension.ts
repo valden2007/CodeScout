@@ -2,12 +2,12 @@ import * as vscode from 'vscode';
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { abortError, createProvider, isAbortError, RateLimitError, RetryEvent, sleep } from '../../src/llm-client';
+import { abortError, BadResponseError, classifyError, createProvider, isAbortError, ProviderHttpError, RateLimitError, RetryEvent, sleep } from '../../src/llm-client';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, detectProvider, fetchLiveModels, keyUrl, maskApiKey, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
+import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
@@ -27,7 +27,7 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext']);
 
 interface ScanResult {
   issues: ReviewIssue[];
@@ -94,9 +94,10 @@ function preferredLiveModel(models: string[], fallback: string): string {
 }
 
 async function fetchModels(selection: ProviderSelection): Promise<string[]> {
-  if (!selection.key) return [];
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
-  return fetchLiveModels(baseUrl, selection.key);
+  // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
+  if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
+  return fetchLiveModels(baseUrl, selection.key ?? '');
 }
 
 // Возвращает undefined, если пользователь отменил выбор: отмена = возврат
@@ -263,14 +264,31 @@ function rateLimitPausesFromSetting(value: unknown): number {
   return Math.min(5, n);
 }
 
+// Батч 13, п.4: понятные категории ошибок в UI; длинный технический ответ
+// уходит в раскрываемую диагностику (panel.setError(message, details)).
+function friendlyError(error: unknown): { message: string; details?: string } {
+  const lang = currentReportLanguage();
+  const raw = error instanceof Error ? error.message : String(error);
+  const c = classifyError(error);
+  switch (c.kind) {
+    case 'auth': return { message: t('err.auth', lang), details: c.details || raw };
+    case 'notFound': return { message: t('err.notFound', lang), details: c.details || raw };
+    case 'rateLimit': return { message: t('err.rateLimit', lang, { n: c.waitSeconds ?? 60 }), details: c.details || raw };
+    case 'timeout': return { message: t('err.timeout', lang), details: raw };
+    case 'badResponse': return { message: t('err.badResponse', lang), details: c.details || raw };
+    default: return { message: raw, details: undefined };
+  }
+}
+
 export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
-  if (!selection.key) {
+  // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost не требуют ключ.
+  if (!selection.key && !isLocalBaseUrl(selection.baseUrl)) {
     throw new Error(`${t('panel.errNoKey', promptLang, { p: selection.provider })}${t('panel.keyGet', promptLang, { x: keyUrl(selection.provider) ?? t('panel.keyGetAlt', promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
+  const provider = createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues: ReviewIssue[] = [];
   // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
   let skippedFiles = 0;
@@ -421,9 +439,10 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Self-test error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -633,9 +652,10 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
     return { kind: 'interrupted', view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -711,9 +731,10 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     if (isAbortError(error)) { panel.setCancelled(); return; }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -783,9 +804,10 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -877,6 +899,24 @@ async function migrateLanguageSetting(context: vscode.ExtensionContext): Promise
   if (legacyValue && !hasLang) await config.update('language', legacyValue === 'en' ? 'en' : 'ru', vscode.ConfigurationTarget.Global);
   if (legacyValue) await config.update('reportLanguage', undefined, vscode.ConfigurationTarget.Global);
   await context.secrets.store('codescout.languageMigrated', 'true');
+}
+
+// Батч 13: тест подключения возвращает результат вызывающей стороне —
+// палитра показывает нативное уведомление, центр настроек получает
+// connResult postMessage-ем (форма не перерисовывается, правки не теряются).
+async function runConnectionTest(context: vscode.ExtensionContext): Promise<{ ok: boolean; message: string }> {
+  const lang = currentReportLanguage();
+  const selection = await resolveExtensionSelection(context);
+  if (!selection.baseUrl && selection.provider !== 'custom') {
+    return { ok: true, message: t('center.connected', lang, { n: 0 }) };
+  }
+  const testSel = { provider: selection.provider, model: selection.model, key: selection.key ?? '', baseUrl: selection.baseUrl, userChosenModel: false };
+  try {
+    const models = await fetchModels(testSel);
+    return { ok: true, message: t('center.connected', lang, { n: models.length }) };
+  } catch (error) {
+    return { ok: false, message: friendlyError(error).message };
+  }
 }
 
 async function fileIsDirectory(uri: vscode.Uri): Promise<boolean> {
@@ -1054,7 +1094,7 @@ export function activate(context: vscode.ExtensionContext): void {
       rerenderSettings();
     }),
     vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {
-      const render = async (status = '', statusKind: 'ok' | 'error' = 'ok'): Promise<void> => {
+      const render = async (status = '', statusKind: 'ok' | 'error' | 'retry' = 'ok'): Promise<void> => {
         if (settingsPanel) {
           settingsPanel.title = t('title.center', currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'codicon.css')).toString(), cspSource: settingsPanel.webview.cspSource };
@@ -1126,8 +1166,12 @@ export function activate(context: vscode.ExtensionContext): void {
               await vscode.commands.executeCommand('codescout.clearApiKey');
               await render(t('center.keyCleared', currentReportLanguage()));
           } else if (message.command === 'chooseModel') {
+            await render(t('center.connecting', currentReportLanguage()), 'retry');
             await vscode.commands.executeCommand('codescout.chooseModel');
             await render(t('center.modelRefresh', currentReportLanguage()));
+          } else if (message.command === 'testConnection') {
+            const result = await runConnectionTest(context);
+            await settingsPanel?.webview.postMessage({ type: 'connResult', ok: result.ok, message: result.message });
           } else if (message.command === 'saveDocLinks') {
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
             const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -1314,7 +1358,71 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.delete(SECRET_MODEL_CHOSEN);
       panel.setKey(undefined);
       void vscode.window.showInformationMessage(t('key.deletedNotify', lang));
-    })
+    }),
+    // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
+    vscode.commands.registerCommand('codescout.onboardCloud', async () => {
+      const lang = currentReportLanguage();
+      const picked = await vscode.window.showQuickPick(['Gemini', 'Groq', 'OpenRouter', 'Custom (свой адрес)'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
+      if (!picked) return;
+      const providerName = picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : 'custom';
+      const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('wizard.keyPrompt', lang) });
+      if (!key?.trim()) { void vscode.window.showErrorMessage(t('key.needFirst', lang)); return; }
+      const trimmed = key.trim();
+      const det = detectProvider(trimmed) ?? { provider: providerName, model: defaultModel(providerName) };
+      let baseUrl = '';
+      if (providerName === 'custom') {
+        baseUrl = (await vscode.window.showInputBox({ prompt: t('wizard.urlPrompt', lang), value: 'http://localhost:11434/v1', ignoreFocusOut: true }))?.trim() || '';
+        if (!baseUrl) { void vscode.window.showErrorMessage(t('wizard.urlPrompt', lang)); return; }
+      }
+      // Тест подключения.
+      const testSelection = { provider: det.provider, model: det.model, key: trimmed, baseUrl, userChosenModel: false };
+      try {
+        const models = await fetchModels(testSelection);
+        await context.secrets.store(SECRET_KEY, trimmed);
+        await context.secrets.store(SECRET_PROVIDER, det.provider);
+        await context.secrets.store(SECRET_MODEL, preferredLiveModel(models, det.model));
+        await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+        await context.globalState.update('codescout.onboardingDismissed', true);
+        panel.setOnboardingHidden(true);
+        panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
+        void vscode.window.showInformationMessage(`${t('center.connected', lang, { n: models.length })}`);
+      } catch (error) {
+        const friendly = friendlyError(error);
+        void vscode.window.showErrorMessage(friendly.message);
+      }
+    }),
+    vscode.commands.registerCommand('codescout.onboardLocal', async () => {
+      const lang = currentReportLanguage();
+      const kind = await vscode.window.showQuickPick(['Ollama', 'LM Studio'], { placeHolder: t('wizard.localPick', lang) });
+      if (!kind) return;
+      const defaultUrl = kind === 'Ollama' ? 'http://localhost:11434' : 'http://localhost:1234';
+      const url = (await vscode.window.showInputBox({ prompt: t('wizard.urlPrompt', lang), value: defaultUrl, ignoreFocusOut: true }))?.trim();
+      if (!url) return;
+      const probe = await probeLocalServer(url);
+      if (!probe.ok) {
+        const retry = await vscode.window.showWarningMessage(t('wizard.localFail', lang, { n: 0 }), { modal: false }, t('wizard.retry', lang));
+        if (retry === t('wizard.retry', lang)) { vscode.commands.executeCommand('codescout.onboardLocal'); }
+        return;
+      }
+      await vscode.workspace.getConfiguration('codescout').update('provider', 'custom', vscode.ConfigurationTarget.Global);
+      await vscode.workspace.getConfiguration('codescout').update('baseUrl', probe.baseUrl, vscode.ConfigurationTarget.Global);
+      await context.secrets.store(SECRET_MODEL, probe.models[0] || defaultModel('custom'));
+      await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+      await context.globalState.update('codescout.onboardingDismissed', true);
+      panel.setOnboardingHidden(true);
+      panel.setKey(true, 'custom', probe.models[0] || defaultModel('custom'));
+      void vscode.window.showInformationMessage(t('wizard.localSuccess', lang, { n: probe.models.length }));
+    }),
+    vscode.commands.registerCommand('codescout.onboardSkip', async () => {
+      await context.globalState.update('codescout.onboardingDismissed', true);
+      panel.setOnboardingHidden(true);
+      void vscode.commands.executeCommand('codescout.openSettingsPage');
+    }),
+    // Батч 13, п.3: тест подключения в центре настроек.
+    vscode.commands.registerCommand('codescout.testConnection', async () => {
+      const result = await runConnectionTest(context);
+      void (result.ok ? vscode.window.showInformationMessage(result.message) : vscode.window.showErrorMessage(result.message));
+    }),
   );
   void (async () => {
     const workspaceRoot = getWorkspaceRoot();
