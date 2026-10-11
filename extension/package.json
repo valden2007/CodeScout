@@ -35,7 +35,7 @@
         {
           "id": "codescout-explorer",
           "title": "CodeScout",
-          "icon": "media/icon.svg"
+          "icon": "./media/icon.png"
         }
       ]
     },

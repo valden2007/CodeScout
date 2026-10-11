@@ -15,8 +15,7 @@ or run it fully offline against a local model.
 
 > Fast, explainable, and close to the code. No CI needed — it runs in your editor.
 
-![CodeScout panel](media/icon.svg)
-
+<img src="media/icon.png" alt="CodeScout" width="128">
 ## Features
 
 - **Three review modes** — review uncommitted changes, review the last commit, or run a **full project audit** with checkpoints and resume.
