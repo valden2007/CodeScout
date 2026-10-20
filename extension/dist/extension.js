@@ -46,7 +46,7 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
 var import_node_fs5 = require("node:fs");
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 var import_node_path4 = require("node:path");
 
 // ../src/providers.ts
@@ -69,14 +69,45 @@ function assertHttpBaseUrl(url) {
   }
   return url;
 }
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch) {
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3) {
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
   const response = await fetcher(`${safeBase}/models`, {
     method: "GET",
-    headers: { Authorization: `Bearer ${apiKey}` }
+    headers: { Authorization: `Bearer ${apiKey}` },
+    // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+    signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
   return parseLiveModels(await response.json());
+}
+function isLocalBaseUrl(url) {
+  const value = url?.trim() || "";
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(value);
+}
+function parseOllamaTags(payload) {
+  if (!payload || typeof payload !== "object") return [];
+  const models = payload.models;
+  if (!Array.isArray(models)) return [];
+  return models.map((item) => item && typeof item === "object" && typeof item.name === "string" ? item.name : "").filter((name) => Boolean(name));
+}
+async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
+  const base = rawUrl.trim().replace(/\/+$/, "");
+  if (!base) return { ok: false, status: "error", baseUrl: "", models: [], message: "URL \u043D\u0435 \u0437\u0430\u0434\u0430\u043D" };
+  const openAiUrl = base.endsWith("/v1") ? base : `${base}/v1`;
+  const ollamaTagsUrl = base.endsWith("/v1") ? `${base.slice(0, -3)}/api/tags` : `${base}/api/tags`;
+  const probe = async (url) => fetcher(url, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
+  try {
+    const direct = await probe(`${openAiUrl}/models`);
+    if (direct.ok) return { ok: true, status: "ok", baseUrl: openAiUrl, models: parseLiveModels(await direct.json()), message: "" };
+    const tags = await probe(`${base}/api/tags`);
+    if (tags.ok) {
+      const models = parseOllamaTags(await tags.json());
+      return { ok: true, status: "ok", baseUrl: openAiUrl, models, message: "" };
+    }
+    return { ok: false, status: "error", baseUrl: openAiUrl, models: [], message: `HTTP ${direct.status}/${tags.status}` };
+  } catch (error) {
+    return { ok: false, status: "noAnswer", baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
+  }
 }
 var PROVIDERS = {
   gemini: {
@@ -208,10 +239,45 @@ function notFoundMessage(model) {
   return `\u26A0\uFE0F 404: \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442 \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C ${model} \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B. \u041F\u0440\u043E\u0432\u0435\u0440\u044C provider/model.`;
 }
 function finalRateLimitMessage(model, waitSeconds) {
-  const minutes = Math.max(1, Math.ceil((waitSeconds ?? 60) / 60));
+  const wait = waitSeconds ?? 60;
   return `\u26A0\uFE0F \u041F\u0440\u0435\u0432\u044B\u0448\u0435\u043D \u043B\u0438\u043C\u0438\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 ${model}.
-\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 ${minutes} \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C.
-\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u043B\u0438\u043C\u0438\u0442: tokens per day`;
+\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 ${wait} \u0441\u0435\u043A \u0438\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C.`;
+}
+var ProviderHttpError = class extends Error {
+  status;
+  details;
+  constructor(status, message, details = "") {
+    super(message);
+    this.name = "ProviderHttpError";
+    this.status = status;
+    this.details = details;
+  }
+};
+var BadResponseError = class extends Error {
+  details;
+  constructor(message, details = "") {
+    super(message);
+    this.name = "BadResponseError";
+    this.details = details;
+  }
+};
+function isTimeoutError(error) {
+  const name = error instanceof Error ? error.name : "";
+  const msg = error instanceof Error ? error.message : String(error);
+  return name === "TimeoutError" || /ETIMEDOUT|socket hang up|timed?\s*out|EAI_AGAIN/i.test(msg);
+}
+function classifyError(error) {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (error instanceof RateLimitError) return { kind: "rateLimit", title: raw, details: error.details || raw, waitSeconds: error.waitSeconds };
+  if (error instanceof ProviderHttpError) {
+    if (error.status === 401 || error.status === 403) return { kind: "auth", title: raw, details: error.details };
+    if (error.status === 404) return { kind: "notFound", title: raw, details: error.details };
+    if (error.status === 429) return { kind: "rateLimit", title: raw, details: error.details };
+    return { kind: "other", title: raw, details: error.details };
+  }
+  if (error instanceof BadResponseError) return { kind: "badResponse", title: raw, details: error.details };
+  if (isTimeoutError(error)) return { kind: "timeout", title: raw, details: raw };
+  return { kind: "other", title: raw, details: void 0 };
 }
 var OpenAICompatibleProvider = class {
   constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1", signal) {
@@ -252,11 +318,12 @@ var OpenAICompatibleProvider = class {
             const waitSeconds = parseRetryAfterSeconds(response, details);
             throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
-          if (response.status === 404) throw new Error(notFoundMessage(this.model));
+          if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
+          if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
-        if (!content) throw new Error("LLM returned an empty response");
+        if (!content) throw new BadResponseError("\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442: \u043F\u0443\u0441\u0442\u043E\u0439 \u043E\u0442\u0432\u0435\u0442", text.trim().slice(0, 300));
         return content;
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -336,7 +403,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. For each finding, ALSO provide proof of finding and a confidence class: "proof":{"condition":"When X happens (e.g., null input, race condition)","trace":["Line 10: variable assigned","Line 25: used without check"]} \u2014 the concrete trigger condition and the execution path leading to the defect; and "confidenceLevel":"verified" ONLY when the trace is a concrete code path you can point at in the patch, otherwise "confidenceLevel":"suggested" (pattern/heuristic guess). When you cannot prove anything, keep "confidenceLevel":"suggested" and give an empty proof: {"condition":"","trace":[]}. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0,"confidenceLevel":"verified|suggested","proof":{"condition":"string","trace":["string"]}}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
@@ -409,6 +476,26 @@ Return JSON only. Keep descriptions concise and explain why the issue matters. P
 // ../src/response-parser.ts
 var categories = /* @__PURE__ */ new Set(["bug", "security", "performance", "maintainability", "docs", "style"]);
 var severities = /* @__PURE__ */ new Set(["low", "medium", "high", "critical"]);
+var PROOF_TRACE_MAX = 12;
+var PROOF_TRACE_ITEM_MAX = 300;
+var PROOF_CONDITION_MAX = 500;
+function parseConfidenceLevel(value) {
+  const direct = value.confidenceLevel;
+  if (direct === "verified" || direct === "suggested") return direct;
+  if (value.confidence === "verified") return "verified";
+  return "suggested";
+}
+function parseProof(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const value = raw;
+  const proof = {};
+  if (typeof value.condition === "string" && value.condition.trim()) proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
+  if (Array.isArray(value.trace)) {
+    const trace = value.trace.filter((step) => typeof step === "string" && step.trim().length > 0).map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX)).slice(0, PROOF_TRACE_MAX);
+    if (trace.length) proof.trace = trace;
+  }
+  return proof;
+}
 function findBalancedJson(text) {
   const start = text.search(/[[{]/);
   if (start < 0) return void 0;
@@ -468,7 +555,9 @@ function parseReviewResponse(raw, filename) {
     const code = typeof value.code === "string" ? value.code.trim() : void 0;
     const suggestion = typeof value.suggestion === "string" ? value.suggestion.trim() : void 0;
     const severity = rawSeverity === "critical" && confidence < 0.9 ? "medium" : rawSeverity;
-    return [{ file: filename, line, category, severity, description, code, suggestion, confidence }];
+    const confidenceLevel = parseConfidenceLevel(value);
+    const proof = parseProof(value.proof);
+    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
   });
   return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1 };
 }
@@ -615,7 +704,7 @@ function readGitDiff(repoPath, options = {}) {
 // src/panel.ts
 var vscode = __toESM(require("vscode"));
 var import_node_fs3 = require("node:fs");
-var import_node_crypto = require("node:crypto");
+var import_node_crypto2 = require("node:crypto");
 var import_node_path2 = require("node:path");
 
 // src/uiPrefs.ts
@@ -817,6 +906,39 @@ ${CS_DENSITY}
 ${CS_FONTSIZE}`;
 }
 
+// src/findingsStore.ts
+var import_node_crypto = require("node:crypto");
+var SUPPRESSED_KEY = "codescout.suppressedFindings";
+var LINE_BUCKET = 7;
+function computeFingerprint(issue) {
+  const line = Number.isFinite(issue.line) && issue.line >= 1 ? Math.floor(issue.line) : 1;
+  const bucket = Math.floor((line - 1) / LINE_BUCKET);
+  const file = String(issue.file ?? "").trim().replaceAll("\\", "/").toLowerCase();
+  const raw = `${file}\0${issue.severity}\0${issue.category}\0${bucket}`;
+  return (0, import_node_crypto.createHash)("sha1").update(raw, "utf8").digest("hex").slice(0, 16);
+}
+function readSuppressed(workspaceState) {
+  const value = workspaceState.get(SUPPRESSED_KEY);
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim().length > 0) : [];
+}
+function suppressFinding(workspaceState, fingerprint) {
+  const fp = String(fingerprint ?? "").trim();
+  if (!fp) return;
+  const list = readSuppressed(workspaceState);
+  if (list.includes(fp)) return;
+  void workspaceState.update(SUPPRESSED_KEY, [...list, fp]);
+}
+function filterSuppressed(findings, workspaceState) {
+  const suppressed = new Set(readSuppressed(workspaceState));
+  const visible = [];
+  for (const issue of findings) {
+    const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
+    if (suppressed.has(fingerprint)) continue;
+    visible.push(issue.fingerprint === fingerprint ? issue : { ...issue, fingerprint });
+  }
+  return visible;
+}
+
 // ../src/i18n/ru.json
 var ru_default = {
   "brand.name": "CodeScout",
@@ -896,6 +1018,13 @@ var ru_default = {
   "stats.seconds": "{n}s",
   "fixed.title": "\u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 ({n})",
   "issue.new": "\u043D\u043E\u0432\u0430\u044F",
+  "issue.confidenceVerified": "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u043E \u043A\u043E\u0434\u043E\u043C",
+  "issue.confidenceSuggested": "\u041F\u0440\u0435\u0434\u043F\u043E\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "issue.falsePositive": "\u041B\u043E\u0436\u043D\u043E\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u0435",
+  "issue.falsePositiveTip": "\u0421\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u2014 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435",
+  "issue.showProof": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
+  "issue.proofCondition": "\u0423\u0441\u043B\u043E\u0432\u0438\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F",
+  "issue.proofTrace": "\u041F\u0443\u0442\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F",
   "empty.onboardTitle": "\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout",
   "empty.step1Prefix": "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 ",
   "empty.step1Link": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio",
@@ -909,6 +1038,9 @@ var ru_default = {
   "empty.cleanTitle": "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: {n} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E",
   "empty.cleanHint": "\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:",
   "empty.testSample": "\u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435",
+  "empty.scanGit": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 (Git Diff)",
+  "empty.quickHint": "\u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0437\u0430 ~5 \u0441\u0435\u043A\u0443\u043D\u0434",
+  "empty.fullHint": "\u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043D\u044F\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043C\u0438\u043D\u0443\u0442",
   testBadge: "\u0422\u0415\u0421\u0422",
   "sec.key": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
   "sec.lang": "\u042F\u0437\u044B\u043A",
@@ -1098,6 +1230,29 @@ var ru_default = {
   "center.savedAll": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 {p}, maxLines {ml}, maxFiles {f}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D {ar} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: {n} \u0434\u043E\u043A(\u043E\u0432), scope {sc} \xB7 \u044F\u0437\u044B\u043A {L} \xB7 \u0432\u0438\u0434: {ui}",
   "center.rulesOpened": "\u2705 \u041E\u0442\u043A\u0440\u044B\u0442 .codescout/rules.md \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u043F\u043E\u0434\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0440\u0435\u0432\u044C\u044E",
   "center.error": "\u274C \u041E\u0448\u0438\u0431\u043A\u0430: {msg}",
+  "diag.title": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
+  "err.auth": "\u041A\u043B\u044E\u0447 \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D \u0438\u043B\u0438 \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430",
+  "err.notFound": "\u041C\u043E\u0434\u0435\u043B\u044C \u0438\u043B\u0438 \u0430\u0434\u0440\u0435\u0441 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B",
+  "err.rateLimit": "\u041B\u0438\u043C\u0438\u0442 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430, \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 {n} \u0441\u0435\u043A",
+  "err.timeout": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0432\u043E\u0432\u0440\u0435\u043C\u044F",
+  "err.badResponse": "\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442",
+  "wizard.title": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 CodeScout",
+  "wizard.subtitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0440\u0435\u0436\u0438\u043C \u0440\u0430\u0431\u043E\u0442\u044B",
+  "wizard.cloud": "\u2601\uFE0F \u041E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
+  "wizard.cloudProvider": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
+  "wizard.keyPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
+  "wizard.local": "\u{1F4BB} \u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
+  "wizard.localPick": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0435\u0440",
+  "wizard.urlPrompt": "\u0410\u0434\u0440\u0435\u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (\u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0434\u043B\u044F Ollama: http://localhost:11434, \u0434\u043B\u044F LM Studio: http://localhost:1234)",
+  "wizard.localSuccess": "\u2705 \u0421\u0435\u0440\u0432\u0435\u0440 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439. \u041A\u043B\u044E\u0447 \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u043D\u0435 \u043D\u0443\u0436\u0435\u043D.",
+  "wizard.localFail": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0430\u0434\u0440\u0435\u0441 \u0438 \u0437\u0430\u043F\u0443\u0441\u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0430.",
+  "wizard.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "wizard.skip": "\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u0442\u044C",
+  "center.connecting": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443...",
+  "center.connected": "\u2705 \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439",
+  "center.noResponse": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B",
+  "center.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "key.localHint": "\u041E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u0432 (Ollama/LM Studio)",
   "trust.prompt": "Base URL \u043F\u0440\u0438\u0448\u0451\u043B \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438: {url}. \u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443 \u043A\u043E\u0434\u0430 \u0438 API-\u043A\u043B\u044E\u0447\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0430\u0434\u0440\u0435\u0441?",
   "trust.accept": "\u0414\u043E\u0432\u0435\u0440\u044F\u0442\u044C",
   "trust.reject": "\u041E\u0442\u043C\u0435\u043D\u0430",
@@ -1184,6 +1339,13 @@ var en_default = {
   "stats.seconds": "{n}s",
   "fixed.title": "Fixed since last scan ({n})",
   "issue.new": "new",
+  "issue.confidenceVerified": "Verified by code",
+  "issue.confidenceSuggested": "Model suggestion",
+  "issue.falsePositive": "False positive",
+  "issue.falsePositiveTip": "Hide finding \u2014 do not show it again in this workspace",
+  "issue.showProof": "Show proof",
+  "issue.proofCondition": "Trigger condition",
+  "issue.proofTrace": "Execution trace",
   "empty.onboardTitle": "Hi! This is CodeScout",
   "empty.step1Prefix": "Get a provider API key at ",
   "empty.step1Link": "Open Google AI Studio",
@@ -1197,6 +1359,9 @@ var en_default = {
   "empty.cleanTitle": "Checked files: {n} \u2014 no problems found",
   "empty.cleanHint": "Not sure? See how CodeScout catches bugs:",
   "empty.testSample": "Test on sample",
+  "empty.scanGit": "Check last commit (Git Diff)",
+  "empty.quickHint": "quick result in ~5 seconds",
+  "empty.fullHint": "may take several minutes",
   testBadge: "TEST",
   "sec.key": "Key and model",
   "sec.lang": "Language",
@@ -1386,6 +1551,29 @@ var en_default = {
   "center.savedAll": "\u2705 Saved \xB7 audit: passes {p}, maxLines {ml}, maxFiles {f}, auto-catch-up {ar} \xB7 project: {n} docs, scope {sc} \xB7 language {L} \xB7 look: {ui}",
   "center.rulesOpened": "\u2705 Opened .codescout/rules.md \u2014 edits apply from the next review",
   "center.error": "\u274C Error: {msg}",
+  "diag.title": "Diagnostics",
+  "err.auth": "Key rejected or access denied",
+  "err.notFound": "Model or endpoint not found",
+  "err.rateLimit": "Provider rate limit, retry in {n} seconds",
+  "err.timeout": "Server did not respond in time",
+  "err.badResponse": "Model returned invalid format",
+  "wizard.title": "CodeScout Setup",
+  "wizard.subtitle": "Choose your working mode",
+  "wizard.cloud": "\u2601\uFE0F Cloud mode",
+  "wizard.cloudProvider": "Choose provider",
+  "wizard.keyPrompt": "Paste provider API key",
+  "wizard.local": "\u{1F4BB} Local mode",
+  "wizard.localPick": "Choose local server",
+  "wizard.urlPrompt": "Server address (Ollama default: http://localhost:11434, LM Studio default: http://localhost:1234)",
+  "wizard.localSuccess": "\u2705 Server available: {n} models. No key needed for local server.",
+  "wizard.localFail": "\u274C Server did not respond. Check address and server status.",
+  "wizard.retry": "Retry",
+  "wizard.skip": "Skip",
+  "center.connecting": "Connecting to server...",
+  "center.connected": "\u2705 Connection works: {n} models",
+  "center.noResponse": "\u274C Server did not respond",
+  "center.retry": "Retry",
+  "key.localHint": "Leave empty for local servers (Ollama/LM Studio)",
   "trust.prompt": "Base URL comes from workspace settings: {url}. Allow sending code and API key to this address?",
   "trust.accept": "Trust",
   "trust.reject": "Cancel",
@@ -1441,16 +1629,34 @@ function severityClass(severity) {
   if (severity === "critical" || severity === "high") return "critical";
   return severity;
 }
+function confidenceBadge(issue, lang) {
+  if (issue.confidenceLevel === "verified") return `<span class="badge verified">${icon("pass")} ${escapeHtml(t("issue.confidenceVerified", lang))}</span>`;
+  return `<span class="badge suggested">${icon("lightbulb")} ${escapeHtml(t("issue.confidenceSuggested", lang))}</span>`;
+}
+function proofBlock(issue, lang) {
+  const condition = issue.proof?.condition?.trim() ?? "";
+  const trace = (issue.proof?.trace ?? []).filter((step) => typeof step === "string" && step.trim()).map((step) => step.trim());
+  if (!condition && trace.length === 0) return "";
+  const conditionHtml = condition ? `<p class="proof-cond"><strong>${escapeHtml(t("issue.proofCondition", lang))}:</strong> ${escapeHtml(condition)}</p>` : "";
+  const traceHtml = trace.length ? `<div class="proof-trace-label"><strong>${escapeHtml(t("issue.proofTrace", lang))}</strong></div><ol class="proof-trace">${trace.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>` : "";
+  return `<details class="proof"><summary>${icon("search")} <span>${escapeHtml(t("issue.showProof", lang))}</span></summary><div class="proof-body">${conditionHtml}${traceHtml}</div></details>`;
+}
+function suppressButton(issue, lang) {
+  const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
+  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t("issue.falsePositiveTip", lang))}">${icon("thumbsdown")}<span>${escapeHtml(t("issue.falsePositive", lang))}</span></button></div>`;
+}
 function issueCard(issue, isNew = false, showConfidence = true, lang = "ru") {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : "";
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon("arrow-right")} <span>${escapeHtml(issue.suggestion)}</span></div>` : "";
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon("add")} ${t("issue.new", lang)}</span>` : ""}<span class="category">${escapeHtml(issue.category)}</span>${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ""}</div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon("add")} ${t("issue.new", lang)}</span>` : ""}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang)}${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ""}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
   ${suggestion}
+  ${proofBlock(issue, lang)}
+  ${suppressButton(issue, lang)}
 </article>`;
 }
 function autoBadgeText(lang, maxAttempts, maxMinutes) {
@@ -1559,6 +1765,20 @@ h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px solid var(--cs-card-border); border-radius: 3px; background: var(--cs-code-bg); color: var(--cs-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); white-space: pre-wrap; word-break: break-word; }
 .suggestion { color: var(--cs-pass); display: flex; align-items: flex-start; gap: 6px; }
+.badge.verified { color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 15%, transparent); }
+.badge.suggested { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 15%, transparent); }
+.proof { margin-top: var(--cs-space-2); }
+.proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.proof-cond { margin: 0 0 5px; overflow-wrap: anywhere; }
+.proof-trace { margin: 0; padding-left: 18px; }
+.proof-trace li { margin: 2px 0; overflow-wrap: anywhere; }
+.issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
+.fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
+.fp-button:hover { color: var(--cs-error); }
+.empty-actions { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-top: var(--cs-space-4); }
+.empty-actions button { flex: 0 0 auto; width: auto; min-width: 240px; max-width: 340px; justify-content: center; text-align: center; }
+.empty-actions small { display: block; margin: 0 0 var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
 .empty { padding: 48px 10px; color: var(--cs-desc); text-align: center; }
 .empty-icon { margin-bottom: var(--cs-space-2); color: var(--cs-pass); font-size: 24px; display: flex; justify-content: center; }
 .empty small { display: block; margin-top: 5px; }
@@ -1589,7 +1809,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "") {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -1605,13 +1825,17 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const customBanner = customFocus ? `<div class="diff-summary custom">${icon("target")} ${T("customBanner.label")} ${escapeHtml(customFocus.slice(0, 160))}</div>` : "";
   const fixedBlock = findingsDiff?.fixed?.length ? `<details class="fixed-block"><summary>${icon("check")} ${T("fixed.title", { n: findingsDiff.fixed.length })}</summary><ul>${findingsDiff.fixed.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
   const notRecheckedBlock = findingsDiff?.notRechecked?.length ? `<details class="fixed-block"><summary>${icon("history")} ${T("notRechecked.title", { n: findingsDiff.notRechecked.length })}</summary><ul>${findingsDiff.notRechecked.map((entry) => `<li><strong>${escapeHtml(entry.file)}:${entry.line}</strong> \xB7 ${escapeHtml(entry.category)} \u2014 ${escapeHtml(entry.description.slice(0, 140))}</li>`).join("")}</ul></details>` : "";
-  const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon("account")}</div><h1>${T("empty.onboardTitle")}</h1><div class="onboard-sub">${T("onboard.title")}</div><ol class="onboard-steps">
-  <li class="onboard-step"><span class="onboard-num">1</span><div class="onboard-body"><p><strong>${T("empty.stepLabel1")}</strong> ${T("onboard.step1")} ${T("empty.step1Prefix")}<a class="link-button" href="https://aistudio.google.com/apikey" data-command="openKeyLink">${T("empty.step1Link")}</a></p><button class="primary-action cs-btn" type="button" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("onboard.step1Btn")}</span></button></div></li>
-  <li class="onboard-step"><span class="onboard-num">2</span><div class="onboard-body"><p><strong>${T("empty.stepLabel2")}</strong> ${T("onboard.step2")}</p><button class="cs-btn secondary" type="button" data-command="chooseModel">${icon("rocket")}<span>${T("onboard.step2Btn")}</span></button></div></li>
-  <li class="onboard-step"><span class="onboard-num">3</span><div class="onboard-body"><p><strong>${T("empty.stepLabel3")}</strong> ${T("onboard.step3")}</p><button class="cs-btn secondary" type="button" data-command="scanFull">${icon("telescope")}<span>${T("onboard.step3Btn")}</span></button></div></li>
-</ol><button class="link-button" type="button" data-command="dismissOnboarding">${T("onboard.dontShow")}</button></div>`;
+  const onboardCard = `<div class="onboarding"><div class="empty-icon">${icon("account")}</div><h1>${T("empty.onboardTitle")}</h1><div class="onboard-sub">${T("wizard.subtitle")}</div><div class="onboard-steps">
+  <button class="primary-action cs-btn" type="button" data-command="onboardCloud">${icon("cloud")} <span>${T("wizard.cloud")}</span></button>
+  <button class="cs-btn secondary" type="button" data-command="onboardLocal">${icon("desktop")} <span>${T("wizard.local")}</span></button>
+  <button class="link-button" type="button" data-command="onboardSkip">${T("wizard.skip")}</button>
+</div></div>`;
   const firstAuditCard = `<div class="onboarding"><div class="empty-icon">${icon("telescope")}</div><h1>${T("onboard.firstTitle")}</h1><p>${T("onboard.firstBody")}</p><button class="primary-action cs-btn" type="button" data-command="scanFull">${icon("play")}<span>${T("onboard.step3Btn")}</span></button><small class="onboard-auto">${icon("robot")} ${T("onboard.autoHint")}</small></div>`;
-  const body = sections || (emptyState && ux.onboarding ? onboardCard : emptyState && ux.firstAudit ? firstAuditCard : emptyState ? `<div class="empty"><div class="empty-icon">${icon("search")}</div><strong>${T("empty.readyTitle")}</strong><small>${T("empty.readyHint")}</small></div>` : testMode ? `<div class="empty"><div class="empty-icon">${icon("beaker")}</div><strong>${T("empty.testTitle")}</strong><small>${T("empty.testHint")}</small></div>` : `<div class="empty"><div class="empty-icon">${icon("pass")}</div><strong>${T("empty.cleanTitle", { n: stats.files })}</strong><small>${T("empty.cleanHint")}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon("beaker")}<span>${T("empty.testSample")}</span></button></div>`);
+  const emptyActions = `<div class="empty-actions">
+  <button class="empty-action cs-btn" type="button" data-command="scanLastCommit">${icon("diff")}<span>${T("empty.scanGit")}</span></button><small>${T("empty.quickHint")}</small>
+  <button class="empty-action cs-btn" type="button" data-command="scanFull">${icon("telescope")}<span>${T("actions.scanFull")}</span></button><small>${T("empty.fullHint")}</small>
+</div>`;
+  const body = sections || (emptyState && ux.onboarding ? onboardCard : emptyState && ux.firstAudit ? firstAuditCard : emptyState ? `<div class="empty"><div class="empty-icon">${icon("search")}</div><strong>${T("empty.readyTitle")}</strong><small>${T("empty.readyHint")}</small>${emptyActions}</div>` : testMode ? `<div class="empty"><div class="empty-icon">${icon("beaker")}</div><strong>${T("empty.testTitle")}</strong><small>${T("empty.testHint")}</small></div>` : `<div class="empty"><div class="empty-icon">${icon("pass")}</div><strong>${T("empty.cleanTitle", { n: stats.files })}</strong><small>${T("empty.cleanHint")}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon("beaker")}<span>${T("empty.testSample")}</span></button>${emptyActions}</div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   const resumeView = !isScanning && auditResume ? auditResume : void 0;
   const showResume = Boolean(resumeView);
@@ -1630,7 +1854,7 @@ ${headHtml(assets, nonce)}
     <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
-    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}</div>` : ""}</div>
+    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
     ${resumeView ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
@@ -1867,7 +2091,7 @@ ${headHtml(assets, nonce)}
         return;
       }
       event.preventDefault();
-      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor });
+      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor, fingerprint: element.dataset.fingerprint });
     });
     document.addEventListener('change', (event) => {
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;
@@ -1964,9 +2188,30 @@ var CodeScoutPanel = class {
   firstAuditDone;
   progressInfo;
   auditSummary;
+  diagnosticDetails;
   auditDurations = [];
+  workspaceState;
   onWelcomeStart;
   onWelcomeDismiss;
+  // Батч 14: панель получает workspaceState из activate — подавление
+  // находок живёт в этом модуле, extension.ts остаётся чистым.
+  attachWorkspaceState(state) {
+    this.workspaceState = state;
+  }
+  suppressLocal(fingerprint) {
+    if (this.workspaceState) suppressFinding(this.workspaceState, fingerprint);
+    const fingerprintOf = (issue) => issue.fingerprint?.trim() || computeFingerprint(issue);
+    const visible = this.issues.filter((issue) => fingerprintOf(issue) !== fingerprint);
+    if (visible.length === this.issues.length) return;
+    const removed = this.issues.filter((issue) => fingerprintOf(issue) === fingerprint);
+    this.issues = visible;
+    for (const issue of removed) {
+      if (issue.severity === "critical" || issue.severity === "high") this.stats.critical = Math.max(0, this.stats.critical - 1);
+      else if (issue.severity === "medium") this.stats.medium = Math.max(0, this.stats.medium - 1);
+      else this.stats.low = Math.max(0, this.stats.low - 1);
+    }
+    this.render();
+  }
   messageSubscription;
   configSubscription;
   refreshAutoResumeSettings() {
@@ -2047,12 +2292,21 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.chooseModel");
       } else if (message.command === "rerunWithModel") {
         void vscode.commands.executeCommand("codescout.rerunWithModel");
+      } else if (message.command === "onboardCloud") {
+        void vscode.commands.executeCommand("codescout.onboardCloud");
+      } else if (message.command === "onboardLocal") {
+        void vscode.commands.executeCommand("codescout.onboardLocal");
+      } else if (message.command === "onboardSkip") {
+        void vscode.commands.executeCommand("codescout.onboardSkip");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
       } else if (message.command === "testSample") {
         void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "cancelScan") {
         void vscode.commands.executeCommand("codescout.cancelScan");
+      } else if (message.command === "suppressFinding") {
+        const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
+        if (fingerprint) this.suppressLocal(fingerprint);
       } else if (message.command === "pickScope") {
         void this.handlePickScope();
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
@@ -2278,13 +2532,14 @@ var CodeScoutPanel = class {
     this.statusMessage = t("status.cancelled", this.language);
     this.render();
   }
-  setError(message) {
+  setError(message, details) {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
     this.progressMessage = "";
     this.statusKind = "error";
     this.statusMessage = message;
+    this.diagnosticDetails = details;
     this.render();
   }
   update(issues, stats, testMode = false, testMessage = "", testWarning = false, findingsDiff, customFocus = "") {
@@ -2309,14 +2564,14 @@ var CodeScoutPanel = class {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicon.css")).toString(),
       cspSource: webview.cspSource
     };
-    const nonce = (0, import_node_crypto.randomBytes)(16).toString("hex");
+    const nonce = (0, import_node_crypto2.randomBytes)(16).toString("hex");
     const ux = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 };
 
@@ -3515,7 +3770,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <label for="provider">${T("center.provider")}</label>
   <select id="provider">${providerOptions}</select>
   <label for="apiKey">${T("center.apiKeyLabel")}</label>
-  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? T("center.keyKeep") : T("center.keyPaste")}">
+  <input id="apiKey" type="password" autocomplete="off" placeholder="${state.keyConfigured ? T("center.keyKeep") : state.provider === "custom" && state.baseUrl && state.baseUrl.startsWith("http://localhost") ? T("center.keyLocalHint") : T("center.keyPaste")}">
   <label class="checkbox"><input id="revealKey" type="checkbox"> ${T("center.reveal")}</label>
   <div id="baseUrlRow" class="${state.provider === "custom" ? "" : "hidden"}">
     <label for="baseUrl">${T("center.baseUrl")}</label>
@@ -3525,6 +3780,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <div class="current-key">${T("center.now")} ${state.keyConfigured ? `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(state.model)}` : T("center.nowNone")}</div>
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon2("cloud-download")}<span>${T("center.liveModels")}</span></button>
+    <button id="testConnection" type="button" class="secondary">${icon2("sync")}<span>${T("center.retry")}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon2("trash")}<span>${T("center.forgetKey")}</span></button>
   </div>
   <p class="hint">${T("center.prefixHint")}</p>
@@ -3665,7 +3921,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </div>
 <script${nonceAttr}>
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -3855,6 +4111,13 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+const testConnBtn = document.getElementById('testConnection');
+testConnBtn.addEventListener('click', () => {
+  testConnBtn.disabled = true;
+  const label = testConnBtn.querySelector('span:last-child');
+  if (label) label.textContent = L('center.connecting');
+  vscode.postMessage({ command: 'testConnection' });
+});
 document.getElementById('clearKey').addEventListener('click', () => vscode.postMessage({ command: 'clearApiKey' }));
 document.getElementById('openRules').addEventListener('click', () => vscode.postMessage({ command: 'openRules' }));
 document.getElementById('refreshContext').addEventListener('click', () => vscode.postMessage({ command: 'refreshContext' }));
@@ -3891,6 +4154,20 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  if (data.type === 'connResult') {
+    const btn = document.getElementById('testConnection');
+    if (btn) {
+      btn.disabled = false;
+      const label = btn.querySelector('span:last-child');
+      if (label) label.textContent = L('center.retry');
+    }
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = data.message || '';
+      status.classList.toggle('error', data.ok === false);
+    }
+    return;
+  }
   if (data.type !== 'scopePickResult') return;
   const merged = [];
   for (const g of [...splitGlobs(auditScopeInput.value), ...(data.globs || [])]) { if (g && !merged.includes(g)) merged.push(g); }
@@ -3943,7 +4220,7 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext"]);
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -3990,9 +4267,9 @@ function preferredLiveModel(models, fallback) {
   return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
 }
 async function fetchModels(selection) {
-  if (!selection.key) return [];
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
-  return fetchLiveModels(baseUrl, selection.key);
+  if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
+  return fetchLiveModels(baseUrl, selection.key ?? "");
 }
 async function chooseLiveModel(selection, placeHolder) {
   let models = [];
@@ -4117,14 +4394,33 @@ function rateLimitPausesFromSetting(value) {
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
+function friendlyError(error) {
+  const lang = currentReportLanguage();
+  const raw = error instanceof Error ? error.message : String(error);
+  const c = classifyError(error);
+  switch (c.kind) {
+    case "auth":
+      return { message: t("err.auth", lang), details: c.details || raw };
+    case "notFound":
+      return { message: t("err.notFound", lang), details: c.details || raw };
+    case "rateLimit":
+      return { message: t("err.rateLimit", lang, { n: c.waitSeconds ?? 60 }), details: c.details || raw };
+    case "timeout":
+      return { message: t("err.timeout", lang), details: raw };
+    case "badResponse":
+      return { message: t("err.badResponse", lang), details: c.details || raw };
+    default:
+      return { message: raw, details: void 0 };
+  }
+}
 async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
-  if (!selection.key) {
+  if (!selection.key && !isLocalBaseUrl(selection.baseUrl)) {
     throw new Error(`${t("panel.errNoKey", promptLang, { p: selection.provider })}${t("panel.keyGet", promptLang, { x: keyUrl(selection.provider) ?? t("panel.keyGetAlt", promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
-  const provider = createProvider(selection.provider, selection.key, selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
+  const provider = createProvider(selection.provider, selection.key ?? "local-no-key", selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal);
   const issues = [];
   let skippedFiles = 0;
   const queue = files.map((_file, index) => index);
@@ -4267,9 +4563,10 @@ async function runSampleReview(context, output, panel) {
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Self-test error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -4468,9 +4765,10 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       clearAuditProgress(workspaceRoot);
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
-    panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
+    const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
+    panel.update(visibleIssues, buildStats(visibleIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
     panel.setFirstAuditDone(true);
-    panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
+    panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
     const resumeView = result.skippedFiles > 0 ? progressView(state) : void 0;
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode2.commands.executeCommand("codescout.panel.focus");
@@ -4488,9 +4786,10 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
     return { kind: "interrupted", view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -4562,7 +4861,8 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
     }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), void 0, customAdaptive);
-    panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
+    const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
+    panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     void vscode2.window.showInformationMessage(t("notify.customDone", lang, { n: result.issues.length }));
@@ -4573,9 +4873,10 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -4625,8 +4926,9 @@ async function runReview(context, lastCommit, output, panel, signal) {
       panel.setProgress(index, total, filename, t("progress.file.check", currentReportLanguage()), elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
     }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
-    const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
-    panel.update(result.issues, stats);
+    const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
+    const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
+    panel.update(visibleIssues, stats);
     await vscode2.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043A\u043E\u043C\u043C\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine("No issues found.");
@@ -4643,9 +4945,10 @@ async function runReview(context, lastCommit, output, panel, signal) {
     }
     const message = error instanceof Error ? error.message : String(error);
     lastScanError = message;
-    panel.setError(message);
+    const friendly = friendlyError(error);
+    panel.setError(friendly.message, friendly.details);
     output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -4701,6 +5004,20 @@ async function migrateLanguageSetting(context) {
   if (legacyValue && !hasLang) await config.update("language", legacyValue === "en" ? "en" : "ru", vscode2.ConfigurationTarget.Global);
   if (legacyValue) await config.update("reportLanguage", void 0, vscode2.ConfigurationTarget.Global);
   await context.secrets.store("codescout.languageMigrated", "true");
+}
+async function runConnectionTest(context) {
+  const lang = currentReportLanguage();
+  const selection = await resolveExtensionSelection(context);
+  if (!selection.baseUrl && selection.provider !== "custom") {
+    return { ok: true, message: t("center.connected", lang, { n: 0 }) };
+  }
+  const testSel = { provider: selection.provider, model: selection.model, key: selection.key ?? "", baseUrl: selection.baseUrl, userChosenModel: false };
+  try {
+    const models = await fetchModels(testSel);
+    return { ok: true, message: t("center.connected", lang, { n: models.length }) };
+  } catch (error) {
+    return { ok: false, message: friendlyError(error).message };
+  }
 }
 async function fileIsDirectory(uri) {
   try {
@@ -4796,6 +5113,7 @@ function activate(context) {
     realClear();
   };
   const panel = new CodeScoutPanel(context.extensionUri);
+  panel.attachWorkspaceState(context.workspaceState);
   panel.setWelcomeChoiceHandler(() => {
     void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
   });
@@ -4874,7 +5192,7 @@ function activate(context) {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode2.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto2.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto3.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
         }
       };
       rerenderSettings = () => {
@@ -4950,8 +5268,12 @@ function activate(context) {
               await vscode2.commands.executeCommand("codescout.clearApiKey");
               await render(t("center.keyCleared", currentReportLanguage()));
             } else if (message.command === "chooseModel") {
+              await render(t("center.connecting", currentReportLanguage()), "retry");
               await vscode2.commands.executeCommand("codescout.chooseModel");
               await render(t("center.modelRefresh", currentReportLanguage()));
+            } else if (message.command === "testConnection") {
+              const result = await runConnectionTest(context);
+              await settingsPanel?.webview.postMessage({ type: "connResult", ok: result.ok, message: result.message });
             } else if (message.command === "saveDocLinks") {
               const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
               const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -5144,6 +5466,77 @@ function activate(context) {
       await context.secrets.delete(SECRET_MODEL_CHOSEN);
       panel.setKey(void 0);
       void vscode2.window.showInformationMessage(t("key.deletedNotify", lang));
+    }),
+    // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
+    vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
+      const lang = currentReportLanguage();
+      const picked = await vscode2.window.showQuickPick(["Gemini", "Groq", "OpenRouter", "Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      if (!picked) return;
+      const providerName = picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : "custom";
+      const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
+      if (!key?.trim()) {
+        void vscode2.window.showErrorMessage(t("key.needFirst", lang));
+        return;
+      }
+      const trimmed = key.trim();
+      const det = detectProvider(trimmed) ?? { provider: providerName, model: defaultModel(providerName) };
+      let baseUrl = "";
+      if (providerName === "custom") {
+        baseUrl = (await vscode2.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: "http://localhost:11434/v1", ignoreFocusOut: true }))?.trim() || "";
+        if (!baseUrl) {
+          void vscode2.window.showErrorMessage(t("wizard.urlPrompt", lang));
+          return;
+        }
+      }
+      const testSelection = { provider: det.provider, model: det.model, key: trimmed, baseUrl, userChosenModel: false };
+      try {
+        const models = await fetchModels(testSelection);
+        await context.secrets.store(SECRET_KEY, trimmed);
+        await context.secrets.store(SECRET_PROVIDER, det.provider);
+        await context.secrets.store(SECRET_MODEL, preferredLiveModel(models, det.model));
+        await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
+        await context.globalState.update("codescout.onboardingDismissed", true);
+        panel.setOnboardingHidden(true);
+        panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
+        void vscode2.window.showInformationMessage(`${t("center.connected", lang, { n: models.length })}`);
+      } catch (error) {
+        const friendly = friendlyError(error);
+        void vscode2.window.showErrorMessage(friendly.message);
+      }
+    }),
+    vscode2.commands.registerCommand("codescout.onboardLocal", async () => {
+      const lang = currentReportLanguage();
+      const kind = await vscode2.window.showQuickPick(["Ollama", "LM Studio"], { placeHolder: t("wizard.localPick", lang) });
+      if (!kind) return;
+      const defaultUrl = kind === "Ollama" ? "http://localhost:11434" : "http://localhost:1234";
+      const url = (await vscode2.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: defaultUrl, ignoreFocusOut: true }))?.trim();
+      if (!url) return;
+      const probe = await probeLocalServer(url);
+      if (!probe.ok) {
+        const retry = await vscode2.window.showWarningMessage(t("wizard.localFail", lang, { n: 0 }), { modal: false }, t("wizard.retry", lang));
+        if (retry === t("wizard.retry", lang)) {
+          vscode2.commands.executeCommand("codescout.onboardLocal");
+        }
+        return;
+      }
+      await vscode2.workspace.getConfiguration("codescout").update("provider", "custom", vscode2.ConfigurationTarget.Global);
+      await vscode2.workspace.getConfiguration("codescout").update("baseUrl", probe.baseUrl, vscode2.ConfigurationTarget.Global);
+      await context.secrets.store(SECRET_MODEL, probe.models[0] || defaultModel("custom"));
+      await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
+      await context.globalState.update("codescout.onboardingDismissed", true);
+      panel.setOnboardingHidden(true);
+      panel.setKey(true, "custom", probe.models[0] || defaultModel("custom"));
+      void vscode2.window.showInformationMessage(t("wizard.localSuccess", lang, { n: probe.models.length }));
+    }),
+    vscode2.commands.registerCommand("codescout.onboardSkip", async () => {
+      await context.globalState.update("codescout.onboardingDismissed", true);
+      panel.setOnboardingHidden(true);
+      void vscode2.commands.executeCommand("codescout.openSettingsPage");
+    }),
+    // Батч 13, п.3: тест подключения в центре настроек.
+    vscode2.commands.registerCommand("codescout.testConnection", async () => {
+      const result = await runConnectionTest(context);
+      void (result.ok ? vscode2.window.showInformationMessage(result.message) : vscode2.window.showErrorMessage(result.message));
     })
   );
   void (async () => {
@@ -5160,7 +5553,8 @@ function activate(context) {
       const complete = savedResults.checkedFiles >= savedResults.total;
       const resume = complete ? void 0 : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
       const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
-      panel.restoreAuditResults(savedResults.findings, buildStats(savedResults.findings, savedResults.checkedFiles, elapsedMs), resume);
+      const visibleFindings = filterSuppressed(savedResults.findings, context.workspaceState);
+      panel.restoreAuditResults(visibleFindings, buildStats(visibleFindings, savedResults.checkedFiles, elapsedMs), resume);
     } else if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");

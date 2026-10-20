@@ -17,6 +17,7 @@ class StubState {
   panels: StubWebviewPanel[] = [];
   secrets = new Map<string, string>();
   globalState = new Map<string, unknown>();
+  workspaceState = new Map<string, unknown>();
   openedUris: unknown[] = [];
   outputLines: string[] = [];
   workspaceRoot: string | undefined;
@@ -34,6 +35,7 @@ class StubState {
     this.panels = [];
     this.secrets.clear();
     this.globalState.clear();
+    this.workspaceState.clear();
     this.openedUris = [];
     this.outputLines = [];
     this.workspaceRoot = undefined;
@@ -205,6 +207,13 @@ export function makeFakeContext(extensionFolder = '/tmp/ext'): unknown {
       async update(key: string, value: unknown): Promise<void> {
         if (value === undefined) state.globalState.delete(key);
         else state.globalState.set(key, value);
+      }
+    },
+    workspaceState: {
+      get(key: string): unknown { return state.workspaceState.get(key); },
+      async update(key: string, value: unknown): Promise<void> {
+        if (value === undefined) state.workspaceState.delete(key);
+        else state.workspaceState.set(key, value);
       }
     },
     secrets: {

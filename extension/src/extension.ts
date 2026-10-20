@@ -11,6 +11,7 @@ import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, 
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
+import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, makeDocsResolver, maxRequestKTokensFromSetting, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, splitAuditChunk, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
@@ -635,9 +636,12 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       clearAuditProgress(workspaceRoot);
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
-    panel.update(mergedIssues, buildStats(mergedIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
+    // Батч 14: панель получает только непдавленные находки; диск (context/
+    // history/results) остаётся полным единым источником правды.
+    const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
+    panel.update(visibleIssues, buildStats(visibleIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
     panel.setFirstAuditDone(true);
-    panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
+    panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
     const resumeView = result.skippedFiles > 0 ? progressView(state) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -723,7 +727,9 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
-    panel.update(dedupeIssues(result.issues), buildStats(result.issues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
+    // Батч 14: скрытые находки не попадают в панель (пост-обработка).
+    const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
+    panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог кастомного ревью: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
     void vscode.window.showInformationMessage(t('notify.customDone', lang, { n: result.issues.length }));
@@ -786,8 +792,11 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`));
-    const stats = buildStats(result.issues, result.filesAnalyzed, result.durationMs);
-    panel.update(result.issues, stats);
+    // Батч 14: пост-обработка перед передачей в вебвью — скрытые (FP) находки
+    // не попадают в панель; Output-лог остаётся полным (сырые данные).
+    const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
+    const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
+    panel.update(visibleIssues, stats);
     await vscode.commands.executeCommand('codescout.panel.focus');
     dumpFindings(output, result.issues, `Итог проверки коммита: ${result.issues.length} находок, проверено файлов: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine('No issues found.');
@@ -1018,6 +1027,9 @@ export function activate(context: vscode.ExtensionContext): void {
     realClear();
   };
   const panel = new CodeScoutPanel(context.extensionUri);
+  // Батч 14: панель умеет скрывать находки («Ложное срабатывание») — ей
+  // нужен workspaceState; вся логика хранения в findingsStore.
+  panel.attachWorkspaceState(context.workspaceState);
   // The old one-time flow used: await context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true')
   // 👋 Запустить полный аудит для контекста?
   panel.setWelcomeChoiceHandler(() => { void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true'); });
@@ -1438,7 +1450,8 @@ export function activate(context: vscode.ExtensionContext): void {
       const complete = savedResults.checkedFiles >= savedResults.total;
       const resume = complete ? undefined : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
       const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
-      panel.restoreAuditResults(savedResults.findings, buildStats(savedResults.findings, savedResults.checkedFiles, elapsedMs), resume);
+      const visibleFindings = filterSuppressed(savedResults.findings, context.workspaceState);
+      panel.restoreAuditResults(visibleFindings, buildStats(visibleFindings, savedResults.checkedFiles, elapsedMs), resume);
     } else if (savedProgress) panel.setAuditResume(savedProgress);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, 'new');

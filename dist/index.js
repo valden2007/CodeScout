@@ -34566,7 +34566,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. For each finding, ALSO provide proof of finding and a confidence class: "proof":{"condition":"When X happens (e.g., null input, race condition)","trace":["Line 10: variable assigned","Line 25: used without check"]} — the concrete trigger condition and the execution path leading to the defect; and "confidenceLevel":"verified" ONLY when the trace is a concrete code path you can point at in the patch, otherwise "confidenceLevel":"suggested" (pattern/heuristic guess). When you cannot prove anything, keep "confidenceLevel":"suggested" and give an empty proof: {"condition":"","trace":[]}. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0,"confidenceLevel":"verified|suggested","proof":{"condition":"string","trace":["string"]}}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
     return value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -34668,6 +34668,37 @@ function formatSummary(issues, filesAnalyzed, durationMs = 0) {
 ;// CONCATENATED MODULE: ./src/response-parser.ts
 const categories = new Set(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
 const severities = new Set(['low', 'medium', 'high', 'critical']);
+const PROOF_TRACE_MAX = 12;
+const PROOF_TRACE_ITEM_MAX = 300;
+const PROOF_CONDITION_MAX = 500;
+// Батч 14: старые модели/fallback не знают новых полей — ничего не падаем,
+// отдаём дефолты: confidenceLevel 'suggested', proof {}.
+function parseConfidenceLevel(value) {
+    const direct = value.confidenceLevel;
+    if (direct === 'verified' || direct === 'suggested')
+        return direct;
+    // Модели иногда путают поля и кладут строку в numeric confidence — терпим и это.
+    if (value.confidence === 'verified')
+        return 'verified';
+    return 'suggested';
+}
+function parseProof(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        return {};
+    const value = raw;
+    const proof = {};
+    if (typeof value.condition === 'string' && value.condition.trim())
+        proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
+    if (Array.isArray(value.trace)) {
+        const trace = value.trace
+            .filter((step) => typeof step === 'string' && step.trim().length > 0)
+            .map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX))
+            .slice(0, PROOF_TRACE_MAX);
+        if (trace.length)
+            proof.trace = trace;
+    }
+    return proof;
+}
 function findBalancedJson(text) {
     const start = text.search(/[[{]/);
     if (start < 0)
@@ -34740,7 +34771,9 @@ function parseReviewResponse(raw, filename) {
         const code = typeof value.code === 'string' ? value.code.trim() : undefined;
         const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
         const severity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-        return [{ file: filename, line, category, severity, description, code, suggestion, confidence }];
+        const confidenceLevel = parseConfidenceLevel(value);
+        const proof = parseProof(value.proof);
+        return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }

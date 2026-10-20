@@ -1,7 +1,35 @@
-import { ReviewIssue, ReviewResult, ReviewCategory, ReviewSeverity } from './types';
+import { ReviewIssue, ReviewResult, ReviewCategory, ReviewSeverity, FindingConfidence, FindingProof } from './types';
 
 const categories = new Set<ReviewCategory>(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
 const severities = new Set<ReviewSeverity>(['low', 'medium', 'high', 'critical']);
+const PROOF_TRACE_MAX = 12;
+const PROOF_TRACE_ITEM_MAX = 300;
+const PROOF_CONDITION_MAX = 500;
+
+// Батч 14: старые модели/fallback не знают новых полей — ничего не падаем,
+// отдаём дефолты: confidenceLevel 'suggested', proof {}.
+function parseConfidenceLevel(value: Record<string, unknown>): FindingConfidence {
+  const direct = value.confidenceLevel;
+  if (direct === 'verified' || direct === 'suggested') return direct;
+  // Модели иногда путают поля и кладут строку в numeric confidence — терпим и это.
+  if (value.confidence === 'verified') return 'verified';
+  return 'suggested';
+}
+
+function parseProof(raw: unknown): FindingProof {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const value = raw as Record<string, unknown>;
+  const proof: FindingProof = {};
+  if (typeof value.condition === 'string' && value.condition.trim()) proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
+  if (Array.isArray(value.trace)) {
+    const trace = value.trace
+      .filter((step): step is string => typeof step === 'string' && step.trim().length > 0)
+      .map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX))
+      .slice(0, PROOF_TRACE_MAX);
+    if (trace.length) proof.trace = trace;
+  }
+  return proof;
+}
 
 function findBalancedJson(text: string): string | undefined {
   const start = text.search(/[[{]/);
@@ -61,7 +89,9 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     const code = typeof value.code === 'string' ? value.code.trim() : undefined;
     const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
     const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-    return [{ file: filename, line, category, severity, description, code, suggestion, confidence }];
+    const confidenceLevel = parseConfidenceLevel(value);
+    const proof = parseProof(value.proof);
+    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
   });
   return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }

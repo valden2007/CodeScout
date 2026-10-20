@@ -1962,7 +1962,9 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(extension).toContain("get<boolean>('autoResume', false)");
     const startup = extension.slice(extension.indexOf('const savedCheckpoint = readAuditProgress'), extension.indexOf('if (!auditBannerEnabled())'));
     expect(startup).toContain('panel.setAuditResume(savedProgress)');
-    expect(startup).toContain('panel.restoreAuditResults(savedResults.findings');
+    // Батч 14: рестарт рисует то же самое, но без подавленных находок.
+    expect(startup).toContain('filterSuppressed(savedResults.findings, context.workspaceState)');
+    expect(startup).toContain('panel.restoreAuditResults(visibleFindings');
     expect(startup).not.toContain('runFullAudit');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('setAutoResume(view: AutoResumeIndicator | undefined)');
@@ -3329,7 +3331,7 @@ describe('v1.4b-12 onboarding + ETA', () => {
     expect(panel).toContain("message.command === 'runAgain'");
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.openAuditReport'");
-    expect(extension).toContain('panel.showAuditSummary({ issues: mergedIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 })');
+    expect(extension).toContain('panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 })');
     expect(extension).toContain('panel.setFirstAuditDone(true)');
   });
 });

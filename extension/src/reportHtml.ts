@@ -1,6 +1,7 @@
 import { ReviewIssue } from '../../src/types';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefsInput } from './uiPrefs';
+import { computeFingerprint } from './findingsStore';
 import { t, type Lang } from '../../src/i18n';
 
 export interface AutoResumeIndicator {
@@ -78,16 +79,39 @@ function severityClass(severity: ReviewIssue['severity']): string {
   return severity;
 }
 
+// Батч 14: плашка уверенности (verified/suggested), блок доказательства
+// находки и кнопка подавления false positive (fingerprint — для store).
+function confidenceBadge(issue: ReviewIssue, lang: Lang): string {
+  if (issue.confidenceLevel === 'verified') return `<span class="badge verified">${icon('pass')} ${escapeHtml(t('issue.confidenceVerified', lang))}</span>`;
+  return `<span class="badge suggested">${icon('lightbulb')} ${escapeHtml(t('issue.confidenceSuggested', lang))}</span>`;
+}
+
+function proofBlock(issue: ReviewIssue, lang: Lang): string {
+  const condition = issue.proof?.condition?.trim() ?? '';
+  const trace = (issue.proof?.trace ?? []).filter((step) => typeof step === 'string' && step.trim()).map((step) => step.trim());
+  if (!condition && trace.length === 0) return '';
+  const conditionHtml = condition ? `<p class="proof-cond"><strong>${escapeHtml(t('issue.proofCondition', lang))}:</strong> ${escapeHtml(condition)}</p>` : '';
+  const traceHtml = trace.length ? `<div class="proof-trace-label"><strong>${escapeHtml(t('issue.proofTrace', lang))}</strong></div><ol class="proof-trace">${trace.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>` : '';
+  return `<details class="proof"><summary>${icon('search')} <span>${escapeHtml(t('issue.showProof', lang))}</span></summary><div class="proof-body">${conditionHtml}${traceHtml}</div></details>`;
+}
+
+function suppressButton(issue: ReviewIssue, lang: Lang): string {
+  const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
+  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t('issue.falsePositiveTip', lang))}">${icon('thumbsdown')}<span>${escapeHtml(t('issue.falsePositive', lang))}</span></button></div>`;
+}
+
 function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true, lang: Lang = 'ru'): string {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : '';
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon('arrow-right')} <span>${escapeHtml(issue.suggestion)}</span></div>` : '';
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} ${t('issue.new', lang)}</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ''}</div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} ${t('issue.new', lang)}</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang)}${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ''}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
   ${suggestion}
+  ${proofBlock(issue, lang)}
+  ${suppressButton(issue, lang)}
 </article>`;
 }
 
@@ -201,6 +225,20 @@ h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px solid var(--cs-card-border); border-radius: 3px; background: var(--cs-code-bg); color: var(--cs-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); white-space: pre-wrap; word-break: break-word; }
 .suggestion { color: var(--cs-pass); display: flex; align-items: flex-start; gap: 6px; }
+.badge.verified { color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 15%, transparent); }
+.badge.suggested { color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 15%, transparent); }
+.proof { margin-top: var(--cs-space-2); }
+.proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.proof-cond { margin: 0 0 5px; overflow-wrap: anywhere; }
+.proof-trace { margin: 0; padding-left: 18px; }
+.proof-trace li { margin: 2px 0; overflow-wrap: anywhere; }
+.issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
+.fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
+.fp-button:hover { color: var(--cs-error); }
+.empty-actions { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-top: var(--cs-space-4); }
+.empty-actions button { flex: 0 0 auto; width: auto; min-width: 240px; max-width: 340px; justify-content: center; text-align: center; }
+.empty-actions small { display: block; margin: 0 0 var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
 .empty { padding: 48px 10px; color: var(--cs-desc); text-align: center; }
 .empty-icon { margin-bottom: var(--cs-space-2); color: var(--cs-pass); font-size: 24px; display: flex; justify-content: center; }
 .empty small { display: block; margin-top: 5px; }
@@ -260,15 +298,21 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   <button class="link-button" type="button" data-command="onboardSkip">${T('wizard.skip')}</button>
 </div></div>`;
   const firstAuditCard = `<div class="onboarding"><div class="empty-icon">${icon('telescope')}</div><h1>${T('onboard.firstTitle')}</h1><p>${T('onboard.firstBody')}</p><button class="primary-action cs-btn" type="button" data-command="scanFull">${icon('play')}<span>${T('onboard.step3Btn')}</span></button><small class="onboard-auto">${icon('robot')} ${T('onboard.autoHint')}</small></div>`;
+  // Батч 14: пустая панель — две крупные кнопки по центру (быстрый Git Diff
+  // и полный аудит с честной подписью про длительность).
+  const emptyActions = `<div class="empty-actions">
+  <button class="empty-action cs-btn" type="button" data-command="scanLastCommit">${icon('diff')}<span>${T('empty.scanGit')}</span></button><small>${T('empty.quickHint')}</small>
+  <button class="empty-action cs-btn" type="button" data-command="scanFull">${icon('telescope')}<span>${T('actions.scanFull')}</span></button><small>${T('empty.fullHint')}</small>
+</div>`;
   const body = sections || (emptyState && ux.onboarding
     ? onboardCard
     : emptyState && ux.firstAudit
       ? firstAuditCard
       : emptyState
-        ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>${T('empty.readyTitle')}</strong><small>${T('empty.readyHint')}</small></div>`
+        ? `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>${T('empty.readyTitle')}</strong><small>${T('empty.readyHint')}</small>${emptyActions}</div>`
         : testMode
           ? `<div class="empty"><div class="empty-icon">${icon('beaker')}</div><strong>${T('empty.testTitle')}</strong><small>${T('empty.testHint')}</small></div>`
-          : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button></div>`);
+          : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button>${emptyActions}</div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   // Приоритет баннеров (v1.4b-16): скан > прерван > остановлен > пусто.
   // Во время скана resume-баннер прячем; resume-баннер прячет статус («остановлено»).
@@ -523,7 +567,7 @@ ${headHtml(assets, nonce)}
         return;
       }
       event.preventDefault();
-      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor });
+      vscode.postMessage({ command: element.dataset.command, anchor: element.dataset.anchor, fingerprint: element.dataset.fingerprint });
     });
     document.addEventListener('change', (event) => {
       const scope = event.target instanceof Element ? event.target.closest('#customScope') : null;

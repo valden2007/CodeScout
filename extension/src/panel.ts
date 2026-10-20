@@ -5,6 +5,7 @@ import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets, type PanelUx } from './reportHtml';
+import { computeFingerprint, suppressFinding } from './findingsStore';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
@@ -17,6 +18,7 @@ interface ScanMessage {
   scope?: string;
   globs?: string;
   anchor?: string;
+  fingerprint?: string;
 }
 
 function safePost(webview: vscode.Webview, message: Record<string, unknown>): void {
@@ -99,8 +101,30 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private auditSummary?: { issues: number; files: number; seconds: number };
   private diagnosticDetails?: string;
   private auditDurations: number[] = [];
+  private workspaceState?: vscode.Memento;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
+
+  // Батч 14: панель получает workspaceState из activate — подавление
+  // находок живёт в этом модуле, extension.ts остаётся чистым.
+  attachWorkspaceState(state: vscode.Memento): void {
+    this.workspaceState = state;
+  }
+
+  private suppressLocal(fingerprint: string): void {
+    if (this.workspaceState) suppressFinding(this.workspaceState, fingerprint);
+    const fingerprintOf = (issue: ReviewIssue): string => issue.fingerprint?.trim() || computeFingerprint(issue);
+    const visible = this.issues.filter((issue) => fingerprintOf(issue) !== fingerprint);
+    if (visible.length === this.issues.length) return;
+    const removed = this.issues.filter((issue) => fingerprintOf(issue) === fingerprint);
+    this.issues = visible;
+    for (const issue of removed) {
+      if (issue.severity === 'critical' || issue.severity === 'high') this.stats.critical = Math.max(0, this.stats.critical - 1);
+      else if (issue.severity === 'medium') this.stats.medium = Math.max(0, this.stats.medium - 1);
+      else this.stats.low = Math.max(0, this.stats.low - 1);
+    }
+    this.render();
+  }
 
   private messageSubscription?: vscode.Disposable;
   private configSubscription?: vscode.Disposable;
@@ -196,6 +220,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'cancelScan') {
         void vscode.commands.executeCommand('codescout.cancelScan');
+      } else if (message.command === 'suppressFinding') {
+        const fingerprint = typeof message.fingerprint === 'string' ? message.fingerprint.trim() : '';
+        if (fingerprint) this.suppressLocal(fingerprint);
       } else if (message.command === 'pickScope') {
         void this.handlePickScope();
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
