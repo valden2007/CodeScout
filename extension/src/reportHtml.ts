@@ -186,6 +186,11 @@ button:disabled { opacity: 0.65; cursor: default; }
 .status-banner.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
 .status-banner.test, .status-banner.success { border-left-color: var(--cs-pass); color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 12%, transparent); }
 .status-banner button { width: auto; flex: 0 0 auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); }
+.err-card-extra { flex-basis: 100%; margin-top: var(--cs-space-1); }
+.err-hint { color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; gap: 4px; align-items: flex-start; }
+.err-hint .codicon { color: var(--cs-warn); }
+.err-actions { display: flex; gap: 6px; margin-top: var(--cs-space-1); }
+.err-actions button { width: auto; flex: 0 0 auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .test-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: var(--cs-space-2); color: var(--cs-pass); font-size: var(--cs-font-1); font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
@@ -270,7 +275,15 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </head>`;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = ''): string {
+// Батч 15: структурированная информация об ошибке скана для карточки в
+// баннере: подсказка (actionHint) + кнопки «Повторить» / «Открыть настройки».
+export interface ScanErrorInfo {
+  category?: string;
+  title?: string;
+  hint?: string;
+}
+
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-2.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = '', errorInfo?: ScanErrorInfo): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -330,7 +343,7 @@ ${headHtml(assets, nonce)}
     <div class="brand"><span class="brand-mark">${icon('search')}</span> ${T('brand.name')} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T('brand.toggleLang')}">${icon('globe')}<span>${lang === 'en' ? 'EN' : 'RU'}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T('brand.settingsTip')}">${icon('settings-gear')}<span>${T('brand.settings')}</span></button></div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `${icon('pass')} ${escapeHtml(provider)} · ${escapeHtml(model)} · ${escapeHtml(keyMask)} (${T('key.ready')})` : `${icon('error')} ${T('key.missing')}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('key.andModel')}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon('beaker')} ${T('testBadge')}</span>` : ''}
-    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${escapeHtml(showStatus)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>${T('status.model404')}</span></button>` : ''}${diagnosticDetails ? `<details class="diag-block"><summary>${T('diag.title')}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ''}</div>` : ''}</div>
+    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === 'error' && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ''}${escapeHtml(showStatus)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon('lightbulb')} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ''}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon('sync')}<span>${T('err.retry')}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon('settings-gear')}<span>${T('err.openSettings')}</span></button></div></div>` : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>${T('status.model404')}</span></button>` : ''}${diagnosticDetails ? `<details class="diag-block"><summary>${T('diag.title')}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ''}</div>` : ''}</div>
     ${resumeView ? `<div class="audit-resume"><strong>${icon('debug-alt')} ${T('resume.title', { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== undefined ? ` ${T('resume.findings', { n: resumeView.findings })}` : ''}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continue', { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>` : ''}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>

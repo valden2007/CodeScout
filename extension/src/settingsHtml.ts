@@ -21,6 +21,7 @@ export interface SettingsState {
   auditScope: string;
   auditPasses: number;
   rateLimitPauses?: number;
+  requestTimeoutSeconds?: number;
   version: string;
   uiTheme: 'auto' | 'dark' | 'light' | 'custom';
   accentColor: 'auto' | 'blue' | 'purple' | 'green' | 'orange' | 'pink';
@@ -154,6 +155,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .hidden { display: none; }
 .status { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-2) 10px; border-left: 3px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 12%, transparent); font-size: var(--cs-font-2); ${statusMessage ? '' : 'display: none;'} }
 .status.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
+.conn-hint { font-size: var(--cs-font-1); opacity: 0.85; margin-top: 3px; color: var(--cs-desc); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); color: var(--cs-desc); overflow-wrap: anywhere; }
 .savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--cs-card-bg); color: var(--cs-fg); }
 .savebar .dirty { color: var(--cs-desc); font-size: var(--cs-font-1); }
@@ -231,6 +233,9 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
   <label for="rateLimitPauses">${T('audit.rateLimitPauses')}</label>
   <input id="rateLimitPauses" type="number" min="0" max="5" step="1" value="${state.rateLimitPauses ?? 3}">
+  <label for="requestTimeoutSeconds">${T('audit.requestTimeout')}</label>
+  <input id="requestTimeoutSeconds" type="number" min="10" max="600" step="1" value="${state.requestTimeoutSeconds ?? 60}">
+  <p class="hint">${T('audit.requestTimeoutHint')}</p>
   <label for="findingsSort">${T('audit.findingsSort')}</label>
   <select id="findingsSort">
     <option value="severity"${state.findingsSort === 'severity' ? ' selected' : ''}>${T('audit.sortSeverity')}</option>
@@ -378,6 +383,7 @@ const autoResumeBox = document.getElementById('autoResume');
 const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const rateLimitPausesInput = document.getElementById('rateLimitPauses');
+const requestTimeoutInput = document.getElementById('requestTimeoutSeconds');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
 const themeEditor = document.getElementById('themeEditor');
@@ -481,7 +487,8 @@ function snapshot() {
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
-    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value
+    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value,
+    requestTimeoutSeconds: requestTimeoutInput.value
   });
 }
 let initial = snapshot();
@@ -535,7 +542,8 @@ saveAllBtn.addEventListener('click', () => {
     autoResume: autoResumeBox.checked,
     autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
     autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0')),
-    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3'))
+    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3')),
+    requestTimeoutSeconds: Number(clampInt(requestTimeoutInput.value, 10, 600, '60'))
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
@@ -591,8 +599,20 @@ window.addEventListener('message', (event) => {
     }
     const status = document.getElementById('status');
     if (status) {
-      status.textContent = data.message || '';
+      status.textContent = '';
       status.classList.toggle('error', data.ok === false);
+      status.dataset.category = String(data.category || (data.ok ? 'ok' : 'unknown'));
+      if (status.style.display === 'none') status.style.display = 'block';
+      const main = document.createElement('div');
+      main.className = 'conn-line';
+      main.textContent = data.message || '';
+      status.appendChild(main);
+      if (data.ok === false && data.hint) {
+        const hint = document.createElement('div');
+        hint.className = 'conn-hint';
+        hint.textContent = data.hint;
+        status.appendChild(hint);
+      }
     }
     return;
   }

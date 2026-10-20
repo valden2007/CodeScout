@@ -96,6 +96,42 @@ export class BadResponseError extends Error {
   }
 }
 
+// Батч 15: жёсткий дедлайн на HTTP-запрос инференса — зависший провайдер
+// не должен вешать скан навсегда. Категория — timeout (см. error-classifier).
+export class RequestTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`Request timed out after ${timeoutMs}ms: the provider did not respond`);
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export const REQUEST_TIMEOUT_DEFAULT_SECONDS = 60;
+export const REQUEST_TIMEOUT_MIN_SECONDS = 10;
+export const REQUEST_TIMEOUT_MAX_SECONDS = 600;
+
+export function requestTimeoutSecondsFromSetting(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (value === undefined || value === null || value === '' || !Number.isFinite(n)) return REQUEST_TIMEOUT_DEFAULT_SECONDS;
+  return Math.min(REQUEST_TIMEOUT_MAX_SECONDS, Math.max(REQUEST_TIMEOUT_MIN_SECONDS, n));
+}
+
+// Модульный дефолт: расширение выставляет его из codescout.requestTimeoutSeconds
+// (applyRequestTimeout), CLI/action/env остаются на 60с. read в момент review(),
+// чтобы смена настройки действовала без пересоздания провайдера.
+let defaultRequestTimeoutMs = requestTimeoutSecondsFromSetting(process.env.CODESCOUT_REQUEST_TIMEOUT_SECONDS || '') * 1000;
+
+export function setDefaultRequestTimeoutMs(ms: number): void {
+  const n = Math.round(Number(ms));
+  defaultRequestTimeoutMs = Number.isFinite(n) && n >= 1000 ? Math.min(REQUEST_TIMEOUT_MAX_SECONDS * 1000, n) : REQUEST_TIMEOUT_DEFAULT_SECONDS * 1000;
+}
+
+export function getDefaultRequestTimeoutMs(): number {
+  return defaultRequestTimeoutMs;
+}
+
 export interface FriendlyError {
   kind: FriendlyErrorKind;
   title: string;
@@ -134,7 +170,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
     private readonly sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep,
     private readonly onRetry?: (event: RetryEvent) => void,
     baseUrl = 'https://api.groq.com/openai/v1',
-    private readonly signal?: AbortSignal
+    private readonly signal?: AbortSignal,
+    private readonly requestTimeoutMs?: number
   ) {
     this.endpoint = completionUrl(baseUrl);
   }
@@ -148,14 +185,27 @@ export class OpenAICompatibleProvider implements LLMProvider {
     while (true) {
       if (this.signal?.aborted) throw abortError();
       this.lastRequestAt = Date.now();
+      // Батч 15: дедлайн на попытку. Отдельный controller: пользовательский
+      // cancel и таймер сливаются в него, но RequestTimeoutError бросаем
+      // только когда оборвал таймер (external abort = AbortError как раньше).
+      const timeoutMs = this.requestTimeoutMs ?? getDefaultRequestTimeoutMs();
+      const deadline = new AbortController();
+      let timedOut = false;
+      const relayAbort = (): void => { deadline.abort(); };
+      const timer = setTimeout(() => { timedOut = true; deadline.abort(); }, timeoutMs);
+      if (this.signal) {
+        if (this.signal.aborted) deadline.abort();
+        else this.signal.addEventListener('abort', relayAbort, { once: true });
+      }
       try {
         const response = await this.fetcher(this.endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
-          signal: this.signal
+          signal: deadline.signal
         });
         const text = await response.text();
+        clearTimeout(timer);
         let data: GroqResponse = {};
         try {
           data = JSON.parse(text) as GroqResponse;
@@ -177,6 +227,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         if (!content) throw new BadResponseError('Модель вернула некорректный формат: пустой ответ', text.trim().slice(0, 300));
         return content;
       } catch (error) {
+        if (timedOut && !this.signal?.aborted) throw new RequestTimeoutError(timeoutMs);
         if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
         lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
@@ -188,6 +239,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
         const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1000, this.signal);
+      } finally {
+        clearTimeout(timer);
+        this.signal?.removeEventListener('abort', relayAbort);
       }
     }
   }

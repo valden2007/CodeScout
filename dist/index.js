@@ -34396,6 +34396,36 @@ class BadResponseError extends Error {
         this.details = details;
     }
 }
+// Батч 15: жёсткий дедлайн на HTTP-запрос инференса — зависший провайдер
+// не должен вешать скан навсегда. Категория — timeout (см. error-classifier).
+class RequestTimeoutError extends Error {
+    timeoutMs;
+    constructor(timeoutMs) {
+        super(`Request timed out after ${timeoutMs}ms: the provider did not respond`);
+        this.name = 'TimeoutError';
+        this.timeoutMs = timeoutMs;
+    }
+}
+const REQUEST_TIMEOUT_DEFAULT_SECONDS = 60;
+const REQUEST_TIMEOUT_MIN_SECONDS = 10;
+const REQUEST_TIMEOUT_MAX_SECONDS = 600;
+function requestTimeoutSecondsFromSetting(value) {
+    const n = Math.round(Number(value));
+    if (value === undefined || value === null || value === '' || !Number.isFinite(n))
+        return REQUEST_TIMEOUT_DEFAULT_SECONDS;
+    return Math.min(REQUEST_TIMEOUT_MAX_SECONDS, Math.max(REQUEST_TIMEOUT_MIN_SECONDS, n));
+}
+// Модульный дефолт: расширение выставляет его из codescout.requestTimeoutSeconds
+// (applyRequestTimeout), CLI/action/env остаются на 60с. read в момент review(),
+// чтобы смена настройки действовала без пересоздания провайдера.
+let defaultRequestTimeoutMs = requestTimeoutSecondsFromSetting(process.env.CODESCOUT_REQUEST_TIMEOUT_SECONDS || '') * 1000;
+function setDefaultRequestTimeoutMs(ms) {
+    const n = Math.round(Number(ms));
+    defaultRequestTimeoutMs = Number.isFinite(n) && n >= 1000 ? Math.min(REQUEST_TIMEOUT_MAX_SECONDS * 1000, n) : REQUEST_TIMEOUT_DEFAULT_SECONDS * 1000;
+}
+function getDefaultRequestTimeoutMs() {
+    return defaultRequestTimeoutMs;
+}
 function isTimeoutError(error) {
     const name = error instanceof Error ? error.name : '';
     const msg = error instanceof Error ? error.message : String(error);
@@ -34427,15 +34457,17 @@ class OpenAICompatibleProvider {
     sleeper;
     onRetry;
     signal;
+    requestTimeoutMs;
     lastRequestAt = 0;
     endpoint;
-    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal) {
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal, requestTimeoutMs) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
         this.sleeper = sleeper;
         this.onRetry = onRetry;
         this.signal = signal;
+        this.requestTimeoutMs = requestTimeoutMs;
         this.endpoint = completionUrl(baseUrl);
     }
     async review(systemPrompt, userPrompt) {
@@ -34448,14 +34480,29 @@ class OpenAICompatibleProvider {
             if (this.signal?.aborted)
                 throw abortError();
             this.lastRequestAt = Date.now();
+            // Батч 15: дедлайн на попытку. Отдельный controller: пользовательский
+            // cancel и таймер сливаются в него, но RequestTimeoutError бросаем
+            // только когда оборвал таймер (external abort = AbortError как раньше).
+            const timeoutMs = this.requestTimeoutMs ?? getDefaultRequestTimeoutMs();
+            const deadline = new AbortController();
+            let timedOut = false;
+            const relayAbort = () => { deadline.abort(); };
+            const timer = setTimeout(() => { timedOut = true; deadline.abort(); }, timeoutMs);
+            if (this.signal) {
+                if (this.signal.aborted)
+                    deadline.abort();
+                else
+                    this.signal.addEventListener('abort', relayAbort, { once: true });
+            }
             try {
                 const response = await this.fetcher(this.endpoint, {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
-                    signal: this.signal
+                    signal: deadline.signal
                 });
                 const text = await response.text();
+                clearTimeout(timer);
                 let data = {};
                 try {
                     data = JSON.parse(text);
@@ -34482,6 +34529,8 @@ class OpenAICompatibleProvider {
                 return content;
             }
             catch (error) {
+                if (timedOut && !this.signal?.aborted)
+                    throw new RequestTimeoutError(timeoutMs);
                 if (isAbortError(error))
                     throw error;
                 if (!(error instanceof RateLimitError))
@@ -34495,6 +34544,10 @@ class OpenAICompatibleProvider {
                 const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
                 this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
                 await this.sleeper(waitSeconds * 1000, this.signal);
+            }
+            finally {
+                clearTimeout(timer);
+                this.signal?.removeEventListener('abort', relayAbort);
             }
         }
     }

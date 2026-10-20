@@ -173,7 +173,11 @@ describe('E9.5 scan cancellation', () => {
     const pending = provider.review('system', 'user');
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-    expect(receivedSignal).toBe(controller.signal);
+    // Батч 15: fetch получает производный deadline-сигнал (AbortSignal.timeout
+    // + relay пользовательского cancel), а не сам signal — cancel всё равно
+    // доходит (aborted=true) и остаётся AbortError, не TimeoutError.
+    expect(receivedSignal).not.toBe(controller.signal);
+    expect(receivedSignal?.aborted).toBe(true);
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('if (signal?.aborted) throw abortError()');
   });
@@ -1063,7 +1067,7 @@ describe('E1.3a audit checkpoints', () => {
 
   it('wires resume/restart through panel, extension and manifest', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("registerCommand('codescout.resumeAudit', () => runScan(() => runFullAudit(context, output, panel, true)))");
+    expect(extension).toContain("registerCommand('codescout.resumeAudit', () => { lastScanKind = 'audit'; return runScan(() => runFullAudit(context, output, panel, true)); })");
     expect(extension).toContain("registerCommand('codescout.restartAudit'");
     expect(extension).toContain('panel.setAuditResume(savedProgress)');
     expect(extension).toContain('onFileChecked?.(file.filename, deduped)');
@@ -3125,7 +3129,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("await config.update('language', next, vscode.ConfigurationTarget.Global)");
     expect(extension).toContain('panel.forceLanguageRefresh();');
     expect(extension).toContain('rerenderSettings();');
-    expect(extension).toContain("'docMaxLinks', 'language', 'showAuditBanner'");
+    expect(extension).toContain("'docMaxLinks', 'rateLimitPauses', 'requestTimeoutSeconds', 'language', 'showAuditBanner'");
   });
 
   it('Язык-секции select shares its source of truth with the globe button', () => {
@@ -3404,7 +3408,7 @@ describe('v1.4b-13 reportIssue + open-source wrapper', () => {
     expect(extension).toContain("registerCommand('codescout.reportIssue'");
     expect(extension).toContain('outputTail.push(String(value ?? \'\'))');
     expect(extension).toContain('if (outputTail.length > 50) outputTail.splice(0, outputTail.length - 50)');
-    expect(extension).toContain('lastScanError = message;');
+    expect(extension).toContain('lastScanError = raw;');
     expect(extension).toContain('reportIssueUrl(body)');
     expect(extension).toContain('hasKey: keyValues.some((key) => Boolean(key.trim()))');
     const bodyCall = extension.slice(extension.indexOf('const body = buildIssueBody'), extension.indexOf('reportIssueUrl(body)'));

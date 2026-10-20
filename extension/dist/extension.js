@@ -261,32 +261,39 @@ var BadResponseError = class extends Error {
     this.details = details;
   }
 };
-function isTimeoutError(error) {
-  const name = error instanceof Error ? error.name : "";
-  const msg = error instanceof Error ? error.message : String(error);
-  return name === "TimeoutError" || /ETIMEDOUT|socket hang up|timed?\s*out|EAI_AGAIN/i.test(msg);
-}
-function classifyError(error) {
-  const raw = error instanceof Error ? error.message : String(error);
-  if (error instanceof RateLimitError) return { kind: "rateLimit", title: raw, details: error.details || raw, waitSeconds: error.waitSeconds };
-  if (error instanceof ProviderHttpError) {
-    if (error.status === 401 || error.status === 403) return { kind: "auth", title: raw, details: error.details };
-    if (error.status === 404) return { kind: "notFound", title: raw, details: error.details };
-    if (error.status === 429) return { kind: "rateLimit", title: raw, details: error.details };
-    return { kind: "other", title: raw, details: error.details };
+var RequestTimeoutError = class extends Error {
+  timeoutMs;
+  constructor(timeoutMs) {
+    super(`Request timed out after ${timeoutMs}ms: the provider did not respond`);
+    this.name = "TimeoutError";
+    this.timeoutMs = timeoutMs;
   }
-  if (error instanceof BadResponseError) return { kind: "badResponse", title: raw, details: error.details };
-  if (isTimeoutError(error)) return { kind: "timeout", title: raw, details: raw };
-  return { kind: "other", title: raw, details: void 0 };
+};
+var REQUEST_TIMEOUT_DEFAULT_SECONDS = 60;
+var REQUEST_TIMEOUT_MIN_SECONDS = 10;
+var REQUEST_TIMEOUT_MAX_SECONDS = 600;
+function requestTimeoutSecondsFromSetting(value) {
+  const n = Math.round(Number(value));
+  if (value === void 0 || value === null || value === "" || !Number.isFinite(n)) return REQUEST_TIMEOUT_DEFAULT_SECONDS;
+  return Math.min(REQUEST_TIMEOUT_MAX_SECONDS, Math.max(REQUEST_TIMEOUT_MIN_SECONDS, n));
+}
+var defaultRequestTimeoutMs = requestTimeoutSecondsFromSetting(process.env.CODESCOUT_REQUEST_TIMEOUT_SECONDS || "") * 1e3;
+function setDefaultRequestTimeoutMs(ms) {
+  const n = Math.round(Number(ms));
+  defaultRequestTimeoutMs = Number.isFinite(n) && n >= 1e3 ? Math.min(REQUEST_TIMEOUT_MAX_SECONDS * 1e3, n) : REQUEST_TIMEOUT_DEFAULT_SECONDS * 1e3;
+}
+function getDefaultRequestTimeoutMs() {
+  return defaultRequestTimeoutMs;
 }
 var OpenAICompatibleProvider = class {
-  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1", signal) {
+  constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = "https://api.groq.com/openai/v1", signal, requestTimeoutMs) {
     this.apiKey = apiKey;
     this.model = model;
     this.fetcher = fetcher;
     this.sleeper = sleeper;
     this.onRetry = onRetry;
     this.signal = signal;
+    this.requestTimeoutMs = requestTimeoutMs;
     this.endpoint = completionUrl(baseUrl);
   }
   lastRequestAt = 0;
@@ -299,14 +306,29 @@ var OpenAICompatibleProvider = class {
     while (true) {
       if (this.signal?.aborted) throw abortError();
       this.lastRequestAt = Date.now();
+      const timeoutMs = this.requestTimeoutMs ?? getDefaultRequestTimeoutMs();
+      const deadline = new AbortController();
+      let timedOut = false;
+      const relayAbort = () => {
+        deadline.abort();
+      };
+      const timer = setTimeout(() => {
+        timedOut = true;
+        deadline.abort();
+      }, timeoutMs);
+      if (this.signal) {
+        if (this.signal.aborted) deadline.abort();
+        else this.signal.addEventListener("abort", relayAbort, { once: true });
+      }
       try {
         const response = await this.fetcher(this.endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] }),
-          signal: this.signal
+          signal: deadline.signal
         });
         const text = await response.text();
+        clearTimeout(timer);
         let data = {};
         try {
           data = JSON.parse(text);
@@ -326,6 +348,7 @@ var OpenAICompatibleProvider = class {
         if (!content) throw new BadResponseError("\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442: \u043F\u0443\u0441\u0442\u043E\u0439 \u043E\u0442\u0432\u0435\u0442", text.trim().slice(0, 300));
         return content;
       } catch (error) {
+        if (timedOut && !this.signal?.aborted) throw new RequestTimeoutError(timeoutMs);
         if (isAbortError(error)) throw error;
         if (!(error instanceof RateLimitError)) throw error;
         lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
@@ -337,6 +360,9 @@ var OpenAICompatibleProvider = class {
         const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
         this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
         await this.sleeper(waitSeconds * 1e3, this.signal);
+      } finally {
+        clearTimeout(timer);
+        this.signal?.removeEventListener("abort", relayAbort);
       }
     }
   }
@@ -345,6 +371,799 @@ function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
   const normalized = normalizeProvider(provider);
   const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
   return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal);
+}
+
+// ../src/i18n/ru.json
+var ru_default = {
+  "brand.name": "CodeScout",
+  "brand.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+  "brand.settingsTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout",
+  "brand.toggleLang": "\u0421\u043C\u0435\u043D\u0438\u0442\u044C \u044F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
+  "brand.langRu": "RU",
+  "key.ready": "\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E",
+  "key.missing": "\u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
+  "key.andModel": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
+  "actions.scanLastCommit": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442",
+  "actions.scanUncommitted": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430",
+  "actions.scanFull": "\u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430",
+  "actions.customReview": "\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E",
+  "actions.customReviewCollapse": "\u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C",
+  "actions.cancel": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C",
+  "actions.rerunWithModel": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0441 \u044D\u0442\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u044C\u044E",
+  "status.model404": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
+  "badge.auto": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
+  "badge.autoAttempts": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {n} \u043F\u043E\u043F\u044B\u0442\u043E\u043A)",
+  "badge.autoMinutes": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {n} \u043C\u0438\u043D)",
+  "badge.autoBoth": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {a} \u043F\u043E\u043F\u044B\u0442\u043E\u043A / {m} \u043C\u0438\u043D)",
+  "badge.autoTitle": "\u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0441\u0430\u043C \u0434\u043E\u0433\u043E\u043D\u0438\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u043E\u0435 \u0441 backoff (codescout.autoResume)",
+  "badge.autoDetailNone": "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430",
+  "badge.autoDetailAttempts": "\u043C\u0430\u043A\u0441. {n} \u043F\u043E\u043F\u044B\u0442\u043E\u043A",
+  "badge.autoDetailMinutes": "\u043C\u0430\u043A\u0441. {n} \u043C\u0438\u043D",
+  "badge.autoDetailBoth": "\u043C\u0430\u043A\u0441. {a} \u043F\u043E\u043F\u044B\u0442\u043E\u043A / {m} \u043C\u0438\u043D",
+  "banner.welcomeNew": "CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?",
+  "banner.welcomeStale": "\u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?",
+  "banner.startAudit": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442",
+  "banner.update": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C",
+  "banner.later": "\u041F\u043E\u0437\u0436\u0435",
+  "resume.title": "\u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E {done} \u0438\u0437 {total} \u0444\u0430\u0439\u043B\u043E\u0432 ({model})",
+  "resume.findings": "\xB7 \u043D\u0430\u0445\u043E\u0434\u043E\u043A {n}",
+  "resume.continue": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C ({done} \u0438\u0437 {total})",
+  "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
+  "restart.confirm": "\u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A \u0430\u0443\u0434\u0438\u0442\u0430 \u0443\u0434\u0430\u043B\u0438\u0442 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
+  "restart.confirmBtn": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0438 \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
+  "auto.line": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u0447\u0435\u0440\u0435\u0437 {seconds}\u0441",
+  "auto.lineRetry": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026",
+  "auto.attemptOf": "\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m}",
+  "auto.attempt": "\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}",
+  "auto.retrying": " \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026",
+  "form.focusLabel": "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C?",
+  "form.focusPlaceholder": "\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u0432\u0441\u0435 \u043B\u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043A \u0411\u0414 \u0432\u043D\u0443\u0442\u0440\u0438 \u0442\u0440\u0430\u043D\u0437\u0430\u043A\u0446\u0438\u0439?",
+  "form.scopeAll": "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430",
+  "form.scopeActive": "\u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0444\u0430\u0439\u043B",
+  "form.scopeList": "\u0441\u043F\u0438\u0441\u043E\u043A \u0444\u0430\u0439\u043B\u043E\u0432 (\u0433\u043B\u043E\u0431\u044B \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E)",
+  "form.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
+  "form.start": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E",
+  "form.pickOutside": "\u0432\u043D\u0435 workspace, \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E:",
+  "form.pickNoWorkspace": "\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u043F\u0430\u043F\u043A\u0438 \u2014 \u0432\u044B\u0431\u043E\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D",
+  "progress.startup": "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026",
+  "progress.eta": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2248 {t}",
+  "progress.etaPending": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2026",
+  "progress.pass": "\u043A\u0440\u0443\u0433 {p}/{tp}",
+  "progress.filesDone": "{d}/{t} \u0444\u0430\u0439\u043B\u043E\u0432",
+  "onboard.title": "\u041F\u0435\u0440\u0432\u044B\u0439 \u0437\u0430\u043F\u0443\u0441\u043A CodeScout",
+  "onboard.step1": "\u0414\u043E\u0431\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C.",
+  "onboard.step1Btn": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447",
+  "onboard.step2": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439, \u0441 \u0432\u0430\u043B\u0438\u0434\u0430\u0446\u0438\u0435\u0439.",
+  "onboard.step2Btn": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
+  "onboard.step3": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u043E\u043D \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C.",
+  "onboard.step3Btn": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
+  "onboard.dontShow": "\u041D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "onboard.firstTitle": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
+  "onboard.firstBody": "\u0410\u0443\u0434\u0438\u0442 \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0438 \u043F\u043E\u0434\u043C\u0435\u0448\u0430\u0435\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0432 \u043A\u0430\u0436\u0434\u043E\u0435 \u0440\u0435\u0432\u044C\u044E \u2014 \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0441\u0442\u0430\u043D\u0443\u0442 \u0442\u043E\u0447\u043D\u0435\u0435.",
+  "onboard.autoHint": "\u041F\u0440\u0435\u0440\u044B\u0432\u0430\u043D\u0438\u044F \u0430\u0443\u0434\u0438\u0442 \u0434\u043E\u0433\u043E\u043D\u044F\u0435\u0442 \u0441\u0430\u043C \u2014 \u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C.",
+  "summary.title": "\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
+  "summary.meta": "\u041D\u0430\u0445\u043E\u0434\u043E\u043A: {i} \xB7 \u0424\u0430\u0439\u043B\u043E\u0432: {f} \xB7 \u0412\u0440\u0435\u043C\u044F: {t}",
+  "summary.open": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043E\u0442\u0447\u0451\u0442",
+  "summary.again": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "search.placeholder": "\u043F\u043E\u0438\u0441\u043A \u0444\u0430\u0439\u043B\u0430\u2026",
+  "customBanner.label": "\u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E:",
+  "stats.issues": "{n} issues",
+  "stats.files": "{n} files",
+  "stats.seconds": "{n}s",
+  "fixed.title": "\u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 ({n})",
+  "issue.new": "\u043D\u043E\u0432\u0430\u044F",
+  "issue.confidenceVerified": "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u043E \u043A\u043E\u0434\u043E\u043C",
+  "issue.confidenceSuggested": "\u041F\u0440\u0435\u0434\u043F\u043E\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "issue.falsePositive": "\u041B\u043E\u0436\u043D\u043E\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u0435",
+  "issue.falsePositiveTip": "\u0421\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u2014 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435",
+  "issue.showProof": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
+  "issue.proofCondition": "\u0423\u0441\u043B\u043E\u0432\u0438\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F",
+  "issue.proofTrace": "\u041F\u0443\u0442\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F",
+  "empty.onboardTitle": "\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout",
+  "empty.step1Prefix": "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 ",
+  "empty.step1Link": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio",
+  "empty.stepLabel1": "\u0428\u0430\u0433 1.",
+  "empty.stepLabel2": "\u0428\u0430\u0433 2.",
+  "empty.stepLabel3": "\u0428\u0430\u0433 3.",
+  "empty.readyTitle": "CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435",
+  "empty.readyHint": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.",
+  "empty.testTitle": "\u0422\u0415\u0421\u0422",
+  "empty.testHint": "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.",
+  "empty.cleanTitle": "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: {n} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E",
+  "empty.cleanHint": "\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:",
+  "empty.testSample": "\u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435",
+  "empty.scanGit": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 (Git Diff)",
+  "empty.quickHint": "\u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0437\u0430 ~5 \u0441\u0435\u043A\u0443\u043D\u0434",
+  "empty.fullHint": "\u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043D\u044F\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043C\u0438\u043D\u0443\u0442",
+  testBadge: "\u0422\u0415\u0421\u0422",
+  "sec.key": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
+  "sec.lang": "\u042F\u0437\u044B\u043A",
+  "sec.audit": "\u0410\u0443\u0434\u0438\u0442",
+  "sec.project": "\u041F\u0440\u043E\u0435\u043A\u0442",
+  "sec.appearance": "\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434",
+  "sec.about": "\u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438",
+  "subtab.basic": "\u0411\u0430\u0437\u043E\u0432\u044B\u0435",
+  "subtab.custom": "\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F",
+  "title.center": "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+  "center.provider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
+  "center.providerAuto": "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443",
+  "center.apiKeyLabel": "API-\u043A\u043B\u044E\u0447 ( SecretStorage )",
+  "center.keyKeep": "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
+  "center.keyPaste": "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C",
+  "center.reveal": "\u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447",
+  "center.baseUrl": "Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)",
+  "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
+  "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
+  "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
+  "center.liveModels": "\u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
+  "center.forgetKey": "\u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447",
+  "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
+  "audit.passes": "\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)",
+  "audit.maxLines": "\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
+  "audit.maxFiles": "\u041C\u0430\u043A\u0441. \u0444\u0430\u0439\u043B\u043E\u0432 \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
+  "audit.autoResume": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C (\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D)",
+  "audit.autoMaxAttempts": "\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043F\u043E\u043F\u044B\u0442\u043E\u043A (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
+  "audit.autoMaxMinutes": "\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
+  "audit.rateLimitPauses": "\u041F\u0430\u0443\u0437\u044B \u043F\u0440\u0438 rate-limit \u043D\u0430 \u0444\u0430\u0439\u043B (0-5, 0 = \u0441\u043A\u0438\u043F \u0441\u0440\u0430\u0437\u0443)",
+  "audit.findingsSort": "\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043D\u0430\u0445\u043E\u0434\u043E\u043A",
+  "audit.sortSeverity": "\u043F\u043E \u0432\u0430\u0436\u043D\u043E\u0441\u0442\u0438",
+  "audit.sortFile": "\u043F\u043E \u0444\u0430\u0439\u043B\u0443",
+  "audit.sortLine": "\u043F\u043E \u0441\u0442\u0440\u043E\u043A\u0435",
+  "audit.hint": "maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B >800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; N > 0: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F. \u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u0432\u043E\u0437\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0438\u0437 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442\u0430 \u0441 backoff 30\u0441\u219260\u0441\u21922\u043C\u0438\u043D\u21925\u043C\u0438\u043D.",
+  "project.docLinks": "\u0421\u0441\u044B\u043B\u043A\u0438 \u043D\u0430 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044E (\u043E\u0434\u043D\u0430 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435)",
+  "project.docMaxKb": "\u041C\u0430\u043A\u0441. \u0440\u0430\u0437\u043C\u0435\u0440 \u0434\u043E\u043A\u0430 \u0432 \u043F\u0440\u043E\u043C\u0442 (KB)",
+  "project.docMaxLinks": "\u041C\u0430\u043A\u0441. \u0447\u0438\u0441\u043B\u043E \u0441\u0441\u044B\u043B\u043E\u043A \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
+  "project.auditScope": "Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)",
+  "project.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
+  "project.openRules": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md",
+  "project.refreshContext": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442",
+  "project.contextCleared": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043E\u0447\u0438\u0449\u0435\u043D. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0430\u0443\u0434\u0438\u0442 \u0441\u043D\u043E\u0432\u0430.",
+  "project.contextBusy": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0438 \u0434\u043E\u0436\u0434\u0438\u0442\u0435\u0441\u044C \u0435\u0433\u043E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0434 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435\u043C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
+  "project.contextNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043F\u0430\u043F\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
+  "project.hint": "rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.",
+  "lang.select": "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430, \u043E\u0442\u0447\u0451\u0442\u043E\u0432 \u0438 \u043E\u0442\u0432\u0435\u0442\u043E\u0432 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "lang.hint": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442 \u0432\u0441\u0451 \u0441\u0440\u0430\u0437\u0443: \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441, \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0438 \u043E\u0442\u0432\u0435\u0442\u044B \u043C\u043E\u0434\u0435\u043B\u0438. \u0413\u043B\u043E\u0431\u0443\u0441 \u0432 \u0448\u0430\u043F\u043A\u0435 \u043F\u0430\u043D\u0435\u043B\u0438 \u2014 \u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0442\u0443\u043C\u0431\u043B\u0435\u0440 \u0442\u043E\u0433\u043E \u0436\u0435.",
+  "appear.langRu": "RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438",
+  "appear.langEn": "EN \u2014 English",
+  "appear.rtAuto": "auto \u2014 \u043A\u0430\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441",
+  "appear.rtDark": "dark \u2014 \u0442\u0451\u043C\u043D\u0430\u044F",
+  "appear.rtLight": "light \u2014 \u0441\u0432\u0435\u0442\u043B\u0430\u044F",
+  "appear.uiTheme": "\u0422\u0435\u043C\u0430 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
+  "appear.themeAuto": "auto \u2014 \u043A\u0430\u043A \u0432 VS Code",
+  "appear.themeDark": "dark \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0442\u0451\u043C\u043D\u0430\u044F",
+  "appear.themeLight": "light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F",
+  "appear.themeCustom": "custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430",
+  "appear.themeEditor": "Theme Editor",
+  "appear.accent": "\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442",
+  "appear.accentAuto": "auto \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 VS Code",
+  "appear.density": "\u041F\u043B\u043E\u0442\u043D\u043E\u0441\u0442\u044C",
+  "appear.densityStandard": "standard",
+  "appear.densityCompact": "compact",
+  "appear.reportTheme": "\u0422\u0435\u043C\u0430 \u044D\u043A\u0441\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C\u043E\u0433\u043E \u043E\u0442\u0447\u0451\u0442\u0430",
+  "appear.showConfidence": "\u041F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C % \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0443 \u043D\u0430\u0445\u043E\u0434\u043E\u043A",
+  "appear.showBanner": "\u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435",
+  "appear.customHint": "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043D\u0438\u0436\u0435 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0432\u043A\u043B\u044E\u0447\u0430\u0442 \u0442\u0435\u043C\u0443 custom.",
+  "appear.enableCustom": "\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C custom \u0441\u0435\u0439\u0447\u0430\u0441",
+  "palette.colors": "\u0426\u0412\u0415\u0422\u0410",
+  "palette.geometry": "\u0413\u0415\u041E\u041C\u0415\u0422\u0420\u0418\u042F",
+  "palette.typography": "\u0422\u0418\u041F\u041E\u0413\u0420\u0410\u0424\u0418\u041A\u0410",
+  "palette.fontSize": "\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430",
+  "palette.fontS": "s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439",
+  "palette.fontM": "m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439",
+  "palette.fontL": "l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439",
+  "palette.reset": "\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443",
+  "palette.copy": "\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C JSON \u0442\u0435\u043C\u044B",
+  "palette.apply": "\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 JSON",
+  "palette.contrastHint": "\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C",
+  "cc.bg": "\u0424\u043E\u043D \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B",
+  "cc.card": "\u0424\u043E\u043D \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438",
+  "cc.fg": "\u0422\u0435\u043A\u0441\u0442",
+  "cc.desc": "\u041F\u0440\u0438\u0433\u043B\u0443\u0448\u0451\u043D\u043D\u044B\u0439 \u0442\u0435\u043A\u0441\u0442",
+  "cc.border": "\u0413\u0440\u0430\u043D\u0438\u0446\u044B",
+  "cc.accent": "\u0410\u043A\u0446\u0435\u043D\u0442",
+  "cc.btnBg": "\u041A\u043D\u043E\u043F\u043A\u0430: \u0444\u043E\u043D",
+  "cc.btnFg": "\u041A\u043D\u043E\u043F\u043A\u0430: \u0442\u0435\u043A\u0441\u0442",
+  "cc.btnHover": "\u041A\u043D\u043E\u043F\u043A\u0430: hover",
+  "cc.inputBg": "\u0418\u043D\u043F\u0443\u0442: \u0444\u043E\u043D",
+  "cc.inputFg": "\u0418\u043D\u043F\u0443\u0442: \u0442\u0435\u043A\u0441\u0442",
+  "cc.error": "Severity: error",
+  "cc.warn": "Severity: warning",
+  "cc.pass": "Severity: pass",
+  "cc.chipBg": "\u0427\u0438\u043F\u044B: \u0444\u043E\u043D",
+  "cc.chipFg": "\u0427\u0438\u043F\u044B: \u0442\u0435\u043A\u0441\u0442",
+  "geom.btnRadius": "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u043D\u043E\u043F\u043E\u043A (px)",
+  "geom.btnHeight": "\u0412\u044B\u0441\u043E\u0442\u0430 \u043A\u043D\u043E\u043F\u043E\u043A (px)",
+  "geom.cardRadius": "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A (px)",
+  "chip.removeTip": "\u0423\u0431\u0440\u0430\u0442\u044C \u0438\u0437 scope",
+  "save.save": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C",
+  "save.saving": "\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026",
+  "save.clean": "\u043D\u0435\u0442 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439",
+  "save.dirty": "\u0435\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F",
+  "about.version": "\u0412\u0435\u0440\u0441\u0438\u044F:",
+  "about.readme": "README",
+  "about.repo": "\u0420\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0439",
+  "about.issue": "\u0421\u043E\u043E\u0431\u0449\u0438\u0442\u044C \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435",
+  "issue.happened": "\u0427\u0442\u043E \u0441\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C",
+  "issue.steps": "\u0428\u0430\u0433\u0438 \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F",
+  "issue.expectedActual": "\u041E\u0436\u0438\u0434\u0430\u043B / \u041F\u043E\u043B\u0443\u0447\u0438\u043B",
+  "issue.expected": "\u041E\u0436\u0438\u0434\u0430\u043B",
+  "issue.actual": "\u041F\u043E\u043B\u0443\u0447\u0438\u043B",
+  "issue.diag": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
+  "issue.keyYes": "\u043A\u043B\u044E\u0447: \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D (\u0441\u0430\u043C \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F)",
+  "issue.keyNo": "\u043A\u043B\u044E\u0447: \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
+  "issue.lastError": "\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u043D\u0430: {e}",
+  "issue.noError": "\u043E\u0448\u0438\u0431\u043E\u043A \u0441\u043A\u0430\u043D\u0430 \u043D\u0435 \u0431\u044B\u043B\u043E",
+  "issue.outputTail": "\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Output",
+  "issue.hint": "\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0437\u0434\u0435\u0441\u044C \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443",
+  "progress.file.check": "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B",
+  "progress.file.audit": "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B",
+  "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
+  "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}\u0441",
+  "status.thinking": "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 {s}\u0441",
+  "status.retry": "\u23F3 Rate limit \u0443 {model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m})...",
+  "status.cancelled": "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C",
+  "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u23F3 \u043D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: {r} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
+  "notRechecked.title": "\u041D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u0441\u043A\u0430\u043D\u0435 ({n})",
+  "sample.summary": "\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}.",
+  "sample.weak": "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F",
+  "sample.onlyOne": "\u041D\u0430\u0448\u0451\u043B \u0442\u043E\u043B\u044C\u043A\u043E 1 \u0438\u0437 3 \u2014 \u0440\u0435\u0432\u044C\u044E\u0435\u0440 \u0441\u043B\u0430\u0431\u044B\u0439, \u043F\u043E\u0434\u0443\u043C\u0430\u0439 \u0441\u043C\u0435\u043D\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
+  "sample.ok": "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!",
+  "panel.errOpenFileNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.",
+  "panel.errFileNotFound": "\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: {file}",
+  "dialog.addToScope": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0432 scope \u0430\u0443\u0434\u0438\u0442\u0430",
+  "panel.errNoWorkspaceAudit": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0434\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430.",
+  "panel.errNoWorkspaceCustom": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E.",
+  "panel.errNoWorkspaceReview": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0444\u0430\u0439\u043B/\u043F\u0430\u043F\u043A\u0443.",
+  "panel.errUseExplorer": "CodeScout: \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0442\u044C \u043C\u043E\u0436\u043D\u043E \u0447\u0435\u0440\u0435\u0437 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u043E\u0435 \u043C\u0435\u043D\u044E \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0430 (\u041F\u041A\u041C \u043F\u043E \u0444\u0430\u0439\u043B\u0443 \u0438\u043B\u0438 \u043F\u0430\u043F\u043A\u0435).",
+  "panel.errPathUnreadable": "CodeScout: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C: {path}",
+  "panel.errPathOutside": "CodeScout: \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C \u0432\u043D\u0435 workspace \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0442\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+  "custom.explorerFocus": "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0432\u044B\u0431\u043E\u0440\u0430 \u0432 \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0435: {rel}",
+  "panel.errNoGlobMatch": '\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "{globs}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).',
+  "panel.errNoFiles": "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.",
+  "panel.errNoKey": "\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F {p}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key.",
+  "panel.keyGet": " \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: {x}",
+  "panel.keyGetAlt": "\u043D\u0430\u0441\u0442\u0440\u043E\u0439 codescout.baseUrl / CODESCOUT_BASE_URL",
+  "panel.errNoGit": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.",
+  "notify.customDone": "CodeScout: \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u043E, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}",
+  "model.inputFetchFailed": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C /models. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
+  "model.inputEmpty": "\u0421\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u043F\u0443\u0441\u0442. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
+  "model.pickTitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u0437 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445",
+  "model.pickTitleShort": "\u0412\u044B\u0431\u0435\u0440\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
+  "custom.focusPrompt": "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C? \u041E\u043F\u0438\u0448\u0438 \u0444\u043E\u043A\u0443\u0441 \u0440\u0435\u0432\u044C\u044E \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439",
+  "custom.focusPlaceholder": "\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043E\u0448\u0438\u0431\u043E\u043A \u0432 \u0441\u0435\u0442\u0435\u0432\u044B\u0445 \u0432\u044B\u0437\u043E\u0432\u0430\u0445",
+  "custom.scopePlaceholder": "\u041A\u0430\u043A\u0438\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C?",
+  "custom.globsPrompt": "\u0413\u043B\u043E\u0431\u044B \u0444\u0430\u0439\u043B\u043E\u0432 \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E",
+  "onboarding.resetConfirm": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430?",
+  "common.delete": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C",
+  "onboarding.resetDone": "\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D",
+  "key.inputPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
+  "key.pickProvider": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
+  "key.sourceAuto": "\u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043E \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
+  "key.sourceManual": "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
+  "key.savedNotify": "\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: {p}, \u043C\u043E\u0434\u0435\u043B\u044C: {m} ({s})",
+  "key.needFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0447\u0435\u0440\u0435\u0437 CodeScout: set API key.",
+  "key.deleteConfirm": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?",
+  "key.deletedNotify": "\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
+  "rules.errNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0432 VS Code",
+  "center.savedKey": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 {p} \xB7 {m}",
+  "center.noteKey": "\u043A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D",
+  "center.noteProviderAuto": "\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0451\u043D \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438: {p}",
+  "center.noteProviderManual": "\u043F\u0440\u0435\u0444\u0438\u043A\u0441 \u043A\u043B\u044E\u0447\u0430 \u043D\u0435 \u0440\u0430\u0441\u043F\u043E\u0437\u043D\u0430\u043D \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
+  "center.noteCustomNoUrl": "custom \u0431\u0435\u0437 Base URL \u2014 \u0437\u0430\u043F\u043E\u043B\u043D\u0438 \u043F\u043E\u043B\u0435 \u0438\u043B\u0438 env CODESCOUT_BASE_URL",
+  "center.savedLang": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430 \u0438 \u043E\u0442\u0447\u0451\u0442\u043E\u0432: {L} (\u043F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u0441\u044F \u043A \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u043C\u0443 \u0440\u0435\u0432\u044C\u044E) \xB7 \u0431\u0430\u043D\u043D\u0435\u0440 \u0430\u0443\u0434\u0438\u0442\u0430 {B}",
+  "center.on": "\u0432\u043A\u043B\u044E\u0447\u0451\u043D",
+  "center.off": "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D",
+  "center.autoIn": "\u0432\u043A\u043B",
+  "center.autoOut": "\u0432\u044B\u043A\u043B",
+  "center.keyCleared": "\u2705 \u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 SecretStorage",
+  "center.modelRefresh": "\u2705 \u041C\u043E\u0434\u0435\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0438\u0437 \u0436\u0438\u0432\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430",
+  "center.savedProject": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: {n} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 {kb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 {max} \xB7 maxLines: {ml} \xB7 \u043A\u0440\u0443\u0433\u043E\u0432: {p} \xB7 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C {ar} \xB7 scope: {sc}",
+  "center.maxLinesNo": "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)",
+  "center.maxLinesN": "{n} \u0441\u0442\u0440\u043E\u043A",
+  "center.scopeAll": "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B",
+  "center.savedAll": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 {p}, maxLines {ml}, maxFiles {f}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D {ar} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: {n} \u0434\u043E\u043A(\u043E\u0432), scope {sc} \xB7 \u044F\u0437\u044B\u043A {L} \xB7 \u0432\u0438\u0434: {ui}",
+  "center.rulesOpened": "\u2705 \u041E\u0442\u043A\u0440\u044B\u0442 .codescout/rules.md \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u043F\u043E\u0434\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0440\u0435\u0432\u044C\u044E",
+  "center.error": "\u274C \u041E\u0448\u0438\u0431\u043A\u0430: {msg}",
+  "diag.title": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
+  "err.auth": "\u041A\u043B\u044E\u0447 \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D \u0438\u043B\u0438 \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430",
+  "err.notFound": "\u041C\u043E\u0434\u0435\u043B\u044C \u0438\u043B\u0438 \u0430\u0434\u0440\u0435\u0441 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B",
+  "err.rateLimit": "\u041B\u0438\u043C\u0438\u0442 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430, \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 {n} \u0441\u0435\u043A",
+  "err.timeout": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0432\u043E\u0432\u0440\u0435\u043C\u044F",
+  "err.badResponse": "\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442",
+  "err.title.auth_invalid_key": "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 (401)",
+  "err.msg.auth_invalid_key": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u043B API-\u043A\u043B\u044E\u0447 \u2014 \u0437\u0430\u043F\u0440\u043E\u0441 \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D.",
+  "err.hint.auth_invalid_key": "\u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043A\u043B\u044E\u0447 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0435\u0433\u043E \u0437\u0430\u043D\u043E\u0432\u043E: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u2192 \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C.",
+  "err.title.auth_forbidden": "\u0414\u043E\u0441\u0442\u0443\u043F \u0437\u0430\u043F\u0440\u0435\u0449\u0451\u043D (403)",
+  "err.msg.auth_forbidden": "\u041A\u043B\u044E\u0447 \u043F\u0440\u0438\u043D\u044F\u0442, \u043D\u043E \u043F\u0440\u0430\u0432 \u043D\u0430 \u044D\u0442\u0443 \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u043B\u0438 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442 \u043D\u0435 \u0445\u0432\u0430\u0442\u0430\u0435\u0442.",
+  "err.hint.auth_forbidden": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u043B\u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043F\u0440\u0430\u0432\u0430 \u043A\u043B\u044E\u0447\u0430 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430.",
+  "err.title.rate_limit_exceeded": "\u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (429)",
+  "err.msg.rate_limit_exceeded": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441\u044B (\u043A\u0432\u043E\u0442\u0430, RPM \u0438\u043B\u0438 TPM).",
+  "err.hint.rate_limit_exceeded": "\u041F\u043E\u0434\u043E\u0436\u0434\u0438\u0442\u0435 \u043F\u0430\u0440\u0443 \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u0435\u0441\u044C \u043D\u0430 \u0437\u0430\u043F\u0430\u0441\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C; \u043F\u0430\u0443\u0437\u044B \u0440\u0435\u0442\u0440\u0430\u044F \u2014 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0430\u0443\u0434\u0438\u0442\u0430.",
+  "err.title.model_not_found": "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 (404)",
+  "err.msg.model_not_found": "\u0418\u043C\u044F \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435\u0432\u0435\u0440\u043D\u043E \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u044D\u0442\u043E\u043C\u0443 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.",
+  "err.hint.model_not_found": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C\xBB \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439 \u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0439.",
+  "err.title.timeout": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0432\u043E\u0432\u0440\u0435\u043C\u044F",
+  "err.msg.timeout": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0437\u0430 {s} \u0441 \u2014 \u0441\u043E\u0435\u0434\u0438\u043D\u0435\u043D\u0438\u0435 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043E \u043F\u043E \u0442\u0430\u0439\u043C\u0430\u0443\u0442\u0443.",
+  "err.hint.timeout": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u043F\u043E\u043F\u044B\u0442\u043A\u0443; \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435, \u0437\u0430\u043F\u0443\u0449\u0435\u043D \u043B\u0438 \u0441\u0435\u0440\u0432\u0435\u0440, \u0438\u043B\u0438 \u0443\u0432\u0435\u043B\u0438\u0447\u044C\u0442\u0435 \u0442\u0430\u0439\u043C\u0430\u0443\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.",
+  "err.title.connection_refused": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D",
+  "err.msg.connection_refused": "\u0421\u043E\u0435\u0434\u0438\u043D\u0435\u043D\u0438\u0435 \u043E\u0442\u043A\u043B\u043E\u043D\u0435\u043D\u043E (ECONNREFUSED) \u2014 \u0430\u0434\u0440\u0435\u0441 \u043D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0438\u043B\u0438 \u0441\u0435\u0440\u0432\u0438\u0441 \u043D\u0435 \u0437\u0430\u043F\u0443\u0449\u0435\u043D.",
+  "err.hint.connection_refused": "\u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 Base URL \u0438 \u0437\u0430\u043F\u0443\u0449\u0435\u043D \u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0438\u0441: Ollama (ollama serve) \u0438\u043B\u0438 LM Studio.",
+  "err.title.invalid_json": "\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 JSON",
+  "err.msg.invalid_json": "\u041E\u0442\u0432\u0435\u0442 \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0440\u0430\u0437\u043E\u0431\u0440\u0430\u0442\u044C: \u0432\u043C\u0435\u0441\u0442\u043E JSON \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043F\u0440\u0438\u0441\u043B\u0430\u043B \u043D\u0435\u0440\u0430\u0431\u043E\u0447\u0438\u0439 \u0444\u043E\u0440\u043C\u0430\u0442.",
+  "err.hint.invalid_json": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u043F\u043E\u043F\u044B\u0442\u043A\u0443 \u0438\u043B\u0438 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C, \u043D\u0430\u0434\u0451\u0436\u043D\u043E \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0443\u044E \u0444\u043E\u0440\u043C\u0430\u0442\u0443 \u043E\u0442\u0432\u0435\u0442\u0430.",
+  "err.title.unknown": "\u041E\u0448\u0438\u0431\u043A\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438",
+  "err.msg.unknown": "\u041F\u0440\u043E\u0438\u0437\u043E\u0448\u043B\u0430 \u043D\u0435\u043F\u0440\u0435\u0434\u0432\u0438\u0434\u0435\u043D\u043D\u0430\u044F \u043E\u0448\u0438\u0431\u043A\u0430. \u041F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0438 \u2014 \u0432 Output CodeScout.",
+  "err.hint.unknown": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 Output CodeScout \u0438 \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u0441\u043E\u043E\u0431\u0449\u0438\u0442\u0435 \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435.",
+  "err.retry": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u043F\u043E\u043F\u044B\u0442\u043A\u0443",
+  "err.openSettings": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+  "audit.requestTimeout": "\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043A \u043C\u043E\u0434\u0435\u043B\u0438, \u0441\u0435\u043A (10-600)",
+  "audit.requestTimeoutHint": "\u0416\u0451\u0441\u0442\u043A\u0438\u0439 \u0434\u0435\u0434\u043B\u0430\u0439\u043D \u043E\u0434\u043D\u043E\u0433\u043E HTTP-\u0432\u044B\u0437\u043E\u0432\u0430 \u0438\u043D\u0444\u0435\u0440\u0435\u043D\u0441\u0430: \u0437\u0430\u0432\u0438\u0441\u0448\u0438\u0439 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043F\u043E\u0434\u0432\u0435\u0441\u0438\u0442 \u0441\u043A\u0430\u043D. \u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u0438 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0432\u0441\u0435\u0433\u0434\u0430 \u0436\u0434\u0443\u0442 5 \u0441.",
+  "wizard.title": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 CodeScout",
+  "wizard.subtitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0440\u0435\u0436\u0438\u043C \u0440\u0430\u0431\u043E\u0442\u044B",
+  "wizard.cloud": "\u2601\uFE0F \u041E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
+  "wizard.cloudProvider": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
+  "wizard.keyPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
+  "wizard.local": "\u{1F4BB} \u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
+  "wizard.localPick": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0435\u0440",
+  "wizard.urlPrompt": "\u0410\u0434\u0440\u0435\u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (\u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0434\u043B\u044F Ollama: http://localhost:11434, \u0434\u043B\u044F LM Studio: http://localhost:1234)",
+  "wizard.localSuccess": "\u2705 \u0421\u0435\u0440\u0432\u0435\u0440 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439. \u041A\u043B\u044E\u0447 \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u043D\u0435 \u043D\u0443\u0436\u0435\u043D.",
+  "wizard.localFail": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0430\u0434\u0440\u0435\u0441 \u0438 \u0437\u0430\u043F\u0443\u0441\u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0430.",
+  "wizard.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "wizard.skip": "\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u0442\u044C",
+  "center.connecting": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443...",
+  "center.connected": "\u2705 \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439",
+  "center.noResponse": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B",
+  "center.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "key.localHint": "\u041E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u0432 (Ollama/LM Studio)",
+  "trust.prompt": "Base URL \u043F\u0440\u0438\u0448\u0451\u043B \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438: {url}. \u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443 \u043A\u043E\u0434\u0430 \u0438 API-\u043A\u043B\u044E\u0447\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0430\u0434\u0440\u0435\u0441?",
+  "trust.accept": "\u0414\u043E\u0432\u0435\u0440\u044F\u0442\u044C",
+  "trust.reject": "\u041E\u0442\u043C\u0435\u043D\u0430",
+  "trust.errUntrusted": "Base URL \u0437\u0430\u0434\u0430\u043D \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438, \u043D\u043E \u0440\u0430\u0431\u043E\u0447\u0430\u044F \u043E\u0431\u043B\u0430\u0441\u0442\u044C \u043D\u0435 \u0434\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u0430\u044F. \u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.",
+  "trust.errNotConfirmed": "Base URL \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438 \u043D\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D. \u0417\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0438\u043B\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435."
+};
+
+// ../src/i18n/en.json
+var en_default = {
+  "brand.name": "CodeScout",
+  "brand.settings": "Settings",
+  "brand.settingsTip": "Open CodeScout settings",
+  "brand.toggleLang": "Switch interface language",
+  "brand.langRu": "EN",
+  "key.ready": "protected",
+  "key.missing": "Key not configured",
+  "key.andModel": "Key and model",
+  "actions.scanLastCommit": "Review last commit",
+  "actions.scanUncommitted": "Review uncommitted changes",
+  "actions.scanFull": "Full project audit",
+  "actions.customReview": "Custom review",
+  "actions.customReviewCollapse": "Collapse",
+  "actions.cancel": "Stop",
+  "actions.rerunWithModel": "Re-run with this model",
+  "status.model404": "Choose an available model",
+  "badge.auto": "Autonomous mode: ON (unlimited)",
+  "badge.autoAttempts": "Autonomous mode: ON (max {n} attempts)",
+  "badge.autoMinutes": "Autonomous mode: ON (max {n} min)",
+  "badge.autoBoth": "Autonomous mode: ON (max {a} attempts / {m} min)",
+  "badge.autoTitle": "A full audit catches up from where it stopped with backoff (codescout.autoResume)",
+  "badge.autoDetailNone": "unlimited",
+  "badge.autoDetailAttempts": "max {n} attempts",
+  "badge.autoDetailMinutes": "max {n} min",
+  "badge.autoDetailBoth": "max {a} attempts / {m} min",
+  "banner.welcomeNew": "CodeScout can study the whole project \u2014 reviews get sharper. Run a full audit?",
+  "banner.welcomeStale": "The model changed \u2014 the context may be stale. Refresh with a full audit?",
+  "banner.startAudit": "Run audit",
+  "banner.update": "Refresh",
+  "banner.later": "Later",
+  "resume.title": "Audit interrupted: checked {done} of {total} files ({model})",
+  "resume.findings": "\xB7 {n} findings",
+  "resume.continue": "Continue ({done} of {total})",
+  "resume.restart": "Start over",
+  "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",
+  "restart.confirmBtn": "Delete and restart",
+  "auto.line": "auto-catch-up: {done}/{total}, {attemptLabel} in {seconds}s",
+  "auto.lineRetry": "auto-catch-up: {done}/{total}, {attemptLabel} \u2014 retrying\u2026",
+  "auto.attemptOf": "attempt {a}/{m}",
+  "auto.attempt": "attempt {a}",
+  "auto.retrying": " \u2014 retrying\u2026",
+  "form.focusLabel": "What to check?",
+  "form.focusPlaceholder": "e.g. are all DB calls inside transactions?",
+  "form.scopeAll": "all project files",
+  "form.scopeActive": "only the open file",
+  "form.scopeList": "file list (globs, comma separated)",
+  "form.pickFiles": "Pick files/folders",
+  "form.start": "Run custom review",
+  "form.pickOutside": "outside workspace, not added:",
+  "form.pickNoWorkspace": "No open folder \u2014 picking is unavailable",
+  "progress.startup": "Starting check\u2026",
+  "progress.eta": "\u2248 {t} left",
+  "progress.etaPending": "ETA \u2026",
+  "progress.pass": "pass {p}/{tp}",
+  "progress.filesDone": "{d}/{t} files",
+  "onboard.title": "First run of CodeScout",
+  "onboard.step1": "Add an API key \u2014 the provider is detected automatically.",
+  "onboard.step1Btn": "Add key",
+  "onboard.step2": "Pick a model \u2014 the list is live and validated.",
+  "onboard.step2Btn": "Choose model",
+  "onboard.step3": "Run a full audit \u2014 it studies the whole project.",
+  "onboard.step3Btn": "Run first audit",
+  "onboard.dontShow": "Don't show again",
+  "onboard.firstTitle": "Run your first audit",
+  "onboard.firstBody": "The audit studies the project and mixes context into every review \u2014 findings get sharper.",
+  "onboard.autoHint": "Interruptions catch up on their own \u2014 \u{1F916} autonomous mode.",
+  "summary.title": "Audit finished",
+  "summary.meta": "{i} findings \xB7 {f} files \xB7 {t} total",
+  "summary.open": "Open report",
+  "summary.again": "Run again",
+  "search.placeholder": "search file\u2026",
+  "customBanner.label": "Custom review:",
+  "stats.issues": "{n} issues",
+  "stats.files": "{n} files",
+  "stats.seconds": "{n}s",
+  "fixed.title": "Fixed since last scan ({n})",
+  "issue.new": "new",
+  "issue.confidenceVerified": "Verified by code",
+  "issue.confidenceSuggested": "Model suggestion",
+  "issue.falsePositive": "False positive",
+  "issue.falsePositiveTip": "Hide finding \u2014 do not show it again in this workspace",
+  "issue.showProof": "Show proof",
+  "issue.proofCondition": "Trigger condition",
+  "issue.proofTrace": "Execution trace",
+  "empty.onboardTitle": "Hi! This is CodeScout",
+  "empty.step1Prefix": "Get a provider API key at ",
+  "empty.step1Link": "Open Google AI Studio",
+  "empty.stepLabel1": "Step 1.",
+  "empty.stepLabel2": "Step 2.",
+  "empty.stepLabel3": "Step 3.",
+  "empty.readyTitle": "CodeScout is ready",
+  "empty.readyHint": "Click one of the buttons above to start a review.",
+  "empty.testTitle": "TEST",
+  "empty.testHint": "Check finished on the built-in sample.",
+  "empty.cleanTitle": "Checked files: {n} \u2014 no problems found",
+  "empty.cleanHint": "Not sure? See how CodeScout catches bugs:",
+  "empty.testSample": "Test on sample",
+  "empty.scanGit": "Check last commit (Git Diff)",
+  "empty.quickHint": "quick result in ~5 seconds",
+  "empty.fullHint": "may take several minutes",
+  testBadge: "TEST",
+  "sec.key": "Key and model",
+  "sec.lang": "Language",
+  "sec.audit": "Audit",
+  "sec.project": "Project",
+  "sec.appearance": "Appearance",
+  "sec.about": "About",
+  "subtab.basic": "Basic",
+  "subtab.custom": "Customization",
+  "title.center": "CodeScout: Settings",
+  "center.provider": "Provider",
+  "center.providerAuto": "auto \u2014 by key",
+  "center.apiKeyLabel": "API key ( SecretStorage )",
+  "center.keyKeep": "empty field = keep the current key",
+  "center.keyPaste": "paste a key \u2014 the provider is detected",
+  "center.reveal": "show the typed key",
+  "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
+  "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
+  "center.now": "now:",
+  "center.nowNone": "key not configured",
+  "center.liveModels": "Live models\u2026",
+  "center.forgetKey": "Forget key",
+  "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
+  "audit.passes": "Review passes per file (1-3)",
+  "audit.maxLines": "Max lines per file (0 = no limit)",
+  "audit.maxFiles": "Max files per audit",
+  "audit.autoResume": "Autonomous mode (auto-catch-up)",
+  "audit.autoMaxAttempts": "Auto-catch-up: max attempts (0 = unlimited)",
+  "audit.autoMaxMinutes": "Auto-catch-up: max minutes (0 = unlimited)",
+  "audit.rateLimitPauses": "Pauses on file rate-limit (0-5, 0 = skip at once)",
+  "audit.findingsSort": "Findings sort order",
+  "audit.sortSeverity": "by severity",
+  "audit.sortFile": "by file",
+  "audit.sortLine": "by line",
+  "audit.hint": "maxLines = 0: no limit, files >800 lines are chunked with a 50-line overlap; N > 0: longer files are skipped. Auto-catch-up resumes an interrupted audit from the checkpoint with a 30s\u219260s\u21922min\u21925min backoff.",
+  "project.docLinks": "Documentation links (one per line)",
+  "project.docMaxKb": "Max doc size in the prompt (KB)",
+  "project.docMaxLinks": "Max doc links per audit",
+  "project.auditScope": "Audit scope (globs, comma separated, empty = all)",
+  "project.pickFiles": "Pick files/folders",
+  "project.openRules": "Open rules.md",
+  "project.refreshContext": "Refresh context",
+  "project.contextCleared": "Context cleared. Run audit again.",
+  "project.contextBusy": "Stop the scan and wait for it to finish before refreshing context.",
+  "project.contextNoWorkspace": "Open a project folder to refresh context.",
+  "project.hint": "rules.md is mixed into every prompt. Docs are fetched (5s timeout, oversized truncated keeping the head) and cached in .codescout/docs-cache.json for 24h. Scope limits the full audit; the right-click review ignores it.",
+  "lang.select": "Interface, reports and model answers language",
+  "lang.hint": "Switches everything at once: the UI, findings and model answers. The globe in the panel header is a quick toggle for the same setting.",
+  "appear.langRu": "RU \u2014 Russian",
+  "appear.langEn": "EN \u2014 English",
+  "appear.rtAuto": "auto \u2014 match the interface",
+  "appear.rtDark": "dark",
+  "appear.rtLight": "light",
+  "appear.uiTheme": "Interface theme",
+  "appear.themeAuto": "auto \u2014 match VS Code",
+  "appear.themeDark": "dark \u2014 fixed dark",
+  "appear.themeLight": "light \u2014 fixed light",
+  "appear.themeCustom": "custom \u2014 own palette",
+  "appear.themeEditor": "Theme Editor",
+  "appear.accent": "Accent color",
+  "appear.accentAuto": "auto \u2014 VS Code button",
+  "appear.density": "Density",
+  "appear.densityStandard": "standard",
+  "appear.densityCompact": "compact",
+  "appear.reportTheme": "Exported report theme",
+  "appear.showConfidence": "Show model confidence % on findings",
+  "appear.showBanner": 'Show the "run a full audit" banner on start',
+  "appear.customHint": "Edits below automatically turn on the custom theme.",
+  "appear.enableCustom": "Enable custom now",
+  "palette.colors": "COLORS",
+  "palette.geometry": "GEOMETRY",
+  "palette.typography": "TYPOGRAPHY",
+  "palette.fontSize": "Font size",
+  "palette.fontS": "s \u2014 small",
+  "palette.fontM": "m \u2014 normal",
+  "palette.fontL": "l \u2014 large",
+  "palette.reset": "Reset palette",
+  "palette.copy": "Copy theme JSON",
+  "palette.apply": "Apply from JSON",
+  "palette.contrastHint": "low contrast \u2014 text may be unreadable",
+  "cc.bg": "Page background",
+  "cc.card": "Card background",
+  "cc.fg": "Text",
+  "cc.desc": "Muted text",
+  "cc.border": "Borders",
+  "cc.accent": "Accent",
+  "cc.btnBg": "Button: background",
+  "cc.btnFg": "Button: text",
+  "cc.btnHover": "Button: hover",
+  "cc.inputBg": "Input: background",
+  "cc.inputFg": "Input: text",
+  "cc.error": "Severity: error",
+  "cc.warn": "Severity: warning",
+  "cc.pass": "Severity: pass",
+  "cc.chipBg": "Chips: background",
+  "cc.chipFg": "Chips: text",
+  "geom.btnRadius": "Button radius (px)",
+  "geom.btnHeight": "Button height (px)",
+  "geom.cardRadius": "Card radius (px)",
+  "chip.removeTip": "Remove from scope",
+  "save.save": "Save",
+  "save.saving": "Saving\u2026",
+  "save.clean": "no unsaved changes",
+  "save.dirty": "there are unsaved changes",
+  "about.version": "Version:",
+  "about.readme": "README",
+  "about.repo": "Repository",
+  "about.issue": "Report an issue",
+  "issue.happened": "What happened",
+  "issue.steps": "Steps to reproduce",
+  "issue.expectedActual": "Expected / Actual",
+  "issue.expected": "Expected",
+  "issue.actual": "Actual",
+  "issue.diag": "Diagnostics",
+  "issue.keyYes": "key: installed (the key itself is never submitted)",
+  "issue.keyNo": "key: not configured",
+  "issue.lastError": "last scan error: {e}",
+  "issue.noError": "no scan errors",
+  "issue.outputTail": "Recent Output lines",
+  "issue.hint": "describe it briefly here",
+  "progress.file.check": "\u{1F50E} Checking file",
+  "progress.file.audit": "\u{1F50E} Full audit: file",
+  "progress.file.custom": "\u{1F3AF} Custom review: file",
+  "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}s",
+  "status.thinking": "\u{1F916} Model is thinking... \xB7 \u23F1 {s}s",
+  "status.retry": "\u23F3 Rate limit from {model}, waiting {s}s (attempt {a}/{m})...",
+  "status.cancelled": "\u26D4 Scan stopped by user",
+  "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u23F3 not rechecked: {r} \xB7 \u{1F501} unchanged: {s}",
+  "notRechecked.title": "Not rechecked in this scan ({n})",
+  "sample.summary": "Sample: expected 2-3 bugs, found {n}.",
+  "sample.weak": "\u26A0\uFE0F The model is too weak for review \u2014 switch the model via the \u2699\uFE0F button",
+  "sample.onlyOne": "Only 1 of 3 found \u2014 the reviewer is weak, consider switching the model",
+  "sample.ok": "Reviewer is alive!",
+  "panel.errOpenFileNoWorkspace": "Open a workspace folder to jump to the file.",
+  "panel.errFileNotFound": "File not found in workspace: {file}",
+  "dialog.addToScope": "Add to audit scope",
+  "panel.errNoWorkspaceAudit": "Open a workspace folder to run a full audit.",
+  "panel.errNoWorkspaceCustom": "Open a workspace folder to run a custom review.",
+  "panel.errNoWorkspaceReview": "Open a workspace folder to review a file/folder.",
+  "panel.errUseExplorer": "CodeScout: review is available from the explorer context menu (right-click a file or folder).",
+  "panel.errPathUnreadable": "CodeScout: failed to read the selected path: {path}",
+  "panel.errPathOutside": "CodeScout: the selected path is outside the workspace \u2014 only project files can be reviewed.",
+  "custom.explorerFocus": "Explorer selection review: {rel}",
+  "panel.errNoGlobMatch": 'No files matched the globs "{globs}" (check the ignore lists).',
+  "panel.errNoFiles": "No files available for review.",
+  "panel.errNoKey": "No API key found for {p}. Set codescout.apiKey or run CodeScout: set API key.",
+  "panel.keyGet": " Get a key: {x}",
+  "panel.keyGetAlt": "configure codescout.baseUrl / CODESCOUT_BASE_URL",
+  "panel.errNoGit": "Open a folder with a Git repository in VS Code and run the command again.",
+  "notify.customDone": "CodeScout: custom review finished, {n} found",
+  "model.inputFetchFailed": "Failed to fetch /models. Type a model manually",
+  "model.inputEmpty": "The model list is empty. Type a model manually",
+  "model.pickTitle": "Choose a model from the available ones",
+  "model.pickTitleShort": "Pick an available model",
+  "custom.focusPrompt": "What to check? Describe the review focus in one line",
+  "custom.focusPlaceholder": "e.g. check error handling in network calls",
+  "custom.scopePlaceholder": "Which files do we check?",
+  "custom.globsPrompt": "File globs, comma separated",
+  "onboarding.resetConfirm": "Delete the saved project context?",
+  "common.delete": "Delete",
+  "onboarding.resetDone": "\u2705 Onboarding reset",
+  "key.inputPrompt": "Paste a provider API key \u2014 the provider is detected automatically",
+  "key.pickProvider": "Pick a provider",
+  "key.sourceAuto": "detected automatically",
+  "key.sourceManual": "chosen manually",
+  "key.savedNotify": "\u2705 Key saved. Provider: {p}, model: {m} ({s})",
+  "key.needFirst": "Save an API key first via CodeScout: set API key.",
+  "key.deleteConfirm": "Delete the saved CodeScout API key?",
+  "key.deletedNotify": "Key removed from secret storage",
+  "rules.errNoWorkspace": "Open a workspace folder in VS Code",
+  "center.savedKey": "\u2705 Saved \xB7 {p} \xB7 {m}",
+  "center.noteKey": "key saved",
+  "center.noteProviderAuto": "provider auto-detected: {p}",
+  "center.noteProviderManual": "key prefix not recognized \u2014 pick the provider manually",
+  "center.noteCustomNoUrl": "custom without Base URL \u2014 fill the field or env CODESCOUT_BASE_URL",
+  "center.savedLang": "\u2705 Saved \xB7 Interface & report language: {L} (applies to the next review) \xB7 audit banner {B}",
+  "center.on": "on",
+  "center.off": "off",
+  "center.autoIn": "on",
+  "center.autoOut": "off",
+  "center.keyCleared": "\u2705 Key removed from SecretStorage",
+  "center.modelRefresh": "\u2705 Model refreshed from the live list",
+  "center.savedProject": "\u2705 Saved \xB7 Docs: {n} links, doc \u2264 {kb}KB, links per audit \u2264 {max} \xB7 maxLines: {ml} \xB7 passes: {p} \xB7 autonomous mode {ar} \xB7 scope: {sc}",
+  "center.maxLinesNo": "no limit (800-line chunks)",
+  "center.maxLinesN": "{n} lines",
+  "center.scopeAll": "all files",
+  "center.savedAll": "\u2705 Saved \xB7 audit: passes {p}, maxLines {ml}, maxFiles {f}, auto-catch-up {ar} \xB7 project: {n} docs, scope {sc} \xB7 language {L} \xB7 look: {ui}",
+  "center.rulesOpened": "\u2705 Opened .codescout/rules.md \u2014 edits apply from the next review",
+  "center.error": "\u274C Error: {msg}",
+  "diag.title": "Diagnostics",
+  "err.auth": "Key rejected or access denied",
+  "err.notFound": "Model or endpoint not found",
+  "err.rateLimit": "Provider rate limit, retry in {n} seconds",
+  "err.timeout": "Server did not respond in time",
+  "err.badResponse": "Model returned invalid format",
+  "err.title.auth_invalid_key": "Invalid API key (401)",
+  "err.msg.auth_invalid_key": "The provider rejected the API key \u2014 the request was not completed.",
+  "err.hint.auth_invalid_key": "Check the key in the provider console and save it again: Settings \u2192 Key and model.",
+  "err.title.auth_forbidden": "Access forbidden (403)",
+  "err.msg.auth_forbidden": "The key was accepted, but it lacks permissions for this model or endpoint.",
+  "err.hint.auth_forbidden": "Choose another model or check the key permissions in the provider console.",
+  "err.title.rate_limit_exceeded": "Request limit exceeded (429)",
+  "err.msg.rate_limit_exceeded": "The provider temporarily throttled your requests (quota, RPM or TPM).",
+  "err.hint.rate_limit_exceeded": "Wait a couple of minutes or switch to a fallback model; retry pauses live in audit settings.",
+  "err.title.model_not_found": "Model not found (404)",
+  "err.msg.model_not_found": "The model name is wrong or the model is unavailable for this provider.",
+  "err.hint.model_not_found": 'Open "Choose model" \u2014 the list is live and validated.',
+  "err.title.timeout": "The server did not answer in time",
+  "err.msg.timeout": "The server did not answer within {s}s \u2014 the connection was cut by timeout.",
+  "err.hint.timeout": "Retry; for local models make sure the server is running or increase the request timeout in settings.",
+  "err.title.connection_refused": "Server unavailable",
+  "err.msg.connection_refused": "Connection refused (ECONNREFUSED) \u2014 wrong address or the service is not running.",
+  "err.hint.connection_refused": "Check the Base URL and that the local service is running: Ollama (ollama serve) or LM Studio.",
+  "err.title.invalid_json": "The model returned invalid JSON",
+  "err.msg.invalid_json": "The response could not be parsed: the provider sent a broken payload instead of JSON.",
+  "err.hint.invalid_json": "Retry or pick a model that follows the response format more reliably.",
+  "err.title.unknown": "Review failed",
+  "err.msg.unknown": "An unexpected error occurred. See the CodeScout output channel for details.",
+  "err.hint.unknown": "Open the CodeScout output channel and report the issue if needed.",
+  "err.retry": "Retry",
+  "err.openSettings": "Open settings",
+  "audit.requestTimeout": "Model request timeout, seconds (10-600)",
+  "audit.requestTimeoutHint": "Hard deadline for a single inference HTTP call: a hung provider will not freeze the scan. Connection checks and the model list always wait 5s.",
+  "wizard.title": "CodeScout Setup",
+  "wizard.subtitle": "Choose your working mode",
+  "wizard.cloud": "\u2601\uFE0F Cloud mode",
+  "wizard.cloudProvider": "Choose provider",
+  "wizard.keyPrompt": "Paste provider API key",
+  "wizard.local": "\u{1F4BB} Local mode",
+  "wizard.localPick": "Choose local server",
+  "wizard.urlPrompt": "Server address (Ollama default: http://localhost:11434, LM Studio default: http://localhost:1234)",
+  "wizard.localSuccess": "\u2705 Server available: {n} models. No key needed for local server.",
+  "wizard.localFail": "\u274C Server did not respond. Check address and server status.",
+  "wizard.retry": "Retry",
+  "wizard.skip": "Skip",
+  "center.connecting": "Connecting to server...",
+  "center.connected": "\u2705 Connection works: {n} models",
+  "center.noResponse": "\u274C Server did not respond",
+  "center.retry": "Retry",
+  "key.localHint": "Leave empty for local servers (Ollama/LM Studio)",
+  "trust.prompt": "Base URL comes from workspace settings: {url}. Allow sending code and API key to this address?",
+  "trust.accept": "Trust",
+  "trust.reject": "Cancel",
+  "trust.errUntrusted": "Base URL is set in workspace settings, but the workspace is not trusted. Confirm trust or set baseUrl in user settings.",
+  "trust.errNotConfirmed": "Base URL from workspace settings was not confirmed. Set baseUrl in user settings or confirm trust."
+};
+
+// ../src/i18n/index.ts
+var DICTS = {
+  ru: ru_default,
+  en: en_default
+};
+function normalizeLang(value) {
+  return value === "en" ? "en" : "ru";
+}
+function t(key, lang, vars) {
+  const table = DICTS[lang] ?? DICTS.ru;
+  const raw = table[key] ?? DICTS.ru[key] ?? key;
+  if (!vars) return raw;
+  return Object.keys(vars).reduce((acc, name) => acc.replaceAll(`{${name}}`, String(vars[name])), raw);
+}
+
+// ../src/error-classifier.ts
+var PROBE_TIMEOUT_FALLBACK_SECONDS = 5;
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function nameOf(error) {
+  return error instanceof Error ? error.name : "";
+}
+function isTimeoutShape(error, raw) {
+  if (nameOf(error) === "TimeoutError") return true;
+  return /ETIMEDOUT|socket hang up|timed?\s*out|aborted due to timeout|EAI_AGAIN/i.test(raw);
+}
+function isJsonFailure(raw) {
+  return /malformed JSON|JSON null|JSON-массив|не JSON-объект|ожидается объект|Unexpected end of JSON|Unexpected token|invalid JSON|not valid JSON/i.test(raw);
+}
+function isConnectionFailure(raw) {
+  return /ECONNREFUSED|ECONNRESET|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
+}
+function statusFromText(raw) {
+  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[134]|429)\b/i) || raw.match(/^(40[134]|429)\b/);
+  return match ? Number(match[1]) : void 0;
+}
+function categorizeError(error) {
+  if (error instanceof RateLimitError) return "rate_limit_exceeded";
+  if (error instanceof ProviderHttpError) {
+    if (error.status === 401) return "auth_invalid_key";
+    if (error.status === 403) return "auth_forbidden";
+    if (error.status === 404) return "model_not_found";
+    if (error.status === 429) return "rate_limit_exceeded";
+    return "unknown";
+  }
+  if (error instanceof BadResponseError) return "invalid_json";
+  const raw = messageOf(error);
+  if (isTimeoutShape(error, raw)) return "timeout";
+  if (isJsonFailure(raw)) return "invalid_json";
+  const textStatus = statusFromText(raw);
+  if (textStatus === 401) return "auth_invalid_key";
+  if (textStatus === 403) return "auth_forbidden";
+  if (textStatus === 404) return "model_not_found";
+  if (textStatus === 429) return "rate_limit_exceeded";
+  if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return "auth_invalid_key";
+  if (/forbidden|permission denied/i.test(raw)) return "auth_forbidden";
+  if (/model[^.]{0,60}?(?:not found|does not exist|is unavailable|unknown model)/i.test(raw)) return "model_not_found";
+  if (/rate.?limit|too many requests|overloaded|quota|exceeded/i.test(raw)) return "rate_limit_exceeded";
+  if (isConnectionFailure(raw)) return "connection_refused";
+  return "unknown";
+}
+function timeoutSecondsOf(error, raw) {
+  const direct = error instanceof Error && "timeoutMs" in error ? Number(error.timeoutMs) : Number.NaN;
+  if (Number.isFinite(direct) && direct > 0) return Math.max(1, Math.round(direct / 1e3));
+  const parsed = raw.match(/(\d+(?:\.\d+)?)\s*ms\b/i);
+  if (parsed) return Math.max(1, Math.round(Number(parsed[1]) / 1e3));
+  return PROBE_TIMEOUT_FALLBACK_SECONDS;
+}
+var SECRET_SHAPE = /(?:gsk|sk|AIza|ya29|ghp|gho|glpat)[A-Za-z0-9_\-]{4,}|Bearer\s+\S+|api[_-]?key["'\s=:]+[^\s,"']{6,}/gi;
+function scrubSecrets(text) {
+  return text.replace(SECRET_SHAPE, "\u2022\u2022\u2022");
+}
+function isHumanReadableSingleLine(raw) {
+  const value = raw.trim();
+  if (!value || value.length > 240) return false;
+  if (/[\r\n]/.test(value) || /^\s*</.test(value)) return false;
+  if (/error\s+at|stack|\bat\s+\S+\s+\(|Traceback/i.test(value)) return false;
+  return true;
+}
+function formatError(error, lang) {
+  const category = categorizeError(error);
+  const rawMessage = messageOf(error);
+  const vars = category === "timeout" ? { s: timeoutSecondsOf(error, rawMessage) } : void 0;
+  const generic = t(`err.msg.${category}`, lang, vars);
+  const message = category === "unknown" && isHumanReadableSingleLine(rawMessage) ? scrubSecrets(rawMessage.trim()) : generic;
+  return {
+    category,
+    title: t(`err.title.${category}`, lang),
+    message,
+    actionHint: t(`err.hint.${category}`, lang),
+    rawMessage
+  };
 }
 
 // ../src/line-numbering.ts
@@ -939,663 +1758,6 @@ function filterSuppressed(findings, workspaceState) {
   return visible;
 }
 
-// ../src/i18n/ru.json
-var ru_default = {
-  "brand.name": "CodeScout",
-  "brand.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
-  "brand.settingsTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout",
-  "brand.toggleLang": "\u0421\u043C\u0435\u043D\u0438\u0442\u044C \u044F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
-  "brand.langRu": "RU",
-  "key.ready": "\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E",
-  "key.missing": "\u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
-  "key.andModel": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
-  "actions.scanLastCommit": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442",
-  "actions.scanUncommitted": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0434\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430",
-  "actions.scanFull": "\u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430",
-  "actions.customReview": "\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E",
-  "actions.customReviewCollapse": "\u0421\u0432\u0435\u0440\u043D\u0443\u0442\u044C",
-  "actions.cancel": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C",
-  "actions.rerunWithModel": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0441 \u044D\u0442\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u044C\u044E",
-  "status.model404": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
-  "badge.auto": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
-  "badge.autoAttempts": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {n} \u043F\u043E\u043F\u044B\u0442\u043E\u043A)",
-  "badge.autoMinutes": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {n} \u043C\u0438\u043D)",
-  "badge.autoBoth": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C: \u0412\u041A\u041B (\u043C\u0430\u043A\u0441. {a} \u043F\u043E\u043F\u044B\u0442\u043E\u043A / {m} \u043C\u0438\u043D)",
-  "badge.autoTitle": "\u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0441\u0430\u043C \u0434\u043E\u0433\u043E\u043D\u0438\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u043E\u0435 \u0441 backoff (codescout.autoResume)",
-  "badge.autoDetailNone": "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430",
-  "badge.autoDetailAttempts": "\u043C\u0430\u043A\u0441. {n} \u043F\u043E\u043F\u044B\u0442\u043E\u043A",
-  "badge.autoDetailMinutes": "\u043C\u0430\u043A\u0441. {n} \u043C\u0438\u043D",
-  "badge.autoDetailBoth": "\u043C\u0430\u043A\u0441. {a} \u043F\u043E\u043F\u044B\u0442\u043E\u043A / {m} \u043C\u0438\u043D",
-  "banner.welcomeNew": "CodeScout \u043C\u043E\u0436\u0435\u0442 \u0438\u0437\u0443\u0447\u0438\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0440\u0435\u0432\u044C\u044E \u0441\u0442\u0430\u043D\u0435\u0442 \u0442\u043E\u0447\u043D\u0435\u0435. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442?",
-  "banner.welcomeStale": "\u041C\u043E\u0434\u0435\u043B\u044C \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C \u2014 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0433 \u0443\u0441\u0442\u0430\u0440\u0435\u0442\u044C. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u043C \u0430\u0443\u0434\u0438\u0442\u043E\u043C?",
-  "banner.startAudit": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0430\u0443\u0434\u0438\u0442",
-  "banner.update": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C",
-  "banner.later": "\u041F\u043E\u0437\u0436\u0435",
-  "resume.title": "\u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E {done} \u0438\u0437 {total} \u0444\u0430\u0439\u043B\u043E\u0432 ({model})",
-  "resume.findings": "\xB7 \u043D\u0430\u0445\u043E\u0434\u043E\u043A {n}",
-  "resume.continue": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C ({done} \u0438\u0437 {total})",
-  "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
-  "restart.confirm": "\u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A \u0430\u0443\u0434\u0438\u0442\u0430 \u0443\u0434\u0430\u043B\u0438\u0442 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
-  "restart.confirmBtn": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0438 \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
-  "auto.line": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u0447\u0435\u0440\u0435\u0437 {seconds}\u0441",
-  "auto.lineRetry": "\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: {done}/{total}, {attemptLabel} \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026",
-  "auto.attemptOf": "\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m}",
-  "auto.attempt": "\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}",
-  "auto.retrying": " \u2014 \u043F\u0440\u043E\u0431\u0443\u044E \u0441\u043D\u043E\u0432\u0430\u2026",
-  "form.focusLabel": "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C?",
-  "form.focusPlaceholder": "\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u0432\u0441\u0435 \u043B\u0438 \u043E\u0431\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u043A \u0411\u0414 \u0432\u043D\u0443\u0442\u0440\u0438 \u0442\u0440\u0430\u043D\u0437\u0430\u043A\u0446\u0438\u0439?",
-  "form.scopeAll": "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430",
-  "form.scopeActive": "\u0442\u043E\u043B\u044C\u043A\u043E \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0444\u0430\u0439\u043B",
-  "form.scopeList": "\u0441\u043F\u0438\u0441\u043E\u043A \u0444\u0430\u0439\u043B\u043E\u0432 (\u0433\u043B\u043E\u0431\u044B \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E)",
-  "form.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
-  "form.start": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E",
-  "form.pickOutside": "\u0432\u043D\u0435 workspace, \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E:",
-  "form.pickNoWorkspace": "\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u043F\u0430\u043F\u043A\u0438 \u2014 \u0432\u044B\u0431\u043E\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D",
-  "progress.startup": "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0443\u2026",
-  "progress.eta": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2248 {t}",
-  "progress.etaPending": "\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2026",
-  "progress.pass": "\u043A\u0440\u0443\u0433 {p}/{tp}",
-  "progress.filesDone": "{d}/{t} \u0444\u0430\u0439\u043B\u043E\u0432",
-  "onboard.title": "\u041F\u0435\u0440\u0432\u044B\u0439 \u0437\u0430\u043F\u0443\u0441\u043A CodeScout",
-  "onboard.step1": "\u0414\u043E\u0431\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C.",
-  "onboard.step1Btn": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447",
-  "onboard.step2": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439, \u0441 \u0432\u0430\u043B\u0438\u0434\u0430\u0446\u0438\u0435\u0439.",
-  "onboard.step2Btn": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
-  "onboard.step3": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u043E\u043D \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0446\u0435\u043B\u0438\u043A\u043E\u043C.",
-  "onboard.step3Btn": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
-  "onboard.dontShow": "\u041D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
-  "onboard.firstTitle": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438 \u043F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
-  "onboard.firstBody": "\u0410\u0443\u0434\u0438\u0442 \u0438\u0437\u0443\u0447\u0438\u0442 \u043F\u0440\u043E\u0435\u043A\u0442 \u0438 \u043F\u043E\u0434\u043C\u0435\u0448\u0430\u0435\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0432 \u043A\u0430\u0436\u0434\u043E\u0435 \u0440\u0435\u0432\u044C\u044E \u2014 \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0441\u0442\u0430\u043D\u0443\u0442 \u0442\u043E\u0447\u043D\u0435\u0435.",
-  "onboard.autoHint": "\u041F\u0440\u0435\u0440\u044B\u0432\u0430\u043D\u0438\u044F \u0430\u0443\u0434\u0438\u0442 \u0434\u043E\u0433\u043E\u043D\u044F\u0435\u0442 \u0441\u0430\u043C \u2014 \u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C.",
-  "summary.title": "\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
-  "summary.meta": "\u041D\u0430\u0445\u043E\u0434\u043E\u043A: {i} \xB7 \u0424\u0430\u0439\u043B\u043E\u0432: {f} \xB7 \u0412\u0440\u0435\u043C\u044F: {t}",
-  "summary.open": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043E\u0442\u0447\u0451\u0442",
-  "summary.again": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
-  "search.placeholder": "\u043F\u043E\u0438\u0441\u043A \u0444\u0430\u0439\u043B\u0430\u2026",
-  "customBanner.label": "\u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E:",
-  "stats.issues": "{n} issues",
-  "stats.files": "{n} files",
-  "stats.seconds": "{n}s",
-  "fixed.title": "\u041F\u043E\u0447\u0438\u043D\u0435\u043D\u043E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430 ({n})",
-  "issue.new": "\u043D\u043E\u0432\u0430\u044F",
-  "issue.confidenceVerified": "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u043E \u043A\u043E\u0434\u043E\u043C",
-  "issue.confidenceSuggested": "\u041F\u0440\u0435\u0434\u043F\u043E\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u043C\u043E\u0434\u0435\u043B\u0438",
-  "issue.falsePositive": "\u041B\u043E\u0436\u043D\u043E\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u0435",
-  "issue.falsePositiveTip": "\u0421\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u2014 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435",
-  "issue.showProof": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
-  "issue.proofCondition": "\u0423\u0441\u043B\u043E\u0432\u0438\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F",
-  "issue.proofTrace": "\u041F\u0443\u0442\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F",
-  "empty.onboardTitle": "\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout",
-  "empty.step1Prefix": "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 ",
-  "empty.step1Link": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio",
-  "empty.stepLabel1": "\u0428\u0430\u0433 1.",
-  "empty.stepLabel2": "\u0428\u0430\u0433 2.",
-  "empty.stepLabel3": "\u0428\u0430\u0433 3.",
-  "empty.readyTitle": "CodeScout \u0433\u043E\u0442\u043E\u0432 \u043A \u0440\u0430\u0431\u043E\u0442\u0435",
-  "empty.readyHint": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043E\u0434\u043D\u0443 \u0438\u0437 \u043A\u043D\u043E\u043F\u043E\u043A \u0432\u044B\u0448\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C \u0440\u0435\u0432\u044C\u044E.",
-  "empty.testTitle": "\u0422\u0415\u0421\u0422",
-  "empty.testHint": "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430 \u043D\u0430 \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u043E\u043C \u043F\u0440\u0438\u043C\u0435\u0440\u0435.",
-  "empty.cleanTitle": "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: {n} \u2014 \u043F\u0440\u043E\u0431\u043B\u0435\u043C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E",
-  "empty.cleanHint": "\u0421\u043E\u043C\u043D\u0435\u0432\u0430\u0435\u0448\u044C\u0441\u044F? \u041F\u0440\u043E\u0432\u0435\u0440\u044C, \u043A\u0430\u043A CodeScout \u043B\u043E\u0432\u0438\u0442 \u0431\u0430\u0433\u0438:",
-  "empty.testSample": "\u0422\u0435\u0441\u0442 \u043D\u0430 \u043F\u0440\u0438\u043C\u0435\u0440\u0435",
-  "empty.scanGit": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 (Git Diff)",
-  "empty.quickHint": "\u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0437\u0430 ~5 \u0441\u0435\u043A\u0443\u043D\u0434",
-  "empty.fullHint": "\u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043D\u044F\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043C\u0438\u043D\u0443\u0442",
-  testBadge: "\u0422\u0415\u0421\u0422",
-  "sec.key": "\u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C",
-  "sec.lang": "\u042F\u0437\u044B\u043A",
-  "sec.audit": "\u0410\u0443\u0434\u0438\u0442",
-  "sec.project": "\u041F\u0440\u043E\u0435\u043A\u0442",
-  "sec.appearance": "\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434",
-  "sec.about": "\u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438",
-  "subtab.basic": "\u0411\u0430\u0437\u043E\u0432\u044B\u0435",
-  "subtab.custom": "\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F",
-  "title.center": "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
-  "center.provider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
-  "center.providerAuto": "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443",
-  "center.apiKeyLabel": "API-\u043A\u043B\u044E\u0447 ( SecretStorage )",
-  "center.keyKeep": "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
-  "center.keyPaste": "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C",
-  "center.reveal": "\u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447",
-  "center.baseUrl": "Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)",
-  "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
-  "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
-  "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
-  "center.liveModels": "\u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
-  "center.forgetKey": "\u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447",
-  "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
-  "audit.passes": "\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)",
-  "audit.maxLines": "\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
-  "audit.maxFiles": "\u041C\u0430\u043A\u0441. \u0444\u0430\u0439\u043B\u043E\u0432 \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
-  "audit.autoResume": "\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C (\u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D)",
-  "audit.autoMaxAttempts": "\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043F\u043E\u043F\u044B\u0442\u043E\u043A (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
-  "audit.autoMaxMinutes": "\u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D: \u043C\u0430\u043A\u0441. \u043C\u0438\u043D\u0443\u0442 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
-  "audit.rateLimitPauses": "\u041F\u0430\u0443\u0437\u044B \u043F\u0440\u0438 rate-limit \u043D\u0430 \u0444\u0430\u0439\u043B (0-5, 0 = \u0441\u043A\u0438\u043F \u0441\u0440\u0430\u0437\u0443)",
-  "audit.findingsSort": "\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043D\u0430\u0445\u043E\u0434\u043E\u043A",
-  "audit.sortSeverity": "\u043F\u043E \u0432\u0430\u0436\u043D\u043E\u0441\u0442\u0438",
-  "audit.sortFile": "\u043F\u043E \u0444\u0430\u0439\u043B\u0443",
-  "audit.sortLine": "\u043F\u043E \u0441\u0442\u0440\u043E\u043A\u0435",
-  "audit.hint": "maxLines = 0: \u043B\u0438\u043C\u0438\u0442\u0430 \u043D\u0435\u0442, \u0444\u0430\u0439\u043B\u044B >800 \u0441\u0442\u0440\u043E\u043A \u0440\u0435\u0436\u0443\u0442\u0441\u044F \u0447\u0430\u043D\u043A\u0430\u043C\u0438 \u0441 \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435\u043C 50 \u0441\u0442\u0440\u043E\u043A; N > 0: \u0444\u0430\u0439\u043B\u044B \u0434\u043B\u0438\u043D\u043D\u0435\u0435 N \u0441\u043A\u0438\u043F\u0430\u044E\u0442\u0441\u044F. \u0410\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u0432\u043E\u0437\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u0438\u0437 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442\u0430 \u0441 backoff 30\u0441\u219260\u0441\u21922\u043C\u0438\u043D\u21925\u043C\u0438\u043D.",
-  "project.docLinks": "\u0421\u0441\u044B\u043B\u043A\u0438 \u043D\u0430 \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044E (\u043E\u0434\u043D\u0430 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435)",
-  "project.docMaxKb": "\u041C\u0430\u043A\u0441. \u0440\u0430\u0437\u043C\u0435\u0440 \u0434\u043E\u043A\u0430 \u0432 \u043F\u0440\u043E\u043C\u0442 (KB)",
-  "project.docMaxLinks": "\u041C\u0430\u043A\u0441. \u0447\u0438\u0441\u043B\u043E \u0441\u0441\u044B\u043B\u043E\u043A \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
-  "project.auditScope": "Scope \u0430\u0443\u0434\u0438\u0442\u0430 (glob \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E, \u043F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435)",
-  "project.pickFiles": "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B\u044B/\u043F\u0430\u043F\u043A\u0438",
-  "project.openRules": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C rules.md",
-  "project.refreshContext": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442",
-  "project.contextCleared": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043E\u0447\u0438\u0449\u0435\u043D. \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0430\u0443\u0434\u0438\u0442 \u0441\u043D\u043E\u0432\u0430.",
-  "project.contextBusy": "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0438 \u0434\u043E\u0436\u0434\u0438\u0442\u0435\u0441\u044C \u0435\u0433\u043E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u044F \u043F\u0435\u0440\u0435\u0434 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435\u043C \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
-  "project.contextNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043F\u0430\u043F\u043A\u0443 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0434\u043B\u044F \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430.",
-  "project.hint": "rules.md \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442. \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F \u0434\u043E\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F (\u0442\u0430\u0439\u043C\u0430\u0443\u0442 5\u0441, oversized \u0443\u0441\u0435\u043A\u0430\u0435\u0442\u0441\u044F \u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043D\u0430\u0447\u0430\u043B\u0430), \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 .codescout/docs-cache.json \u043D\u0430 24\u0447. Scope \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442; \u041F\u041A\u041C-\u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0435\u0433\u043E \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442.",
-  "lang.select": "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430, \u043E\u0442\u0447\u0451\u0442\u043E\u0432 \u0438 \u043E\u0442\u0432\u0435\u0442\u043E\u0432 \u043C\u043E\u0434\u0435\u043B\u0438",
-  "lang.hint": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442 \u0432\u0441\u0451 \u0441\u0440\u0430\u0437\u0443: \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441, \u043D\u0430\u0445\u043E\u0434\u043A\u0438 \u0438 \u043E\u0442\u0432\u0435\u0442\u044B \u043C\u043E\u0434\u0435\u043B\u0438. \u0413\u043B\u043E\u0431\u0443\u0441 \u0432 \u0448\u0430\u043F\u043A\u0435 \u043F\u0430\u043D\u0435\u043B\u0438 \u2014 \u0431\u044B\u0441\u0442\u0440\u044B\u0439 \u0442\u0443\u043C\u0431\u043B\u0435\u0440 \u0442\u043E\u0433\u043E \u0436\u0435.",
-  "appear.langRu": "RU \u2014 \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438",
-  "appear.langEn": "EN \u2014 English",
-  "appear.rtAuto": "auto \u2014 \u043A\u0430\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441",
-  "appear.rtDark": "dark \u2014 \u0442\u0451\u043C\u043D\u0430\u044F",
-  "appear.rtLight": "light \u2014 \u0441\u0432\u0435\u0442\u043B\u0430\u044F",
-  "appear.uiTheme": "\u0422\u0435\u043C\u0430 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
-  "appear.themeAuto": "auto \u2014 \u043A\u0430\u043A \u0432 VS Code",
-  "appear.themeDark": "dark \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0442\u0451\u043C\u043D\u0430\u044F",
-  "appear.themeLight": "light \u2014 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u0441\u0432\u0435\u0442\u043B\u0430\u044F",
-  "appear.themeCustom": "custom \u2014 \u0441\u0432\u043E\u044F \u043F\u0430\u043B\u0438\u0442\u0440\u0430",
-  "appear.themeEditor": "Theme Editor",
-  "appear.accent": "\u0410\u043A\u0446\u0435\u043D\u0442\u043D\u044B\u0439 \u0446\u0432\u0435\u0442",
-  "appear.accentAuto": "auto \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 VS Code",
-  "appear.density": "\u041F\u043B\u043E\u0442\u043D\u043E\u0441\u0442\u044C",
-  "appear.densityStandard": "standard",
-  "appear.densityCompact": "compact",
-  "appear.reportTheme": "\u0422\u0435\u043C\u0430 \u044D\u043A\u0441\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C\u043E\u0433\u043E \u043E\u0442\u0447\u0451\u0442\u0430",
-  "appear.showConfidence": "\u041F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C % \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0443 \u043D\u0430\u0445\u043E\u0434\u043E\u043A",
-  "appear.showBanner": "\u0411\u0430\u043D\u043D\u0435\u0440 \xAB\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442\xBB \u043F\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435",
-  "appear.customHint": "\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u043D\u0438\u0436\u0435 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0432\u043A\u043B\u044E\u0447\u0430\u0442 \u0442\u0435\u043C\u0443 custom.",
-  "appear.enableCustom": "\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C custom \u0441\u0435\u0439\u0447\u0430\u0441",
-  "palette.colors": "\u0426\u0412\u0415\u0422\u0410",
-  "palette.geometry": "\u0413\u0415\u041E\u041C\u0415\u0422\u0420\u0418\u042F",
-  "palette.typography": "\u0422\u0418\u041F\u041E\u0413\u0420\u0410\u0424\u0418\u041A\u0410",
-  "palette.fontSize": "\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430",
-  "palette.fontS": "s \u2014 \u043C\u0435\u043B\u043A\u0438\u0439",
-  "palette.fontM": "m \u2014 \u043E\u0431\u044B\u0447\u043D\u044B\u0439",
-  "palette.fontL": "l \u2014 \u043A\u0440\u0443\u043F\u043D\u044B\u0439",
-  "palette.reset": "\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u043F\u0430\u043B\u0438\u0442\u0440\u0443",
-  "palette.copy": "\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C JSON \u0442\u0435\u043C\u044B",
-  "palette.apply": "\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 JSON",
-  "palette.contrastHint": "\u043D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 \u2014 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u0435\u0442 \u0431\u044B\u0442\u044C \u043D\u0435\u0447\u0438\u0442\u0430\u0435\u043C",
-  "cc.bg": "\u0424\u043E\u043D \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B",
-  "cc.card": "\u0424\u043E\u043D \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438",
-  "cc.fg": "\u0422\u0435\u043A\u0441\u0442",
-  "cc.desc": "\u041F\u0440\u0438\u0433\u043B\u0443\u0448\u0451\u043D\u043D\u044B\u0439 \u0442\u0435\u043A\u0441\u0442",
-  "cc.border": "\u0413\u0440\u0430\u043D\u0438\u0446\u044B",
-  "cc.accent": "\u0410\u043A\u0446\u0435\u043D\u0442",
-  "cc.btnBg": "\u041A\u043D\u043E\u043F\u043A\u0430: \u0444\u043E\u043D",
-  "cc.btnFg": "\u041A\u043D\u043E\u043F\u043A\u0430: \u0442\u0435\u043A\u0441\u0442",
-  "cc.btnHover": "\u041A\u043D\u043E\u043F\u043A\u0430: hover",
-  "cc.inputBg": "\u0418\u043D\u043F\u0443\u0442: \u0444\u043E\u043D",
-  "cc.inputFg": "\u0418\u043D\u043F\u0443\u0442: \u0442\u0435\u043A\u0441\u0442",
-  "cc.error": "Severity: error",
-  "cc.warn": "Severity: warning",
-  "cc.pass": "Severity: pass",
-  "cc.chipBg": "\u0427\u0438\u043F\u044B: \u0444\u043E\u043D",
-  "cc.chipFg": "\u0427\u0438\u043F\u044B: \u0442\u0435\u043A\u0441\u0442",
-  "geom.btnRadius": "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u043D\u043E\u043F\u043E\u043A (px)",
-  "geom.btnHeight": "\u0412\u044B\u0441\u043E\u0442\u0430 \u043A\u043D\u043E\u043F\u043E\u043A (px)",
-  "geom.cardRadius": "\u0420\u0430\u0434\u0438\u0443\u0441 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A (px)",
-  "chip.removeTip": "\u0423\u0431\u0440\u0430\u0442\u044C \u0438\u0437 scope",
-  "save.save": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C",
-  "save.saving": "\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026",
-  "save.clean": "\u043D\u0435\u0442 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439",
-  "save.dirty": "\u0435\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F",
-  "about.version": "\u0412\u0435\u0440\u0441\u0438\u044F:",
-  "about.readme": "README",
-  "about.repo": "\u0420\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0439",
-  "about.issue": "\u0421\u043E\u043E\u0431\u0449\u0438\u0442\u044C \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435",
-  "issue.happened": "\u0427\u0442\u043E \u0441\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C",
-  "issue.steps": "\u0428\u0430\u0433\u0438 \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F",
-  "issue.expectedActual": "\u041E\u0436\u0438\u0434\u0430\u043B / \u041F\u043E\u043B\u0443\u0447\u0438\u043B",
-  "issue.expected": "\u041E\u0436\u0438\u0434\u0430\u043B",
-  "issue.actual": "\u041F\u043E\u043B\u0443\u0447\u0438\u043B",
-  "issue.diag": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
-  "issue.keyYes": "\u043A\u043B\u044E\u0447: \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D (\u0441\u0430\u043C \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F)",
-  "issue.keyNo": "\u043A\u043B\u044E\u0447: \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
-  "issue.lastError": "\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u043D\u0430: {e}",
-  "issue.noError": "\u043E\u0448\u0438\u0431\u043E\u043A \u0441\u043A\u0430\u043D\u0430 \u043D\u0435 \u0431\u044B\u043B\u043E",
-  "issue.outputTail": "\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Output",
-  "issue.hint": "\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0437\u0434\u0435\u0441\u044C \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443",
-  "progress.file.check": "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B",
-  "progress.file.audit": "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B",
-  "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
-  "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}\u0441",
-  "status.thinking": "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 {s}\u0441",
-  "status.retry": "\u23F3 Rate limit \u0443 {model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m})...",
-  "status.cancelled": "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C",
-  "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u23F3 \u043D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: {r} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
-  "notRechecked.title": "\u041D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u0441\u043A\u0430\u043D\u0435 ({n})",
-  "sample.summary": "\u041F\u0440\u0438\u043C\u0435\u0440: \u043E\u0436\u0438\u0434\u0430\u043B\u043E\u0441\u044C 2-3 \u0431\u0430\u0433\u0430, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}.",
-  "sample.weak": "\u26A0\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0441\u043B\u0430\u0431\u0430\u044F \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E \u2014 \u0441\u043C\u0435\u043D\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u2699\uFE0F",
-  "sample.onlyOne": "\u041D\u0430\u0448\u0451\u043B \u0442\u043E\u043B\u044C\u043A\u043E 1 \u0438\u0437 3 \u2014 \u0440\u0435\u0432\u044C\u044E\u0435\u0440 \u0441\u043B\u0430\u0431\u044B\u0439, \u043F\u043E\u0434\u0443\u043C\u0430\u0439 \u0441\u043C\u0435\u043D\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C",
-  "sample.ok": "\u0420\u0435\u0432\u044C\u044E\u0435\u0440 \u0436\u0438\u0432!",
-  "panel.errOpenFileNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A \u0444\u0430\u0439\u043B\u0443.",
-  "panel.errFileNotFound": "\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0432 workspace: {file}",
-  "dialog.addToScope": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0432 scope \u0430\u0443\u0434\u0438\u0442\u0430",
-  "panel.errNoWorkspaceAudit": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0434\u043B\u044F \u043F\u043E\u043B\u043D\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430.",
-  "panel.errNoWorkspaceCustom": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E.",
-  "panel.errNoWorkspaceReview": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace, \u0447\u0442\u043E\u0431\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0444\u0430\u0439\u043B/\u043F\u0430\u043F\u043A\u0443.",
-  "panel.errUseExplorer": "CodeScout: \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0442\u044C \u043C\u043E\u0436\u043D\u043E \u0447\u0435\u0440\u0435\u0437 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u043E\u0435 \u043C\u0435\u043D\u044E \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0430 (\u041F\u041A\u041C \u043F\u043E \u0444\u0430\u0439\u043B\u0443 \u0438\u043B\u0438 \u043F\u0430\u043F\u043A\u0435).",
-  "panel.errPathUnreadable": "CodeScout: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C: {path}",
-  "panel.errPathOutside": "CodeScout: \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0443\u0442\u044C \u0432\u043D\u0435 workspace \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0442\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
-  "custom.explorerFocus": "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u0432\u044B\u0431\u043E\u0440\u0430 \u0432 \u043F\u0440\u043E\u0432\u043E\u0434\u043D\u0438\u043A\u0435: {rel}",
-  "panel.errNoGlobMatch": '\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "{globs}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).',
-  "panel.errNoFiles": "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.",
-  "panel.errNoKey": "\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F {p}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key.",
-  "panel.keyGet": " \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: {x}",
-  "panel.keyGetAlt": "\u043D\u0430\u0441\u0442\u0440\u043E\u0439 codescout.baseUrl / CODESCOUT_BASE_URL",
-  "panel.errNoGit": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.",
-  "notify.customDone": "CodeScout: \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u043E, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}",
-  "model.inputFetchFailed": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C /models. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
-  "model.inputEmpty": "\u0421\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u043F\u0443\u0441\u0442. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
-  "model.pickTitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u0437 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445",
-  "model.pickTitleShort": "\u0412\u044B\u0431\u0435\u0440\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
-  "custom.focusPrompt": "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C? \u041E\u043F\u0438\u0448\u0438 \u0444\u043E\u043A\u0443\u0441 \u0440\u0435\u0432\u044C\u044E \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439",
-  "custom.focusPlaceholder": "\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u043A\u0443 \u043E\u0448\u0438\u0431\u043E\u043A \u0432 \u0441\u0435\u0442\u0435\u0432\u044B\u0445 \u0432\u044B\u0437\u043E\u0432\u0430\u0445",
-  "custom.scopePlaceholder": "\u041A\u0430\u043A\u0438\u0435 \u0444\u0430\u0439\u043B\u044B \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C?",
-  "custom.globsPrompt": "\u0413\u043B\u043E\u0431\u044B \u0444\u0430\u0439\u043B\u043E\u0432 \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E",
-  "onboarding.resetConfirm": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430?",
-  "common.delete": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C",
-  "onboarding.resetDone": "\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D",
-  "key.inputPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
-  "key.pickProvider": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
-  "key.sourceAuto": "\u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043E \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
-  "key.sourceManual": "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
-  "key.savedNotify": "\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: {p}, \u043C\u043E\u0434\u0435\u043B\u044C: {m} ({s})",
-  "key.needFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0447\u0435\u0440\u0435\u0437 CodeScout: set API key.",
-  "key.deleteConfirm": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?",
-  "key.deletedNotify": "\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
-  "rules.errNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0432 VS Code",
-  "center.savedKey": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 {p} \xB7 {m}",
-  "center.noteKey": "\u043A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D",
-  "center.noteProviderAuto": "\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0451\u043D \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438: {p}",
-  "center.noteProviderManual": "\u043F\u0440\u0435\u0444\u0438\u043A\u0441 \u043A\u043B\u044E\u0447\u0430 \u043D\u0435 \u0440\u0430\u0441\u043F\u043E\u0437\u043D\u0430\u043D \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
-  "center.noteCustomNoUrl": "custom \u0431\u0435\u0437 Base URL \u2014 \u0437\u0430\u043F\u043E\u043B\u043D\u0438 \u043F\u043E\u043B\u0435 \u0438\u043B\u0438 env CODESCOUT_BASE_URL",
-  "center.savedLang": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430 \u0438 \u043E\u0442\u0447\u0451\u0442\u043E\u0432: {L} (\u043F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u0441\u044F \u043A \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u043C\u0443 \u0440\u0435\u0432\u044C\u044E) \xB7 \u0431\u0430\u043D\u043D\u0435\u0440 \u0430\u0443\u0434\u0438\u0442\u0430 {B}",
-  "center.on": "\u0432\u043A\u043B\u044E\u0447\u0451\u043D",
-  "center.off": "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D",
-  "center.autoIn": "\u0432\u043A\u043B",
-  "center.autoOut": "\u0432\u044B\u043A\u043B",
-  "center.keyCleared": "\u2705 \u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 SecretStorage",
-  "center.modelRefresh": "\u2705 \u041C\u043E\u0434\u0435\u043B\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0438\u0437 \u0436\u0438\u0432\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430",
-  "center.savedProject": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0414\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u0446\u0438\u044F: {n} \u0441\u0441\u044B\u043B\u043E\u043A, \u0434\u043E\u043A \u2264 {kb}KB, \u0441\u0441\u044B\u043B\u043E\u043A \u0432 \u0430\u0443\u0434\u0438\u0442 \u2264 {max} \xB7 maxLines: {ml} \xB7 \u043A\u0440\u0443\u0433\u043E\u0432: {p} \xB7 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C {ar} \xB7 scope: {sc}",
-  "center.maxLinesNo": "\u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 (\u0447\u0430\u043D\u043A\u0438 \u043F\u043E 800)",
-  "center.maxLinesN": "{n} \u0441\u0442\u0440\u043E\u043A",
-  "center.scopeAll": "\u0432\u0441\u0435 \u0444\u0430\u0439\u043B\u044B",
-  "center.savedAll": "\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \xB7 \u0430\u0443\u0434\u0438\u0442: \u043A\u0440\u0443\u0433\u043E\u0432 {p}, maxLines {ml}, maxFiles {f}, \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D {ar} \xB7 \u043F\u0440\u043E\u0435\u043A\u0442: {n} \u0434\u043E\u043A(\u043E\u0432), scope {sc} \xB7 \u044F\u0437\u044B\u043A {L} \xB7 \u0432\u0438\u0434: {ui}",
-  "center.rulesOpened": "\u2705 \u041E\u0442\u043A\u0440\u044B\u0442 .codescout/rules.md \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u043F\u043E\u0434\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0440\u0435\u0432\u044C\u044E",
-  "center.error": "\u274C \u041E\u0448\u0438\u0431\u043A\u0430: {msg}",
-  "diag.title": "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430",
-  "err.auth": "\u041A\u043B\u044E\u0447 \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D \u0438\u043B\u0438 \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430",
-  "err.notFound": "\u041C\u043E\u0434\u0435\u043B\u044C \u0438\u043B\u0438 \u0430\u0434\u0440\u0435\u0441 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B",
-  "err.rateLimit": "\u041B\u0438\u043C\u0438\u0442 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430, \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 {n} \u0441\u0435\u043A",
-  "err.timeout": "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0432\u043E\u0432\u0440\u0435\u043C\u044F",
-  "err.badResponse": "\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442",
-  "wizard.title": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 CodeScout",
-  "wizard.subtitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0440\u0435\u0436\u0438\u043C \u0440\u0430\u0431\u043E\u0442\u044B",
-  "wizard.cloud": "\u2601\uFE0F \u041E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
-  "wizard.cloudProvider": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
-  "wizard.keyPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430",
-  "wizard.local": "\u{1F4BB} \u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
-  "wizard.localPick": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0435\u0440",
-  "wizard.urlPrompt": "\u0410\u0434\u0440\u0435\u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (\u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0434\u043B\u044F Ollama: http://localhost:11434, \u0434\u043B\u044F LM Studio: http://localhost:1234)",
-  "wizard.localSuccess": "\u2705 \u0421\u0435\u0440\u0432\u0435\u0440 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439. \u041A\u043B\u044E\u0447 \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u043D\u0435 \u043D\u0443\u0436\u0435\u043D.",
-  "wizard.localFail": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0430\u0434\u0440\u0435\u0441 \u0438 \u0437\u0430\u043F\u0443\u0441\u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0430.",
-  "wizard.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
-  "wizard.skip": "\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u0442\u044C",
-  "center.connecting": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443...",
-  "center.connected": "\u2705 \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442: {n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439",
-  "center.noResponse": "\u274C \u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B",
-  "center.retry": "\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
-  "key.localHint": "\u041E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u0432 (Ollama/LM Studio)",
-  "trust.prompt": "Base URL \u043F\u0440\u0438\u0448\u0451\u043B \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438: {url}. \u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443 \u043A\u043E\u0434\u0430 \u0438 API-\u043A\u043B\u044E\u0447\u0430 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0430\u0434\u0440\u0435\u0441?",
-  "trust.accept": "\u0414\u043E\u0432\u0435\u0440\u044F\u0442\u044C",
-  "trust.reject": "\u041E\u0442\u043C\u0435\u043D\u0430",
-  "trust.errUntrusted": "Base URL \u0437\u0430\u0434\u0430\u043D \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438, \u043D\u043E \u0440\u0430\u0431\u043E\u0447\u0430\u044F \u043E\u0431\u043B\u0430\u0441\u0442\u044C \u043D\u0435 \u0434\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u0430\u044F. \u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.",
-  "trust.errNotConfirmed": "Base URL \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u0440\u0430\u0431\u043E\u0447\u0435\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438 \u043D\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D. \u0417\u0430\u0434\u0430\u0439\u0442\u0435 baseUrl \u0432 user-\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0438\u043B\u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043E\u0432\u0435\u0440\u0438\u0435."
-};
-
-// ../src/i18n/en.json
-var en_default = {
-  "brand.name": "CodeScout",
-  "brand.settings": "Settings",
-  "brand.settingsTip": "Open CodeScout settings",
-  "brand.toggleLang": "Switch interface language",
-  "brand.langRu": "EN",
-  "key.ready": "protected",
-  "key.missing": "Key not configured",
-  "key.andModel": "Key and model",
-  "actions.scanLastCommit": "Review last commit",
-  "actions.scanUncommitted": "Review uncommitted changes",
-  "actions.scanFull": "Full project audit",
-  "actions.customReview": "Custom review",
-  "actions.customReviewCollapse": "Collapse",
-  "actions.cancel": "Stop",
-  "actions.rerunWithModel": "Re-run with this model",
-  "status.model404": "Choose an available model",
-  "badge.auto": "Autonomous mode: ON (unlimited)",
-  "badge.autoAttempts": "Autonomous mode: ON (max {n} attempts)",
-  "badge.autoMinutes": "Autonomous mode: ON (max {n} min)",
-  "badge.autoBoth": "Autonomous mode: ON (max {a} attempts / {m} min)",
-  "badge.autoTitle": "A full audit catches up from where it stopped with backoff (codescout.autoResume)",
-  "badge.autoDetailNone": "unlimited",
-  "badge.autoDetailAttempts": "max {n} attempts",
-  "badge.autoDetailMinutes": "max {n} min",
-  "badge.autoDetailBoth": "max {a} attempts / {m} min",
-  "banner.welcomeNew": "CodeScout can study the whole project \u2014 reviews get sharper. Run a full audit?",
-  "banner.welcomeStale": "The model changed \u2014 the context may be stale. Refresh with a full audit?",
-  "banner.startAudit": "Run audit",
-  "banner.update": "Refresh",
-  "banner.later": "Later",
-  "resume.title": "Audit interrupted: checked {done} of {total} files ({model})",
-  "resume.findings": "\xB7 {n} findings",
-  "resume.continue": "Continue ({done} of {total})",
-  "resume.restart": "Start over",
-  "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",
-  "restart.confirmBtn": "Delete and restart",
-  "auto.line": "auto-catch-up: {done}/{total}, {attemptLabel} in {seconds}s",
-  "auto.lineRetry": "auto-catch-up: {done}/{total}, {attemptLabel} \u2014 retrying\u2026",
-  "auto.attemptOf": "attempt {a}/{m}",
-  "auto.attempt": "attempt {a}",
-  "auto.retrying": " \u2014 retrying\u2026",
-  "form.focusLabel": "What to check?",
-  "form.focusPlaceholder": "e.g. are all DB calls inside transactions?",
-  "form.scopeAll": "all project files",
-  "form.scopeActive": "only the open file",
-  "form.scopeList": "file list (globs, comma separated)",
-  "form.pickFiles": "Pick files/folders",
-  "form.start": "Run custom review",
-  "form.pickOutside": "outside workspace, not added:",
-  "form.pickNoWorkspace": "No open folder \u2014 picking is unavailable",
-  "progress.startup": "Starting check\u2026",
-  "progress.eta": "\u2248 {t} left",
-  "progress.etaPending": "ETA \u2026",
-  "progress.pass": "pass {p}/{tp}",
-  "progress.filesDone": "{d}/{t} files",
-  "onboard.title": "First run of CodeScout",
-  "onboard.step1": "Add an API key \u2014 the provider is detected automatically.",
-  "onboard.step1Btn": "Add key",
-  "onboard.step2": "Pick a model \u2014 the list is live and validated.",
-  "onboard.step2Btn": "Choose model",
-  "onboard.step3": "Run a full audit \u2014 it studies the whole project.",
-  "onboard.step3Btn": "Run first audit",
-  "onboard.dontShow": "Don't show again",
-  "onboard.firstTitle": "Run your first audit",
-  "onboard.firstBody": "The audit studies the project and mixes context into every review \u2014 findings get sharper.",
-  "onboard.autoHint": "Interruptions catch up on their own \u2014 \u{1F916} autonomous mode.",
-  "summary.title": "Audit finished",
-  "summary.meta": "{i} findings \xB7 {f} files \xB7 {t} total",
-  "summary.open": "Open report",
-  "summary.again": "Run again",
-  "search.placeholder": "search file\u2026",
-  "customBanner.label": "Custom review:",
-  "stats.issues": "{n} issues",
-  "stats.files": "{n} files",
-  "stats.seconds": "{n}s",
-  "fixed.title": "Fixed since last scan ({n})",
-  "issue.new": "new",
-  "issue.confidenceVerified": "Verified by code",
-  "issue.confidenceSuggested": "Model suggestion",
-  "issue.falsePositive": "False positive",
-  "issue.falsePositiveTip": "Hide finding \u2014 do not show it again in this workspace",
-  "issue.showProof": "Show proof",
-  "issue.proofCondition": "Trigger condition",
-  "issue.proofTrace": "Execution trace",
-  "empty.onboardTitle": "Hi! This is CodeScout",
-  "empty.step1Prefix": "Get a provider API key at ",
-  "empty.step1Link": "Open Google AI Studio",
-  "empty.stepLabel1": "Step 1.",
-  "empty.stepLabel2": "Step 2.",
-  "empty.stepLabel3": "Step 3.",
-  "empty.readyTitle": "CodeScout is ready",
-  "empty.readyHint": "Click one of the buttons above to start a review.",
-  "empty.testTitle": "TEST",
-  "empty.testHint": "Check finished on the built-in sample.",
-  "empty.cleanTitle": "Checked files: {n} \u2014 no problems found",
-  "empty.cleanHint": "Not sure? See how CodeScout catches bugs:",
-  "empty.testSample": "Test on sample",
-  "empty.scanGit": "Check last commit (Git Diff)",
-  "empty.quickHint": "quick result in ~5 seconds",
-  "empty.fullHint": "may take several minutes",
-  testBadge: "TEST",
-  "sec.key": "Key and model",
-  "sec.lang": "Language",
-  "sec.audit": "Audit",
-  "sec.project": "Project",
-  "sec.appearance": "Appearance",
-  "sec.about": "About",
-  "subtab.basic": "Basic",
-  "subtab.custom": "Customization",
-  "title.center": "CodeScout: Settings",
-  "center.provider": "Provider",
-  "center.providerAuto": "auto \u2014 by key",
-  "center.apiKeyLabel": "API key ( SecretStorage )",
-  "center.keyKeep": "empty field = keep the current key",
-  "center.keyPaste": "paste a key \u2014 the provider is detected",
-  "center.reveal": "show the typed key",
-  "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
-  "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
-  "center.now": "now:",
-  "center.nowNone": "key not configured",
-  "center.liveModels": "Live models\u2026",
-  "center.forgetKey": "Forget key",
-  "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
-  "audit.passes": "Review passes per file (1-3)",
-  "audit.maxLines": "Max lines per file (0 = no limit)",
-  "audit.maxFiles": "Max files per audit",
-  "audit.autoResume": "Autonomous mode (auto-catch-up)",
-  "audit.autoMaxAttempts": "Auto-catch-up: max attempts (0 = unlimited)",
-  "audit.autoMaxMinutes": "Auto-catch-up: max minutes (0 = unlimited)",
-  "audit.rateLimitPauses": "Pauses on file rate-limit (0-5, 0 = skip at once)",
-  "audit.findingsSort": "Findings sort order",
-  "audit.sortSeverity": "by severity",
-  "audit.sortFile": "by file",
-  "audit.sortLine": "by line",
-  "audit.hint": "maxLines = 0: no limit, files >800 lines are chunked with a 50-line overlap; N > 0: longer files are skipped. Auto-catch-up resumes an interrupted audit from the checkpoint with a 30s\u219260s\u21922min\u21925min backoff.",
-  "project.docLinks": "Documentation links (one per line)",
-  "project.docMaxKb": "Max doc size in the prompt (KB)",
-  "project.docMaxLinks": "Max doc links per audit",
-  "project.auditScope": "Audit scope (globs, comma separated, empty = all)",
-  "project.pickFiles": "Pick files/folders",
-  "project.openRules": "Open rules.md",
-  "project.refreshContext": "Refresh context",
-  "project.contextCleared": "Context cleared. Run audit again.",
-  "project.contextBusy": "Stop the scan and wait for it to finish before refreshing context.",
-  "project.contextNoWorkspace": "Open a project folder to refresh context.",
-  "project.hint": "rules.md is mixed into every prompt. Docs are fetched (5s timeout, oversized truncated keeping the head) and cached in .codescout/docs-cache.json for 24h. Scope limits the full audit; the right-click review ignores it.",
-  "lang.select": "Interface, reports and model answers language",
-  "lang.hint": "Switches everything at once: the UI, findings and model answers. The globe in the panel header is a quick toggle for the same setting.",
-  "appear.langRu": "RU \u2014 Russian",
-  "appear.langEn": "EN \u2014 English",
-  "appear.rtAuto": "auto \u2014 match the interface",
-  "appear.rtDark": "dark",
-  "appear.rtLight": "light",
-  "appear.uiTheme": "Interface theme",
-  "appear.themeAuto": "auto \u2014 match VS Code",
-  "appear.themeDark": "dark \u2014 fixed dark",
-  "appear.themeLight": "light \u2014 fixed light",
-  "appear.themeCustom": "custom \u2014 own palette",
-  "appear.themeEditor": "Theme Editor",
-  "appear.accent": "Accent color",
-  "appear.accentAuto": "auto \u2014 VS Code button",
-  "appear.density": "Density",
-  "appear.densityStandard": "standard",
-  "appear.densityCompact": "compact",
-  "appear.reportTheme": "Exported report theme",
-  "appear.showConfidence": "Show model confidence % on findings",
-  "appear.showBanner": 'Show the "run a full audit" banner on start',
-  "appear.customHint": "Edits below automatically turn on the custom theme.",
-  "appear.enableCustom": "Enable custom now",
-  "palette.colors": "COLORS",
-  "palette.geometry": "GEOMETRY",
-  "palette.typography": "TYPOGRAPHY",
-  "palette.fontSize": "Font size",
-  "palette.fontS": "s \u2014 small",
-  "palette.fontM": "m \u2014 normal",
-  "palette.fontL": "l \u2014 large",
-  "palette.reset": "Reset palette",
-  "palette.copy": "Copy theme JSON",
-  "palette.apply": "Apply from JSON",
-  "palette.contrastHint": "low contrast \u2014 text may be unreadable",
-  "cc.bg": "Page background",
-  "cc.card": "Card background",
-  "cc.fg": "Text",
-  "cc.desc": "Muted text",
-  "cc.border": "Borders",
-  "cc.accent": "Accent",
-  "cc.btnBg": "Button: background",
-  "cc.btnFg": "Button: text",
-  "cc.btnHover": "Button: hover",
-  "cc.inputBg": "Input: background",
-  "cc.inputFg": "Input: text",
-  "cc.error": "Severity: error",
-  "cc.warn": "Severity: warning",
-  "cc.pass": "Severity: pass",
-  "cc.chipBg": "Chips: background",
-  "cc.chipFg": "Chips: text",
-  "geom.btnRadius": "Button radius (px)",
-  "geom.btnHeight": "Button height (px)",
-  "geom.cardRadius": "Card radius (px)",
-  "chip.removeTip": "Remove from scope",
-  "save.save": "Save",
-  "save.saving": "Saving\u2026",
-  "save.clean": "no unsaved changes",
-  "save.dirty": "there are unsaved changes",
-  "about.version": "Version:",
-  "about.readme": "README",
-  "about.repo": "Repository",
-  "about.issue": "Report an issue",
-  "issue.happened": "What happened",
-  "issue.steps": "Steps to reproduce",
-  "issue.expectedActual": "Expected / Actual",
-  "issue.expected": "Expected",
-  "issue.actual": "Actual",
-  "issue.diag": "Diagnostics",
-  "issue.keyYes": "key: installed (the key itself is never submitted)",
-  "issue.keyNo": "key: not configured",
-  "issue.lastError": "last scan error: {e}",
-  "issue.noError": "no scan errors",
-  "issue.outputTail": "Recent Output lines",
-  "issue.hint": "describe it briefly here",
-  "progress.file.check": "\u{1F50E} Checking file",
-  "progress.file.audit": "\u{1F50E} Full audit: file",
-  "progress.file.custom": "\u{1F3AF} Custom review: file",
-  "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}s",
-  "status.thinking": "\u{1F916} Model is thinking... \xB7 \u23F1 {s}s",
-  "status.retry": "\u23F3 Rate limit from {model}, waiting {s}s (attempt {a}/{m})...",
-  "status.cancelled": "\u26D4 Scan stopped by user",
-  "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u23F3 not rechecked: {r} \xB7 \u{1F501} unchanged: {s}",
-  "notRechecked.title": "Not rechecked in this scan ({n})",
-  "sample.summary": "Sample: expected 2-3 bugs, found {n}.",
-  "sample.weak": "\u26A0\uFE0F The model is too weak for review \u2014 switch the model via the \u2699\uFE0F button",
-  "sample.onlyOne": "Only 1 of 3 found \u2014 the reviewer is weak, consider switching the model",
-  "sample.ok": "Reviewer is alive!",
-  "panel.errOpenFileNoWorkspace": "Open a workspace folder to jump to the file.",
-  "panel.errFileNotFound": "File not found in workspace: {file}",
-  "dialog.addToScope": "Add to audit scope",
-  "panel.errNoWorkspaceAudit": "Open a workspace folder to run a full audit.",
-  "panel.errNoWorkspaceCustom": "Open a workspace folder to run a custom review.",
-  "panel.errNoWorkspaceReview": "Open a workspace folder to review a file/folder.",
-  "panel.errUseExplorer": "CodeScout: review is available from the explorer context menu (right-click a file or folder).",
-  "panel.errPathUnreadable": "CodeScout: failed to read the selected path: {path}",
-  "panel.errPathOutside": "CodeScout: the selected path is outside the workspace \u2014 only project files can be reviewed.",
-  "custom.explorerFocus": "Explorer selection review: {rel}",
-  "panel.errNoGlobMatch": 'No files matched the globs "{globs}" (check the ignore lists).',
-  "panel.errNoFiles": "No files available for review.",
-  "panel.errNoKey": "No API key found for {p}. Set codescout.apiKey or run CodeScout: set API key.",
-  "panel.keyGet": " Get a key: {x}",
-  "panel.keyGetAlt": "configure codescout.baseUrl / CODESCOUT_BASE_URL",
-  "panel.errNoGit": "Open a folder with a Git repository in VS Code and run the command again.",
-  "notify.customDone": "CodeScout: custom review finished, {n} found",
-  "model.inputFetchFailed": "Failed to fetch /models. Type a model manually",
-  "model.inputEmpty": "The model list is empty. Type a model manually",
-  "model.pickTitle": "Choose a model from the available ones",
-  "model.pickTitleShort": "Pick an available model",
-  "custom.focusPrompt": "What to check? Describe the review focus in one line",
-  "custom.focusPlaceholder": "e.g. check error handling in network calls",
-  "custom.scopePlaceholder": "Which files do we check?",
-  "custom.globsPrompt": "File globs, comma separated",
-  "onboarding.resetConfirm": "Delete the saved project context?",
-  "common.delete": "Delete",
-  "onboarding.resetDone": "\u2705 Onboarding reset",
-  "key.inputPrompt": "Paste a provider API key \u2014 the provider is detected automatically",
-  "key.pickProvider": "Pick a provider",
-  "key.sourceAuto": "detected automatically",
-  "key.sourceManual": "chosen manually",
-  "key.savedNotify": "\u2705 Key saved. Provider: {p}, model: {m} ({s})",
-  "key.needFirst": "Save an API key first via CodeScout: set API key.",
-  "key.deleteConfirm": "Delete the saved CodeScout API key?",
-  "key.deletedNotify": "Key removed from secret storage",
-  "rules.errNoWorkspace": "Open a workspace folder in VS Code",
-  "center.savedKey": "\u2705 Saved \xB7 {p} \xB7 {m}",
-  "center.noteKey": "key saved",
-  "center.noteProviderAuto": "provider auto-detected: {p}",
-  "center.noteProviderManual": "key prefix not recognized \u2014 pick the provider manually",
-  "center.noteCustomNoUrl": "custom without Base URL \u2014 fill the field or env CODESCOUT_BASE_URL",
-  "center.savedLang": "\u2705 Saved \xB7 Interface & report language: {L} (applies to the next review) \xB7 audit banner {B}",
-  "center.on": "on",
-  "center.off": "off",
-  "center.autoIn": "on",
-  "center.autoOut": "off",
-  "center.keyCleared": "\u2705 Key removed from SecretStorage",
-  "center.modelRefresh": "\u2705 Model refreshed from the live list",
-  "center.savedProject": "\u2705 Saved \xB7 Docs: {n} links, doc \u2264 {kb}KB, links per audit \u2264 {max} \xB7 maxLines: {ml} \xB7 passes: {p} \xB7 autonomous mode {ar} \xB7 scope: {sc}",
-  "center.maxLinesNo": "no limit (800-line chunks)",
-  "center.maxLinesN": "{n} lines",
-  "center.scopeAll": "all files",
-  "center.savedAll": "\u2705 Saved \xB7 audit: passes {p}, maxLines {ml}, maxFiles {f}, auto-catch-up {ar} \xB7 project: {n} docs, scope {sc} \xB7 language {L} \xB7 look: {ui}",
-  "center.rulesOpened": "\u2705 Opened .codescout/rules.md \u2014 edits apply from the next review",
-  "center.error": "\u274C Error: {msg}",
-  "diag.title": "Diagnostics",
-  "err.auth": "Key rejected or access denied",
-  "err.notFound": "Model or endpoint not found",
-  "err.rateLimit": "Provider rate limit, retry in {n} seconds",
-  "err.timeout": "Server did not respond in time",
-  "err.badResponse": "Model returned invalid format",
-  "wizard.title": "CodeScout Setup",
-  "wizard.subtitle": "Choose your working mode",
-  "wizard.cloud": "\u2601\uFE0F Cloud mode",
-  "wizard.cloudProvider": "Choose provider",
-  "wizard.keyPrompt": "Paste provider API key",
-  "wizard.local": "\u{1F4BB} Local mode",
-  "wizard.localPick": "Choose local server",
-  "wizard.urlPrompt": "Server address (Ollama default: http://localhost:11434, LM Studio default: http://localhost:1234)",
-  "wizard.localSuccess": "\u2705 Server available: {n} models. No key needed for local server.",
-  "wizard.localFail": "\u274C Server did not respond. Check address and server status.",
-  "wizard.retry": "Retry",
-  "wizard.skip": "Skip",
-  "center.connecting": "Connecting to server...",
-  "center.connected": "\u2705 Connection works: {n} models",
-  "center.noResponse": "\u274C Server did not respond",
-  "center.retry": "Retry",
-  "key.localHint": "Leave empty for local servers (Ollama/LM Studio)",
-  "trust.prompt": "Base URL comes from workspace settings: {url}. Allow sending code and API key to this address?",
-  "trust.accept": "Trust",
-  "trust.reject": "Cancel",
-  "trust.errUntrusted": "Base URL is set in workspace settings, but the workspace is not trusted. Confirm trust or set baseUrl in user settings.",
-  "trust.errNotConfirmed": "Base URL from workspace settings was not confirmed. Set baseUrl in user settings or confirm trust."
-};
-
-// ../src/i18n/index.ts
-var DICTS = {
-  ru: ru_default,
-  en: en_default
-};
-function normalizeLang(value) {
-  return value === "en" ? "en" : "ru";
-}
-function t(key, lang, vars) {
-  const table = DICTS[lang] ?? DICTS.ru;
-  const raw = table[key] ?? DICTS.ru[key] ?? key;
-  if (!vars) return raw;
-  return Object.keys(vars).reduce((acc, name) => acc.replaceAll(`{${name}}`, String(vars[name])), raw);
-}
-
 // src/reportHtml.ts
 function formatEtaSeconds(total) {
   const sec = Math.max(0, Math.round(total));
@@ -1726,6 +1888,11 @@ button:disabled { opacity: 0.65; cursor: default; }
 .status-banner.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
 .status-banner.test, .status-banner.success { border-left-color: var(--cs-pass); color: var(--cs-pass); background: color-mix(in srgb, var(--cs-pass) 12%, transparent); }
 .status-banner button { width: auto; flex: 0 0 auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); }
+.err-card-extra { flex-basis: 100%; margin-top: var(--cs-space-1); }
+.err-hint { color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; gap: 4px; align-items: flex-start; }
+.err-hint .codicon { color: var(--cs-warn); }
+.err-actions { display: flex; gap: 6px; margin-top: var(--cs-space-1); }
+.err-actions button { width: auto; flex: 0 0 auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .test-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: var(--cs-space-2); color: var(--cs-pass); font-size: var(--cs-font-1); font-weight: 700; }
 .animated-dots { display: inline-block; width: 16px; overflow: hidden; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { width: 0; } 25% { width: 5px; } 50% { width: 10px; } 75% { width: 15px; } 100% { width: 16px; } }
@@ -1809,7 +1976,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "") {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -1854,7 +2021,7 @@ ${headHtml(assets, nonce)}
     <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
-    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
+    <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
     ${resumeView ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
@@ -2189,6 +2356,7 @@ var CodeScoutPanel = class {
   progressInfo;
   auditSummary;
   diagnosticDetails;
+  errorInfo;
   auditDurations = [];
   workspaceState;
   onWelcomeStart;
@@ -2304,6 +2472,8 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "cancelScan") {
         void vscode.commands.executeCommand("codescout.cancelScan");
+      } else if (message.command === "retryScan") {
+        void vscode.commands.executeCommand("codescout.retryScan");
       } else if (message.command === "suppressFinding") {
         const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
         if (fingerprint) this.suppressLocal(fingerprint);
@@ -2427,6 +2597,7 @@ var CodeScoutPanel = class {
     this.auditDurations = [];
     this.firstAuditDone = false;
     this.welcomeBanner = false;
+    this.errorInfo = void 0;
     this.render();
   }
   // Персистентный частичный отчёт (v1.4b-15): после рестарта VS Code
@@ -2446,6 +2617,7 @@ var CodeScoutPanel = class {
     this.customFocus = "";
     this.auditSummary = void 0;
     this.auditResume = resume;
+    this.errorInfo = void 0;
     this.render();
   }
   setKey(keyMaskOrStatus, provider = "gemini", model = "gemini-2.5-flash") {
@@ -2472,6 +2644,7 @@ var CodeScoutPanel = class {
       this.autoResumeView = void 0;
       this.progressInfo = void 0;
       this.auditSummary = void 0;
+      this.errorInfo = void 0;
       if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
@@ -2530,9 +2703,12 @@ var CodeScoutPanel = class {
     this.autoResumeView = void 0;
     this.statusKind = "error";
     this.statusMessage = t("status.cancelled", this.language);
+    this.errorInfo = void 0;
     this.render();
   }
-  setError(message, details) {
+  // Батч 15: host присылает форматированную ошибку (title + hint из
+  // error-classifier) — панель рисует карточку с кнопками, сырое — details.
+  setError(message, details, info) {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
@@ -2540,6 +2716,7 @@ var CodeScoutPanel = class {
     this.statusKind = "error";
     this.statusMessage = message;
     this.diagnosticDetails = details;
+    this.errorInfo = info;
     this.render();
   }
   update(issues, stats, testMode = false, testMessage = "", testWarning = false, findingsDiff, customFocus = "") {
@@ -2555,6 +2732,7 @@ var CodeScoutPanel = class {
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "success";
+    this.errorInfo = void 0;
     this.render();
   }
   render() {
@@ -2571,7 +2749,7 @@ var CodeScoutPanel = class {
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 };
 
@@ -3723,6 +3901,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .hidden { display: none; }
 .status { margin: 0 0 var(--cs-space-3); padding: var(--cs-space-2) 10px; border-left: 3px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 12%, transparent); font-size: var(--cs-font-2); ${statusMessage ? "" : "display: none;"} }
 .status.error { border-left-color: var(--cs-error); color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); }
+.conn-hint { font-size: var(--cs-font-1); opacity: 0.85; margin-top: 3px; color: var(--cs-desc); }
 .current-key { margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); color: var(--cs-desc); overflow-wrap: anywhere; }
 .savebar { position: fixed; left: 200px; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px var(--cs-space-4); border-top: 1px solid var(--cs-border); background: var(--cs-card-bg); color: var(--cs-fg); }
 .savebar .dirty { color: var(--cs-desc); font-size: var(--cs-font-1); }
@@ -3800,6 +3979,9 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <input id="autoResumeMaxMinutes" type="number" min="0" max="10000" step="1" value="${state.autoResumeMaxMinutes}">
   <label for="rateLimitPauses">${T("audit.rateLimitPauses")}</label>
   <input id="rateLimitPauses" type="number" min="0" max="5" step="1" value="${state.rateLimitPauses ?? 3}">
+  <label for="requestTimeoutSeconds">${T("audit.requestTimeout")}</label>
+  <input id="requestTimeoutSeconds" type="number" min="10" max="600" step="1" value="${state.requestTimeoutSeconds ?? 60}">
+  <p class="hint">${T("audit.requestTimeoutHint")}</p>
   <label for="findingsSort">${T("audit.findingsSort")}</label>
   <select id="findingsSort">
     <option value="severity"${state.findingsSort === "severity" ? " selected" : ""}>${T("audit.sortSeverity")}</option>
@@ -3950,6 +4132,7 @@ const autoResumeBox = document.getElementById('autoResume');
 const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempts');
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const rateLimitPausesInput = document.getElementById('rateLimitPauses');
+const requestTimeoutInput = document.getElementById('requestTimeoutSeconds');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
 const themeEditor = document.getElementById('themeEditor');
@@ -4053,7 +4236,8 @@ function snapshot() {
     docLinks: docLinksInput.value, docMaxKb: docMaxKbInput.value, docMaxLinks: docMaxLinksInput.value,
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
-    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value
+    autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value,
+    requestTimeoutSeconds: requestTimeoutInput.value
   });
 }
 let initial = snapshot();
@@ -4107,7 +4291,8 @@ saveAllBtn.addEventListener('click', () => {
     autoResume: autoResumeBox.checked,
     autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
     autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0')),
-    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3'))
+    rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3')),
+    requestTimeoutSeconds: Number(clampInt(requestTimeoutInput.value, 10, 600, '60'))
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
@@ -4163,8 +4348,20 @@ window.addEventListener('message', (event) => {
     }
     const status = document.getElementById('status');
     if (status) {
-      status.textContent = data.message || '';
+      status.textContent = '';
       status.classList.toggle('error', data.ok === false);
+      status.dataset.category = String(data.category || (data.ok ? 'ok' : 'unknown'));
+      if (status.style.display === 'none') status.style.display = 'block';
+      const main = document.createElement('div');
+      main.className = 'conn-line';
+      main.textContent = data.message || '';
+      status.appendChild(main);
+      if (data.ok === false && data.hint) {
+        const hint = document.createElement('div');
+        hint.className = 'conn-hint';
+        hint.textContent = data.hint;
+        status.appendChild(hint);
+      }
     }
     return;
   }
@@ -4394,24 +4591,26 @@ function rateLimitPausesFromSetting(value) {
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
-function friendlyError(error) {
-  const lang = currentReportLanguage();
-  const raw = error instanceof Error ? error.message : String(error);
-  const c = classifyError(error);
-  switch (c.kind) {
-    case "auth":
-      return { message: t("err.auth", lang), details: c.details || raw };
-    case "notFound":
-      return { message: t("err.notFound", lang), details: c.details || raw };
-    case "rateLimit":
-      return { message: t("err.rateLimit", lang, { n: c.waitSeconds ?? 60 }), details: c.details || raw };
-    case "timeout":
-      return { message: t("err.timeout", lang), details: raw };
-    case "badResponse":
-      return { message: t("err.badResponse", lang), details: c.details || raw };
-    default:
-      return { message: raw, details: void 0 };
-  }
+async function secretKeyValues(context) {
+  const configKey = vscode2.workspace.getConfiguration("codescout").get("apiKey") ?? "";
+  const secretKey = await context.secrets.get(SECRET_KEY) ?? "";
+  return [secretKey, configKey].filter((key) => key.trim().length > 0);
+}
+function structuredError(error) {
+  return formatError(error, currentReportLanguage());
+}
+async function reportScanFailure(context, output, panel, error, logPrefix = "Error") {
+  const formatted = structuredError(error);
+  const raw = formatted.rawMessage ?? "";
+  lastScanError = raw;
+  const redacted = raw ? redactSecrets(raw, await secretKeyValues(context)) : "";
+  output.appendLine(`${logPrefix}: ${redacted || formatted.title}`);
+  panel.setError(formatted.message, redacted || void 0, { category: formatted.category, title: formatted.title, hint: formatted.actionHint });
+  void vscode2.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
+}
+function applyRequestTimeoutSetting() {
+  const seconds = requestTimeoutSecondsFromSetting(vscode2.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
+  setDefaultRequestTimeoutMs(seconds * 1e3);
 }
 async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}) {
   const startedAt = Date.now();
@@ -4561,12 +4760,7 @@ async function runSampleReview(context, output, panel) {
       panel.setCancelled();
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Self-test error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error, "Self-test error");
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -4784,12 +4978,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       panel.setCancelled();
       return { kind: "done" };
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
     return { kind: "interrupted", view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -4871,12 +5060,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       panel.setCancelled();
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -4943,12 +5127,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
       panel.setCancelled();
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
   }
@@ -5016,7 +5195,8 @@ async function runConnectionTest(context) {
     const models = await fetchModels(testSel);
     return { ok: true, message: t("center.connected", lang, { n: models.length }) };
   } catch (error) {
-    return { ok: false, message: friendlyError(error).message };
+    const formatted = formatError(error, lang);
+    return { ok: false, message: `${formatted.title} \u2014 ${formatted.message}`, title: formatted.title, hint: formatted.actionHint, category: formatted.category };
   }
 }
 async function fileIsDirectory(uri) {
@@ -5048,6 +5228,7 @@ async function readSettingsState(context) {
     auditScope: vscode2.workspace.getConfiguration("codescout").get("auditScope") ?? "",
     auditPasses: auditPassesFromSetting(vscode2.workspace.getConfiguration("codescout").get("auditPasses")),
     rateLimitPauses: rateLimitPausesFromSetting(vscode2.workspace.getConfiguration("codescout").get("rateLimitPauses")),
+    requestTimeoutSeconds: requestTimeoutSecondsFromSetting(vscode2.workspace.getConfiguration("codescout").get("requestTimeoutSeconds")),
     version: String(context.extension.packageJSON.version ?? "0.0.0"),
     uiTheme: readUiPrefs().theme,
     accentColor: readUiPrefs().accent,
@@ -5118,6 +5299,8 @@ function activate(context) {
     void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, "true");
   });
   let lastScanWasLastCommit = false;
+  let lastScanKind = "review";
+  let lastCustomArgs;
   let pendingScans = 0;
   const runScan = async (task) => {
     pendingScans++;
@@ -5128,6 +5311,10 @@ function activate(context) {
     }
   };
   context.subscriptions.push(output);
+  applyRequestTimeoutSetting();
+  context.subscriptions.push(vscode2.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("codescout.requestTimeoutSeconds")) applyRequestTimeoutSetting();
+  }));
   const syncKeyStatus = async () => {
     try {
       const selection = await resolveExtensionSelection(context);
@@ -5206,7 +5393,7 @@ function activate(context) {
           settingsPanel = void 0;
         });
         settingsConfigSubscription = vscode2.workspace.onDidChangeConfiguration((event) => {
-          const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "customColors", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "language", "showAuditBanner"];
+          const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "customColors", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "rateLimitPauses", "requestTimeoutSeconds", "language", "showAuditBanner"];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
         });
@@ -5273,7 +5460,7 @@ function activate(context) {
               await render(t("center.modelRefresh", currentReportLanguage()));
             } else if (message.command === "testConnection") {
               const result = await runConnectionTest(context);
-              await settingsPanel?.webview.postMessage({ type: "connResult", ok: result.ok, message: result.message });
+              await settingsPanel?.webview.postMessage({ type: "connResult", ok: result.ok, message: result.message, title: result.title, hint: result.hint, category: result.category });
             } else if (message.command === "saveDocLinks") {
               const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
               const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -5317,6 +5504,7 @@ function activate(context) {
               const auditScope = (message.auditScope ?? "").trim();
               const auditPasses = auditPassesFromSetting(message.auditPasses);
               const rateLimitPauses = rateLimitPausesFromSetting(message.rateLimitPauses);
+              const requestTimeoutSeconds = requestTimeoutSecondsFromSetting(message.requestTimeoutSeconds);
               const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1e3);
               const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 1e4);
               const ui = normalizeUiPrefs({
@@ -5340,6 +5528,8 @@ function activate(context) {
               await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
               await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
               await config.update("rateLimitPauses", rateLimitPauses, vscode2.ConfigurationTarget.Global);
+              await config.update("requestTimeoutSeconds", requestTimeoutSeconds, vscode2.ConfigurationTarget.Global);
+              applyRequestTimeoutSetting();
               await config.update("uiTheme", ui.theme, vscode2.ConfigurationTarget.Global);
               await config.update("accentColor", ui.accent, vscode2.ConfigurationTarget.Global);
               await config.update("uiDensity", ui.density, vscode2.ConfigurationTarget.Global);
@@ -5376,15 +5566,26 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.scanUncommitted", () => {
       lastScanWasLastCommit = false;
+      lastScanKind = "review";
       return runScan(() => runReview(context, false, output, panel));
     }),
     vscode2.commands.registerCommand("codescout.scanLastCommit", () => {
       lastScanWasLastCommit = true;
+      lastScanKind = "review";
       return runScan(() => runReview(context, true, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.testSample", () => runScan(() => runSampleReview(context, output, panel))),
-    vscode2.commands.registerCommand("codescout.scanFull", () => runScan(() => runFullAudit(context, output, panel))),
-    vscode2.commands.registerCommand("codescout.resumeAudit", () => runScan(() => runFullAudit(context, output, panel, true))),
+    vscode2.commands.registerCommand("codescout.testSample", () => {
+      lastScanKind = "sample";
+      return runScan(() => runSampleReview(context, output, panel));
+    }),
+    vscode2.commands.registerCommand("codescout.scanFull", () => {
+      lastScanKind = "audit";
+      return runScan(() => runFullAudit(context, output, panel));
+    }),
+    vscode2.commands.registerCommand("codescout.resumeAudit", () => {
+      lastScanKind = "audit";
+      return runScan(() => runFullAudit(context, output, panel, true));
+    }),
     vscode2.commands.registerCommand("codescout.restartAudit", async () => {
       const lang = currentReportLanguage();
       const answer = await vscode2.window.showWarningMessage(t("restart.confirm", lang), { modal: true }, t("restart.confirmBtn", lang));
@@ -5397,8 +5598,21 @@ function activate(context) {
       panel.setAuditResume(void 0);
       return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => runScan(() => runCustomReview(context, output, panel, focus, scope, globs))),
+    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => {
+      lastScanKind = "custom";
+      lastCustomArgs = { focus: focus ?? "", scope: scope ?? "all", globs: globs ?? "" };
+      return runScan(() => runCustomReview(context, output, panel, focus, scope, globs));
+    }),
     vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
+    // Батч 15: «Повторить попытку» с карточки ошибки — перезапуск последнего
+    // скана того же типа (review/audit/custom/sample), если скан не идёт.
+    vscode2.commands.registerCommand("codescout.retryScan", () => {
+      if (panel.isScanRunning()) return void 0;
+      if (lastScanKind === "audit") return runScan(() => runFullAudit(context, output, panel));
+      if (lastScanKind === "sample") return runScan(() => runSampleReview(context, output, panel));
+      if (lastScanKind === "custom") return runScan(() => runCustomReview(context, output, panel, lastCustomArgs?.focus, lastCustomArgs?.scope, lastCustomArgs?.globs));
+      return runScan(() => runReview(context, lastScanWasLastCommit, output, panel));
+    }),
     vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       await context.globalState.update("codescout.onboardingDismissed", void 0);
@@ -5500,8 +5714,8 @@ function activate(context) {
         panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
         void vscode2.window.showInformationMessage(`${t("center.connected", lang, { n: models.length })}`);
       } catch (error) {
-        const friendly = friendlyError(error);
-        void vscode2.window.showErrorMessage(friendly.message);
+        const formatted = formatError(error, lang);
+        void vscode2.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
       }
     }),
     vscode2.commands.registerCommand("codescout.onboardLocal", async () => {

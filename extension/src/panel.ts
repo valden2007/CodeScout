@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type WebviewAssets, type PanelUx } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx } from './reportHtml';
 import { computeFingerprint, suppressFinding } from './findingsStore';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
@@ -100,6 +100,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private progressInfo?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
   private auditSummary?: { issues: number; files: number; seconds: number };
   private diagnosticDetails?: string;
+  private errorInfo?: ScanErrorInfo;
   private auditDurations: number[] = [];
   private workspaceState?: vscode.Memento;
   private onWelcomeStart?: () => void;
@@ -220,6 +221,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'cancelScan') {
         void vscode.commands.executeCommand('codescout.cancelScan');
+      } else if (message.command === 'retryScan') {
+        // Батч 15: карточка ошибки предлагает повторить последний скан тем же
+        // хост-командом — какой скан был последним, знает extension.ts.
+        void vscode.commands.executeCommand('codescout.retryScan');
       } else if (message.command === 'suppressFinding') {
         const fingerprint = typeof message.fingerprint === 'string' ? message.fingerprint.trim() : '';
         if (fingerprint) this.suppressLocal(fingerprint);
@@ -353,6 +358,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditDurations = [];
     this.firstAuditDone = false;
     this.welcomeBanner = false;
+    this.errorInfo = undefined;
     this.render();
   }
 
@@ -373,6 +379,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.customFocus = '';
     this.auditSummary = undefined;
     this.auditResume = resume;
+    this.errorInfo = undefined;
     this.render();
   }
 
@@ -401,6 +408,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.autoResumeView = undefined;
       this.progressInfo = undefined;
       this.auditSummary = undefined;
+      this.errorInfo = undefined;
       if (!keepAuditStats) this.auditDurations = [];
     }
     this.render();
@@ -466,10 +474,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.autoResumeView = undefined;
     this.statusKind = 'error';
     this.statusMessage = t('status.cancelled', this.language);
+    this.errorInfo = undefined;
     this.render();
   }
 
-  setError(message: string, details?: string): void {
+  // Батч 15: host присылает форматированную ошибку (title + hint из
+  // error-classifier) — панель рисует карточку с кнопками, сырое — details.
+  setError(message: string, details?: string, info?: ScanErrorInfo): void {
     this.scanning = false;
     this.hasRun = true;
     this.testMode = false;
@@ -477,6 +488,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.statusKind = 'error';
     this.statusMessage = message;
     this.diagnosticDetails = details;
+    this.errorInfo = info;
     this.render();
   }
 
@@ -493,6 +505,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'success';
+    this.errorInfo = undefined;
     this.render();
   }
 
@@ -511,7 +524,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails)
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
   }
 }

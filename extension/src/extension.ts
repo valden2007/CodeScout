@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { abortError, BadResponseError, classifyError, createProvider, isAbortError, ProviderHttpError, RateLimitError, RetryEvent, sleep } from '../../src/llm-client';
+import { abortError, BadResponseError, createProvider, isAbortError, ProviderHttpError, RateLimitError, requestTimeoutSecondsFromSetting, RetryEvent, setDefaultRequestTimeoutMs, sleep } from '../../src/llm-client';
+import { formatError } from '../../src/error-classifier';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -265,20 +266,35 @@ function rateLimitPausesFromSetting(value: unknown): number {
   return Math.min(5, n);
 }
 
-// Батч 13, п.4: понятные категории ошибок в UI; длинный технический ответ
-// уходит в раскрываемую диагностику (panel.setError(message, details)).
-function friendlyError(error: unknown): { message: string; details?: string } {
-  const lang = currentReportLanguage();
-  const raw = error instanceof Error ? error.message : String(error);
-  const c = classifyError(error);
-  switch (c.kind) {
-    case 'auth': return { message: t('err.auth', lang), details: c.details || raw };
-    case 'notFound': return { message: t('err.notFound', lang), details: c.details || raw };
-    case 'rateLimit': return { message: t('err.rateLimit', lang, { n: c.waitSeconds ?? 60 }), details: c.details || raw };
-    case 'timeout': return { message: t('err.timeout', lang), details: raw };
-    case 'badResponse': return { message: t('err.badResponse', lang), details: c.details || raw };
-    default: return { message: raw, details: undefined };
-  }
+// Батч 15: вся категоризация ошибок живёт в src/error-classifier. Здесь —
+// единственный выход сбоя скана: локализованная карточка в панели, понятная
+// нотификация и ОДИНАКОВЫЙ redactSecrets-путь для raw-сообщения в Output.
+async function secretKeyValues(context: vscode.ExtensionContext): Promise<string[]> {
+  const configKey = vscode.workspace.getConfiguration('codescout').get<string>('apiKey') ?? '';
+  const secretKey = await context.secrets.get(SECRET_KEY) ?? '';
+  return [secretKey, configKey].filter((key) => key.trim().length > 0);
+}
+
+function structuredError(error: unknown): ReturnType<typeof formatError> {
+  return formatError(error, currentReportLanguage());
+}
+
+async function reportScanFailure(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, error: unknown, logPrefix = 'Error'): Promise<void> {
+  const formatted = structuredError(error);
+  const raw = formatted.rawMessage ?? '';
+  lastScanError = raw;
+  const redacted = raw ? redactSecrets(raw, await secretKeyValues(context)) : '';
+  output.appendLine(`${logPrefix}: ${redacted || formatted.title}`);
+  panel.setError(formatted.message, redacted || undefined, { category: formatted.category, title: formatted.title, hint: formatted.actionHint });
+  void vscode.window.showErrorMessage(`CodeScout: ${formatted.title} — ${formatted.message}`);
+}
+
+// Батч 15: дедлайн инференса (codescout.requestTimeoutSeconds, 10-600,
+// дефолт 60с) применяется к модульному значению в llm-client — новый
+// параметр reviewFiles не нужен, зависшие чанки падают в категорию timeout.
+function applyRequestTimeoutSetting(): void {
+  const seconds = requestTimeoutSecondsFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('requestTimeoutSeconds'));
+  setDefaultRequestTimeoutMs(seconds * 1000);
 }
 
 export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}): Promise<ScanResult> {
@@ -438,12 +454,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
       panel.setCancelled();
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Self-test error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error, 'Self-test error');
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -654,12 +665,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
     return { kind: 'interrupted', view: resumeView };
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -735,12 +741,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     void vscode.window.showInformationMessage(t('notify.customDone', lang, { n: result.issues.length }));
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -811,12 +812,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
       panel.setCancelled();
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    lastScanError = message;
-    const friendly = friendlyError(error);
-    panel.setError(friendly.message, friendly.details);
-    output.appendLine(`Error: ${message}`);
-    void vscode.window.showErrorMessage(`CodeScout: ${friendly.message}`);
+    await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
   }
@@ -848,6 +844,7 @@ interface SettingsMessage {
   showConfidence?: boolean;
   customColors?: string;
   rateLimitPauses?: number;
+  requestTimeoutSeconds?: number;
   url?: string;
 }
 
@@ -913,7 +910,17 @@ async function migrateLanguageSetting(context: vscode.ExtensionContext): Promise
 // Батч 13: тест подключения возвращает результат вызывающей стороне —
 // палитра показывает нативное уведомление, центр настроек получает
 // connResult postMessage-ем (форма не перерисовывается, правки не теряются).
-async function runConnectionTest(context: vscode.ExtensionContext): Promise<{ ok: boolean; message: string }> {
+// Батч 15: результат дополнен структурой (title/hint/category) из
+// error-classifier — центр рисует красный бейдж категории + совет.
+interface ConnectionTestResult {
+  ok: boolean;
+  message: string;
+  title?: string;
+  hint?: string;
+  category?: string;
+}
+
+async function runConnectionTest(context: vscode.ExtensionContext): Promise<ConnectionTestResult> {
   const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
   if (!selection.baseUrl && selection.provider !== 'custom') {
@@ -924,7 +931,8 @@ async function runConnectionTest(context: vscode.ExtensionContext): Promise<{ ok
     const models = await fetchModels(testSel);
     return { ok: true, message: t('center.connected', lang, { n: models.length }) };
   } catch (error) {
-    return { ok: false, message: friendlyError(error).message };
+    const formatted = formatError(error, lang);
+    return { ok: false, message: `${formatted.title} — ${formatted.message}`, title: formatted.title, hint: formatted.actionHint, category: formatted.category };
   }
 }
 
@@ -958,6 +966,7 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     auditScope: vscode.workspace.getConfiguration('codescout').get<string>('auditScope') ?? '',
     auditPasses: auditPassesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('auditPasses')),
     rateLimitPauses: rateLimitPausesFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('rateLimitPauses')),
+    requestTimeoutSeconds: requestTimeoutSecondsFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('requestTimeoutSeconds')),
     version: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
     uiTheme: readUiPrefs().theme,
     accentColor: readUiPrefs().accent,
@@ -1034,6 +1043,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // 👋 Запустить полный аудит для контекста?
   panel.setWelcomeChoiceHandler(() => { void context.secrets.store(SECRET_FULL_AUDIT_WELCOME, 'true'); });
   let lastScanWasLastCommit = false;
+  // Батч 15: карточка ошибки предлагает «Повторить попытку» — хост знает,
+  // какой скан был последним, и перезапускает именно его.
+  let lastScanKind: 'review' | 'audit' | 'custom' | 'sample' = 'review';
+  let lastCustomArgs: { focus: string; scope: string; globs: string } | undefined;
   let pendingScans = 0;
   // Keep clearing blocked through preflight, auto-resume waits and abort cleanup.
   const runScan = async (task: () => Promise<void>): Promise<void> => {
@@ -1041,6 +1054,12 @@ export function activate(context: vscode.ExtensionContext): void {
     try { await task(); } finally { pendingScans--; }
   };
   context.subscriptions.push(output);
+  // Батч 15: стартовый дедлайн запросов + реакция на смену настройки без
+  // перезагрузки окна (значения вне 10-600 клампятся в llm-client).
+  applyRequestTimeoutSetting();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration('codescout.requestTimeoutSeconds')) applyRequestTimeoutSetting();
+  }));
   const syncKeyStatus = async (): Promise<void> => {
     try {
       const selection = await resolveExtensionSelection(context);
@@ -1122,7 +1141,7 @@ export function activate(context: vscode.ExtensionContext): void {
           settingsPanel = undefined;
         });
         settingsConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
-          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'language', 'showAuditBanner'];
+          const watched = ['uiTheme', 'accentColor', 'uiDensity', 'uiFontSize', 'showConfidence', 'findingsSort', 'reportTheme', 'customColors', 'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes', 'auditScope', 'auditPasses', 'maxLines', 'maxFiles', 'docLinks', 'docMaxKb', 'docMaxLinks', 'rateLimitPauses', 'requestTimeoutSeconds', 'language', 'showAuditBanner'];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
         });
@@ -1183,7 +1202,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await render(t('center.modelRefresh', currentReportLanguage()));
           } else if (message.command === 'testConnection') {
             const result = await runConnectionTest(context);
-            await settingsPanel?.webview.postMessage({ type: 'connResult', ok: result.ok, message: result.message });
+            await settingsPanel?.webview.postMessage({ type: 'connResult', ok: result.ok, message: result.message, title: result.title, hint: result.hint, category: result.category });
           } else if (message.command === 'saveDocLinks') {
             const links = (message.linksText ?? '').split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
             const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
@@ -1227,6 +1246,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const auditScope = (message.auditScope ?? '').trim();
             const auditPasses = auditPassesFromSetting(message.auditPasses);
             const rateLimitPauses = rateLimitPausesFromSetting(message.rateLimitPauses);
+            const requestTimeoutSeconds = requestTimeoutSecondsFromSetting(message.requestTimeoutSeconds);
             const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1000);
             const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 10000);
             const ui = normalizeUiPrefs({
@@ -1250,6 +1270,8 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('auditScope', auditScope, vscode.ConfigurationTarget.Global);
             await config.update('auditPasses', auditPasses, vscode.ConfigurationTarget.Global);
             await config.update('rateLimitPauses', rateLimitPauses, vscode.ConfigurationTarget.Global);
+            await config.update('requestTimeoutSeconds', requestTimeoutSeconds, vscode.ConfigurationTarget.Global);
+            applyRequestTimeoutSetting();
             await config.update('uiTheme', ui.theme, vscode.ConfigurationTarget.Global);
             await config.update('accentColor', ui.accent, vscode.ConfigurationTarget.Global);
             await config.update('uiDensity', ui.density, vscode.ConfigurationTarget.Global);
@@ -1284,11 +1306,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       await render();
     }),
-    vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; return runScan(() => runReview(context, false, output, panel)); }),
-    vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; return runScan(() => runReview(context, true, output, panel)); }),
-    vscode.commands.registerCommand('codescout.testSample', () => runScan(() => runSampleReview(context, output, panel))),
-    vscode.commands.registerCommand('codescout.scanFull', () => runScan(() => runFullAudit(context, output, panel))),
-    vscode.commands.registerCommand('codescout.resumeAudit', () => runScan(() => runFullAudit(context, output, panel, true))),
+    vscode.commands.registerCommand('codescout.scanUncommitted', () => { lastScanWasLastCommit = false; lastScanKind = 'review'; return runScan(() => runReview(context, false, output, panel)); }),
+    vscode.commands.registerCommand('codescout.scanLastCommit', () => { lastScanWasLastCommit = true; lastScanKind = 'review'; return runScan(() => runReview(context, true, output, panel)); }),
+    vscode.commands.registerCommand('codescout.testSample', () => { lastScanKind = 'sample'; return runScan(() => runSampleReview(context, output, panel)); }),
+    vscode.commands.registerCommand('codescout.scanFull', () => { lastScanKind = 'audit'; return runScan(() => runFullAudit(context, output, panel)); }),
+    vscode.commands.registerCommand('codescout.resumeAudit', () => { lastScanKind = 'audit'; return runScan(() => runFullAudit(context, output, panel, true)); }),
     vscode.commands.registerCommand('codescout.restartAudit', async () => {
       const lang = currentReportLanguage();
       const answer = await vscode.window.showWarningMessage(t('restart.confirm', lang), { modal: true }, t('restart.confirmBtn', lang));
@@ -1301,8 +1323,21 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.setAuditResume(undefined);
       return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => runScan(() => runCustomReview(context, output, panel, focus, scope, globs))),
+    vscode.commands.registerCommand('codescout.customReview', (focus?: string, scope?: string, globs?: string) => {
+      lastScanKind = 'custom';
+      lastCustomArgs = { focus: focus ?? '', scope: scope ?? 'all', globs: globs ?? '' };
+      return runScan(() => runCustomReview(context, output, panel, focus, scope, globs));
+    }),
     vscode.commands.registerCommand('codescout.reviewSelection', (uri?: vscode.Uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
+    // Батч 15: «Повторить попытку» с карточки ошибки — перезапуск последнего
+    // скана того же типа (review/audit/custom/sample), если скан не идёт.
+    vscode.commands.registerCommand('codescout.retryScan', () => {
+      if (panel.isScanRunning()) return undefined;
+      if (lastScanKind === 'audit') return runScan(() => runFullAudit(context, output, panel));
+      if (lastScanKind === 'sample') return runScan(() => runSampleReview(context, output, panel));
+      if (lastScanKind === 'custom') return runScan(() => runCustomReview(context, output, panel, lastCustomArgs?.focus, lastCustomArgs?.scope, lastCustomArgs?.globs));
+      return runScan(() => runReview(context, lastScanWasLastCommit, output, panel));
+    }),
     vscode.commands.registerCommand('codescout.resetOnboarding', async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       await context.globalState.update('codescout.onboardingDismissed', undefined);
@@ -1399,8 +1434,8 @@ export function activate(context: vscode.ExtensionContext): void {
         panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
         void vscode.window.showInformationMessage(`${t('center.connected', lang, { n: models.length })}`);
       } catch (error) {
-        const friendly = friendlyError(error);
-        void vscode.window.showErrorMessage(friendly.message);
+        const formatted = formatError(error, lang);
+        void vscode.window.showErrorMessage(`CodeScout: ${formatted.title} — ${formatted.message}`);
       }
     }),
     vscode.commands.registerCommand('codescout.onboardLocal', async () => {

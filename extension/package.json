@@ -228,6 +228,13 @@
           "maximum": 5,
           "description": "%rateLimitPauses.description%"
         },
+        "codescout.requestTimeoutSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "description": "%requestTimeout.description%"
+        },
         "codescout.fileCooldownSeconds": {
           "type": "number",
           "default": 5,
