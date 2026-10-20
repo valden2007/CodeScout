@@ -188,7 +188,11 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   const secretModel = await context.secrets.get(SECRET_MODEL);
   const userChosenModel = (await context.secrets.get(SECRET_MODEL_CHOSEN)) === 'true';
   const settingsProvider = config.get<string>('provider')?.trim();
-  const settingsModel = config.get<string>('model')?.trim();
+  // HOTFIX: манифестный дефолт codescout.model ('gemini-2.5-flash') не должен
+  // просачиваться в провайдеры, где он не имеет смысла (custom/ollama/opencode).
+  // Учитываем только явно заданное пользователем значение (global/workspace).
+  const inspectedModel = config.inspect<string>('model');
+  const settingsModel = (inspectedModel?.globalValue ?? inspectedModel?.workspaceValue ?? '').trim();
   const provider = (secretProvider?.trim() || settingsProvider || 'gemini') as ProviderName;
   const model = userChosenModel ? (secretModel?.trim() || settingsModel || defaultModel(provider)) : (settingsModel || secretModel?.trim() || defaultModel(provider));
   const key = resolveApiKeyPriority(secretKey, provider, config.get<string>('apiKey'));
@@ -1016,7 +1020,7 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `${t('center.savedKey', lang, { p: provider, m: model })}${notes.length ? ` (${notes.join('; ')})` : ''}`;
+  return `${t('center.savedKey', lang, { p: provider, m: model || t('center.nowModelMissing', lang) })}${notes.length ? ` (${notes.join('; ')})` : ''}`;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -1133,7 +1137,11 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       };
       rerenderSettings = () => { void render(); };
-      if (!settingsPanel) {
+      // HOTFIX: панель могли закрыть без корректного onDidDispose (reload
+      // окна). WebviewPanel.disposed появился позже наших типов 1.85 —
+      // читаем defensively: undefined у старых VS Code просто не мешает.
+      const panelDisposed = (settingsPanel as unknown as { disposed?: boolean } | undefined)?.disposed === true;
+      if (!settingsPanel || panelDisposed) {
         settingsPanel = vscode.window.createWebviewPanel('codescout.settings', t('title.center', currentReportLanguage()), vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => {
           settingsConfigSubscription?.dispose();

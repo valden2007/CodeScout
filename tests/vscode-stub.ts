@@ -32,6 +32,9 @@ class StubState {
     this.configListeners = [];
     this.commands.clear();
     this.providers.clear();
+    // Reload окна VS Code закрывает панели: dispose() выставляет disposed,
+    // и расширение пересоздаёт центр вместо reveal() на мёртвой панели.
+    for (const panel of this.panels) panel.dispose();
     this.panels = [];
     this.secrets.clear();
     this.globalState.clear();

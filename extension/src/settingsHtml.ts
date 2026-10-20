@@ -82,6 +82,26 @@ export function splitScopeGlobs(value: string): string[] {
   return [...new Set((value ?? '').split(',').map((glob) => glob.trim()).filter(Boolean))];
 }
 
+// HOTFIX: имя локального сервиса по порту OpenAI-совместимого адреса.
+// Нужен для строго динамической строки «сейчас:» без устаревших дефолтов.
+export function localServiceName(baseUrl: string): string | undefined {
+  const match = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::(\d+))?(?:\/|$)/i.exec((baseUrl ?? '').trim());
+  if (!match) return undefined;
+  if (match[1] === '11434') return 'Ollama';
+  if (match[1] === '1234') return 'LM Studio';
+  return 'localhost';
+}
+
+function currentKeyLine(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
+  if (state.keyConfigured) {
+    const model = state.model.trim() || T('center.nowModelMissing');
+    return `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(model)}`;
+  }
+  const local = localServiceName(state.baseUrl);
+  if (state.provider === 'custom' && local) return escapeHtml(T('center.nowLocal', { s: local }));
+  return escapeHtml(T('center.nowNone'));
+}
+
 export function mergeScopeGlobs(existing: string, added: string[]): string {
   return [...new Set([...splitScopeGlobs(existing), ...added.map((glob) => glob.trim()).filter(Boolean)])].join(', ');
 }
@@ -210,7 +230,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml(state.baseUrl)}">
     <p class="hint">${T('center.baseUrlHint')}</p>
   </div>
-  <div class="current-key">${T('center.now')} ${state.keyConfigured ? `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}` : T('center.nowNone')}</div>
+  <div class="current-key">${T('center.now')} ${currentKeyLine(T, state)}</div>
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>${T('center.liveModels')}</span></button>
     <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>

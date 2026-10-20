@@ -495,6 +495,8 @@ var ru_default = {
   "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
   "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
   "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
+  "center.nowLocal": "\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \xB7 {s}",
+  "center.nowModelMissing": "\u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430",
   "center.liveModels": "\u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
   "center.forgetKey": "\u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447",
   "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
@@ -844,6 +846,8 @@ var en_default = {
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
   "center.now": "now:",
   "center.nowNone": "key not configured",
+  "center.nowLocal": "local mode \xB7 {s}",
+  "center.nowModelMissing": "no model selected",
   "center.liveModels": "Live models\u2026",
   "center.forgetKey": "Forget key",
   "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
@@ -2019,7 +2023,7 @@ ${headHtml(assets, nonce)}
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${T(welcomeReason === "stale" ? "banner.welcomeStale" : "banner.welcomeNew")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === "stale" ? "sync" : "play")}<span>${T(welcomeReason === "stale" ? "banner.update" : "banner.startAudit")}</span></button><button type="button" data-command="dismissWelcome">${T("banner.later")}</button></div></div></div></div>` : ""}
     <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
-    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model)} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
+    <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
     ${resumeView ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
@@ -3840,6 +3844,22 @@ function escapeHtml2(value) {
 function icon2(name) {
   return `<i class="codicon codicon-${name}" aria-hidden="true"></i>`;
 }
+function localServiceName(baseUrl) {
+  const match = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::(\d+))?(?:\/|$)/i.exec((baseUrl ?? "").trim());
+  if (!match) return void 0;
+  if (match[1] === "11434") return "Ollama";
+  if (match[1] === "1234") return "LM Studio";
+  return "localhost";
+}
+function currentKeyLine(T, state) {
+  if (state.keyConfigured) {
+    const model = state.model.trim() || T("center.nowModelMissing");
+    return `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(model)}`;
+  }
+  const local = localServiceName(state.baseUrl);
+  if (state.provider === "custom" && local) return escapeHtml2(T("center.nowLocal", { s: local }));
+  return escapeHtml2(T("center.nowNone"));
+}
 function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "", anchor = "", assets, lang = "ru") {
   const T = (key, vars) => t(key, lang, vars);
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
@@ -3956,7 +3976,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml2(state.baseUrl)}">
     <p class="hint">${T("center.baseUrlHint")}</p>
   </div>
-  <div class="current-key">${T("center.now")} ${state.keyConfigured ? `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(state.model)}` : T("center.nowNone")}</div>
+  <div class="current-key">${T("center.now")} ${currentKeyLine(T, state)}</div>
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon2("cloud-download")}<span>${T("center.liveModels")}</span></button>
     <button id="testConnection" type="button" class="secondary">${icon2("sync")}<span>${T("center.retry")}</span></button>
@@ -4543,7 +4563,8 @@ async function resolveExtensionSelection(context) {
   const secretModel = await context.secrets.get(SECRET_MODEL);
   const userChosenModel = await context.secrets.get(SECRET_MODEL_CHOSEN) === "true";
   const settingsProvider = config.get("provider")?.trim();
-  const settingsModel = config.get("model")?.trim();
+  const inspectedModel = config.inspect("model");
+  const settingsModel = (inspectedModel?.globalValue ?? inspectedModel?.workspaceValue ?? "").trim();
   const provider = secretProvider?.trim() || settingsProvider || "gemini";
   const model = userChosenModel ? secretModel?.trim() || settingsModel || defaultModel(provider) : settingsModel || secretModel?.trim() || defaultModel(provider);
   const key = resolveApiKeyPriority(secretKey, provider, config.get("apiKey"));
@@ -5277,7 +5298,7 @@ async function saveKeyProvider(context, message) {
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `${t("center.savedKey", lang, { p: provider, m: model })}${notes.length ? ` (${notes.join("; ")})` : ""}`;
+  return `${t("center.savedKey", lang, { p: provider, m: model || t("center.nowModelMissing", lang) })}${notes.length ? ` (${notes.join("; ")})` : ""}`;
 }
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
@@ -5385,7 +5406,8 @@ function activate(context) {
       rerenderSettings = () => {
         void render();
       };
-      if (!settingsPanel) {
+      const panelDisposed = settingsPanel?.disposed === true;
+      if (!settingsPanel || panelDisposed) {
         settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", t("title.center", currentReportLanguage()), vscode2.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => {
           settingsConfigSubscription?.dispose();

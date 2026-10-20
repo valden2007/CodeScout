@@ -119,6 +119,8 @@
   "center.baseUrlHint": "Нужен для custom: Ollama, LM Studio, свой прокси. Приоритет: эта настройка > env CODESCOUT_BASE_URL.",
   "center.now": "сейчас:",
   "center.nowNone": "ключ не настроен",
+  "center.nowLocal": "локальный режим · {s}",
+  "center.nowModelMissing": "модель не выбрана",
   "center.liveModels": "Живые модели…",
   "center.forgetKey": "Забыть ключ",
   "center.prefixHint": "auto = groq-ключ → groq, AIza… → gemini, sk-or-… → openrouter, ghp_… → github.",

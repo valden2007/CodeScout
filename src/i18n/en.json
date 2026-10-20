@@ -119,6 +119,8 @@
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
   "center.now": "now:",
   "center.nowNone": "key not configured",
+  "center.nowLocal": "local mode · {s}",
+  "center.nowModelMissing": "no model selected",
   "center.liveModels": "Live models…",
   "center.forgetKey": "Forget key",
   "center.prefixHint": "auto = groq key → groq, AIza… → gemini, sk-or-… → openrouter, ghp_… → github.",
