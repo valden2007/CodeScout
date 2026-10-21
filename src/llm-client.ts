@@ -1,9 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import { LLMProvider } from './types';
 import { completionUrl, normalizeProvider, resolveBaseUrl } from './providers';
 
 interface GroqResponse {
   choices?: Array<{ message?: { content?: string } }>;
   error?: { message?: string };
+}
+
+// Батч 17.5: идентификация клиента OpenCode Go + контракт совместимости
+// сессий: один стабильный x-opencode-session на экземпляр клиента (= на
+// один аудит), User-Agent версии продукта.
+export const USER_AGENT = 'CodeScout/1.5.0';
+
+export function isRedirectStatus(status: number): boolean {
+  return (status >= 300 && status < 400) || status === 0;
 }
 
 export interface RetryEvent {
@@ -167,6 +177,9 @@ export function classifyError(error: unknown): FriendlyError {
 export class OpenAICompatibleProvider implements LLMProvider {
   private lastRequestAt = 0;
   private readonly endpoint: string;
+  // Батч 17.5: UUID живёт всю жизнь клиента — все запросы одного аудита
+  // идут с одним x-opencode-session (скоррелированные логи на стороне шлюза).
+  readonly sessionId: string = randomUUID();
 
   constructor(
     private readonly apiKey: string,
@@ -205,12 +218,22 @@ export class OpenAICompatibleProvider implements LLMProvider {
       try {
         const response = await this.fetcher(this.endpoint, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT, 'x-opencode-session': this.sessionId },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
-          signal: deadline.signal
+          signal: deadline.signal,
+          // Батч 17.5 (SSRF): никаких автоматических 301/302 переходов —
+          // вредоносный Base URL не может перенаправить запрос с API-ключом
+          // на внутренние метаданные облака (169.254.169.254 и т.п.).
+          redirect: 'manual'
         });
         const text = await response.text();
         clearTimeout(timer);
+        // Редирект = жёсткий отказ: ключ/промпт не уходят по Location,
+        // перенаправление не разыгрывается ни в одной из попыток ретрая.
+        if ((response as { type?: string }).type === 'opaqueredirect' || isRedirectStatus(response.status)) {
+          const target = response.headers.get('location') || 'скрыт';
+          throw new ProviderHttpError(response.status || 302, `⛔ SSRF-защита: редирект ${response.status} на ${target} запрещён — редиректы не отслеживаются`, `redirect=${response.status} → ${target}`);
+        }
         let data: GroqResponse = {};
         try {
           data = JSON.parse(text) as GroqResponse;

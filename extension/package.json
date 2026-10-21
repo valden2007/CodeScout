@@ -29,6 +29,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "CodeScout requires full workspace access to analyze code and read Git history."
+    }
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onCommand:codescout.scanUncommitted",

@@ -34147,6 +34147,8 @@ function formatIssue(issue) {
     return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
 }
 
+// EXTERNAL MODULE: external "node:crypto"
+var external_node_crypto_ = __nccwpck_require__(7598);
 ;// CONCATENATED MODULE: ./src/providers.ts
 function parseLiveModels(payload) {
     if (!payload || typeof payload !== 'object')
@@ -34179,7 +34181,10 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 500
         method: 'GET',
         headers: { Authorization: `Bearer ${apiKey}` },
         // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: AbortSignal.timeout(timeoutMs),
+        // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
+        // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
+        redirect: 'manual'
     });
     if (!response.ok)
         throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
@@ -34209,7 +34214,7 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5000) {
         return { ok: false, status: 'error', baseUrl: '', models: [], message: 'URL не задан' };
     const openAiUrl = base.endsWith('/v1') ? base : `${base}/v1`;
     const ollamaTagsUrl = base.endsWith('/v1') ? `${base.slice(0, -3)}/api/tags` : `${base}/api/tags`;
-    const probe = async (url) => fetcher(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+    const probe = async (url) => fetcher(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' });
     try {
         // LM Studio / OpenAI-совместимые: GET {base}/models
         const direct = await probe(`${openAiUrl}/models`);
@@ -34228,7 +34233,18 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5000) {
         return { ok: false, status: 'noAnswer', baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
     }
 }
+// Батч 17.5: единый порядок показа провайдеров во всех UI-списках
+// (центр настроек, quickPick, wizard, CLI choices): custom → opencode → остальное.
+const PROVIDER_ORDER = (/* unused pure expression or super */ null && (['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github']));
 const PROVIDERS = {
+    // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+    // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+    opencode: {
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+        envKey: 'OPENCODE_GO_API_KEY',
+        defaultModel: 'qwen3.8-flash',
+        keyUrl: 'https://opencode.ai/auth'
+    },
     gemini: {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
         envKey: 'GEMINI_API_KEY',
@@ -34252,18 +34268,14 @@ const PROVIDERS = {
         envKey: 'GITHUB_TOKEN',
         defaultModel: 'gpt-4o-mini',
         keyUrl: 'https://github.com/settings/tokens'
-    },
-    // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
-    // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
-    opencode: {
-        baseUrl: 'https://opencode.ai/zen/go/v1',
-        envKey: 'OPENCODE_GO_API_KEY',
-        defaultModel: 'qwen3.8-flash',
-        keyUrl: 'https://opencode.ai/auth'
     }
 };
 function detectProvider(key) {
     const value = key.trim();
+    // Батч 17.5: oc_sk_ проверяется первым и строго — ключ OpenCode Go обязан
+    // давать opencode, никаких соскальзываний на gemini/других дефолтного списка.
+    if (value.startsWith('oc_sk_'))
+        return { provider: 'opencode', model: 'qwen3.8-flash' };
     if (value.startsWith('gsk_'))
         return { provider: 'groq', model: 'llama-3.3-70b-versatile' };
     if (value.startsWith('AIza') || value.startsWith('AQ.'))
@@ -34272,8 +34284,6 @@ function detectProvider(key) {
         return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
     if (value.startsWith('ghp_') || value.startsWith('github_pat_'))
         return { provider: 'github', model: 'gpt-4o-mini' };
-    if (value.startsWith('oc_sk_'))
-        return { provider: 'opencode', model: 'qwen3.8-flash' };
     return null;
 }
 function normalizeProvider(provider) {
@@ -34335,6 +34345,14 @@ function maskApiKey(key) {
 
 ;// CONCATENATED MODULE: ./src/llm-client.ts
 
+
+// Батч 17.5: идентификация клиента OpenCode Go + контракт совместимости
+// сессий: один стабильный x-opencode-session на экземпляр клиента (= на
+// один аудит), User-Agent версии продукта.
+const USER_AGENT = 'CodeScout/1.5.0';
+function isRedirectStatus(status) {
+    return (status >= 300 && status < 400) || status === 0;
+}
 class RateLimitError extends Error {
     waitSeconds;
     details;
@@ -34478,6 +34496,9 @@ class OpenAICompatibleProvider {
     requestTimeoutMs;
     lastRequestAt = 0;
     endpoint;
+    // Батч 17.5: UUID живёт всю жизнь клиента — все запросы одного аудита
+    // идут с одним x-opencode-session (скоррелированные логи на стороне шлюза).
+    sessionId = (0,external_node_crypto_.randomUUID)();
     constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal, requestTimeoutMs) {
         this.apiKey = apiKey;
         this.model = model;
@@ -34515,12 +34536,22 @@ class OpenAICompatibleProvider {
             try {
                 const response = await this.fetcher(this.endpoint, {
                     method: 'POST',
-                    headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+                    headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT, 'x-opencode-session': this.sessionId },
                     body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
-                    signal: deadline.signal
+                    signal: deadline.signal,
+                    // Батч 17.5 (SSRF): никаких автоматических 301/302 переходов —
+                    // вредоносный Base URL не может перенаправить запрос с API-ключом
+                    // на внутренние метаданные облака (169.254.169.254 и т.п.).
+                    redirect: 'manual'
                 });
                 const text = await response.text();
                 clearTimeout(timer);
+                // Редирект = жёсткий отказ: ключ/промпт не уходят по Location,
+                // перенаправление не разыгрывается ни в одной из попыток ретрая.
+                if (response.type === 'opaqueredirect' || isRedirectStatus(response.status)) {
+                    const target = response.headers.get('location') || 'скрыт';
+                    throw new ProviderHttpError(response.status || 302, `⛔ SSRF-защита: редирект ${response.status} на ${target} запрещён — редиректы не отслеживаются`, `redirect=${response.status} → ${target}`);
+                }
                 let data = {};
                 try {
                     data = JSON.parse(text);

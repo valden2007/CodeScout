@@ -231,6 +231,8 @@
   "issue.noError": "no scan errors",
   "issue.outputTail": "Recent Output lines",
   "issue.hint": "describe it briefly here",
+  "issue.logsWarn": "Audit logs will be attached to the issue: the last Output lines and the last scan error (keys are redacted). Continue?",
+  "issue.logsWarnBtn": "Attach logs and open issue",
   "progress.file.check": "🔎 Checking file",
   "progress.file.audit": "🔎 Full audit: file",
   "progress.file.custom": "🎯 Custom review: file",

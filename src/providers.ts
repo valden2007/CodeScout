@@ -34,7 +34,10 @@ export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: 
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
     // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(timeoutMs),
+    // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
+    // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
+    redirect: 'manual'
   });
   if (!response.ok) throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
   return parseLiveModels(await response.json());
@@ -74,7 +77,7 @@ export async function probeLocalServer(rawUrl: string, fetcher: typeof fetch = f
   if (!base) return { ok: false, status: 'error', baseUrl: '', models: [], message: 'URL не задан' };
   const openAiUrl = base.endsWith('/v1') ? base : `${base}/v1`;
   const ollamaTagsUrl = base.endsWith('/v1') ? `${base.slice(0, -3)}/api/tags` : `${base}/api/tags`;
-  const probe = async (url: string): Promise<Response> => fetcher(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+  const probe = async (url: string): Promise<Response> => fetcher(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' });
   try {
     // LM Studio / OpenAI-совместимые: GET {base}/models
     const direct = await probe(`${openAiUrl}/models`);
@@ -99,7 +102,19 @@ export interface ProviderDefinition {
   keyUrl: string;
 }
 
+// Батч 17.5: единый порядок показа провайдеров во всех UI-списках
+// (центр настроек, quickPick, wizard, CLI choices): custom → opencode → остальное.
+export const PROVIDER_ORDER: ProviderName[] = ['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github'];
+
 export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefinition> = {
+  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+  opencode: {
+    baseUrl: 'https://opencode.ai/zen/go/v1',
+    envKey: 'OPENCODE_GO_API_KEY',
+    defaultModel: 'qwen3.8-flash',
+    keyUrl: 'https://opencode.ai/auth'
+  },
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     envKey: 'GEMINI_API_KEY',
@@ -123,24 +138,18 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
     envKey: 'GITHUB_TOKEN',
     defaultModel: 'gpt-4o-mini',
     keyUrl: 'https://github.com/settings/tokens'
-  },
-  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
-  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
-  opencode: {
-    baseUrl: 'https://opencode.ai/zen/go/v1',
-    envKey: 'OPENCODE_GO_API_KEY',
-    defaultModel: 'qwen3.8-flash',
-    keyUrl: 'https://opencode.ai/auth'
   }
 };
 
 export function detectProvider(key: string): DetectedProvider | null {
   const value = key.trim();
+  // Батч 17.5: oc_sk_ проверяется первым и строго — ключ OpenCode Go обязан
+  // давать opencode, никаких соскальзываний на gemini/других дефолтного списка.
+  if (value.startsWith('oc_sk_')) return { provider: 'opencode', model: 'qwen3.8-flash' };
   if (value.startsWith('gsk_')) return { provider: 'groq', model: 'llama-3.3-70b-versatile' };
   if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-2.5-flash' };
   if (value.startsWith('sk-or-')) return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
   if (value.startsWith('ghp_') || value.startsWith('github_pat_')) return { provider: 'github', model: 'gpt-4o-mini' };
-  if (value.startsWith('oc_sk_')) return { provider: 'opencode', model: 'qwen3.8-flash' };
   return null;
 }
 

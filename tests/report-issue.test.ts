@@ -2,8 +2,12 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 import * as reporting from '../extension/src/reportIssue';
+import { t } from '../src/i18n';
 
 const SECRET = 'CS_MOCK_KEY_FOR_TESTS';
+// Батч 17.5: перед формированием ссылки на Issue — модалка «логи будут
+// прикреплены». Стаб возвращает shift(), значит согласие надо положить в очередь.
+const AGREE = () => state.warningAnswers.push(t('issue.logsWarnBtn', 'ru'));
 
 describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
   const realFetch = globalThis.fetch;
@@ -37,6 +41,7 @@ describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
     globalThis.fetch = (async () => { throw new Error(`failure ${SECRET} \\u0043ONFIG_PRIVATE_KEY`); }) as typeof fetch;
     activate(context as never);
     await (state.commands.get('codescout.testSample') as () => Promise<unknown>)();
+    AGREE();
     await (state.commands.get('codescout.reportIssue') as () => Promise<unknown>)();
     const input = formatter.mock.calls[0][1];
     expect(input).not.toHaveProperty('keyValues');
@@ -62,6 +67,7 @@ describe('v1.4b-13 reportIssue e2e (mock key must never leak)', () => {
     await flush();
     expect(state.outputLines.join('\n')).toContain('Self-test error');
 
+    AGREE();
     await (state.commands.get('codescout.reportIssue') as () => Promise<unknown>)();
     await flush();
     expect(state.openedUris).toHaveLength(1);

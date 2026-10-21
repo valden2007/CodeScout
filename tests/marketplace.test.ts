@@ -2,7 +2,7 @@
 // OpenCode Go (oc_sk_ → qwen3.8-flash), лицензии в сборке, README.
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { detectProvider, normalizeProvider, resolveBaseUrl, defaultModel, keyUrl, resolveApiKey, completionUrl } from '../src/providers';
+import { detectProvider, normalizeProvider, resolveBaseUrl, defaultModel, keyUrl, resolveApiKey, completionUrl, PROVIDER_ORDER } from '../src/providers';
 
 function extManifest(): Record<string, any> {
   return JSON.parse(readFileSync('extension/package.json', 'utf8'));
@@ -51,12 +51,29 @@ describe('батч 16: zero-config OpenCode Go', () => {
 
   it('центр настроек, wizard и ручной выбор предлагают opencode', () => {
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
-    expect(center).toContain("'opencode'");
+    expect(center).toContain('PROVIDER_ORDER'); // список провайдеров центра теперь из providers.ts (custom → opencode → …)
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("['gemini', 'groq', 'openrouter', 'github', 'opencode', 'custom']");
+    expect(extension).toContain('[...PROVIDER_ORDER]');
     expect(extension).toContain('OpenCode Go');
     const i18n = JSON.parse(readFileSync('src/i18n/ru.json', 'utf8')) as Record<string, string>;
     expect(i18n['center.prefixHint']).toContain('oc_sk_');
+  });
+
+  it('батч 17.5: единый порядок провайдеров — custom первый, opencode второй', () => {
+    const providers = readFileSync('src/providers.ts', 'utf8');
+    expect(providers).toContain("['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github']");
+    expect(PROVIDER_ORDER[0]).toBe('custom');
+    expect(PROVIDER_ORDER[1]).toBe('opencode');
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).toContain("['auto', ...PROVIDER_ORDER]");
+    // ключ oc_sk_ строго ведёт в opencode — никогда в gemini-дефолт селекта
+    expect(detectProvider('oc_sk_STRICT')?.provider).toBe('opencode');
+  });
+
+  it('батч 17.5: Workspace Trust — в untrusted workspace расширение не активируется', () => {
+    const m = extManifest();
+    expect(m.capabilities.untrustedWorkspaces.supported).toBe(false);
+    expect(m.capabilities.untrustedWorkspaces.description).toBe('CodeScout requires full workspace access to analyze code and read Git history.');
   });
 });
 

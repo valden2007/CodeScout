@@ -8,7 +8,7 @@ import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../s
 import { parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
+import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
@@ -1028,21 +1028,23 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     await context.secrets.store(SECRET_KEY, key);
     notes.push(t('center.noteKey', lang));
   }
-  if (message.providerKey && message.providerKey !== 'auto') {
+  // Батч 17.5: префикс ключа сильнее выбора в селекте. Селект по умолчанию
+  // показывает provider из конфига (manifest default 'gemini'), и раньше
+  // вставленный oc_sk_ ключ сохранялся как gemini — автодетект никогда не
+  // срабатывал. Теперь распознанный ключ строго выставляет своего провайдера.
+  const detected = key ? detectProvider(key) : undefined;
+  if (detected) {
+    provider = detected.provider;
+    model = selection.userChosenModel ? model : detected.model;
+    notes.push(t('center.noteProviderAuto', lang, { p: provider }));
+  } else if (message.providerKey && message.providerKey !== 'auto') {
     provider = message.providerKey as ProviderName;
     if (provider !== selection.provider || key) {
       model = defaultModel(provider);
       await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
     }
   } else if (key) {
-    const detected = detectProvider(key);
-    if (detected) {
-      provider = detected.provider;
-      if (!selection.userChosenModel) model = detected.model;
-      notes.push(t('center.noteProviderAuto', lang, { p: provider }));
-    } else {
-      notes.push(t('center.noteProviderManual', lang));
-    }
+    notes.push(t('center.noteProviderManual', lang));
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
   const baseUrl = message.baseUrl?.trim() || '';
@@ -1133,6 +1135,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand('codescout.panel.focus');
     }),
     vscode.commands.registerCommand('codescout.reportIssue', async () => {
+      // Батч 17.5 (Privacy): логи аудита уезжают в публичный Issue — сначала
+      // модальное предупреждение с явным согласием, без «слепой» отправки.
+      const confirmLang = currentReportLanguage();
+      const answer = await vscode.window.showWarningMessage(t('issue.logsWarn', confirmLang), { modal: true }, t('issue.logsWarnBtn', confirmLang));
+      if (answer !== t('issue.logsWarnBtn', confirmLang)) return;
       const cfg = vscode.workspace.getConfiguration('codescout');
       // Батч 17: только SecretStorage + in-memory значения после миграции;
       // чтение ключа из settings.json здесь упразднено.
@@ -1413,7 +1420,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const detected = detectProvider(key);
       let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
       if (!selection) {
-        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'opencode', 'custom'], { placeHolder: t('key.pickProvider', lang) });
+        const picked = await vscode.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t('key.pickProvider', lang) });
         if (!picked) return;
         selection = { provider: picked as ProviderName, model: defaultModel(picked) };
       }
@@ -1457,7 +1464,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode.commands.registerCommand('codescout.onboardCloud', async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode.window.showQuickPick(['OpenCode Go', 'Gemini', 'Groq', 'OpenRouter', 'Custom (свой адрес)'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
+      const picked = await vscode.window.showQuickPick(['Custom (свой адрес)', 'OpenCode Go', 'Gemini', 'Groq', 'OpenRouter'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
       if (!picked) return;
       const providerName = picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : picked === 'OpenCode Go' ? 'opencode' : 'custom';
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('wizard.keyPrompt', lang) });

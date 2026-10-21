@@ -231,6 +231,8 @@
   "issue.noError": "ошибок скана не было",
   "issue.outputTail": "Последние строки Output",
   "issue.hint": "опишите здесь коротко и по делу",
+  "issue.logsWarn": "К Issue будут прикреплены логи аудита: последние строки Output и последняя ошибка скана (ключи маскируются). Продолжить?",
+  "issue.logsWarnBtn": "Прикрепить логи и открыть Issue",
   "progress.file.check": "🔎 Проверяю файл",
   "progress.file.audit": "🔎 Полный аудит: файл",
   "progress.file.custom": "🎯 Своё ревью: файл",

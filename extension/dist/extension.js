@@ -47,8 +47,11 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode2 = __toESM(require("vscode"));
 var import_node_fs5 = require("node:fs");
-var import_node_crypto3 = require("node:crypto");
+var import_node_crypto4 = require("node:crypto");
 var import_node_path4 = require("node:path");
+
+// ../src/llm-client.ts
+var import_node_crypto = require("node:crypto");
 
 // ../src/providers.ts
 function parseLiveModels(payload) {
@@ -76,7 +79,10 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
     // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(timeoutMs),
+    // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
+    // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
+    redirect: "manual"
   });
   if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
   return parseLiveModels(await response.json());
@@ -96,7 +102,7 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
   if (!base) return { ok: false, status: "error", baseUrl: "", models: [], message: "URL \u043D\u0435 \u0437\u0430\u0434\u0430\u043D" };
   const openAiUrl = base.endsWith("/v1") ? base : `${base}/v1`;
   const ollamaTagsUrl = base.endsWith("/v1") ? `${base.slice(0, -3)}/api/tags` : `${base}/api/tags`;
-  const probe = async (url) => fetcher(url, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
+  const probe = async (url) => fetcher(url, { method: "GET", signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
   try {
     const direct = await probe(`${openAiUrl}/models`);
     if (direct.ok) return { ok: true, status: "ok", baseUrl: openAiUrl, models: parseLiveModels(await direct.json()), message: "" };
@@ -110,7 +116,16 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
     return { ok: false, status: "noAnswer", baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
   }
 }
+var PROVIDER_ORDER = ["custom", "opencode", "gemini", "groq", "openrouter", "github"];
 var PROVIDERS = {
+  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+  opencode: {
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    envKey: "OPENCODE_GO_API_KEY",
+    defaultModel: "qwen3.8-flash",
+    keyUrl: "https://opencode.ai/auth"
+  },
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envKey: "GEMINI_API_KEY",
@@ -134,23 +149,15 @@ var PROVIDERS = {
     envKey: "GITHUB_TOKEN",
     defaultModel: "gpt-4o-mini",
     keyUrl: "https://github.com/settings/tokens"
-  },
-  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
-  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
-  opencode: {
-    baseUrl: "https://opencode.ai/zen/go/v1",
-    envKey: "OPENCODE_GO_API_KEY",
-    defaultModel: "qwen3.8-flash",
-    keyUrl: "https://opencode.ai/auth"
   }
 };
 function detectProvider(key) {
   const value = key.trim();
+  if (value.startsWith("oc_sk_")) return { provider: "opencode", model: "qwen3.8-flash" };
   if (value.startsWith("gsk_")) return { provider: "groq", model: "llama-3.3-70b-versatile" };
   if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-2.5-flash" };
   if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
   if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
-  if (value.startsWith("oc_sk_")) return { provider: "opencode", model: "qwen3.8-flash" };
   return null;
 }
 function normalizeProvider(provider) {
@@ -199,6 +206,10 @@ function maskApiKey(key) {
 }
 
 // ../src/llm-client.ts
+var USER_AGENT = "CodeScout/1.5.0";
+function isRedirectStatus(status) {
+  return status >= 300 && status < 400 || status === 0;
+}
 var RateLimitError = class extends Error {
   waitSeconds;
   details;
@@ -308,6 +319,9 @@ var OpenAICompatibleProvider = class {
   }
   lastRequestAt = 0;
   endpoint;
+  // Батч 17.5: UUID живёт всю жизнь клиента — все запросы одного аудита
+  // идут с одним x-opencode-session (скоррелированные логи на стороне шлюза).
+  sessionId = (0, import_node_crypto.randomUUID)();
   async review(systemPrompt, userPrompt) {
     const wait = 2e3 - (Date.now() - this.lastRequestAt);
     if (wait > 0) await this.sleeper(wait, this.signal);
@@ -333,12 +347,20 @@ var OpenAICompatibleProvider = class {
       try {
         const response = await this.fetcher(this.endpoint, {
           method: "POST",
-          headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json", "User-Agent": USER_AGENT, "x-opencode-session": this.sessionId },
           body: JSON.stringify({ model: this.model, temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] }),
-          signal: deadline.signal
+          signal: deadline.signal,
+          // Батч 17.5 (SSRF): никаких автоматических 301/302 переходов —
+          // вредоносный Base URL не может перенаправить запрос с API-ключом
+          // на внутренние метаданные облака (169.254.169.254 и т.п.).
+          redirect: "manual"
         });
         const text = await response.text();
         clearTimeout(timer);
+        if (response.type === "opaqueredirect" || isRedirectStatus(response.status)) {
+          const target = response.headers.get("location") || "\u0441\u043A\u0440\u044B\u0442";
+          throw new ProviderHttpError(response.status || 302, `\u26D4 SSRF-\u0437\u0430\u0449\u0438\u0442\u0430: \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442 ${response.status} \u043D\u0430 ${target} \u0437\u0430\u043F\u0440\u0435\u0449\u0451\u043D \u2014 \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u044B \u043D\u0435 \u043E\u0442\u0441\u043B\u0435\u0436\u0438\u0432\u0430\u044E\u0442\u0441\u044F`, `redirect=${response.status} \u2192 ${target}`);
+        }
         let data = {};
         try {
           data = JSON.parse(text);
@@ -617,6 +639,8 @@ var ru_default = {
   "issue.noError": "\u043E\u0448\u0438\u0431\u043E\u043A \u0441\u043A\u0430\u043D\u0430 \u043D\u0435 \u0431\u044B\u043B\u043E",
   "issue.outputTail": "\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Output",
   "issue.hint": "\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0437\u0434\u0435\u0441\u044C \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u043F\u043E \u0434\u0435\u043B\u0443",
+  "issue.logsWarn": "\u041A Issue \u0431\u0443\u0434\u0443\u0442 \u043F\u0440\u0438\u043A\u0440\u0435\u043F\u043B\u0435\u043D\u044B \u043B\u043E\u0433\u0438 \u0430\u0443\u0434\u0438\u0442\u0430: \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Output \u0438 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u043A\u0430\u043D\u0430 (\u043A\u043B\u044E\u0447\u0438 \u043C\u0430\u0441\u043A\u0438\u0440\u0443\u044E\u0442\u0441\u044F). \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
+  "issue.logsWarnBtn": "\u041F\u0440\u0438\u043A\u0440\u0435\u043F\u0438\u0442\u044C \u043B\u043E\u0433\u0438 \u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u044C Issue",
   "progress.file.check": "\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0444\u0430\u0439\u043B",
   "progress.file.audit": "\u{1F50E} \u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442: \u0444\u0430\u0439\u043B",
   "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
@@ -978,6 +1002,8 @@ var en_default = {
   "issue.noError": "no scan errors",
   "issue.outputTail": "Recent Output lines",
   "issue.hint": "describe it briefly here",
+  "issue.logsWarn": "Audit logs will be attached to the issue: the last Output lines and the last scan error (keys are redacted). Continue?",
+  "issue.logsWarnBtn": "Attach logs and open issue",
   "progress.file.check": "\u{1F50E} Checking file",
   "progress.file.audit": "\u{1F50E} Full audit: file",
   "progress.file.custom": "\u{1F3AF} Custom review: file",
@@ -1557,7 +1583,7 @@ function readGitDiff(repoPath, options = {}) {
 // src/panel.ts
 var vscode = __toESM(require("vscode"));
 var import_node_fs3 = require("node:fs");
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 var import_node_path2 = require("node:path");
 
 // src/uiPrefs.ts
@@ -1760,7 +1786,7 @@ ${CS_FONTSIZE}`;
 }
 
 // src/findingsStore.ts
-var import_node_crypto = require("node:crypto");
+var import_node_crypto2 = require("node:crypto");
 var SUPPRESSED_KEY = "codescout.suppressedFindings";
 var LINE_BUCKET = 7;
 function computeFingerprint(issue) {
@@ -1768,7 +1794,7 @@ function computeFingerprint(issue) {
   const bucket = Math.floor((line - 1) / LINE_BUCKET);
   const file = String(issue.file ?? "").trim().replaceAll("\\", "/").toLowerCase();
   const raw = `${file}\0${issue.severity}\0${issue.category}\0${bucket}`;
-  return (0, import_node_crypto.createHash)("sha1").update(raw, "utf8").digest("hex").slice(0, 16);
+  return (0, import_node_crypto2.createHash)("sha1").update(raw, "utf8").digest("hex").slice(0, 16);
 }
 function readSuppressed(workspaceState) {
   const value = workspaceState.get(SUPPRESSED_KEY);
@@ -2286,6 +2312,15 @@ ${headHtml(assets, nonce)}
         vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
         return;
       }
+      // Batch 17.5: mailto clicks must not navigate the webview; intercept and
+      // ask the host to open the mail client via openExternal. Keep this script
+      // Cyrillic-free: EN build contract.
+      const mail = origin.closest('a[href^="mailto:"]');
+      if (mail) {
+        event.preventDefault();
+        vscode.postMessage({ command: 'openLink', url: mail.getAttribute('href') });
+        return;
+      }
       const element = origin.closest('[data-command]');
       if (!element) return;
       if (element.classList.contains('welcome-overlay') && event.target !== element) {
@@ -2502,6 +2537,11 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.onboardSkip");
       } else if (message.command === "openKeyLink") {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
+      } else if (message.command === "openLink") {
+        const url = typeof message.url === "string" ? message.url.trim() : "";
+        if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(url)) {
+          void vscode.env.openExternal(vscode.Uri.parse(url));
+        }
       } else if (message.command === "testSample") {
         void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "cancelScan") {
@@ -2776,7 +2816,7 @@ var CodeScoutPanel = class {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicon.css")).toString(),
       cspSource: webview.cspSource
     };
-    const nonce = (0, import_node_crypto2.randomBytes)(16).toString("hex");
+    const nonce = (0, import_node_crypto3.randomBytes)(16).toString("hex");
     const ux = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
@@ -3844,7 +3884,7 @@ function buildIssueBody(lang, input) {
 }
 
 // src/settingsHtml.ts
-var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "opencode", "custom"];
+var providerValues = ["auto", ...PROVIDER_ORDER];
 var colorFields = [
   { key: "bg" },
   { key: "card" },
@@ -5342,21 +5382,19 @@ async function saveKeyProvider(context, message) {
     await context.secrets.store(SECRET_KEY, key);
     notes.push(t("center.noteKey", lang));
   }
-  if (message.providerKey && message.providerKey !== "auto") {
+  const detected = key ? detectProvider(key) : void 0;
+  if (detected) {
+    provider = detected.provider;
+    model = selection.userChosenModel ? model : detected.model;
+    notes.push(t("center.noteProviderAuto", lang, { p: provider }));
+  } else if (message.providerKey && message.providerKey !== "auto") {
     provider = message.providerKey;
     if (provider !== selection.provider || key) {
       model = defaultModel(provider);
       await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
     }
   } else if (key) {
-    const detected = detectProvider(key);
-    if (detected) {
-      provider = detected.provider;
-      if (!selection.userChosenModel) model = detected.model;
-      notes.push(t("center.noteProviderAuto", lang, { p: provider }));
-    } else {
-      notes.push(t("center.noteProviderManual", lang));
-    }
+    notes.push(t("center.noteProviderManual", lang));
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
   const baseUrl = message.baseUrl?.trim() || "";
@@ -5436,6 +5474,9 @@ function activate(context) {
       await vscode2.commands.executeCommand("codescout.panel.focus");
     }),
     vscode2.commands.registerCommand("codescout.reportIssue", async () => {
+      const confirmLang = currentReportLanguage();
+      const answer = await vscode2.window.showWarningMessage(t("issue.logsWarn", confirmLang), { modal: true }, t("issue.logsWarnBtn", confirmLang));
+      if (answer !== t("issue.logsWarnBtn", confirmLang)) return;
       const cfg = vscode2.workspace.getConfiguration("codescout");
       const keyValues = await secretKeyValues(context);
       const safe = (value) => redactSecrets(value, keyValues);
@@ -5469,7 +5510,7 @@ function activate(context) {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode2.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto3.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto4.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
         }
       };
       rerenderSettings = () => {
@@ -5731,7 +5772,7 @@ function activate(context) {
       const detected = detectProvider(key);
       let selection = detected ?? void 0;
       if (!selection) {
-        const picked = await vscode2.window.showQuickPick(["gemini", "groq", "openrouter", "github", "opencode", "custom"], { placeHolder: t("key.pickProvider", lang) });
+        const picked = await vscode2.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t("key.pickProvider", lang) });
         if (!picked) return;
         selection = { provider: picked, model: defaultModel(picked) };
       }
@@ -5775,7 +5816,7 @@ function activate(context) {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode2.window.showQuickPick(["OpenCode Go", "Gemini", "Groq", "OpenRouter", "Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      const picked = await vscode2.window.showQuickPick(["Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)", "OpenCode Go", "Gemini", "Groq", "OpenRouter"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
       if (!picked) return;
       const providerName = picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : picked === "OpenCode Go" ? "opencode" : "custom";
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });

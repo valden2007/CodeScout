@@ -1,6 +1,7 @@
 import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type CustomColors } from './uiPrefs';
 import { t, type Lang } from '../../src/i18n';
 import { CODESCOUT_REPO_URL as REPO_URL } from './reportIssue';
+import { PROVIDER_ORDER } from '../../src/providers';
 
 export interface SettingsState {
   keyMask: string;
@@ -38,7 +39,8 @@ export interface SettingsAssets {
   cspSource: string;
 }
 
-const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'opencode', 'custom'];
+// Батч 17.5: автоопределение + единый порядок PROVIDER_ORDER (custom → opencode → …).
+const providerValues = ['auto', ...PROVIDER_ORDER];
 
 const colorFields: { key: keyof CustomColors }[] = [
   { key: 'bg' },

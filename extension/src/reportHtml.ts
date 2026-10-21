@@ -574,6 +574,15 @@ ${headHtml(assets, nonce)}
         vscode.postMessage({ command: 'openFile', file: anchor.getAttribute('data-file'), line: anchor.getAttribute('data-line') });
         return;
       }
+      // Batch 17.5: mailto clicks must not navigate the webview; intercept and
+      // ask the host to open the mail client via openExternal. Keep this script
+      // Cyrillic-free: EN build contract.
+      const mail = origin.closest('a[href^="mailto:"]');
+      if (mail) {
+        event.preventDefault();
+        vscode.postMessage({ command: 'openLink', url: mail.getAttribute('href') });
+        return;
+      }
       const element = origin.closest('[data-command]');
       if (!element) return;
       if (element.classList.contains('welcome-overlay') && event.target !== element) {

@@ -19,6 +19,7 @@ interface ScanMessage {
   globs?: string;
   anchor?: string;
   fingerprint?: string;
+  url?: string;
 }
 
 function safePost(webview: vscode.Webview, message: Record<string, unknown>): void {
@@ -217,6 +218,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.onboardSkip');
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
+      } else if (message.command === 'openLink') {
+        // Батч 17.5: webview шлёт mailto/ссылки только через openLink. Тот же
+        // жёсткий whitelist, что в центре настроек: репозиторий + почта автора.
+        const url = typeof message.url === 'string' ? message.url.trim() : '';
+        if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(url)) {
+          void vscode.env.openExternal(vscode.Uri.parse(url));
+        }
       } else if (message.command === 'testSample') {
         void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'cancelScan') {
