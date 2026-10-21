@@ -1,4 +1,4 @@
-export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'custom';
+export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'opencode' | 'custom';
 
 export interface DetectedProvider {
   provider: ProviderName;
@@ -123,6 +123,14 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
     envKey: 'GITHUB_TOKEN',
     defaultModel: 'gpt-4o-mini',
     keyUrl: 'https://github.com/settings/tokens'
+  },
+  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+  opencode: {
+    baseUrl: 'https://opencode.ai/zen/go/v1',
+    envKey: 'OPENCODE_GO_API_KEY',
+    defaultModel: 'qwen3.8-flash',
+    keyUrl: 'https://opencode.ai/auth'
   }
 };
 
@@ -132,6 +140,7 @@ export function detectProvider(key: string): DetectedProvider | null {
   if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-2.5-flash' };
   if (value.startsWith('sk-or-')) return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
   if (value.startsWith('ghp_') || value.startsWith('github_pat_')) return { provider: 'github', model: 'gpt-4o-mini' };
+  if (value.startsWith('oc_sk_')) return { provider: 'opencode', model: 'qwen3.8-flash' };
   return null;
 }
 
@@ -139,7 +148,7 @@ export function normalizeProvider(provider?: string): ProviderName {
   const value = provider?.trim().toLowerCase() || 'gemini';
   if (value === 'custom') return 'custom';
   if (Object.hasOwn(PROVIDERS, value)) return value as Exclude<ProviderName, 'custom'>;
-  throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
+  throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github, opencode или custom.`);
 }
 
 export function resolveApiKey(provider: string, explicitKey?: string, env: NodeJS.ProcessEnv = process.env): string | undefined {

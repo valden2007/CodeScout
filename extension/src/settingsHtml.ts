@@ -38,7 +38,7 @@ export interface SettingsAssets {
   cspSource: string;
 }
 
-const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'custom'];
+const providerValues = ['auto', 'gemini', 'groq', 'openrouter', 'github', 'opencode', 'custom'];
 
 const colorFields: { key: keyof CustomColors }[] = [
   { key: 'bg' },

@@ -1373,7 +1373,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const detected = detectProvider(key);
       let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
       if (!selection) {
-        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'custom'], { placeHolder: t('key.pickProvider', lang) });
+        const picked = await vscode.window.showQuickPick(['gemini', 'groq', 'openrouter', 'github', 'opencode', 'custom'], { placeHolder: t('key.pickProvider', lang) });
         if (!picked) return;
         selection = { provider: picked as ProviderName, model: defaultModel(picked) };
       }
@@ -1417,9 +1417,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode.commands.registerCommand('codescout.onboardCloud', async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode.window.showQuickPick(['Gemini', 'Groq', 'OpenRouter', 'Custom (свой адрес)'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
+      const picked = await vscode.window.showQuickPick(['OpenCode Go', 'Gemini', 'Groq', 'OpenRouter', 'Custom (свой адрес)'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName = picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : 'custom';
+      const providerName = picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : picked === 'OpenCode Go' ? 'opencode' : 'custom';
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('wizard.keyPrompt', lang) });
       if (!key?.trim()) { void vscode.window.showErrorMessage(t('key.needFirst', lang)); return; }
       const trimmed = key.trim();

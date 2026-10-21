@@ -34252,6 +34252,14 @@ const PROVIDERS = {
         envKey: 'GITHUB_TOKEN',
         defaultModel: 'gpt-4o-mini',
         keyUrl: 'https://github.com/settings/tokens'
+    },
+    // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+    // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+    opencode: {
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+        envKey: 'OPENCODE_GO_API_KEY',
+        defaultModel: 'qwen3.8-flash',
+        keyUrl: 'https://opencode.ai/auth'
     }
 };
 function detectProvider(key) {
@@ -34264,6 +34272,8 @@ function detectProvider(key) {
         return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
     if (value.startsWith('ghp_') || value.startsWith('github_pat_'))
         return { provider: 'github', model: 'gpt-4o-mini' };
+    if (value.startsWith('oc_sk_'))
+        return { provider: 'opencode', model: 'qwen3.8-flash' };
     return null;
 }
 function normalizeProvider(provider) {
@@ -34272,7 +34282,7 @@ function normalizeProvider(provider) {
         return 'custom';
     if (Object.hasOwn(PROVIDERS, value))
         return value;
-    throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github или custom.`);
+    throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github, opencode или custom.`);
 }
 function resolveApiKey(provider, explicitKey, env = process.env) {
     if (explicitKey?.trim())

@@ -133,6 +133,14 @@ var PROVIDERS = {
     envKey: "GITHUB_TOKEN",
     defaultModel: "gpt-4o-mini",
     keyUrl: "https://github.com/settings/tokens"
+  },
+  // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
+  // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
+  opencode: {
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    envKey: "OPENCODE_GO_API_KEY",
+    defaultModel: "qwen3.8-flash",
+    keyUrl: "https://opencode.ai/auth"
   }
 };
 function detectProvider(key) {
@@ -141,13 +149,14 @@ function detectProvider(key) {
   if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-2.5-flash" };
   if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
   if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
+  if (value.startsWith("oc_sk_")) return { provider: "opencode", model: "qwen3.8-flash" };
   return null;
 }
 function normalizeProvider(provider) {
   const value = provider?.trim().toLowerCase() || "gemini";
   if (value === "custom") return "custom";
   if (Object.hasOwn(PROVIDERS, value)) return value;
-  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github \u0438\u043B\u0438 custom.`);
+  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github, opencode \u0438\u043B\u0438 custom.`);
 }
 function resolveApiKey(provider, explicitKey, env3 = process.env) {
   if (explicitKey?.trim()) return explicitKey.trim();
@@ -499,7 +508,7 @@ var ru_default = {
   "center.nowModelMissing": "\u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430",
   "center.liveModels": "\u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
   "center.forgetKey": "\u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447",
-  "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
+  "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github, oc_sk_\u2026 \u2192 opencode (OpenCode Go).",
   "audit.passes": "\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)",
   "audit.maxLines": "\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
   "audit.maxFiles": "\u041C\u0430\u043A\u0441. \u0444\u0430\u0439\u043B\u043E\u0432 \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
@@ -850,7 +859,7 @@ var en_default = {
   "center.nowModelMissing": "no model selected",
   "center.liveModels": "Live models\u2026",
   "center.forgetKey": "Forget key",
-  "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github.",
+  "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github, oc_sk_\u2026 \u2192 opencode (OpenCode Go).",
   "audit.passes": "Review passes per file (1-3)",
   "audit.maxLines": "Max lines per file (0 = no limit)",
   "audit.maxFiles": "Max files per audit",
@@ -3814,7 +3823,7 @@ function buildIssueBody(lang, input) {
 }
 
 // src/settingsHtml.ts
-var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "custom"];
+var providerValues = ["auto", "gemini", "groq", "openrouter", "github", "opencode", "custom"];
 var colorFields = [
   { key: "bg" },
   { key: "card" },
@@ -5662,7 +5671,7 @@ function activate(context) {
       const detected = detectProvider(key);
       let selection = detected ?? void 0;
       if (!selection) {
-        const picked = await vscode2.window.showQuickPick(["gemini", "groq", "openrouter", "github", "custom"], { placeHolder: t("key.pickProvider", lang) });
+        const picked = await vscode2.window.showQuickPick(["gemini", "groq", "openrouter", "github", "opencode", "custom"], { placeHolder: t("key.pickProvider", lang) });
         if (!picked) return;
         selection = { provider: picked, model: defaultModel(picked) };
       }
@@ -5706,9 +5715,9 @@ function activate(context) {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode2.window.showQuickPick(["Gemini", "Groq", "OpenRouter", "Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      const picked = await vscode2.window.showQuickPick(["OpenCode Go", "Gemini", "Groq", "OpenRouter", "Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName = picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : "custom";
+      const providerName = picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : picked === "OpenCode Go" ? "opencode" : "custom";
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
       if (!key?.trim()) {
         void vscode2.window.showErrorMessage(t("key.needFirst", lang));
