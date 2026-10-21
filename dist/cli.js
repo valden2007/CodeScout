@@ -85460,8 +85460,11 @@ function resolveApiKey(provider, explicitKey, env = process.env) {
         return env.CODESCOUT_API_KEY?.trim();
     return env[PROVIDERS[normalized].envKey]?.trim();
 }
-function resolveApiKeyPriority(secretKey, provider, legacySetting, env = process.env) {
-    return secretKey?.trim() || resolveApiKey(provider, undefined, env) || legacySetting?.trim() || undefined;
+// Батч 17: строго secret > env. Чтение ключа из plaintext settings.json
+// полностью удалено — единственный путь для расширения это
+// context.secrets (SecretStorage), для CLI/action — env/Secrets.
+function resolveApiKeyPriority(secretKey, provider, env = process.env) {
+    return secretKey?.trim() || resolveApiKey(provider, undefined, env) || undefined;
 }
 function resolveBaseUrl(provider, customBaseUrl) {
     if (customBaseUrl?.trim()) {
@@ -85732,7 +85735,12 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
     signal?.addEventListener('abort', onAbort, { once: true });
 });
 
-const RETRY_DELAYS_SECONDS = [15, 30, 60];
+// Батч 17 «Ночной аудит»: адаптивная экспоненциальная пауза (лестница
+// 30с → 60с → 120с) на 429 Rate Limit. Максимум 3 ретрая = 4 попытки на
+// чанк/файл. Раньше (15/30/60) бесплатные модели (minimax-free, beam-free)
+// успевали исчерпать бакет между попытками, и чанк улетал в скип; лестница
+// медленнее, но гарантированно доедает проект за ночь без пропуска файлов.
+const RETRY_DELAYS_SECONDS = [30, 60, 120];
 function parseRetryAfterSeconds(response, message) {
     const header = response.headers.get('retry-after');
     if (header) {
@@ -86295,7 +86303,7 @@ function toTuiIssue(issue) {
 }
 function reviewStatus(model, retry) {
     return retry
-        ? `⏳ Rate limit у ${model}, ожидание ${retry.waitSeconds}с (попытка ${retry.attempt}/${retry.maxRetries})...`
+        ? `⏳ Лимит запросов. Ожидание ${retry.waitSeconds}с перед повтором ${retry.attempt}/${retry.maxRetries} (Ночной режим, модель ${model})...`
         : `🤖 Отправляю запрос в ${model}...`;
 }
 async function reviewFiles(files, args, apiKey, onRetry) {

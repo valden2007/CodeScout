@@ -1,6 +1,7 @@
 {
   "settings.title": "CodeScout",
   "apiKey.description": "API key for the selected provider. Keep it private; it is stored as a secret.",
+  "apiKey.deprecated": "Deprecated and ignored by CodeScout: the API key lives ONLY in the OS SecretStorage now. Any value found here is moved to SecretStorage and deleted from settings.json automatically. Use the CodeScout settings center or the 'Set API key' command.",
   "provider.description": "LLM provider used by CodeScout.",
   "model.description": "Model name understood by the selected provider.",
   "baseUrl.description": "Optional OpenAI-compatible base URL. Set this for Ollama, LM Studio, or a proxy.",

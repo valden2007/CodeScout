@@ -310,11 +310,21 @@ describe('E5.5 endpoint URLs', () => {
 });
 
 describe('E5 onboarding and secure keys', () => {
-  it('resolves SecretStorage before env and legacy settings', () => {
+  it('resolves SecretStorage before env; plaintext settings are not a key source (батч 17)', () => {
     const env = { GEMINI_API_KEY: 'env-key' };
-    expect(resolveApiKeyPriority('secret-key', 'gemini', 'legacy-key', env)).toBe('secret-key');
-    expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', env)).toBe('env-key');
-    expect(resolveApiKeyPriority(undefined, 'gemini', 'legacy-key', {})).toBe('legacy-key');
+    expect(resolveApiKeyPriority('secret-key', 'gemini', env)).toBe('secret-key');
+    expect(resolveApiKeyPriority(undefined, 'gemini', env)).toBe('env-key');
+    // Третий аргумент legacySetting удалён: без env ключа нет.
+    expect(resolveApiKeyPriority(undefined, 'gemini', {})).toBeUndefined();
+    const providers = readFileSync('src/providers.ts', 'utf8');
+    expect(providers).not.toContain('legacySetting');
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    // STRICT SecretStorage: в auth-пути нет чтения ключа из config/settings.json.
+    expect(extension).not.toContain("get<string>('apiKey')");
+    expect(extension).toContain('resolveApiKeyPriority(secretKey, provider)');
+    expect(extension).toContain('async function migrateApiKeyFromSettings(context: vscode.ExtensionContext)');
+    expect(extension).toContain('void migrateApiKeyFromSettings(context).catch(() => {}).then(() => syncKeyStatus());');
+    expect(extension).not.toContain('configKey');
   });
 
   it('renders the onboarding wizard when no key is configured', () => {
@@ -354,9 +364,11 @@ describe('universal providers', () => {
     expect(resolveApiKey('gemini', undefined, { GEMINI_API_KEY: 'env-key' })).toBe('env-key');
   });
 
-  it('includes the selected model in status text', () => {
+  it('includes the selected model in status text (night-mode wording, батч 17)', () => {
     expect(reviewStatus('qwen2.5-coder')).toContain('qwen2.5-coder');
-    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 15 })).toContain('Rate limit у qwen2.5-coder');
+    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('⏳ Лимит запросов. Ожидание 30с перед повтором');
+    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('Ночной режим');
+    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('qwen2.5-coder');
   });
 });
 
@@ -366,18 +378,18 @@ describe('Groq retry handling', () => {
   const quickRateLimited = () => new Response(JSON.stringify({ error: { message: 'rate limit, try again in 1s' } }), { status: 429, headers: { 'retry-after': '1' } });
   const request = ['system', 'user'] as const;
 
-  it('retries 429 with backoff events and succeeds', async () => {
+  it('retries 429 with exponential backoff events and succeeds (батч 17: 30/60/120)', async () => {
     const responses = [rateLimited(), rateLimited(), rateLimited(), success()];
     const waits: number[] = [];
     const events: RetryEvent[] = [];
     const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async (ms) => { waits.push(ms); }, (event) => events.push(event));
     await expect(provider.review(...request)).resolves.toContain('issues');
     expect(events).toEqual([
-      { attempt: 1, maxRetries: 3, waitSeconds: 15 },
-      { attempt: 2, maxRetries: 3, waitSeconds: 30 },
-      { attempt: 3, maxRetries: 3, waitSeconds: 60 }
+      { attempt: 1, maxRetries: 3, waitSeconds: 30 },
+      { attempt: 2, maxRetries: 3, waitSeconds: 60 },
+      { attempt: 3, maxRetries: 3, waitSeconds: 120 }
     ]);
-    expect(waits).toEqual([15000, 30000, 60000]);
+    expect(waits).toEqual([30000, 60000, 120000]);
   });
 
   it('returns a friendly error after three exhausted retries', async () => {
@@ -407,7 +419,7 @@ describe('Groq retry handling', () => {
     const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
     await expect(provider.review('system', 'user')).resolves.toContain('issues');
     expect(events).toHaveLength(1);
-    expect(events[0].waitSeconds).toBe(15);
+    expect(events[0].waitSeconds).toBe(30);
   });
 
   it('rejects with empty response when status 200 body is not JSON', async () => {
@@ -1701,7 +1713,7 @@ describe('G3 fix batch llm', () => {
     const events: RetryEvent[] = [];
     const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
     await expect(provider.review('system', 'user')).resolves.toContain('issues');
-    expect(events[0].waitSeconds).toBe(15);
+    expect(events[0].waitSeconds).toBe(30);
   });
 });
 
@@ -2187,7 +2199,7 @@ describe('G6 fix batch security and robustness', () => {
     const events: RetryEvent[] = [];
     const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
     await expect(provider.review('system', 'user')).resolves.toContain('issues');
-    expect(events[0].waitSeconds).toBe(15);
+    expect(events[0].waitSeconds).toBe(30);
     const longResponses = [
       new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429, headers: { 'retry-after': '90' } }),
       new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[]}' } }] }), { status: 200 })
@@ -2500,10 +2512,10 @@ describe('G7 fix batch security and robustness', () => {
 describe('v1.4b settings center with sidebar', () => {
   const centerState = { keyMask: 'AIza•••XYZ', keyConfigured: true, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: '', reportLanguage: 'ru' as const, showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto' as const, accentColor: 'auto' as const, uiDensity: 'standard' as const, uiFontSize: 'm' as const, showConfidence: true, findingsSort: 'severity' as const, reportTheme: 'auto' as const, customColors: '' };
 
-  it('sidebar lists exactly the six sections and each has a matching anchor', () => {
+  it('sidebar lists exactly the seven sections and each has a matching anchor', () => {
     const html = buildSettingsHtml(centerState);
     const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
-    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
+    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about', 'sec-dev']);
     for (const id of navTargets) expect(html).toContain(`id="${id}"`);
     expect(html).toContain('position: sticky');
   });
@@ -3205,8 +3217,8 @@ describe('v1.4b-11 «Язык» section (moved out of Базовые)', () => {
   it('Язык section is the 2nd nav item, sits between Ключ and Аудит, with a globe icon', () => {
     const html = buildSettingsHtml(langState, '', 'ok', 'n', '', undefined, 'en');
     const navTargets = [...html.matchAll(/class="nav-link[^"]*" href="#([\w-]+)"/g)].map((m) => m[1]);
-    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about']);
-    expect(navTargets).toHaveLength(6);
+    expect(navTargets).toEqual(['sec-key', 'sec-lang', 'sec-audit', 'sec-project', 'sec-appearance', 'sec-about', 'sec-dev']);
+    expect(navTargets).toHaveLength(7);
     const keyEnd = html.indexOf('</section>');
     const langStart = html.indexOf('id="sec-lang"');
     const auditStart = html.indexOf('id="sec-audit"');

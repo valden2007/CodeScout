@@ -202,6 +202,9 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 #themeJson { margin-top: var(--cs-space-2); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+.key-secure { display: flex; align-items: center; gap: var(--cs-space-1); margin-top: 4px; color: var(--cs-pass); font-size: var(--cs-font-1); }
+.dev-link { color: var(--cs-accent); text-decoration: underline; cursor: pointer; overflow-wrap: anywhere; }
+.key-secure .codicon { color: var(--cs-pass); }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -214,6 +217,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon('folder')}<span>${T('sec.project')}</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon('symbol-color')}<span>${T('sec.appearance')}</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon('info')}<span>${T('sec.about')}</span></a>
+  <a class="nav-link" href="#sec-dev" data-target="sec-dev">${icon('account')}<span>${T('sec.dev')}</span></a>
 </nav>
 <div class="content">
 <div class="status${statusKind === 'error' ? ' error' : ''}" id="status">${escapeHtml(statusMessage)}</div>
@@ -231,6 +235,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <p class="hint">${T('center.baseUrlHint')}</p>
   </div>
   <div class="current-key">${T('center.now')} ${currentKeyLine(T, state)}</div>
+  ${state.keyConfigured ? `<div class="key-secure">${icon('lock')}<span>${T('center.secureNote')}</span></div>` : ''}
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon('cloud-download')}<span>${T('center.liveModels')}</span></button>
     <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>
@@ -367,6 +372,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="openRepo" type="button" class="secondary" data-url="${REPO_URL}">${icon('repo')}<span>${T('about.repo')}</span></button>
     <button id="reportIssue" type="button" class="secondary">${icon('report')}<span>${T('about.issue')}</span></button>
   </div>
+</section>
+<section id="sec-dev">
+  <h2>${icon('account')} ${T('sec.dev')}</h2>
+  <div class="about-line">${T('about.devAuthor')} <strong>${T('about.devName')}</strong></div>
+  <div class="about-line">${T('about.devContact')} <a class="dev-link" href="mailto:work.valden@gmail.com" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
+  <div class="about-line">${T('about.devGithub')} <a class="dev-link" href="${REPO_URL}" data-url="${REPO_URL}">valden2007/CodeScout</a> — ${T('about.devIssues')}</div>
+  <div class="about-line">${T('about.devCard')} <span class="scope-chip"><span>${T('about.devSiteWip')}</span></span></div>
+  <p class="hint">${T('about.devCall')}</p>
 </section>
 </main>
 </div>
@@ -650,8 +663,14 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
-  btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
+document.querySelectorAll('main [data-url]').forEach((el) => {
+  // Batch 17: one handler for sec-about buttons and sec-dev links (mailto + GitHub).
+  // preventDefault kills native webview navigation; the host opens whitelisted
+  // URLs via openExternal. Keep this script Cyrillic-free: EN build contract.
+  el.addEventListener('click', (event) => {
+    event.preventDefault();
+    vscode.postMessage({ command: 'openLink', url: el.getAttribute('data-url') });
+  });
 });
 const reportIssueBtn = document.getElementById('reportIssue');
 if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));

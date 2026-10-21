@@ -57,7 +57,7 @@ function toTuiIssue(issue: ReviewIssue): Issue {
 
 export function reviewStatus(model: string, retry?: RetryEvent): string {
   return retry
-    ? `⏳ Rate limit у ${model}, ожидание ${retry.waitSeconds}с (попытка ${retry.attempt}/${retry.maxRetries})...`
+    ? `⏳ Лимит запросов. Ожидание ${retry.waitSeconds}с перед повтором ${retry.attempt}/${retry.maxRetries} (Ночной режим, модель ${model})...`
     : `🤖 Отправляю запрос в ${model}...`;
 }
 

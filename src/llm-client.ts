@@ -41,7 +41,12 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> => new Promise((
   signal?.addEventListener('abort', onAbort, { once: true });
 });
 export { sleep };
-const RETRY_DELAYS_SECONDS = [15, 30, 60];
+// Батч 17 «Ночной аудит»: адаптивная экспоненциальная пауза (лестница
+// 30с → 60с → 120с) на 429 Rate Limit. Максимум 3 ретрая = 4 попытки на
+// чанк/файл. Раньше (15/30/60) бесплатные модели (minimax-free, beam-free)
+// успевали исчерпать бакет между попытками, и чанк улетал в скип; лестница
+// медленнее, но гарантированно доедает проект за ночь без пропуска файлов.
+export const RETRY_DELAYS_SECONDS = [30, 60, 120];
 
 function parseRetryAfterSeconds(response: Response, message: string): number | undefined {
   const header = response.headers.get('retry-after');

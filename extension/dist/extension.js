@@ -38,6 +38,7 @@ __export(extension_exports, {
   activate: () => activate,
   deactivate: () => deactivate,
   fileCooldownSecondsFromSetting: () => fileCooldownSecondsFromSetting,
+  migrateApiKeyFromSettings: () => migrateApiKeyFromSettings,
   rateLimitHitsLast5min: () => rateLimitHitsLast5min,
   recordRateLimitHit: () => recordRateLimitHit,
   resetRateLimitHits: () => resetRateLimitHits,
@@ -164,8 +165,8 @@ function resolveApiKey(provider, explicitKey, env3 = process.env) {
   if (normalized === "custom") return env3.CODESCOUT_API_KEY?.trim();
   return env3[PROVIDERS[normalized].envKey]?.trim();
 }
-function resolveApiKeyPriority(secretKey, provider, legacySetting, env3 = process.env) {
-  return secretKey?.trim() || resolveApiKey(provider, void 0, env3) || legacySetting?.trim() || void 0;
+function resolveApiKeyPriority(secretKey, provider, env3 = process.env) {
+  return secretKey?.trim() || resolveApiKey(provider, void 0, env3) || void 0;
 }
 function resolveBaseUrl(provider, customBaseUrl) {
   if (customBaseUrl?.trim()) {
@@ -231,7 +232,7 @@ var sleep = (ms, signal) => new Promise((resolve5, reject) => {
   }, ms);
   signal?.addEventListener("abort", onAbort, { once: true });
 });
-var RETRY_DELAYS_SECONDS = [15, 30, 60];
+var RETRY_DELAYS_SECONDS = [30, 60, 120];
 function parseRetryAfterSeconds(response, message) {
   const header = response.headers.get("retry-after");
   if (header) {
@@ -491,6 +492,7 @@ var ru_default = {
   "sec.project": "\u041F\u0440\u043E\u0435\u043A\u0442",
   "sec.appearance": "\u0412\u043D\u0435\u0448\u043D\u0438\u0439 \u0432\u0438\u0434",
   "sec.about": "\u041E \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0438",
+  "sec.dev": "\u041E \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0435",
   "subtab.basic": "\u0411\u0430\u0437\u043E\u0432\u044B\u0435",
   "subtab.custom": "\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F",
   "title.center": "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
@@ -503,6 +505,7 @@ var ru_default = {
   "center.baseUrl": "Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)",
   "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
   "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
+  "center.secureNote": "\u041A\u043B\u044E\u0447 \u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E \u0437\u0430\u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D \u0432 \u041E\u0421 (SecretStorage)",
   "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
   "center.nowLocal": "\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \xB7 {s}",
   "center.nowModelMissing": "\u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430",
@@ -594,6 +597,14 @@ var ru_default = {
   "about.readme": "README",
   "about.repo": "\u0420\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0439",
   "about.issue": "\u0421\u043E\u043E\u0431\u0449\u0438\u0442\u044C \u043E \u043F\u0440\u043E\u0431\u043B\u0435\u043C\u0435",
+  "about.devAuthor": "\u0420\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A:",
+  "about.devName": "\u042F\u0440\u043E\u043C\u0438\u0440 (Valden)",
+  "about.devContact": "\u0421\u0432\u044F\u0437\u044C \u0438 \u0431\u0430\u0433\u0440\u0435\u043F\u043E\u0440\u0442\u044B:",
+  "about.devGithub": "GitHub:",
+  "about.devIssues": "Issues \u0438 \u0438\u0441\u0445\u043E\u0434\u043D\u0438\u043A\u0438",
+  "about.devCard": "\u041C\u043E\u0438 \u043F\u0440\u043E\u0435\u043A\u0442\u044B, \u0441\u043E\u0446\u0441\u0435\u0442\u0438 \u0438 \u0441\u0442\u0430\u0442\u044C\u0438:",
+  "about.devSiteWip": "\u0421\u0430\u0439\u0442 \u0432 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u043A\u0435",
+  "about.devCall": "\u041D\u0430\u0448\u043B\u0438 \u0431\u0430\u0433, \u0435\u0441\u0442\u044C \u0438\u0434\u0435\u044F \u0438\u043B\u0438 \u0445\u043E\u0442\u0438\u0442\u0435 \u043E\u0431\u0441\u0443\u0434\u0438\u0442\u044C \u0441\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u0447\u0435\u0441\u0442\u0432\u043E? \u041D\u0430\u043F\u0438\u0448\u0438\u0442\u0435 \u043C\u043D\u0435 \u043D\u0430 \u043F\u043E\u0447\u0442\u0443 \u0438\u043B\u0438 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 Issue \u043D\u0430 GitHub!",
   "issue.happened": "\u0427\u0442\u043E \u0441\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C",
   "issue.steps": "\u0428\u0430\u0433\u0438 \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F",
   "issue.expectedActual": "\u041E\u0436\u0438\u0434\u0430\u043B / \u041F\u043E\u043B\u0443\u0447\u0438\u043B",
@@ -611,7 +622,7 @@ var ru_default = {
   "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
   "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}\u0441",
   "status.thinking": "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 {s}\u0441",
-  "status.retry": "\u23F3 Rate limit \u0443 {model}, \u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 {a}/{m})...",
+  "status.retry": "\u23F3 \u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432. \u041E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 \u043F\u0435\u0440\u0435\u0434 \u043F\u043E\u0432\u0442\u043E\u0440\u043E\u043C {a}/{m} (\u041D\u043E\u0447\u043D\u043E\u0439 \u0440\u0435\u0436\u0438\u043C, \u043C\u043E\u0434\u0435\u043B\u044C {model})...",
   "status.cancelled": "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C",
   "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u23F3 \u043D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: {r} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
   "notRechecked.title": "\u041D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u0441\u043A\u0430\u043D\u0435 ({n})",
@@ -842,6 +853,7 @@ var en_default = {
   "sec.project": "Project",
   "sec.appearance": "Appearance",
   "sec.about": "About",
+  "sec.dev": "About the developer",
   "subtab.basic": "Basic",
   "subtab.custom": "Customization",
   "title.center": "CodeScout: Settings",
@@ -854,6 +866,7 @@ var en_default = {
   "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
   "center.now": "now:",
+  "center.secureNote": "Key is securely encrypted in your OS (SecretStorage)",
   "center.nowNone": "key not configured",
   "center.nowLocal": "local mode \xB7 {s}",
   "center.nowModelMissing": "no model selected",
@@ -945,6 +958,14 @@ var en_default = {
   "about.readme": "README",
   "about.repo": "Repository",
   "about.issue": "Report an issue",
+  "about.devAuthor": "Developer:",
+  "about.devName": "Yaromir (Valden)",
+  "about.devContact": "Contacts and bug reports:",
+  "about.devGithub": "GitHub:",
+  "about.devIssues": "issues and sources",
+  "about.devCard": "My projects, social media and articles:",
+  "about.devSiteWip": "Website coming soon",
+  "about.devCall": "Found a bug, have an idea or want to discuss collaboration? Email me or open an Issue on GitHub!",
   "issue.happened": "What happened",
   "issue.steps": "Steps to reproduce",
   "issue.expectedActual": "Expected / Actual",
@@ -962,7 +983,7 @@ var en_default = {
   "progress.file.custom": "\u{1F3AF} Custom review: file",
   "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}s",
   "status.thinking": "\u{1F916} Model is thinking... \xB7 \u23F1 {s}s",
-  "status.retry": "\u23F3 Rate limit from {model}, waiting {s}s (attempt {a}/{m})...",
+  "status.retry": "\u23F3 Request limit. Waiting {s}s before retry {a}/{m} (night mode, model {model})...",
   "status.cancelled": "\u26D4 Scan stopped by user",
   "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u23F3 not rechecked: {r} \xB7 \u{1F501} unchanged: {s}",
   "notRechecked.title": "Not rechecked in this scan ({n})",
@@ -3957,6 +3978,9 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .theme-inactive button { width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); }
 .cc-num { font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
 #themeJson { margin-top: var(--cs-space-2); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); }
+.key-secure { display: flex; align-items: center; gap: var(--cs-space-1); margin-top: 4px; color: var(--cs-pass); font-size: var(--cs-font-1); }
+.dev-link { color: var(--cs-accent); text-decoration: underline; cursor: pointer; overflow-wrap: anywhere; }
+.key-secure .codicon { color: var(--cs-pass); }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -3969,6 +3993,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <a class="nav-link" href="#sec-project" data-target="sec-project">${icon2("folder")}<span>${T("sec.project")}</span></a>
   <a class="nav-link" href="#sec-appearance" data-target="sec-appearance">${icon2("symbol-color")}<span>${T("sec.appearance")}</span></a>
   <a class="nav-link" href="#sec-about" data-target="sec-about">${icon2("info")}<span>${T("sec.about")}</span></a>
+  <a class="nav-link" href="#sec-dev" data-target="sec-dev">${icon2("account")}<span>${T("sec.dev")}</span></a>
 </nav>
 <div class="content">
 <div class="status${statusKind === "error" ? " error" : ""}" id="status">${escapeHtml2(statusMessage)}</div>
@@ -3986,6 +4011,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <p class="hint">${T("center.baseUrlHint")}</p>
   </div>
   <div class="current-key">${T("center.now")} ${currentKeyLine(T, state)}</div>
+  ${state.keyConfigured ? `<div class="key-secure">${icon2("lock")}<span>${T("center.secureNote")}</span></div>` : ""}
   <div class="row">
     <button id="chooseModel" type="button" class="secondary">${icon2("cloud-download")}<span>${T("center.liveModels")}</span></button>
     <button id="testConnection" type="button" class="secondary">${icon2("sync")}<span>${T("center.retry")}</span></button>
@@ -4122,6 +4148,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="openRepo" type="button" class="secondary" data-url="${CODESCOUT_REPO_URL}">${icon2("repo")}<span>${T("about.repo")}</span></button>
     <button id="reportIssue" type="button" class="secondary">${icon2("report")}<span>${T("about.issue")}</span></button>
   </div>
+</section>
+<section id="sec-dev">
+  <h2>${icon2("account")} ${T("sec.dev")}</h2>
+  <div class="about-line">${T("about.devAuthor")} <strong>${T("about.devName")}</strong></div>
+  <div class="about-line">${T("about.devContact")} <a class="dev-link" href="mailto:work.valden@gmail.com" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
+  <div class="about-line">${T("about.devGithub")} <a class="dev-link" href="${CODESCOUT_REPO_URL}" data-url="${CODESCOUT_REPO_URL}">valden2007/CodeScout</a> \u2014 ${T("about.devIssues")}</div>
+  <div class="about-line">${T("about.devCard")} <span class="scope-chip"><span>${T("about.devSiteWip")}</span></span></div>
+  <p class="hint">${T("about.devCall")}</p>
 </section>
 </main>
 </div>
@@ -4408,8 +4442,14 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-document.querySelectorAll('#sec-about button[data-url]').forEach((btn) => {
-  btn.addEventListener('click', () => vscode.postMessage({ command: 'openLink', url: btn.getAttribute('data-url') }));
+document.querySelectorAll('main [data-url]').forEach((el) => {
+  // Batch 17: one handler for sec-about buttons and sec-dev links (mailto + GitHub).
+  // preventDefault kills native webview navigation; the host opens whitelisted
+  // URLs via openExternal. Keep this script Cyrillic-free: EN build contract.
+  el.addEventListener('click', (event) => {
+    event.preventDefault();
+    vscode.postMessage({ command: 'openLink', url: el.getAttribute('data-url') });
+  });
 });
 const reportIssueBtn = document.getElementById('reportIssue');
 if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));
@@ -4576,7 +4616,7 @@ async function resolveExtensionSelection(context) {
   const settingsModel = (inspectedModel?.globalValue ?? inspectedModel?.workspaceValue ?? "").trim();
   const provider = secretProvider?.trim() || settingsProvider || "gemini";
   const model = userChosenModel ? secretModel?.trim() || settingsModel || defaultModel(provider) : settingsModel || secretModel?.trim() || defaultModel(provider);
-  const key = resolveApiKeyPriority(secretKey, provider, config.get("apiKey"));
+  const key = resolveApiKeyPriority(secretKey, provider);
   return {
     provider,
     model,
@@ -4621,10 +4661,31 @@ function rateLimitPausesFromSetting(value) {
   if (!Number.isFinite(n) || n < 0) return 3;
   return Math.min(5, n);
 }
+var migratedLegacyApiKeys = [];
+async function migrateApiKeyFromSettings(context) {
+  const config = vscode2.workspace.getConfiguration("codescout");
+  const inspected = config.inspect("apiKey");
+  const layers = [
+    { value: inspected?.workspaceFolderValue, target: vscode2.ConfigurationTarget.WorkspaceFolder },
+    { value: inspected?.workspaceValue, target: vscode2.ConfigurationTarget.Workspace },
+    { value: inspected?.globalValue, target: vscode2.ConfigurationTarget.Global }
+  ];
+  const found = layers.filter((layer) => Boolean(layer.value?.trim()));
+  if (found.length === 0) return;
+  const secret = (await context.secrets.get(SECRET_KEY))?.trim();
+  if (!secret) {
+    const first = found[0]?.value?.trim();
+    if (first) await context.secrets.store(SECRET_KEY, first);
+  }
+  for (const layer of found) {
+    const value = layer.value?.trim() ?? "";
+    if (value && !migratedLegacyApiKeys.includes(value)) migratedLegacyApiKeys.push(value);
+    await config.update("apiKey", void 0, layer.target);
+  }
+}
 async function secretKeyValues(context) {
-  const configKey = vscode2.workspace.getConfiguration("codescout").get("apiKey") ?? "";
   const secretKey = await context.secrets.get(SECRET_KEY) ?? "";
-  return [secretKey, configKey].filter((key) => key.trim().length > 0);
+  return [secretKey, ...migratedLegacyApiKeys].filter((key) => key.trim().length > 0);
 }
 function structuredError(error) {
   return formatError(error, currentReportLanguage());
@@ -5356,7 +5417,8 @@ function activate(context) {
       panel.setKey(void 0);
     }
   };
-  void syncKeyStatus();
+  void migrateApiKeyFromSettings(context).catch(() => {
+  }).then(() => syncKeyStatus());
   void migrateLanguageSetting(context).catch(() => {
   });
   panel.setOnboardingHidden(context.globalState.get("codescout.onboardingDismissed") === true);
@@ -5375,9 +5437,7 @@ function activate(context) {
     }),
     vscode2.commands.registerCommand("codescout.reportIssue", async () => {
       const cfg = vscode2.workspace.getConfiguration("codescout");
-      const secretKey = await context.secrets.get(SECRET_KEY) ?? "";
-      const apiKey = cfg.get("apiKey") ?? "";
-      const keyValues = [secretKey, apiKey].filter(Boolean);
+      const keyValues = await secretKeyValues(context);
       const safe = (value) => redactSecrets(value, keyValues);
       const preRedactedOutputTail = outputTail.map((line) => redactSecrets(line, keyValues));
       const preRedactedLastScanError = lastScanError ? redactSecrets(lastScanError, keyValues) : void 0;
@@ -5573,7 +5633,7 @@ function activate(context) {
               await render(parts.join(" \xB7 "));
             } else if (message.command === "openLink") {
               const url = (message.url ?? "").trim();
-              if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));
+              if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || url === "mailto:work.valden@gmail.com") await vscode2.env.openExternal(vscode2.Uri.parse(url));
               await render("");
             } else if (message.command === "reportIssue") {
               await vscode2.commands.executeCommand("codescout.reportIssue");
@@ -5822,6 +5882,7 @@ function deactivate() {
   activate,
   deactivate,
   fileCooldownSecondsFromSetting,
+  migrateApiKeyFromSettings,
   rateLimitHitsLast5min,
   recordRateLimitHit,
   resetRateLimitHits,

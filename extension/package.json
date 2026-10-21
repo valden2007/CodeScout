@@ -146,6 +146,7 @@
         "codescout.apiKey": {
           "type": "string",
           "description": "%apiKey.description%",
+          "deprecationMessage": "%apiKey.deprecated%",
           "scope": "machine",
           "password": true
         },

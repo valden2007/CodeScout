@@ -195,7 +195,10 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   const settingsModel = (inspectedModel?.globalValue ?? inspectedModel?.workspaceValue ?? '').trim();
   const provider = (secretProvider?.trim() || settingsProvider || 'gemini') as ProviderName;
   const model = userChosenModel ? (secretModel?.trim() || settingsModel || defaultModel(provider)) : (settingsModel || secretModel?.trim() || defaultModel(provider));
-  const key = resolveApiKeyPriority(secretKey, provider, config.get<string>('apiKey'));
+  // Батч 17: STRICT SecretStorage — никакого фоллбэка на codescout.apiKey из
+  // plaintext settings.json. Приоритет: SecretStorage > env (CODESCOUT_API_KEY
+  // и т.п.). Старые значения из config уносятся миграцией migrateApiKeyFromSettings.
+  const key = resolveApiKeyPriority(secretKey, provider);
   return {
     provider,
     model,
@@ -273,10 +276,41 @@ function rateLimitPausesFromSetting(value: unknown): number {
 // Батч 15: вся категоризация ошибок живёт в src/error-classifier. Здесь —
 // единственный выход сбоя скана: локализованная карточка в панели, понятная
 // нотификация и ОДИНАКОВЫЙ redactSecrets-путь для raw-сообщения в Output.
+// Батч 17: значения API-ключа, найденные в plaintext settings.json и удалённые
+// оттуда миграцией. Держим их только в памяти процесса — чтобы redactSecrets
+// гарантированно вычищал старый ключ из Output-логов и тела Issue. В auth-пути
+// они НЕ участвуют: аутентификация — строго через context.secrets.
+const migratedLegacyApiKeys: string[] = [];
+
+// Одноразовая миграция при активации: ключ из settings.json переезжает в
+// SecretStorage (если секрета ещё нет) и БЕЗЖАЛОСТНО удаляется из config.
+// Читаем через inspect только ради самого переноса — это путь удаления,
+// а не аутентификационный фоллбэк.
+export async function migrateApiKeyFromSettings(context: vscode.ExtensionContext): Promise<void> {
+  const config = vscode.workspace.getConfiguration('codescout');
+  const inspected = config.inspect<string>('apiKey');
+  const layers: Array<{ value: string | undefined; target: vscode.ConfigurationTarget }> = [
+    { value: inspected?.workspaceFolderValue, target: vscode.ConfigurationTarget.WorkspaceFolder },
+    { value: inspected?.workspaceValue, target: vscode.ConfigurationTarget.Workspace },
+    { value: inspected?.globalValue, target: vscode.ConfigurationTarget.Global }
+  ];
+  const found = layers.filter((layer) => Boolean(layer.value?.trim()));
+  if (found.length === 0) return;
+  const secret = (await context.secrets.get(SECRET_KEY))?.trim();
+  if (!secret) {
+    const first = found[0]?.value?.trim();
+    if (first) await context.secrets.store(SECRET_KEY, first);
+  }
+  for (const layer of found) {
+    const value = layer.value?.trim() ?? '';
+    if (value && !migratedLegacyApiKeys.includes(value)) migratedLegacyApiKeys.push(value);
+    await config.update('apiKey', undefined, layer.target);
+  }
+}
+
 async function secretKeyValues(context: vscode.ExtensionContext): Promise<string[]> {
-  const configKey = vscode.workspace.getConfiguration('codescout').get<string>('apiKey') ?? '';
   const secretKey = await context.secrets.get(SECRET_KEY) ?? '';
-  return [secretKey, configKey].filter((key) => key.trim().length > 0);
+  return [secretKey, ...migratedLegacyApiKeys].filter((key) => key.trim().length > 0);
 }
 
 function structuredError(error: unknown): ReturnType<typeof formatError> {
@@ -1078,7 +1112,11 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.setKey(undefined);
     }
   };
-  void syncKeyStatus();
+  // Батч 17: миграция ключа из settings.json в SecretStorage ОБЯЗАТЕЛЬНО до
+  // первого resolveExtensionSelection — иначе панель на долю секунды останется
+  // без ключа, который лежал в открытом config. syncKeyStatus запускаем уже
+  // после переноса/очистки.
+  void migrateApiKeyFromSettings(context).catch(() => {}).then(() => syncKeyStatus());
   void migrateLanguageSetting(context).catch(() => {});
   panel.setOnboardingHidden(context.globalState.get<boolean>('codescout.onboardingDismissed') === true);
   const activateRoot = getWorkspaceRoot();
@@ -1096,9 +1134,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('codescout.reportIssue', async () => {
       const cfg = vscode.workspace.getConfiguration('codescout');
-      const secretKey = await context.secrets.get(SECRET_KEY) ?? '';
-      const apiKey = cfg.get<string>('apiKey') ?? '';
-      const keyValues = [secretKey, apiKey].filter(Boolean);
+      // Батч 17: только SecretStorage + in-memory значения после миграции;
+      // чтение ключа из settings.json здесь упразднено.
+      const keyValues = await secretKeyValues(context);
       const safe = (value: string) => redactSecrets(value, keyValues);
       const preRedactedOutputTail = outputTail.map((line) => redactSecrets(line, keyValues));
       const preRedactedLastScanError = lastScanError ? redactSecrets(lastScanError, keyValues) : undefined;
@@ -1292,7 +1330,9 @@ export function activate(context: vscode.ExtensionContext): void {
             await render(parts.join(' · '));
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();
-            if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
+            // Батч 17: раздел «О разработчике» добавляет кликабельный mailto.
+            // Whitelist жёсткий: свой репозиторий + единственная почта автора.
+            if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || url === 'mailto:work.valden@gmail.com') await vscode.env.openExternal(vscode.Uri.parse(url));
             await render('');
           } else if (message.command === 'reportIssue') {
             await vscode.commands.executeCommand('codescout.reportIssue');

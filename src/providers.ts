@@ -158,8 +158,11 @@ export function resolveApiKey(provider: string, explicitKey?: string, env: NodeJ
   return env[PROVIDERS[normalized].envKey]?.trim();
 }
 
-export function resolveApiKeyPriority(secretKey: string | undefined, provider: string, legacySetting: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return secretKey?.trim() || resolveApiKey(provider, undefined, env) || legacySetting?.trim() || undefined;
+// Батч 17: строго secret > env. Чтение ключа из plaintext settings.json
+// полностью удалено — единственный путь для расширения это
+// context.secrets (SecretStorage), для CLI/action — env/Secrets.
+export function resolveApiKeyPriority(secretKey: string | undefined, provider: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return secretKey?.trim() || resolveApiKey(provider, undefined, env) || undefined;
 }
 
 export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {

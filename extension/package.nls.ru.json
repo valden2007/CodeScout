@@ -1,6 +1,7 @@
 {
   "settings.title": "CodeScout",
   "apiKey.description": "API-ключ выбранного провайдера. Хранится как секрет; не публикуйте его.",
+  "apiKey.deprecated": "Устарело и игнорируется CodeScout: API-ключ живёт ТОЛЬКО в SecretStorage ОС. Значение, найденное здесь, автоматически переносится в SecretStorage и удаляется из settings.json. Используй центр настроек CodeScout или команду «Set API key».",
   "provider.description": "LLM-провайдер, который использует CodeScout.",
   "model.description": "Имя модели, понятное выбранному провайдеру.",
   "baseUrl.description": "Необязательный OpenAI-совместимый base URL. Укажите для Ollama, LM Studio или прокси.",
