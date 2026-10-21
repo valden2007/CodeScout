@@ -116,8 +116,21 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
     return { ok: false, status: "noAnswer", baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
   }
 }
-var PROVIDER_ORDER = ["custom", "opencode", "gemini", "groq", "openrouter", "github"];
+var PROVIDER_ORDER = ["custom", "openai", "anthropic", "opencode", "gemini", "groq", "github"];
 var PROVIDERS = {
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    envKey: "OPENAI_API_KEY",
+    defaultModel: "gpt-4o-mini",
+    keyUrl: "https://platform.openai.com/api-keys"
+  },
+  // OpenAI-совместимый эндпоинт Anthropic (/v1/chat/completions, beta).
+  anthropic: {
+    baseUrl: "https://api.anthropic.com/v1",
+    envKey: "ANTHROPIC_API_KEY",
+    defaultModel: "claude-3-5-haiku-latest",
+    keyUrl: "https://console.anthropic.com/settings/keys"
+  },
   // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
   // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
   opencode: {
@@ -129,7 +142,8 @@ var PROVIDERS = {
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envKey: "GEMINI_API_KEY",
-    defaultModel: "gemini-2.5-flash",
+    // Батч 18: 2.5 может отсутствовать в free-tier — дефолт 1.5-flash.
+    defaultModel: "gemini-1.5-flash",
     keyUrl: "https://aistudio.google.com/apikey"
   },
   groq: {
@@ -155,16 +169,18 @@ function detectProvider(key) {
   const value = key.trim();
   if (value.startsWith("oc_sk_")) return { provider: "opencode", model: "qwen3.8-flash" };
   if (value.startsWith("gsk_")) return { provider: "groq", model: "llama-3.3-70b-versatile" };
-  if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-2.5-flash" };
+  if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-1.5-flash" };
   if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
+  if (value.startsWith("sk-ant-")) return { provider: "anthropic", model: "claude-3-5-haiku-latest" };
   if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
+  if (value.startsWith("sk-")) return { provider: "openai", model: "gpt-4o-mini" };
   return null;
 }
 function normalizeProvider(provider) {
   const value = provider?.trim().toLowerCase() || "gemini";
   if (value === "custom") return "custom";
   if (Object.hasOwn(PROVIDERS, value)) return value;
-  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 gemini, groq, openrouter, github, opencode \u0438\u043B\u0438 custom.`);
+  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 custom, openai, anthropic, opencode, gemini, groq, github \u0438\u043B\u0438 openrouter.`);
 }
 function resolveApiKey(provider, explicitKey, env3 = process.env) {
   if (explicitKey?.trim()) return explicitKey.trim();
@@ -519,7 +535,6 @@ var ru_default = {
   "subtab.custom": "\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F",
   "title.center": "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
   "center.provider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
-  "center.providerAuto": "auto \u2014 \u043F\u043E \u043A\u043B\u044E\u0447\u0443",
   "center.apiKeyLabel": "API-\u043A\u043B\u044E\u0447 ( SecretStorage )",
   "center.keyKeep": "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
   "center.keyPaste": "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C",
@@ -533,7 +548,6 @@ var ru_default = {
   "center.nowModelMissing": "\u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430",
   "center.liveModels": "\u0416\u0438\u0432\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
   "center.forgetKey": "\u0417\u0430\u0431\u044B\u0442\u044C \u043A\u043B\u044E\u0447",
-  "center.prefixHint": "auto = groq-\u043A\u043B\u044E\u0447 \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github, oc_sk_\u2026 \u2192 opencode (OpenCode Go).",
   "audit.passes": "\u041A\u0440\u0443\u0433\u043E\u0432 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0430 \u0444\u0430\u0439\u043B (1-3)",
   "audit.maxLines": "\u041C\u0430\u043A\u0441. \u0441\u0442\u0440\u043E\u043A \u043D\u0430 \u0444\u0430\u0439\u043B (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430)",
   "audit.maxFiles": "\u041C\u0430\u043A\u0441. \u0444\u0430\u0439\u043B\u043E\u0432 \u043D\u0430 \u0430\u0443\u0434\u0438\u0442",
@@ -882,7 +896,6 @@ var en_default = {
   "subtab.custom": "Customization",
   "title.center": "CodeScout: Settings",
   "center.provider": "Provider",
-  "center.providerAuto": "auto \u2014 by key",
   "center.apiKeyLabel": "API key ( SecretStorage )",
   "center.keyKeep": "empty field = keep the current key",
   "center.keyPaste": "paste a key \u2014 the provider is detected",
@@ -896,7 +909,6 @@ var en_default = {
   "center.nowModelMissing": "no model selected",
   "center.liveModels": "Live models\u2026",
   "center.forgetKey": "Forget key",
-  "center.prefixHint": "auto = groq key \u2192 groq, AIza\u2026 \u2192 gemini, sk-or-\u2026 \u2192 openrouter, ghp_\u2026 \u2192 github, oc_sk_\u2026 \u2192 opencode (OpenCode Go).",
   "audit.passes": "Review passes per file (1-3)",
   "audit.maxLines": "Max lines per file (0 = no limit)",
   "audit.maxFiles": "Max files per audit",
@@ -2036,7 +2048,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -2349,8 +2361,58 @@ ${headHtml(assets, nonce)}
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-2.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
   return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux);
+}
+
+// src/reportIssue.ts
+var CODESCOUT_REPO_URL = "https://github.com/valden2007/CodeScout";
+var SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
+function redactSecrets(value, keyValues = []) {
+  const normalized = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+  let out = normalized;
+  for (const key of keyValues) {
+    if (key) out = out.split(key).join("***");
+  }
+  return out.replace(SECRET_PATTERNS, "***");
+}
+function reportIssueUrl(body) {
+  return `${CODESCOUT_REPO_URL}/issues/new?body=${encodeURIComponent(body)}`;
+}
+function isContactUrlAllowed(url) {
+  const value = (url ?? "").trim();
+  return /^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(value) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(value);
+}
+function buildIssueBody(lang, input) {
+  const T = (key, vars) => t(key, lang, vars);
+  const lines = [
+    `**CodeScout ${input.extVersion} \xB7 VS Code ${input.vscodeVersion} \xB7 ${input.os}**`,
+    "",
+    `## ${T("issue.happened")}`,
+    `_${T("issue.hint")}_`,
+    "",
+    `## ${T("issue.steps")}`,
+    "1. ",
+    "",
+    `## ${T("issue.expectedActual")}`,
+    `**${T("issue.expected")}:** `,
+    `**${T("issue.actual")}:** `,
+    "",
+    `## ${T("issue.diag")}`,
+    `- provider: ${input.provider} \xB7 model: ${input.model} \xB7 language: ${input.language} \xB7 uiTheme: ${input.uiTheme} \xB7 auditPasses: ${input.auditPasses} \xB7 rateLimitPauses: ${input.rateLimitPauses}`,
+    `- ${T(input.hasKey ? "issue.keyYes" : "issue.keyNo")}`,
+    `- ${input.lastScanError ? T("issue.lastError", { e: input.lastScanError.slice(0, 300) }) : T("issue.noError")}`,
+    "",
+    `<details><summary>${T("issue.outputTail")}</summary>`,
+    "",
+    "```text",
+    ...input.outputTail.map((line) => line.slice(0, 400)),
+    "```",
+    "",
+    "</details>",
+    ""
+  ];
+  return lines.join("\n");
 }
 
 // src/panel.ts
@@ -2408,7 +2470,7 @@ var CodeScoutPanel = class {
   keyMask = "";
   keyConfigured = false;
   provider = "gemini";
-  model = "gemini-2.5-flash";
+  model = "gemini-1.5-flash";
   welcomeBanner = false;
   welcomeReason = "new";
   findingsDiff;
@@ -2539,9 +2601,7 @@ var CodeScoutPanel = class {
         void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
       } else if (message.command === "openLink") {
         const url = typeof message.url === "string" ? message.url.trim() : "";
-        if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(url)) {
-          void vscode.env.openExternal(vscode.Uri.parse(url));
-        }
+        if (isContactUrlAllowed(url)) void vscode.env.openExternal(vscode.Uri.parse(url));
       } else if (message.command === "testSample") {
         void vscode.commands.executeCommand("codescout.testSample");
       } else if (message.command === "cancelScan") {
@@ -2694,7 +2754,7 @@ var CodeScoutPanel = class {
     this.errorInfo = void 0;
     this.render();
   }
-  setKey(keyMaskOrStatus, provider = "gemini", model = "gemini-2.5-flash") {
+  setKey(keyMaskOrStatus, provider = "gemini", model = "gemini-1.5-flash") {
     if (typeof keyMaskOrStatus === "string") {
       this.keyMask = keyMaskOrStatus;
       this.keyConfigured = keyMaskOrStatus.trim().length > 0;
@@ -3837,54 +3897,8 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
   }
 }
 
-// src/reportIssue.ts
-var CODESCOUT_REPO_URL = "https://github.com/valden2007/CodeScout";
-var SECRET_PATTERNS = /\b(?:sk|gsk|ghp|glpat|AIza|ya29)[A-Za-z0-9_-]{4,}\b/g;
-function redactSecrets(value, keyValues = []) {
-  const normalized = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
-  let out = normalized;
-  for (const key of keyValues) {
-    if (key) out = out.split(key).join("***");
-  }
-  return out.replace(SECRET_PATTERNS, "***");
-}
-function reportIssueUrl(body) {
-  return `${CODESCOUT_REPO_URL}/issues/new?body=${encodeURIComponent(body)}`;
-}
-function buildIssueBody(lang, input) {
-  const T = (key, vars) => t(key, lang, vars);
-  const lines = [
-    `**CodeScout ${input.extVersion} \xB7 VS Code ${input.vscodeVersion} \xB7 ${input.os}**`,
-    "",
-    `## ${T("issue.happened")}`,
-    `_${T("issue.hint")}_`,
-    "",
-    `## ${T("issue.steps")}`,
-    "1. ",
-    "",
-    `## ${T("issue.expectedActual")}`,
-    `**${T("issue.expected")}:** `,
-    `**${T("issue.actual")}:** `,
-    "",
-    `## ${T("issue.diag")}`,
-    `- provider: ${input.provider} \xB7 model: ${input.model} \xB7 language: ${input.language} \xB7 uiTheme: ${input.uiTheme} \xB7 auditPasses: ${input.auditPasses} \xB7 rateLimitPauses: ${input.rateLimitPauses}`,
-    `- ${T(input.hasKey ? "issue.keyYes" : "issue.keyNo")}`,
-    `- ${input.lastScanError ? T("issue.lastError", { e: input.lastScanError.slice(0, 300) }) : T("issue.noError")}`,
-    "",
-    `<details><summary>${T("issue.outputTail")}</summary>`,
-    "",
-    "```text",
-    ...input.outputTail.map((line) => line.slice(0, 400)),
-    "```",
-    "",
-    "</details>",
-    ""
-  ];
-  return lines.join("\n");
-}
-
 // src/settingsHtml.ts
-var providerValues = ["auto", ...PROVIDER_ORDER];
+var providerValues = [...PROVIDER_ORDER];
 var colorFields = [
   { key: "bg" },
   { key: "card" },
@@ -3937,7 +3951,7 @@ function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce =
   const csp = assets ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${assets.cspSource}; img-src data:; style-src ${styleSrc} ${assets.cspSource}; script-src ${scriptSrc};">` : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${styleSrc}; script-src ${scriptSrc};">`;
   const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : "";
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
-  const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value === "auto" ? T("center.providerAuto") : value}</option>`).join("");
+  const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value}</option>`).join("");
   const prefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
   const languageSection = `
@@ -4057,7 +4071,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="testConnection" type="button" class="secondary">${icon2("sync")}<span>${T("center.retry")}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon2("trash")}<span>${T("center.forgetKey")}</span></button>
   </div>
-  <p class="hint">${T("center.prefixHint")}</p>
 </section>${languageSection}
 <section id="sec-audit">
   <h2>${icon2("sync")} ${T("sec.audit")}</h2>
@@ -4482,14 +4495,18 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-document.querySelectorAll('main [data-url]').forEach((el) => {
-  // Batch 17: one handler for sec-about buttons and sec-dev links (mailto + GitHub).
-  // preventDefault kills native webview navigation; the host opens whitelisted
-  // URLs via openExternal. Keep this script Cyrillic-free: EN build contract.
-  el.addEventListener('click', (event) => {
-    event.preventDefault();
-    vscode.postMessage({ command: 'openLink', url: el.getAttribute('data-url') });
-  });
+// Batch 18: one DELEGATED link handler for about/dev buttons and any mailto
+// anchor. preventDefault is mandatory: the webview must never try to navigate
+// itself (CSP kills mailto navigation silently -> "dead click" UX). The host
+// opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const el = target.closest('[data-url], a[href^="mailto:"]');
+  if (!el) return;
+  event.preventDefault();
+  const url = el.getAttribute('data-url') || el.getAttribute('href') || '';
+  if (url) vscode.postMessage({ command: 'openLink', url });
 });
 const reportIssueBtn = document.getElementById('reportIssue');
 if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));
@@ -5674,7 +5691,7 @@ function activate(context) {
               await render(parts.join(" \xB7 "));
             } else if (message.command === "openLink") {
               const url = (message.url ?? "").trim();
-              if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || url === "mailto:work.valden@gmail.com") await vscode2.env.openExternal(vscode2.Uri.parse(url));
+              if (isContactUrlAllowed(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));
               await render("");
             } else if (message.command === "reportIssue") {
               await vscode2.commands.executeCommand("codescout.reportIssue");
@@ -5816,9 +5833,9 @@ function activate(context) {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode2.window.showQuickPick(["Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)", "OpenCode Go", "Gemini", "Groq", "OpenRouter"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      const picked = await vscode2.window.showQuickPick(["Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)", "OpenAI", "Anthropic", "OpenCode Go", "Gemini", "Groq", "OpenRouter"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName = picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : picked === "OpenCode Go" ? "opencode" : "custom";
+      const providerName = picked === "OpenAI" ? "openai" : picked === "Anthropic" ? "anthropic" : picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : picked === "OpenCode Go" ? "opencode" : "custom";
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
       if (!key?.trim()) {
         void vscode2.window.showErrorMessage(t("key.needFirst", lang));

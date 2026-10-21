@@ -39,8 +39,10 @@ export interface SettingsAssets {
   cspSource: string;
 }
 
-// Батч 17.5: автоопределение + единый порядок PROVIDER_ORDER (custom → opencode → …).
-const providerValues = ['auto', ...PROVIDER_ORDER];
+// Батч 18: в селекте только реальные провайдеры в порядке PROVIDER_ORDER
+// (custom → openai → anthropic → …). Системный 'auto' скрыт из UI:
+// автодетект по префиксу ключа живёт под капотом в saveKeyProvider.
+const providerValues = [...PROVIDER_ORDER];
 
 const colorFields: { key: keyof CustomColors }[] = [
   { key: 'bg' },
@@ -118,7 +120,7 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
   const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : '';
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   const providerOptions = providerValues
-    .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value === 'auto' ? T('center.providerAuto') : value}</option>`)
+    .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value}</option>`)
     .join('');
   const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
@@ -243,7 +245,6 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
-  <p class="hint">${T('center.prefixHint')}</p>
 </section>${languageSection}
 <section id="sec-audit">
   <h2>${icon('sync')} ${T('sec.audit')}</h2>
@@ -665,14 +666,18 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-document.querySelectorAll('main [data-url]').forEach((el) => {
-  // Batch 17: one handler for sec-about buttons and sec-dev links (mailto + GitHub).
-  // preventDefault kills native webview navigation; the host opens whitelisted
-  // URLs via openExternal. Keep this script Cyrillic-free: EN build contract.
-  el.addEventListener('click', (event) => {
-    event.preventDefault();
-    vscode.postMessage({ command: 'openLink', url: el.getAttribute('data-url') });
-  });
+// Batch 18: one DELEGATED link handler for about/dev buttons and any mailto
+// anchor. preventDefault is mandatory: the webview must never try to navigate
+// itself (CSP kills mailto navigation silently -> "dead click" UX). The host
+// opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const el = target.closest('[data-url], a[href^="mailto:"]');
+  if (!el) return;
+  event.preventDefault();
+  const url = el.getAttribute('data-url') || el.getAttribute('href') || '';
+  if (url) vscode.postMessage({ command: 'openLink', url });
 });
 const reportIssueBtn = document.getElementById('reportIssue');
 if (reportIssueBtn) reportIssueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }));

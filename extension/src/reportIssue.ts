@@ -32,6 +32,14 @@ export function reportIssueUrl(body: string): string {
   return `${CODESCOUT_REPO_URL}/issues/new?body=${encodeURIComponent(body)}`;
 }
 
+// Батч 18: единый whitelist внешних ссылок для панели и центра настроек.
+// Только свой репозиторий и единственная почта автора (mailto допускает
+// ?subject=…). Хост обязан прогнать url через эту проверку ДО openExternal.
+export function isContactUrlAllowed(url: string): boolean {
+  const value = (url ?? '').trim();
+  return /^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(value) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(value);
+}
+
 // Markdown-шаблон issue на языке пользователя: что случилось / шаги /
 // ожидал-получил / диагностика (версии, настройки, наличие ключа,
 // последние строки Output, последняя ошибка). Caller must redact every string first.

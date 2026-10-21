@@ -12,7 +12,7 @@ inputs:
   model:
     description: Model name understood by the selected provider.
     required: false
-    default: gemini-2.5-flash
+    default: gemini-1.5-flash
   api-key:
     description: LLM API key. Pass this from a repository secret.
     required: true

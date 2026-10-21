@@ -1,4 +1,4 @@
-export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'opencode' | 'custom';
+export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'opencode' | 'openai' | 'anthropic' | 'custom';
 
 export interface DetectedProvider {
   provider: ProviderName;
@@ -102,11 +102,26 @@ export interface ProviderDefinition {
   keyUrl: string;
 }
 
-// Батч 17.5: единый порядок показа провайдеров во всех UI-списках
-// (центр настроек, quickPick, wizard, CLI choices): custom → opencode → остальное.
-export const PROVIDER_ORDER: ProviderName[] = ['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github'];
+// Батч 18: жёсткий порядок отображения в UI (селект центра, quickPick, wizard).
+// Системный 'auto' из списка СКРЫТ: автодетект по префиксу ключа работает
+// под капотом в saveKeyProvider/setApiKey. openrouter остаётся рабочим
+// (sk-or- детект, env-ключ), но из витрины убран.
+export const PROVIDER_ORDER: ProviderName[] = ['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github'];
 
 export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefinition> = {
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    envKey: 'OPENAI_API_KEY',
+    defaultModel: 'gpt-4o-mini',
+    keyUrl: 'https://platform.openai.com/api-keys'
+  },
+  // OpenAI-совместимый эндпоинт Anthropic (/v1/chat/completions, beta).
+  anthropic: {
+    baseUrl: 'https://api.anthropic.com/v1',
+    envKey: 'ANTHROPIC_API_KEY',
+    defaultModel: 'claude-3-5-haiku-latest',
+    keyUrl: 'https://console.anthropic.com/settings/keys'
+  },
   // Батч 16: OpenCode Go — подписочный шлюз opencode.ai с OpenAI-совместимым
   // эндпоинтом /zen/go/v1; ключи начинаются с oc_sk_ (zero-config автовыбор).
   opencode: {
@@ -118,7 +133,8 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     envKey: 'GEMINI_API_KEY',
-    defaultModel: 'gemini-2.5-flash',
+    // Батч 18: 2.5 может отсутствовать в free-tier — дефолт 1.5-flash.
+    defaultModel: 'gemini-1.5-flash',
     keyUrl: 'https://aistudio.google.com/apikey'
   },
   groq: {
@@ -144,12 +160,16 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
 export function detectProvider(key: string): DetectedProvider | null {
   const value = key.trim();
   // Батч 17.5: oc_sk_ проверяется первым и строго — ключ OpenCode Go обязан
-  // давать opencode, никаких соскальзываний на gemini/других дефолтного списка.
+  // давать opencode, никаких соскальзываний на дефолты списка.
   if (value.startsWith('oc_sk_')) return { provider: 'opencode', model: 'qwen3.8-flash' };
   if (value.startsWith('gsk_')) return { provider: 'groq', model: 'llama-3.3-70b-versatile' };
-  if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-2.5-flash' };
+  if (value.startsWith('AIza') || value.startsWith('AQ.')) return { provider: 'gemini', model: 'gemini-1.5-flash' };
+  // Батч 18: длинные sk-префиксы раньше голого sk- (иначе openrouter/anthropic
+  // схлопнулись бы в openai).
   if (value.startsWith('sk-or-')) return { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' };
+  if (value.startsWith('sk-ant-')) return { provider: 'anthropic', model: 'claude-3-5-haiku-latest' };
   if (value.startsWith('ghp_') || value.startsWith('github_pat_')) return { provider: 'github', model: 'gpt-4o-mini' };
+  if (value.startsWith('sk-')) return { provider: 'openai', model: 'gpt-4o-mini' };
   return null;
 }
 
@@ -157,7 +177,7 @@ export function normalizeProvider(provider?: string): ProviderName {
   const value = provider?.trim().toLowerCase() || 'gemini';
   if (value === 'custom') return 'custom';
   if (Object.hasOwn(PROVIDERS, value)) return value as Exclude<ProviderName, 'custom'>;
-  throw new Error(`Неизвестный provider: ${provider}. Используй gemini, groq, openrouter, github, opencode или custom.`);
+  throw new Error(`Неизвестный provider: ${provider}. Используй custom, openai, anthropic, opencode, gemini, groq, github или openrouter.`);
 }
 
 export function resolveApiKey(provider: string, explicitKey?: string, env: NodeJS.ProcessEnv = process.env): string | undefined {

@@ -15,7 +15,7 @@ export interface CliArgs {
 
 const KNOWN_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--dry-run', '--api-key', '--last-commit', '--base', '--help', '--version']);
 const STRING_FLAGS = new Set(['--path', '--provider', '--model', '--base-url', '--api-key', '--base']);
-const PROVIDERS = new Set<ProviderName>(['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github']);
+const PROVIDERS = new Set<ProviderName>(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'openrouter']);
 
 function suggestedFlag(flag: string): string | undefined {
   if (flag.startsWith('--last-')) return '--last-commit';
@@ -59,7 +59,7 @@ export function parseArgs(argv: string[]): CliArgs {
   const parsed = yargs(argv)
     .command('$0 [command]', 'Run a CodeScout scan', (builder) => builder.positional('command', { type: 'string', default: 'scan' }))
     .option('path', { type: 'string', default: process.cwd(), describe: 'Directory containing the git repository' })
-    .option('provider', { type: 'string', choices: ['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github'] as const, default: 'gemini', describe: 'LLM provider' })
+    .option('provider', { type: 'string', choices: ['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'openrouter'] as const, default: 'gemini', describe: 'LLM provider' })
     .option('model', { type: 'string', describe: 'Model name understood by the selected provider' })
     .option('base-url', { type: 'string', describe: 'Custom OpenAI-compatible endpoint base URL' })
     .option('dry-run', { type: 'boolean', default: false, describe: 'Read the diff without calling an LLM' })
@@ -72,7 +72,7 @@ export function parseArgs(argv: string[]): CliArgs {
 
   const rawProvider = String(parsed.provider ?? 'gemini');
   if (!PROVIDERS.has(rawProvider as ProviderName)) {
-    throw new Error(`Неизвестный провайдер: ${rawProvider}. Доступны: custom, opencode, gemini, groq, openrouter, github.`);
+    throw new Error(`Неизвестный провайдер: ${rawProvider}. Доступны: custom, openai, anthropic, opencode, gemini, groq, github, openrouter.`);
   }
   const provider = rawProvider as ProviderName;
   return {

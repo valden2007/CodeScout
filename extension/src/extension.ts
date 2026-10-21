@@ -20,7 +20,7 @@ import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
 import { t } from '../../src/i18n';
-import { buildIssueBody, redactSecrets, reportIssueUrl } from './reportIssue';
+import { buildIssueBody, isContactUrlAllowed, redactSecrets, reportIssueUrl } from './reportIssue';
 import { platform, release } from 'node:os';
 
 const SECRET_KEY = 'codescout.apiKey';
@@ -188,7 +188,7 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   const secretModel = await context.secrets.get(SECRET_MODEL);
   const userChosenModel = (await context.secrets.get(SECRET_MODEL_CHOSEN)) === 'true';
   const settingsProvider = config.get<string>('provider')?.trim();
-  // HOTFIX: манифестный дефолт codescout.model ('gemini-2.5-flash') не должен
+  // HOTFIX: манифестный дефолт codescout.model ('gemini-1.5-flash') не должен
   // просачиваться в провайдеры, где он не имеет смысла (custom/ollama/opencode).
   // Учитываем только явно заданное пользователем значение (global/workspace).
   const inspectedModel = config.inspect<string>('model');
@@ -1337,9 +1337,9 @@ export function activate(context: vscode.ExtensionContext): void {
             await render(parts.join(' · '));
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();
-            // Батч 17: раздел «О разработчике» добавляет кликабельный mailto.
-            // Whitelist жёсткий: свой репозиторий + единственная почта автора.
-            if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || url === 'mailto:work.valden@gmail.com') await vscode.env.openExternal(vscode.Uri.parse(url));
+            // Батч 18: общий whitelist с панелью (isContactUrlAllowed) —
+            // свой репозиторий + почта автора, mailto с ?subject тоже жив.
+            if (isContactUrlAllowed(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
             await render('');
           } else if (message.command === 'reportIssue') {
             await vscode.commands.executeCommand('codescout.reportIssue');
@@ -1464,9 +1464,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     vscode.commands.registerCommand('codescout.onboardCloud', async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode.window.showQuickPick(['Custom (свой адрес)', 'OpenCode Go', 'Gemini', 'Groq', 'OpenRouter'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
+      const picked = await vscode.window.showQuickPick(['Custom (свой адрес)', 'OpenAI', 'Anthropic', 'OpenCode Go', 'Gemini', 'Groq', 'OpenRouter'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName = picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : picked === 'OpenCode Go' ? 'opencode' : 'custom';
+      const providerName: ProviderName = picked === 'OpenAI' ? 'openai' : picked === 'Anthropic' ? 'anthropic' : picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : picked === 'OpenCode Go' ? 'opencode' : 'custom';
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('wizard.keyPrompt', lang) });
       if (!key?.trim()) { void vscode.window.showErrorMessage(t('key.needFirst', lang)); return; }
       const trimmed = key.trim();

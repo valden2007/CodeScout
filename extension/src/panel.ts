@@ -6,6 +6,7 @@ import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx } from './reportHtml';
 import { computeFingerprint, suppressFinding } from './findingsStore';
+import { isContactUrlAllowed } from './reportIssue';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
@@ -84,7 +85,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private keyMask = '';
   private keyConfigured = false;
   private provider = 'gemini';
-  private model = 'gemini-2.5-flash';
+  private model = 'gemini-1.5-flash';
   private welcomeBanner = false;
   private welcomeReason: 'new' | 'stale' = 'new';
   private findingsDiff?: FindingsDiffView;
@@ -219,12 +220,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'openKeyLink') {
         void vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/apikey'));
       } else if (message.command === 'openLink') {
-        // Батч 17.5: webview шлёт mailto/ссылки только через openLink. Тот же
-        // жёсткий whitelist, что в центре настроек: репозиторий + почта автора.
+        // Батч 17.5/18: webview шлёт mailto/ссылки только через openLink
+        // (href-клики в вебвью перехватываются с preventDefault). Общий
+        // whitelist с центром настроек: репозиторий + почта автора.
         const url = typeof message.url === 'string' ? message.url.trim() : '';
-        if (/^https:\/\/github\.com\/valden2007\/CodeScout(\/|$)/.test(url) || /^mailto:work\.valden@gmail\.com(\?.*)?$/i.test(url)) {
-          void vscode.env.openExternal(vscode.Uri.parse(url));
-        }
+        if (isContactUrlAllowed(url)) void vscode.env.openExternal(vscode.Uri.parse(url));
       } else if (message.command === 'testSample') {
         void vscode.commands.executeCommand('codescout.testSample');
       } else if (message.command === 'cancelScan') {
@@ -391,7 +391,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  setKey(keyMaskOrStatus: string | boolean | undefined, provider = 'gemini', model = 'gemini-2.5-flash'): void {
+  setKey(keyMaskOrStatus: string | boolean | undefined, provider = 'gemini', model = 'gemini-1.5-flash'): void {
     if (typeof keyMaskOrStatus === 'string') {
       this.keyMask = keyMaskOrStatus;
       this.keyConfigured = keyMaskOrStatus.trim().length > 0;

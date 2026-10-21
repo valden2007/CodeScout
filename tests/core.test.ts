@@ -282,11 +282,15 @@ describe('E5.7 live model picker', () => {
 describe('E5.6 provider auto-detection', () => {
   it('detects all supported API-key prefixes and their models', () => {
     expect(detectProvider('gsk_test')).toEqual({ provider: 'groq', model: 'llama-3.3-70b-versatile' });
-    expect(detectProvider('AIza-test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
-    expect(detectProvider('AQ.test')).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    expect(detectProvider('AIza-test')).toEqual({ provider: 'gemini', model: 'gemini-1.5-flash' });
+    expect(detectProvider('AQ.test')).toEqual({ provider: 'gemini', model: 'gemini-1.5-flash' });
     expect(detectProvider('sk-or-test')).toEqual({ provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' });
     expect(detectProvider('ghp_test')).toEqual({ provider: 'github', model: 'gpt-4o-mini' });
     expect(detectProvider('github_pat_test')).toEqual({ provider: 'github', model: 'gpt-4o-mini' });
+    // Батч 18: длинные sk-префиксы не схлопываются в голой sk- (openai)
+    expect(detectProvider('sk-or-test')).toEqual({ provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' });
+    expect(detectProvider('sk-ant-test')).toEqual({ provider: 'anthropic', model: 'claude-3-5-haiku-latest' });
+    expect(detectProvider('sk-proj-test')).toEqual({ provider: 'openai', model: 'gpt-4o-mini' });
     expect(detectProvider('unknown-key')).toBeNull();
   });
 
@@ -2544,7 +2548,12 @@ describe('v1.4b settings center with sidebar', () => {
     expect(extension).toContain("command === 'saveAll'");
     expect(extension).toContain("command === 'openLink'");
     expect(extension).toContain('vscode.env.openExternal');
-    expect(extension).toContain('github');
+    // Батч 18: whitelist внешних ссылок вынесен в общий isContactUrlAllowed
+    expect(extension).toContain('isContactUrlAllowed');
+    const contact = readFileSync('extension/src/reportIssue.ts', 'utf8');
+    expect(contact).toContain('github.com/valden2007/CodeScout');
+    expect(contact).toContain('work\\.valden@gmail\\.com'); // mailto-адрес автора в whitelist (экранированный regex)
+    expect(contact).toContain('isContactUrlAllowed');
   });
 
   it('no duplicate audit handles left in the project section (moved to Аудит)', () => {

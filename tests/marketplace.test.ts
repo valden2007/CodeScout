@@ -51,23 +51,62 @@ describe('батч 16: zero-config OpenCode Go', () => {
 
   it('центр настроек, wizard и ручной выбор предлагают opencode', () => {
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
-    expect(center).toContain('PROVIDER_ORDER'); // список провайдеров центра теперь из providers.ts (custom → opencode → …)
+    expect(center).toContain('PROVIDER_ORDER'); // список провайдеров центра теперь из providers.ts (custom → openai → anthropic → …)
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('[...PROVIDER_ORDER]');
     expect(extension).toContain('OpenCode Go');
-    const i18n = JSON.parse(readFileSync('src/i18n/ru.json', 'utf8')) as Record<string, string>;
-    expect(i18n['center.prefixHint']).toContain('oc_sk_');
+    expect(extension).toContain("'OpenAI'");
+    expect(extension).toContain("'Anthropic'");
   });
 
-  it('батч 17.5: единый порядок провайдеров — custom первый, opencode второй', () => {
+  it('батч 18: порядок провайдеров custom → openai → anthropic → opencode → …, auto скрыт из UI', () => {
+    expect(PROVIDER_ORDER).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']);
+    expect(PROVIDER_ORDER).not.toContain('auto');
     const providers = readFileSync('src/providers.ts', 'utf8');
-    expect(providers).toContain("['custom', 'opencode', 'gemini', 'groq', 'openrouter', 'github']");
-    expect(PROVIDER_ORDER[0]).toBe('custom');
-    expect(PROVIDER_ORDER[1]).toBe('opencode');
+    expect(providers).toContain("['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']");
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
-    expect(center).toContain("['auto', ...PROVIDER_ORDER]");
+    expect(center).toContain('[...PROVIDER_ORDER]');
+    expect(center).not.toContain("['auto',");
     // ключ oc_sk_ строго ведёт в opencode — никогда в gemini-дефолт селекта
     expect(detectProvider('oc_sk_STRICT')?.provider).toBe('opencode');
+  });
+
+  it('батч 18: устаревший UI-текст про auto/префиксы вырезан из словарей и разметки', () => {
+    for (const dict of ['ru', 'en']) {
+      const i18n = JSON.parse(readFileSync(`src/i18n/${dict}.json`, 'utf8')) as Record<string, string>;
+      expect(i18n['center.prefixHint']).toBeUndefined();
+      expect(i18n['center.providerAuto']).toBeUndefined();
+    }
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).not.toContain('center.prefixHint');
+    expect(center).not.toContain('center.providerAuto');
+    // noteProviderAuto (короткий статус «определён автоматически: p») остаётся
+    const ru = JSON.parse(readFileSync('src/i18n/ru.json', 'utf8')) as Record<string, string>;
+    expect(ru['center.noteProviderAuto']).toBeTruthy();
+  });
+
+  it('батч 18: иконка Activity Bar — svg (не белый квадрат из png), корневая иконка остаётся png', () => {
+    const m = extManifest();
+    expect(m.contributes.viewsContainers.activitybar[0].icon).toBe('media/icon.svg');
+    expect(m.icon).toBe('media/icon.png');
+    expect(existsSync('extension/media/icon.svg')).toBe(true);
+  });
+
+  it('батч 18: дефолтная модель Gemini — gemini-1.5-flash (free-tier), не 2.5', () => {
+    expect(defaultModel('gemini')).toBe('gemini-1.5-flash');
+    expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+    expect(extManifest().contributes.configuration.properties['codescout.model'].default).toBe('gemini-1.5-flash');
+    expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'openrouter']);
+  });
+
+  it('батч 18: openai и anthropic — полноценные провайдеры (URL, env, model, keyUrl)', () => {
+    expect(resolveBaseUrl('openai')).toBe('https://api.openai.com/v1');
+    expect(resolveBaseUrl('anthropic')).toBe('https://api.anthropic.com/v1');
+    expect(defaultModel('openai')).toBe('gpt-4o-mini');
+    expect(defaultModel('anthropic')).toBe('claude-3-5-haiku-latest');
+    expect(resolveApiKey('openai', undefined, { OPENAI_API_KEY: 'sk-env' })).toBe('sk-env');
+    expect(resolveApiKey('anthropic', undefined, { ANTHROPIC_API_KEY: 'sk-ant-env' })).toBe('sk-ant-env');
+    expect(completionUrl(resolveBaseUrl('openai'))).toBe('https://api.openai.com/v1/chat/completions');
   });
 
   it('батч 17.5: Workspace Trust — в untrusted workspace расширение не активируется', () => {

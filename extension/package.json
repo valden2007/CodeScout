@@ -58,7 +58,7 @@
         {
           "id": "codescout-explorer",
           "title": "CodeScout",
-          "icon": "./media/icon.png"
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -159,19 +159,21 @@
         "codescout.provider": {
           "type": "string",
           "enum": [
+            "custom",
+            "openai",
+            "anthropic",
+            "opencode",
             "gemini",
             "groq",
-            "openrouter",
             "github",
-            "opencode",
-            "custom"
+            "openrouter"
           ],
           "default": "gemini",
           "description": "%provider.description%"
         },
         "codescout.model": {
           "type": "string",
-          "default": "gemini-2.5-flash",
+          "default": "gemini-1.5-flash",
           "description": "%model.description%"
         },
         "codescout.baseUrl": {

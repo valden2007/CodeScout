@@ -29,7 +29,7 @@ export async function run(): Promise<void> {
     const pullRequest = github.context.payload.pull_request as { number: number; head: { sha: string } };
     const context = { owner: github.context.repo.owner, repo: github.context.repo.repo, pullNumber: pullRequest.number, headSha: pullRequest.head.sha };
     const client = new GitHubClient(new Octokit({ auth: token }), context);
-    const provider = createProvider(core.getInput('provider') || 'gemini', apiKey, core.getInput('model') || 'gemini-2.5-flash');
+    const provider = createProvider(core.getInput('provider') || 'gemini', apiKey, core.getInput('model') || 'gemini-1.5-flash');
     const allFiles = await client.getPullRequestFiles();
     const files = allFiles.filter((file) => shouldReviewFile(file.filename) && file.patch);
     const perFile = await asyncPool(4, files, async (file) => {
