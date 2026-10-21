@@ -131,7 +131,10 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
     keyUrl: 'https://opencode.ai/auth'
   },
   gemini: {
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    // Батч 18.5: OpenAI-совместимый эндпоинт Google живёт на /v1beta/openai/v1 —
+    // с этим суффиксом клиентские пути {base}/models и {base}/chat/completions
+    // попадают в реальные роуты и автозагрузка списка моделей работает.
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/v1',
     envKey: 'GEMINI_API_KEY',
     // Батч 18: 2.5 может отсутствовать в free-tier — дефолт 1.5-flash.
     defaultModel: 'gemini-1.5-flash',

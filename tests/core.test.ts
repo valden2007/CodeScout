@@ -302,7 +302,7 @@ describe('E5.6 provider auto-detection', () => {
 
 describe('E5.5 endpoint URLs', () => {
   it('builds the exact OpenAI-compatible URL for every built-in provider', () => {
-    expect(completionUrl(resolveBaseUrl('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+    expect(completionUrl(resolveBaseUrl('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions');
     expect(completionUrl(resolveBaseUrl('groq'))).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect(completionUrl(resolveBaseUrl('openrouter'))).toBe('https://openrouter.ai/api/v1/chat/completions');
   });
@@ -2185,7 +2185,12 @@ describe('G6 fix batch security and robustness', () => {
     expect(html).toContain("command: 'saveAll'");
     expect(html).toContain("command: 'openLink'");
     expect(html).toContain("command: 'chooseModel'");
-    expect(html).not.toMatch(/\son(click|input|change|submit)\s*=/);
+    expect(html).not.toMatch(/\son(input|change|submit)\s*=/);
+    // Batch 18.5: bulletproof mailto — exactly ONE inline onclick, the mail
+    // anchor posting openLink (href="mailto:" removed; delegated data-url
+    // handler stays as the nonce-CSP fallback).
+    expect(html.match(/\sonclick=/g) || []).toHaveLength(1);
+    expect(html).toContain('<a class="dev-link" href="#" data-url="mailto:work.valden@gmail.com" onclick="vscode.postMessage({ command: \'openLink\', url: \'mailto:work.valden@gmail.com\' }); event.stopPropagation(); return false;">work.valden@gmail.com</a>');
     const noNonce = buildSettingsHtml(state);
     expect(noNonce).toContain("script-src 'unsafe-inline';");
     expect(noNonce).toContain('<script>');

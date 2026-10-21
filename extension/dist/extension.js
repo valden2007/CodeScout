@@ -140,7 +140,10 @@ var PROVIDERS = {
     keyUrl: "https://opencode.ai/auth"
   },
   gemini: {
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    // Батч 18.5: OpenAI-совместимый эндпоинт Google живёт на /v1beta/openai/v1 —
+    // с этим суффиксом клиентские пути {base}/models и {base}/chat/completions
+    // попадают в реальные роуты и автозагрузка списка моделей работает.
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/v1",
     envKey: "GEMINI_API_KEY",
     // Батч 18: 2.5 может отсутствовать в free-tier — дефолт 1.5-flash.
     defaultModel: "gemini-1.5-flash",
@@ -4205,7 +4208,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <section id="sec-dev">
   <h2>${icon2("account")} ${T("sec.dev")}</h2>
   <div class="about-line">${T("about.devAuthor")} <strong>${T("about.devName")}</strong></div>
-  <div class="about-line">${T("about.devContact")} <a class="dev-link" href="mailto:work.valden@gmail.com" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
+  <div class="about-line">${T("about.devContact")} <a class="dev-link" href="#" data-url="mailto:work.valden@gmail.com" onclick="vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); event.stopPropagation(); return false;">work.valden@gmail.com</a></div>
   <div class="about-line">${T("about.devGithub")} <a class="dev-link" href="${CODESCOUT_REPO_URL}" data-url="${CODESCOUT_REPO_URL}">valden2007/CodeScout</a> \u2014 ${T("about.devIssues")}</div>
   <div class="about-line">${T("about.devCard")} <span class="scope-chip"><span>${T("about.devSiteWip")}</span></span></div>
   <p class="hint">${T("about.devCall")}</p>
@@ -4499,6 +4502,11 @@ renderChips();
 // anchor. preventDefault is mandatory: the webview must never try to navigate
 // itself (CSP kills mailto navigation silently -> "dead click" UX). The host
 // opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
+// Batch 18.5: the mail anchor ALSO carries an inline onclick (no href=mailto:,
+// href="#" only) so the click posts openLink even when sandboxed delegated
+// capture misfires. Under the nonce CSP the inline handler is blocked and this
+// listener stays as the fallback (data-url); with inline allowed the onclick
+// stopPropagation()s so openLink is posted exactly once.
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
