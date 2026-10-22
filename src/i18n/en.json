@@ -277,7 +277,7 @@
   "onboarding.resetDone": "✅ Onboarding reset",
   "key.inputPrompt": "Paste a provider API key — the provider is detected automatically",
   "key.pickProvider": "Pick a provider",
-  "key.sourceAuto": "detected automatically",
+  "key.pickSkProvider": "Key starts with sk- — choose the platform: OpenAI, DeepSeek, Together AI, SambaNova, SiliconFlow, Hyperbolic, Cerebras or Custom",  "key.sourceAuto": "detected automatically",
   "key.sourceManual": "chosen manually",
   "key.savedNotify": "✅ Key saved. Provider: {p}, model: {m} ({s})",
   "key.needFirst": "Save an API key first via CodeScout: set API key.",

@@ -8,7 +8,7 @@ import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../s
 import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
+import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl, SK_AMBIGUOUS_OPTIONS } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
@@ -29,6 +29,24 @@ const SECRET_MODEL = 'codescout.model';
 const SECRET_MODEL_CHOSEN = 'codescout.model.userChosen';
 const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
+// Батч 21: метки мастера onboardCloud → провайдеры. Метки — собственные
+// имена платформ (не переводятся, i18n-вайтлист тех-терминов).
+const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
+  'Custom (свой адрес)': 'custom',
+  'OpenAI': 'openai',
+  'Anthropic': 'anthropic',
+  'OpenCode Go': 'opencode',
+  'Gemini': 'gemini',
+  'Groq': 'groq',
+  'OpenRouter': 'openrouter',
+  'DeepSeek': 'deepseek',
+  'Together AI': 'together',
+  'SambaNova': 'sambanova',
+  'SiliconFlow': 'siliconflow',
+  'NVIDIA': 'nvidia',
+  'Hyperbolic': 'hyperbolic',
+  'Cerebras': 'cerebras'
+};
 const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
@@ -100,7 +118,7 @@ function preferredLiveModel(models: string[], fallback: string): string {
   return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
 }
 
-async function fetchModels(selection: ProviderSelection): Promise<string[]> {
+async function fetchModels(selection: ProviderSelection, tolerateErrors = true): Promise<string[]> {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
@@ -108,7 +126,28 @@ async function fetchModels(selection: ProviderSelection): Promise<string[]> {
   // gemini работает умный мок: живая попытка GET /models (AbortController,
   // 3000ms) при любом провале отдаёт GEMINI_STATIC_MODELS; onWarn пишет
   // предупреждение в Output-канал расширения.
-  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)));
+  // Батч 21, п.3: tolerateErrors=true (выбор моделей) — 401/404/таймаут
+  // дают пустой список, а не падение UI. Тест подключения и мастер зовут
+  // с false: там ошибка — сигнал пользователю.
+  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)), tolerateErrors);
+}
+
+// Батч 21, п.2: голое `sk-` — неоднозначный префикс (OpenAI, DeepSeek,
+// Together, SambaNova, SiliconFlow, Hyperbolic, Cerebras выдают ключи
+// одинаково). Молча писать openai нельзя — спрашиваем через QuickPick.
+// Отмена = undefined (возврат без действия, P0 Astra-3 контракт).
+async function pickSkProvider(): Promise<{ provider: ProviderName; model: string } | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    SK_AMBIGUOUS_OPTIONS.map((option) => ({
+      label: option.label,
+      description: option.provider === 'custom' ? '' : resolveBaseUrl(option.provider)
+    })),
+    { placeHolder: t('key.pickSkProvider', currentReportLanguage()), ignoreFocusOut: true, matchOnDescription: true }
+  );
+  if (!picked) return undefined;
+  const chosen = SK_AMBIGUOUS_OPTIONS.find((option) => option.label === picked.label);
+  if (!chosen) return undefined;
+  return { provider: chosen.provider, model: defaultModel(chosen.provider) };
 }
 
 // Возвращает undefined, если пользователь отменил выбор: отмена = возврат
@@ -980,7 +1019,9 @@ async function runConnectionTest(context: vscode.ExtensionContext): Promise<Conn
   }
   const testSel = { provider: selection.provider, model: selection.model, key: selection.key ?? '', baseUrl: selection.baseUrl, userChosenModel: false };
   try {
-    const models = await fetchModels(testSel);
+    // Батч 21: тест подключения — строгий (tolerateErrors=false): 401/404
+    // должны вернуться rich-ошибкой с категорией, а не «подключено, 0 моделей».
+    const models = await fetchModels(testSel, false);
     return { ok: true, message: t('center.connected', lang, { n: models.length }) };
   } catch (error) {
     const formatted = formatError(error, lang);
@@ -1051,10 +1092,18 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
   // вставленный oc_sk_ ключ сохранялся как gemini — автодетект никогда не
   // срабатывал. Теперь распознанный ключ строго выставляет своего провайдера.
   const detected = key ? detectProvider(key) : undefined;
-  if (detected) {
+  // Батч 21, п.2: голое sk- — не автодетект, а догадка. Спрашиваем через
+  // QuickPick; отмена меню = сохранить так, как выбрано в селекте вручную.
+  const skChosen = detected?.ambiguous ? await pickSkProvider() : undefined;
+  if (detected && !detected.ambiguous) {
     provider = detected.provider;
     model = selection.userChosenModel ? model : detected.model;
     notes.push(t('center.noteProviderAuto', lang, { p: provider }));
+  } else if (skChosen) {
+    provider = skChosen.provider;
+    model = selection.userChosenModel ? model : skChosen.model;
+    await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
+    notes.push(t('center.noteProviderManual', lang));
   } else if (message.providerKey && message.providerKey !== 'auto') {
     provider = message.providerKey as ProviderName;
     if (provider !== selection.provider || key) {
@@ -1453,7 +1502,15 @@ export function activate(context: vscode.ExtensionContext): void {
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('key.inputPrompt', lang) });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
-      let selection: { provider: ProviderName; model: string } | undefined = detected ?? undefined;
+      // Батч 21, п.2: ambiguous sk- НЕ считаем автодетектом — openai угадан,
+      // пользователь обязан подтвердить/выбрать реальную платформу.
+      const autoDetected = Boolean(detected && !detected.ambiguous);
+      let selection: { provider: ProviderName; model: string } | undefined = autoDetected ? detected ?? undefined : undefined;
+      if (detected?.ambiguous) {
+        const chosen = await pickSkProvider();
+        if (!chosen) return;
+        selection = chosen;
+      }
       if (!selection) {
         const picked = await vscode.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t('key.pickProvider', lang) });
         if (!picked) return;
@@ -1466,7 +1523,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.store(SECRET_MODEL, selection.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
-      const source = detected ? t('key.sourceAuto', lang) : t('key.sourceManual', lang);
+      const source = autoDetected ? t('key.sourceAuto', lang) : t('key.sourceManual', lang);
       void vscode.window.showInformationMessage(t('key.savedNotify', lang, { p: selection.provider, m: selection.model, s: source }));
     }),
     // P0 Astra-3: выбор модели меняет ТОЛЬКО модель. Отмена = возврат без
@@ -1497,24 +1554,29 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage(t('key.deletedNotify', lang));
     }),
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
+    // Батч 21: список расширен top-12 zero-config платформами.
     vscode.commands.registerCommand('codescout.onboardCloud', async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode.window.showQuickPick(['Custom (свой адрес)', 'OpenAI', 'Anthropic', 'OpenCode Go', 'Gemini', 'Groq', 'OpenRouter'], { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
+      const picked = await vscode.window.showQuickPick(Object.keys(WIZARD_PROVIDER_LABELS), { placeHolder: t('wizard.cloudProvider', lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName: ProviderName = picked === 'OpenAI' ? 'openai' : picked === 'Anthropic' ? 'anthropic' : picked === 'Gemini' ? 'gemini' : picked === 'Groq' ? 'groq' : picked === 'OpenRouter' ? 'openrouter' : picked === 'OpenCode Go' ? 'opencode' : 'custom';
+      const providerName = WIZARD_PROVIDER_LABELS[picked];
       const key = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('wizard.keyPrompt', lang) });
       if (!key?.trim()) { void vscode.window.showErrorMessage(t('key.needFirst', lang)); return; }
       const trimmed = key.trim();
-      const det = detectProvider(trimmed) ?? { provider: providerName, model: defaultModel(providerName) };
+      // Батч 21, п.2: в мастере пользователь УЖЕ выбрал платформу списком —
+      // неоднозначное sk- не перебивает этот выбор (без отдельного меню).
+      const auto = detectProvider(trimmed);
+      const det = auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
       let baseUrl = '';
       if (providerName === 'custom') {
         baseUrl = (await vscode.window.showInputBox({ prompt: t('wizard.urlPrompt', lang), value: 'http://localhost:11434/v1', ignoreFocusOut: true }))?.trim() || '';
         if (!baseUrl) { void vscode.window.showErrorMessage(t('wizard.urlPrompt', lang)); return; }
       }
-      // Тест подключения.
+      // Тест подключения (строгий: tolerateErrors=false — мастер обязан
+      // показать реальную ошибку авторизации, а не «подключено 0 моделей»).
       const testSelection = { provider: det.provider, model: det.model, key: trimmed, baseUrl, userChosenModel: false };
       try {
-        const models = await fetchModels(testSelection);
+        const models = await fetchModels(testSelection, false);
         await context.secrets.store(SECRET_KEY, trimmed);
         await context.secrets.store(SECRET_PROVIDER, det.provider);
         await context.secrets.store(SECRET_MODEL, preferredLiveModel(models, det.model));

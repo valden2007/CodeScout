@@ -166,6 +166,13 @@
             "gemini",
             "groq",
             "github",
+            "deepseek",
+            "together",
+            "sambanova",
+            "siliconflow",
+            "nvidia",
+            "hyperbolic",
+            "cerebras",
             "openrouter"
           ],
           "default": "gemini",

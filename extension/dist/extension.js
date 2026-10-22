@@ -99,20 +99,27 @@ async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn) {
     clearTimeout(timer);
   }
 }
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider, onWarn = (message) => console.warn(message)) {
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider, onWarn = (message) => console.warn(message), tolerateErrors = false) {
   if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
-  const response = await fetcher(`${safeBase}/models`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
-    signal: AbortSignal.timeout(timeoutMs),
-    // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
-    // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
-    redirect: "manual"
-  });
-  if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
-  return parseLiveModels(await response.json());
+  try {
+    const response = await fetcher(`${safeBase}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+      signal: AbortSignal.timeout(timeoutMs),
+      // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
+      // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
+      redirect: "manual"
+    });
+    if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
+    return parseLiveModels(await response.json());
+  } catch (error) {
+    if (!tolerateErrors) throw error;
+    const detail = error instanceof Error ? error.message : String(error);
+    onWarn(`\u26A0\uFE0F ${provider ?? "\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440"} /models \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D (${detail}) \u2014 \u043E\u0442\u0434\u0430\u044E \u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A, \u0432\u044B\u0431\u043E\u0440 \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435 \u0431\u043B\u043E\u043A\u0438\u0440\u0443\u0435\u0442\u0441\u044F`);
+    return [];
+  }
 }
 function isLocalBaseUrl(url) {
   const value = url?.trim() || "";
@@ -143,7 +150,7 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
     return { ok: false, status: "noAnswer", baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
   }
 }
-var PROVIDER_ORDER = ["custom", "openai", "anthropic", "opencode", "gemini", "groq", "github"];
+var PROVIDER_ORDER = ["custom", "openai", "anthropic", "opencode", "gemini", "groq", "github", "deepseek", "together", "sambanova", "siliconflow", "nvidia", "hyperbolic", "cerebras"];
 var PROVIDERS = {
   openai: {
     baseUrl: "https://api.openai.com/v1",
@@ -193,24 +200,82 @@ var PROVIDERS = {
     envKey: "GITHUB_TOKEN",
     defaultModel: "gpt-4o-mini",
     keyUrl: "https://github.com/settings/tokens"
+  },
+  // Батч 21: топ-12 zero-config. Все ниже — OpenAI-совместимые /v1-эндпоинты
+  // (GET /models + /chat/completions, Authorization: Bearer), отдельной
+  // логики в клиенте не требуют.
+  deepseek: {
+    baseUrl: "https://api.deepseek.com/v1",
+    envKey: "DEEPSEEK_API_KEY",
+    defaultModel: "deepseek-chat",
+    keyUrl: "https://platform.deepseek.com/api_keys"
+  },
+  together: {
+    baseUrl: "https://api.together.xyz/v1",
+    envKey: "TOGETHER_API_KEY",
+    defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    keyUrl: "https://api.together.xyz/settings/api-keys"
+  },
+  sambanova: {
+    baseUrl: "https://api.sambanova.ai/v1",
+    envKey: "SAMBANOVA_API_KEY",
+    defaultModel: "Meta-Llama-3.1-8B-Instruct",
+    keyUrl: "https://cloud.sambanova.ai/apis"
+  },
+  siliconflow: {
+    baseUrl: "https://api.siliconflow.cn/v1",
+    envKey: "SILICONFLOW_API_KEY",
+    defaultModel: "deepseek-ai/DeepSeek-V3",
+    keyUrl: "https://cloud.siliconflow.cn/account/ak"
+  },
+  nvidia: {
+    // NVIDIA NIM: ключи имеют строгий префикс nvapi- — автодетект однозначен.
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    envKey: "NVIDIA_API_KEY",
+    defaultModel: "meta-llama/llama-3.1-70b-instruct",
+    keyUrl: "https://build.nvidia.com"
+  },
+  hyperbolic: {
+    baseUrl: "https://api.hyperbolic.xyz/v1",
+    envKey: "HYPERBOLIC_API_KEY",
+    defaultModel: "deepseek-ai/DeepSeek-V3",
+    keyUrl: "https://app.hyperbolic.xyz/settings"
+  },
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai/v1",
+    envKey: "CEREBRAS_API_KEY",
+    defaultModel: "llama3.1-8b",
+    keyUrl: "https://cloud.cerebras.ai"
   }
 };
+var SK_AMBIGUOUS_OPTIONS = [
+  { label: "OpenAI", provider: "openai" },
+  { label: "DeepSeek", provider: "deepseek" },
+  { label: "Together AI", provider: "together" },
+  { label: "SambaNova", provider: "sambanova" },
+  { label: "SiliconFlow", provider: "siliconflow" },
+  { label: "Hyperbolic", provider: "hyperbolic" },
+  { label: "Cerebras", provider: "cerebras" },
+  { label: "Custom", provider: "custom" }
+];
 function detectProvider(key) {
   const value = key.trim();
   if (value.startsWith("oc_sk_")) return { provider: "opencode", model: "qwen3.8-flash" };
   if (value.startsWith("gsk_")) return { provider: "groq", model: "llama-3.3-70b-versatile" };
   if (value.startsWith("AIza") || value.startsWith("AQ.")) return { provider: "gemini", model: "gemini-1.5-flash" };
+  if (value.startsWith("nvapi-")) return { provider: "nvidia", model: "meta-llama/llama-3.1-70b-instruct" };
   if (value.startsWith("sk-or-")) return { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" };
   if (value.startsWith("sk-ant-")) return { provider: "anthropic", model: "claude-3-5-haiku-latest" };
   if (value.startsWith("ghp_") || value.startsWith("github_pat_")) return { provider: "github", model: "gpt-4o-mini" };
-  if (value.startsWith("sk-")) return { provider: "openai", model: "gpt-4o-mini" };
+  if (value.startsWith("sk-proj-")) return { provider: "openai", model: "gpt-4o-mini" };
+  if (value.startsWith("sk-")) return { provider: "openai", model: "gpt-4o-mini", ambiguous: true };
   return null;
 }
 function normalizeProvider(provider) {
   const value = provider?.trim().toLowerCase() || "gemini";
   if (value === "custom") return "custom";
   if (Object.hasOwn(PROVIDERS, value)) return value;
-  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 custom, openai, anthropic, opencode, gemini, groq, github \u0438\u043B\u0438 openrouter.`);
+  throw new Error(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 provider: ${provider}. \u0414\u043E\u0441\u0442\u0443\u043F\u043D\u044B: custom, ${Object.keys(PROVIDERS).join(", ")}.`);
 }
 function resolveApiKey(provider, explicitKey, env3 = process.env) {
   if (explicitKey?.trim()) return explicitKey.trim();
@@ -754,6 +819,7 @@ var ru_default = {
   "onboarding.resetDone": "\u2705 \u041E\u043D\u0431\u043E\u0440\u0434\u0438\u043D\u0433 \u0441\u0431\u0440\u043E\u0448\u0435\u043D",
   "key.inputPrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
   "key.pickProvider": "\u0412\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
+  "key.pickSkProvider": "\u041A\u043B\u044E\u0447 \u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F \u0441 sk- \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0443: OpenAI, DeepSeek, Together AI, SambaNova, SiliconFlow, Hyperbolic, Cerebras \u0438\u043B\u0438 Custom",
   "key.sourceAuto": "\u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043E \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438",
   "key.sourceManual": "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
   "key.savedNotify": "\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: {p}, \u043C\u043E\u0434\u0435\u043B\u044C: {m} ({s})",
@@ -1118,6 +1184,7 @@ var en_default = {
   "onboarding.resetDone": "\u2705 Onboarding reset",
   "key.inputPrompt": "Paste a provider API key \u2014 the provider is detected automatically",
   "key.pickProvider": "Pick a provider",
+  "key.pickSkProvider": "Key starts with sk- \u2014 choose the platform: OpenAI, DeepSeek, Together AI, SambaNova, SiliconFlow, Hyperbolic, Cerebras or Custom",
   "key.sourceAuto": "detected automatically",
   "key.sourceManual": "chosen manually",
   "key.savedNotify": "\u2705 Key saved. Provider: {p}, model: {m} ({s})",
@@ -4802,6 +4869,22 @@ var SECRET_MODEL = "codescout.model";
 var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
+var WIZARD_PROVIDER_LABELS = {
+  "Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)": "custom",
+  "OpenAI": "openai",
+  "Anthropic": "anthropic",
+  "OpenCode Go": "opencode",
+  "Gemini": "gemini",
+  "Groq": "groq",
+  "OpenRouter": "openrouter",
+  "DeepSeek": "deepseek",
+  "Together AI": "together",
+  "SambaNova": "sambanova",
+  "SiliconFlow": "siliconflow",
+  "NVIDIA": "nvidia",
+  "Hyperbolic": "hyperbolic",
+  "Cerebras": "cerebras"
+};
 var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext"]);
 var hostOutput;
 function formatIssue(issue) {
@@ -4849,10 +4932,23 @@ function buildStats(issues, filesAnalyzed, durationMs) {
 function preferredLiveModel(models, fallback) {
   return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
 }
-async function fetchModels(selection) {
+async function fetchModels(selection, tolerateErrors = true) {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider, (message) => hostOutput ? hostOutput.appendLine(message) : console.warn(message));
+  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider, (message) => hostOutput ? hostOutput.appendLine(message) : console.warn(message), tolerateErrors);
+}
+async function pickSkProvider() {
+  const picked = await vscode2.window.showQuickPick(
+    SK_AMBIGUOUS_OPTIONS.map((option) => ({
+      label: option.label,
+      description: option.provider === "custom" ? "" : resolveBaseUrl(option.provider)
+    })),
+    { placeHolder: t("key.pickSkProvider", currentReportLanguage()), ignoreFocusOut: true, matchOnDescription: true }
+  );
+  if (!picked) return void 0;
+  const chosen = SK_AMBIGUOUS_OPTIONS.find((option) => option.label === picked.label);
+  if (!chosen) return void 0;
+  return { provider: chosen.provider, model: defaultModel(chosen.provider) };
 }
 async function chooseLiveModel(selection, placeHolder) {
   let models = [];
@@ -5603,7 +5699,7 @@ async function runConnectionTest(context) {
   }
   const testSel = { provider: selection.provider, model: selection.model, key: selection.key ?? "", baseUrl: selection.baseUrl, userChosenModel: false };
   try {
-    const models = await fetchModels(testSel);
+    const models = await fetchModels(testSel, false);
     return { ok: true, message: t("center.connected", lang, { n: models.length }) };
   } catch (error) {
     const formatted = formatError(error, lang);
@@ -5665,10 +5761,16 @@ async function saveKeyProvider(context, message) {
     notes.push(t("center.noteKey", lang));
   }
   const detected = key ? detectProvider(key) : void 0;
-  if (detected) {
+  const skChosen = detected?.ambiguous ? await pickSkProvider() : void 0;
+  if (detected && !detected.ambiguous) {
     provider = detected.provider;
     model = selection.userChosenModel ? model : detected.model;
     notes.push(t("center.noteProviderAuto", lang, { p: provider }));
+  } else if (skChosen) {
+    provider = skChosen.provider;
+    model = selection.userChosenModel ? model : skChosen.model;
+    await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
+    notes.push(t("center.noteProviderManual", lang));
   } else if (message.providerKey && message.providerKey !== "auto") {
     provider = message.providerKey;
     if (provider !== selection.provider || key) {
@@ -6064,7 +6166,13 @@ function activate(context) {
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("key.inputPrompt", lang) });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
-      let selection = detected ?? void 0;
+      const autoDetected = Boolean(detected && !detected.ambiguous);
+      let selection = autoDetected ? detected ?? void 0 : void 0;
+      if (detected?.ambiguous) {
+        const chosen = await pickSkProvider();
+        if (!chosen) return;
+        selection = chosen;
+      }
       if (!selection) {
         const picked = await vscode2.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t("key.pickProvider", lang) });
         if (!picked) return;
@@ -6077,7 +6185,7 @@ function activate(context) {
       await context.secrets.store(SECRET_MODEL, selection.model);
       await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
-      const source = detected ? t("key.sourceAuto", lang) : t("key.sourceManual", lang);
+      const source = autoDetected ? t("key.sourceAuto", lang) : t("key.sourceManual", lang);
       void vscode2.window.showInformationMessage(t("key.savedNotify", lang, { p: selection.provider, m: selection.model, s: source }));
     }),
     // P0 Astra-3: выбор модели меняет ТОЛЬКО модель. Отмена = возврат без
@@ -6108,18 +6216,20 @@ function activate(context) {
       void vscode2.window.showInformationMessage(t("key.deletedNotify", lang));
     }),
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
+    // Батч 21: список расширен top-12 zero-config платформами.
     vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode2.window.showQuickPick(["Custom (\u0441\u0432\u043E\u0439 \u0430\u0434\u0440\u0435\u0441)", "OpenAI", "Anthropic", "OpenCode Go", "Gemini", "Groq", "OpenRouter"], { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      const picked = await vscode2.window.showQuickPick(Object.keys(WIZARD_PROVIDER_LABELS), { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
       if (!picked) return;
-      const providerName = picked === "OpenAI" ? "openai" : picked === "Anthropic" ? "anthropic" : picked === "Gemini" ? "gemini" : picked === "Groq" ? "groq" : picked === "OpenRouter" ? "openrouter" : picked === "OpenCode Go" ? "opencode" : "custom";
+      const providerName = WIZARD_PROVIDER_LABELS[picked];
       const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
       if (!key?.trim()) {
         void vscode2.window.showErrorMessage(t("key.needFirst", lang));
         return;
       }
       const trimmed = key.trim();
-      const det = detectProvider(trimmed) ?? { provider: providerName, model: defaultModel(providerName) };
+      const auto = detectProvider(trimmed);
+      const det = auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
       let baseUrl = "";
       if (providerName === "custom") {
         baseUrl = (await vscode2.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: "http://localhost:11434/v1", ignoreFocusOut: true }))?.trim() || "";
@@ -6130,7 +6240,7 @@ function activate(context) {
       }
       const testSelection = { provider: det.provider, model: det.model, key: trimmed, baseUrl, userChosenModel: false };
       try {
-        const models = await fetchModels(testSelection);
+        const models = await fetchModels(testSelection, false);
         await context.secrets.store(SECRET_KEY, trimmed);
         await context.secrets.store(SECRET_PROVIDER, det.provider);
         await context.secrets.store(SECRET_MODEL, preferredLiveModel(models, det.model));

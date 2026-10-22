@@ -34404,22 +34404,37 @@ async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn) {
         clearTimeout(timer);
     }
 }
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5000, provider, onWarn = (message) => console.warn(message)) {
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5000, provider, onWarn = (message) => console.warn(message), tolerateErrors = false) {
     if (provider === 'gemini')
         return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
-    const response = await fetcher(`${safeBase}/models`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
-        signal: AbortSignal.timeout(timeoutMs),
-        // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
-        // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
-        redirect: 'manual'
-    });
-    if (!response.ok)
-        throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
-    return parseLiveModels(await response.json());
+    try {
+        const response = await fetcher(`${safeBase}/models`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+            signal: AbortSignal.timeout(timeoutMs),
+            // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
+            // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
+            redirect: 'manual'
+        });
+        if (!response.ok)
+            throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
+        return parseLiveModels(await response.json());
+    }
+    catch (error) {
+        // Батч 21, п.3: все top-12 платформ OpenAI-совместимы (GET /models +
+        // Bearer). Интерфейс выбора модели не имеет права падать на 401/404/
+        // таймауте/битом JSON — при tolerateErrors тихо отдаём пустой список
+        // (UI предложит ввести модель вручную). CLI/Action и «тест подключения»
+        // зовут без флага: там ошибка — полезный сигнал, он летит наружу.
+        // Битый baseUrl валидируется строго всегда (см. assertHttpBaseUrl выше).
+        if (!tolerateErrors)
+            throw error;
+        const detail = error instanceof Error ? error.message : String(error);
+        onWarn(`⚠️ ${provider ?? 'провайдер'} /models недоступен (${detail}) — отдаю пустой список, выбор модели не блокируется`);
+        return [];
+    }
 }
 // Локальный режим (батч 13, п.2): localhost-серверы (Ollama, LM Studio) не
 // требуют ключа — код не покидает машину, аутентификации нет.
@@ -34468,7 +34483,9 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5000) {
 // Системный 'auto' из списка СКРЫТ: автодетект по префиксу ключа работает
 // под капотом в saveKeyProvider/setApiKey. openrouter остаётся рабочим
 // (sk-or- детект, env-ключ), но из витрины убран.
-const PROVIDER_ORDER = (/* unused pure expression or super */ null && (['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']));
+// Батч 21: к витрине добавлены семь zero-config OpenAI-совместимых платформ
+// (top-12 из коробки) — меньше ручной настройки custom-эндпоинтов.
+const PROVIDER_ORDER = (/* unused pure expression or super */ null && (['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']));
 const PROVIDERS = {
     openai: {
         baseUrl: 'https://api.openai.com/v1',
@@ -34518,8 +34535,66 @@ const PROVIDERS = {
         envKey: 'GITHUB_TOKEN',
         defaultModel: 'gpt-4o-mini',
         keyUrl: 'https://github.com/settings/tokens'
+    },
+    // Батч 21: топ-12 zero-config. Все ниже — OpenAI-совместимые /v1-эндпоинты
+    // (GET /models + /chat/completions, Authorization: Bearer), отдельной
+    // логики в клиенте не требуют.
+    deepseek: {
+        baseUrl: 'https://api.deepseek.com/v1',
+        envKey: 'DEEPSEEK_API_KEY',
+        defaultModel: 'deepseek-chat',
+        keyUrl: 'https://platform.deepseek.com/api_keys'
+    },
+    together: {
+        baseUrl: 'https://api.together.xyz/v1',
+        envKey: 'TOGETHER_API_KEY',
+        defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        keyUrl: 'https://api.together.xyz/settings/api-keys'
+    },
+    sambanova: {
+        baseUrl: 'https://api.sambanova.ai/v1',
+        envKey: 'SAMBANOVA_API_KEY',
+        defaultModel: 'Meta-Llama-3.1-8B-Instruct',
+        keyUrl: 'https://cloud.sambanova.ai/apis'
+    },
+    siliconflow: {
+        baseUrl: 'https://api.siliconflow.cn/v1',
+        envKey: 'SILICONFLOW_API_KEY',
+        defaultModel: 'deepseek-ai/DeepSeek-V3',
+        keyUrl: 'https://cloud.siliconflow.cn/account/ak'
+    },
+    nvidia: {
+        // NVIDIA NIM: ключи имеют строгий префикс nvapi- — автодетект однозначен.
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+        envKey: 'NVIDIA_API_KEY',
+        defaultModel: 'meta-llama/llama-3.1-70b-instruct',
+        keyUrl: 'https://build.nvidia.com'
+    },
+    hyperbolic: {
+        baseUrl: 'https://api.hyperbolic.xyz/v1',
+        envKey: 'HYPERBOLIC_API_KEY',
+        defaultModel: 'deepseek-ai/DeepSeek-V3',
+        keyUrl: 'https://app.hyperbolic.xyz/settings'
+    },
+    cerebras: {
+        baseUrl: 'https://api.cerebras.ai/v1',
+        envKey: 'CEREBRAS_API_KEY',
+        defaultModel: 'llama3.1-8b',
+        keyUrl: 'https://cloud.cerebras.ai'
     }
 };
+// Батч 21, п.2: список для QuickPick-развилки неоднозначного `sk-`.
+// Метка — провайдер не переводится (тех-термины/i18n-вайтлист).
+const SK_AMBIGUOUS_OPTIONS = [
+    { label: 'OpenAI', provider: 'openai' },
+    { label: 'DeepSeek', provider: 'deepseek' },
+    { label: 'Together AI', provider: 'together' },
+    { label: 'SambaNova', provider: 'sambanova' },
+    { label: 'SiliconFlow', provider: 'siliconflow' },
+    { label: 'Hyperbolic', provider: 'hyperbolic' },
+    { label: 'Cerebras', provider: 'cerebras' },
+    { label: 'Custom', provider: 'custom' }
+];
 function detectProvider(key) {
     const value = key.trim();
     // Батч 17.5: oc_sk_ проверяется первым и строго — ключ OpenCode Go обязан
@@ -34530,6 +34605,8 @@ function detectProvider(key) {
         return { provider: 'groq', model: 'llama-3.3-70b-versatile' };
     if (value.startsWith('AIza') || value.startsWith('AQ.'))
         return { provider: 'gemini', model: 'gemini-1.5-flash' };
+    if (value.startsWith('nvapi-'))
+        return { provider: 'nvidia', model: 'meta-llama/llama-3.1-70b-instruct' };
     // Батч 18: длинные sk-префиксы раньше голого sk- (иначе openrouter/anthropic
     // схлопнулись бы в openai).
     if (value.startsWith('sk-or-'))
@@ -34538,8 +34615,14 @@ function detectProvider(key) {
         return { provider: 'anthropic', model: 'claude-3-5-haiku-latest' };
     if (value.startsWith('ghp_') || value.startsWith('github_pat_'))
         return { provider: 'github', model: 'gpt-4o-mini' };
-    if (value.startsWith('sk-'))
+    // sk-proj- — явный формат OpenAI project-ключей, здесь гадать не нужно.
+    if (value.startsWith('sk-proj-'))
         return { provider: 'openai', model: 'gpt-4o-mini' };
+    // Батч 21, п.2: голое `sk-` НЕ пишем молча в OpenAI — DeepSeek, Together,
+    // SambaNova, SiliconFlow, Cerebras выдают ключи ровно так же. Возвращаем
+    // догадку openai с ambiguous=true: UI обязан показать список выбора.
+    if (value.startsWith('sk-'))
+        return { provider: 'openai', model: 'gpt-4o-mini', ambiguous: true };
     return null;
 }
 function normalizeProvider(provider) {
@@ -34548,7 +34631,7 @@ function normalizeProvider(provider) {
         return 'custom';
     if (Object.hasOwn(PROVIDERS, value))
         return value;
-    throw new Error(`Неизвестный provider: ${provider}. Используй custom, openai, anthropic, opencode, gemini, groq, github или openrouter.`);
+    throw new Error(`Неизвестный provider: ${provider}. Доступны: custom, ${Object.keys(PROVIDERS).join(', ')}.`);
 }
 function resolveApiKey(provider, explicitKey, env = process.env) {
     if (explicitKey?.trim())

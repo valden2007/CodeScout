@@ -277,7 +277,7 @@
   "onboarding.resetDone": "✅ Онбординг сброшен",
   "key.inputPrompt": "Вставьте API-ключ провайдера — провайдер определится автоматически",
   "key.pickProvider": "Выбери провайдер",
-  "key.sourceAuto": "определено автоматически",
+  "key.pickSkProvider": "Ключ начинается с sk- — выбери платформу: OpenAI, DeepSeek, Together AI, SambaNova, SiliconFlow, Hyperbolic, Cerebras или Custom",  "key.sourceAuto": "определено автоматически",
   "key.sourceManual": "выбрано вручную",
   "key.savedNotify": "✅ Ключ сохранён. Провайдер: {p}, модель: {m} ({s})",
   "key.needFirst": "Сначала сохрани API-ключ через CodeScout: set API key.",

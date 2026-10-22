@@ -63,11 +63,11 @@ describe('батч 16: zero-config OpenCode Go', () => {
     expect(extension).toContain("'Anthropic'");
   });
 
-  it('батч 18: порядок провайдеров custom → openai → anthropic → opencode → …, auto скрыт из UI', () => {
-    expect(PROVIDER_ORDER).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']);
+  it('батч 18: порядок провайдеров custom → openai → anthropic → …, auto скрыт из UI (батч 21: витрина расширена топ-12)', () => {
+    expect(PROVIDER_ORDER).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']);
     expect(PROVIDER_ORDER).not.toContain('auto');
     const providers = readFileSync('src/providers.ts', 'utf8');
-    expect(providers).toContain("['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']");
+    expect(providers).toContain("['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']");
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
     expect(center).toContain('[...PROVIDER_ORDER]');
     expect(center).not.toContain("['auto',");
@@ -100,7 +100,7 @@ describe('батч 16: zero-config OpenCode Go', () => {
     expect(defaultModel('gemini')).toBe('gemini-1.5-flash');
     expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1');
     expect(extManifest().contributes.configuration.properties['codescout.model'].default).toBe('gemini-1.5-flash');
-    expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'openrouter']);
+    expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'openrouter']);
   });
 
   it('батч 18: openai и anthropic — полноценные провайдеры (URL, env, model, keyUrl)', () => {
