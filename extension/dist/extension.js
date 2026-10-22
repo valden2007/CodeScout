@@ -1268,10 +1268,16 @@ function formatError(error, lang) {
 
 // ../src/line-numbering.ts
 var HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+var FILE_OLD_HEADER = /^--- (?:a\/|\/dev\/null)/;
+var FILE_NEW_HEADER = /^\+\+\+ (?:b\/|\/dev\/null)/;
+function isFileHeaderAt(lines, index) {
+  return index >= 0 && index + 1 < lines.length && FILE_OLD_HEADER.test(lines[index]) && FILE_NEW_HEADER.test(lines[index + 1]);
+}
 function numberPatch(patch) {
   let newLine = 0;
   let inHunk = false;
-  return patch.split("\n").map((line) => {
+  const lines = patch.split("\n");
+  return lines.map((line, index) => {
     const hunk = line.match(HUNK_HEADER);
     if (hunk) {
       const parsed = Number(hunk[1]);
@@ -1280,10 +1286,11 @@ function numberPatch(patch) {
       inHunk = true;
       return line;
     }
-    if (line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("diff --git ")) {
+    if (line.startsWith("diff --git ") || isFileHeaderAt(lines, index)) {
       inHunk = false;
       return line;
     }
+    if (isFileHeaderAt(lines, index - 1)) return line;
     if (!inHunk || newLine === 0 || line.startsWith("\\")) return line;
     if (line.startsWith("+")) {
       const numbered = `${newLine} | ${line}`;
@@ -1554,13 +1561,36 @@ function shouldReviewFile(filename) {
   if (IGNORED_EXTENSIONS.test(basename)) return false;
   return true;
 }
+var C_ESCAPES = { a: "\x07", b: "\b", t: "	", n: "\n", v: "\v", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+function unquoteGitPath(value) {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value;
+  const body = value.slice(1, -1);
+  const tokens = body.match(/\\[0-7]{3}|\\[\s\S]|[^\\]+/g) ?? [];
+  const bytes = [];
+  for (const token of tokens) {
+    if (token.length === 4 && /^\\[0-7]{3}$/.test(token)) {
+      bytes.push(parseInt(token.slice(1), 8));
+    } else if (token.startsWith("\\")) {
+      bytes.push(...Buffer.from(C_ESCAPES[token[1]] ?? token[1], "utf8"));
+    } else {
+      bytes.push(...Buffer.from(token, "utf8"));
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+var SECTION_HEADER = /^("(?:[^"\\]|\\[\s\S])*"|a\/.+?) ("(?:[^"\\]|\\[\s\S])*"|b\/.+?)(?:\n|$)/;
+function filenameFromHeader(section) {
+  const header = section.match(SECTION_HEADER);
+  if (!header) return void 0;
+  const bSide = unquoteGitPath(header[2]);
+  return bSide.startsWith("b/") ? bSide.slice(2) : void 0;
+}
 function parseUnifiedDiff(diff) {
   const files = [];
   const sections = diff.split(/^diff --git /m).slice(1);
   for (const section of sections) {
-    const header = section.match(/^a\/(.+?) b\/(.+?)(?:\n|$)/);
-    if (!header) continue;
-    const filename = header[2];
+    const filename = filenameFromHeader(section);
+    if (!filename) continue;
     if (!shouldReviewFile(filename)) continue;
     const lines = section.split("\n");
     let inHunk = false;
@@ -1615,6 +1645,18 @@ function validateGitPath(repoPath) {
     return `\u041F\u0443\u0442\u044C "${repoPath}" \u043D\u0435 \u044F\u0432\u043B\u044F\u0435\u0442\u0441\u044F Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C. \u0423\u043A\u0430\u0436\u0438 \u043F\u0430\u043F\u043A\u0443 \u0441 .git \u0447\u0435\u0440\u0435\u0437 --path.`;
   }
 }
+var GIT_DIFF_CONFIG = [
+  "-c",
+  "color.ui=false",
+  "-c",
+  "diff.noprefix=false",
+  "-c",
+  "diff.mnemonicPrefix=false",
+  "-c",
+  "diff.srcPrefix=a/",
+  "-c",
+  "diff.dstPrefix=b/"
+];
 function runGit(args, cwd, allowEmptyDiff = false) {
   try {
     return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 });
@@ -1630,6 +1672,18 @@ function tryRunGit(args, cwd) {
     return void 0;
   }
 }
+function runGitNoIndexDiff(path, cwd) {
+  try {
+    return (0, import_node_child_process.execFileSync)("git", [...GIT_DIFF_CONFIG, "diff", "--no-index", "--", "/dev/null", path], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 });
+  } catch (error) {
+    const failure = error;
+    return failure.status === 1 && typeof failure.stdout === "string" ? failure.stdout : "";
+  }
+}
+function readUntrackedDiff(repoPath) {
+  const listing = tryRunGit([...GIT_DIFF_CONFIG, "ls-files", "-z", "--others", "--exclude-standard"], repoPath) ?? "";
+  return listing.split("\0").filter((name) => name.length > 0).map((name) => runGitNoIndexDiff(name, repoPath)).join("");
+}
 function parseGitDiff(diff) {
   return parseUnifiedDiff(diff);
 }
@@ -1640,7 +1694,7 @@ function readGitDiff(repoPath, options = {}) {
   if (tryRunGit(["rev-parse", "--verify", "HEAD"], repoPath) === void 0) {
     throw new Error("\u0412 \u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0438 \u0435\u0449\u0451 \u043D\u0435\u0442 \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u043A\u043E\u043C\u043C\u0438\u0442\u0430 (unborn branch). \u0421\u0434\u0435\u043B\u0430\u0439 \u043F\u0435\u0440\u0432\u044B\u0439 \u043A\u043E\u043C\u043C\u0438\u0442 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438.");
   }
-  const git = (...args) => runGit(["-c", "color.ui=false", ...args], repoPath, true);
+  const git = (...args) => runGit([...GIT_DIFF_CONFIG, ...args], repoPath, true);
   if (options.base) {
     const base = options.base.trim();
     if (!base || base.startsWith("-") || base.includes("~") || base.includes("@") || !SAFE_BASE_REF.test(base)) throw new Error(`\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u0438\u043C\u044F \u0431\u0430\u0437\u043E\u0432\u043E\u0439 \u0432\u0435\u0442\u043A\u0438: "${options.base}". \u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u044B \u0431\u0443\u043A\u0432\u044B, \u0446\u0438\u0444\u0440\u044B, . _ / \u0438 \u0434\u0435\u0444\u0438\u0441 (\u0431\u0435\u0437 \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u0432, ~, @ \u0438 \u0434\u0435\u0444\u0438\u0441\u0430 \u0432 \u043D\u0430\u0447\u0430\u043B\u0435).`);
@@ -1655,7 +1709,9 @@ function readGitDiff(repoPath, options = {}) {
     }
     return parseGitDiff(git("diff", "HEAD~1", "HEAD"));
   }
-  return parseGitDiff(git("diff", "HEAD"));
+  const tracked = git("diff", "HEAD");
+  const separator = tracked && !tracked.endsWith("\n") ? "\n" : "";
+  return parseGitDiff(`${tracked}${separator}${readUntrackedDiff(repoPath)}`);
 }
 
 // src/panel.ts
@@ -4956,11 +5012,11 @@ ${docPick.section}` : systemPrompt;
   }
   return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
 }
-async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown) {
+async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown, onFileSkipped) {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) throw new Error(t("panel.errNoGit", currentReportLanguage()));
   if (signal?.aborted) throw abortError();
-  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, false, void 0, void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, 0, void 0, void 0, currentReportLanguage(), fileCooldown, onFileCooldown);
+  return reviewFiles(context, readGitDiff(workspaceRoot, { lastCommit }), workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt, true, onFileSkipped, void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, 0, void 0, void 0, currentReportLanguage(), fileCooldown, onFileCooldown);
 }
 var activeAbortController;
 var lastScanError;
@@ -5336,7 +5392,10 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.check", currentReportLanguage()), elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), (filename, error) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename} \xB7 ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`));
+    if (result.skippedFiles > 0) {
+      output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.skippedFiles} (\u043E\u0448\u0438\u0431\u043A\u0438 \u0438\u043B\u0438 rate-limit) \u2014 \u0441\u043C. \u0441\u0442\u0440\u043E\u043A\u0438 \xAB\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B\xBB \u0432\u044B\u0448\u0435.`);
+    }
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
     const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
     panel.update(visibleIssues, stats);

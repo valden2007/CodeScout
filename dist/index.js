@@ -33942,14 +33942,45 @@ function shouldReviewFile(filename) {
         return false;
     return true;
 }
+// Git берёт путь в двойные кавычки, если он содержит не-ASCII (кириллица),
+// кавычки, обратный слэш или управляющие символы. Не-ASCII приходит как
+// восьмеричные байты UTF-8 (\320\277 = "п"), поэтому декодируем байты целиком.
+const C_ESCAPES = { a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', '"': '"', '\\': '\\' };
+function unquoteGitPath(value) {
+    if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"'))
+        return value;
+    const body = value.slice(1, -1);
+    const tokens = body.match(/\\[0-7]{3}|\\[\s\S]|[^\\]+/g) ?? [];
+    const bytes = [];
+    for (const token of tokens) {
+        if (token.length === 4 && /^\\[0-7]{3}$/.test(token)) {
+            bytes.push(parseInt(token.slice(1), 8));
+        }
+        else if (token.startsWith('\\')) {
+            bytes.push(...Buffer.from(C_ESCAPES[token[1]] ?? token[1], 'utf8'));
+        }
+        else {
+            bytes.push(...Buffer.from(token, 'utf8'));
+        }
+    }
+    return Buffer.from(bytes).toString('utf8');
+}
+// Заголовок секции: "a/<path> b/<path>", где каждый путь может быть в кавычках.
+const SECTION_HEADER = /^("(?:[^"\\]|\\[\s\S])*"|a\/.+?) ("(?:[^"\\]|\\[\s\S])*"|b\/.+?)(?:\n|$)/;
+function filenameFromHeader(section) {
+    const header = section.match(SECTION_HEADER);
+    if (!header)
+        return undefined;
+    const bSide = unquoteGitPath(header[2]);
+    return bSide.startsWith('b/') ? bSide.slice(2) : undefined;
+}
 function parseUnifiedDiff(diff) {
     const files = [];
     const sections = diff.split(/^diff --git /m).slice(1);
     for (const section of sections) {
-        const header = section.match(/^a\/(.+?) b\/(.+?)(?:\n|$)/);
-        if (!header)
+        const filename = filenameFromHeader(section);
+        if (!filename)
             continue;
-        const filename = header[2];
         if (!shouldReviewFile(filename))
             continue;
         const lines = section.split('\n');
@@ -34680,10 +34711,20 @@ function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
 
 ;// CONCATENATED MODULE: ./src/line-numbering.ts
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+// Заголовок файла = пара строк "--- a/… | --- /dev/null" + "+++ b/… | +++ /dev/null".
+// Одной строки "--- " недостаточно: удалённый SQL/Lua-комментарий "-- x" в диффе
+// выглядит как "--- x" и не должен сбрасывать нумерацию хунка.
+const FILE_OLD_HEADER = /^--- (?:a\/|\/dev\/null)/;
+const FILE_NEW_HEADER = /^\+\+\+ (?:b\/|\/dev\/null)/;
+function isFileHeaderAt(lines, index) {
+    return index >= 0 && index + 1 < lines.length
+        && FILE_OLD_HEADER.test(lines[index]) && FILE_NEW_HEADER.test(lines[index + 1]);
+}
 function numberPatch(patch) {
     let newLine = 0;
     let inHunk = false;
-    return patch.split('\n').map((line) => {
+    const lines = patch.split('\n');
+    return lines.map((line, index) => {
         const hunk = line.match(HUNK_HEADER);
         if (hunk) {
             const parsed = Number(hunk[1]);
@@ -34693,10 +34734,13 @@ function numberPatch(patch) {
             inHunk = true;
             return line;
         }
-        if (line.startsWith('--- ') || line.startsWith('+++ ') || line.startsWith('diff --git ')) {
+        if (line.startsWith('diff --git ') || isFileHeaderAt(lines, index)) {
             inHunk = false;
             return line;
         }
+        // Вторая строка пары заголовка ("+++ b/…") тоже не нумеруется.
+        if (isFileHeaderAt(lines, index - 1))
+            return line;
         if (!inHunk || newLine === 0 || line.startsWith('\\'))
             return line;
         if (line.startsWith('+')) {

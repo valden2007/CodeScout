@@ -2410,7 +2410,7 @@ describe('G6 fix batch security and robustness', () => {
   it('empty diff (exit code 1) is not an error and background runs report failures', () => {
     const reader = readFileSync('src/tui/DiffReader.ts', 'utf8');
     expect(reader).toContain('if (allowEmptyDiff && (error as { status?: number }).status === 1) return');
-    expect(reader).toContain("runGit(['-c', 'color.ui=false', ...args], repoPath, true)");
+    expect(reader).toContain('runGit([...GIT_DIFF_CONFIG, ...args], repoPath, true)');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("codescout.rerunWithModel");
     expect(extension).toContain("runReview(context, lastScanWasLastCommit, output, panel)");

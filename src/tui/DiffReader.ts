@@ -25,6 +25,17 @@ export function validateGitPath(repoPath: string): string | undefined {
   }
 }
 
+// Конфиг, который задаёт формат diff независимо от пользовательского git-конфига:
+// префиксы a/ b/ (иначе diff.noprefix / mnemonicPrefix ломают разбор заголовков),
+// без цвета. Кавычки путей обрабатывает diff-parser (unquoteGitPath).
+const GIT_DIFF_CONFIG = [
+  '-c', 'color.ui=false',
+  '-c', 'diff.noprefix=false',
+  '-c', 'diff.mnemonicPrefix=false',
+  '-c', 'diff.srcPrefix=a/',
+  '-c', 'diff.dstPrefix=b/',
+];
+
 function runGit(args: string[], cwd: string, allowEmptyDiff = false): string {
   try {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 10 * 1024 * 1024 });
@@ -42,6 +53,30 @@ function tryRunGit(args: string[], cwd: string): string | undefined {
   }
 }
 
+// git diff --no-index возвращает код 1, когда различия найдены, это нормальный
+// результат, а не ошибка. Поэтому берём stdout из ошибки. Прочие сбои
+// (например, файл больше maxBuffer) дают пустой патч: один файл не должен
+// ронять весь ревью.
+function runGitNoIndexDiff(path: string, cwd: string): string {
+  try {
+    return execFileSync('git', [...GIT_DIFF_CONFIG, 'diff', '--no-index', '--', '/dev/null', path], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 10 * 1024 * 1024 });
+  } catch (error) {
+    const failure = error as { status?: number; stdout?: string };
+    return failure.status === 1 && typeof failure.stdout === 'string' ? failure.stdout : '';
+  }
+}
+
+// Неотслеживаемые файлы (new, не добавленные в индекс) не видны в `git diff HEAD`.
+// -z отключает кавычки в самом списке имён.
+function readUntrackedDiff(repoPath: string): string {
+  const listing = tryRunGit([...GIT_DIFF_CONFIG, 'ls-files', '-z', '--others', '--exclude-standard'], repoPath) ?? '';
+  return listing
+    .split('\0')
+    .filter((name) => name.length > 0)
+    .map((name) => runGitNoIndexDiff(name, repoPath))
+    .join('');
+}
+
 function parseGitDiff(diff: string): LocalDiffFile[] {
   return parseUnifiedDiff(diff);
 }
@@ -54,7 +89,7 @@ export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): Lo
   if (tryRunGit(['rev-parse', '--verify', 'HEAD'], repoPath) === undefined) {
     throw new Error('В репозитории ещё нет ни одного коммита (unborn branch). Сделай первый коммит и повтори.');
   }
-  const git = (...args: string[]) => runGit(['-c', 'color.ui=false', ...args], repoPath, true);
+  const git = (...args: string[]) => runGit([...GIT_DIFF_CONFIG, ...args], repoPath, true);
 
   if (options.base) {
     const base = options.base.trim();
@@ -71,5 +106,7 @@ export function readGitDiff(repoPath: string, options: DiffReadOptions = {}): Lo
     return parseGitDiff(git('diff', 'HEAD~1', 'HEAD'));
   }
 
-  return parseGitDiff(git('diff', 'HEAD'));
+  const tracked = git('diff', 'HEAD');
+  const separator = tracked && !tracked.endsWith('\n') ? '\n' : '';
+  return parseGitDiff(`${tracked}${separator}${readUntrackedDiff(repoPath)}`);
 }
