@@ -7,16 +7,16 @@
   "license": "MIT",
   "icon": "media/icon.png",
   "categories": [
-    "Machine Learning",
     "Linters",
-    "Education"
+    "Machine Learning",
+    "Testing"
   ],
   "keywords": [
-    "ai",
-    "code review",
-    "audit",
-    "qwen",
-    "ollama"
+    "AI",
+    "Code Review",
+    "LLM",
+    "Qwen",
+    "Security"
   ],
   "repository": {
     "type": "git",

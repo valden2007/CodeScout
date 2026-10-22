@@ -9,17 +9,21 @@ function extManifest(): Record<string, any> {
 }
 
 describe('батч 16: манифест расширения для Marketplace', () => {
-  it('version 1.5.0, publisher, categories, keywords, repository, bugs, homepage, icon', () => {
+  it('version 1.5.0, publisher, categories, keywords, repository, bugs, homepage, icon, license, engines', () => {
     const m = extManifest();
     expect(m.version).toBe('1.5.0');
     expect(m.publisher).toBe('valden2007');
-    expect(m.categories).toEqual(['Machine Learning', 'Linters', 'Education']);
-    expect(m.keywords).toEqual(['ai', 'code review', 'audit', 'qwen', 'ollama']);
+    // Батч 20a, п.3: витрина Marketplace — точные списки категорий и ключевых слов
+    expect(m.categories).toEqual(['Linters', 'Machine Learning', 'Testing']);
+    expect(m.keywords).toEqual(['AI', 'Code Review', 'LLM', 'Qwen', 'Security']);
     expect(m.repository).toEqual({ type: 'git', url: 'https://github.com/valden2007/CodeScout' });
     expect(m.bugs.url).toContain('/issues');
     expect(m.homepage).toContain('valden2007/CodeScout');
     expect(m.icon).toBe('media/icon.png');
     expect(existsSync('extension/media/icon.png')).toBe(true);
+    // Обязательные поля манифеста присутствуют (не выдумываем пути — проверяем реальный файл)
+    expect(m.license).toBe('MIT');
+    expect(m.engines?.vscode).toBe('^1.85.0');
   });
 
   it('enum провайдера в манифесте и в CLI знает opencode; версия npm-пакета синхронна', () => {
