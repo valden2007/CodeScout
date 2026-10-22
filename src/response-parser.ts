@@ -73,16 +73,26 @@ function stripMarkdownFences(text: string): string {
   return (fenced ? fenced[1] : text).trim();
 }
 
-function extractJson(raw: string): string {
-  const body = stripMarkdownFences(raw);
-  if (/^["\-[0-9]/.test(body)) return body;
-  return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+// Батч 20a: санитайз висячих запятых — «[1,2,]» и «{"a":1,}» лечатся regex
+// `,\s*([\]}]) → $1`. Применяется ВТОРЫМ проходом на кандидате, который уже
+// не парсится как есть: валидный JSON со строкой вида "wait, }" не портится
+// (первым всегда пробуем оригинал, sanitized-вариант подхватывается только
+// когда сырой кандидат упал).
+export function stripTrailingCommas(text: string): string {
+  return text.replace(/,(\s*[\]}])/g, '$1');
 }
 
-// Батч 18.8: единая точка «достать JSON из ответа модели». Порядок fallback:
-// 1) чистый текст; 2) после снятия markdown-обёрток ```json … ```;
-// 3) сбалансированный сканер; 4) greedy-вырезка первый [/{ … последний ]/}.
-export function tryParseJson(raw: string): { ok: true; value: unknown } | { ok: false; lastError: unknown } {
+const RAW_TAIL_LIMIT = 200;
+
+export type JsonParseOutcome = { ok: true; value: unknown } | { ok: false; reason: string; rawTail: string };
+
+// Батч 20a (контракт каскада): кандидаты СТРОГО в порядке
+// 1) чистый текст → 2) снятие markdown-фенсов → 3) balanced-brace сканер →
+// 4) greedy slice (первый [/{ … последний ]/}) — последним, он самый ryzy.
+// Перед parse каждого кандидата — попытка санитайза висячих запятых.
+// Если всё упало → { ok:false, reason, rawTail } для вывода в Output, без
+// падения: старые форматы ответов (без новых полей) парсятся по-прежнему.
+export function tryParseJson(raw: string): JsonParseOutcome {
   const candidates: string[] = [];
   const seen = new Set<string>();
   const push = (value: string): void => {
@@ -94,22 +104,22 @@ export function tryParseJson(raw: string): { ok: true; value: unknown } | { ok: 
   push(stripped);
   push(findBalancedJson(stripped) ?? '');
   push(findGreedyJsonSpan(stripped) ?? '');
-  let lastError: unknown;
+  let lastReason = 'в ответе не найдено JSON-подобного текста';
   for (const candidate of candidates) {
-    try { return { ok: true, value: JSON.parse(candidate) as unknown }; }
-    catch (error) { lastError = error; }
+    for (const variant of [candidate, stripTrailingCommas(candidate)]) {
+      try { return { ok: true, value: JSON.parse(variant) as unknown }; }
+      catch (error) { lastReason = error instanceof Error ? error.message : String(error); }
+    }
   }
-  return { ok: false, lastError };
+  return { ok: false, reason: lastReason, rawTail: raw.trim().slice(0, RAW_TAIL_LIMIT) };
 }
 
 export function parseReviewResponse(raw: string, filename: string): ReviewResult {
-  let parsed: unknown;
   const outcome = tryParseJson(raw);
-  if (outcome.ok) parsed = outcome.value;
-  else {
-    try { parsed = JSON.parse(extractJson(raw)); }
-    catch { throw new Error(`LLM returned malformed JSON for ${filename}`); }
+  if (!outcome.ok) {
+    throw new Error(`LLM returned malformed JSON for ${filename} · ${outcome.reason} · хвост ответа: ${outcome.rawTail}`);
   }
+  const parsed: unknown = outcome.value;
   if (parsed === null) throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
   if (Array.isArray(parsed)) throw new Error(`Ответ модели для ${filename} — JSON-массив, ожидается объект с полем "issues"`);
   if (typeof parsed !== 'object') throw new Error(`Ответ модели для ${filename} — не JSON-объект (получен ${typeof parsed})`);

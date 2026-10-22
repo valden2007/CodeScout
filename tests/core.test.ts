@@ -665,6 +665,50 @@ describe('response parser', () => {
   });
 });
 
+// Батч 20a, п.1: безопасный JSON-каскад — порядок кандидатов, санитайз
+// висячих запятых, объект ошибки { ok:false, reason, rawTail } без падения.
+describe('батч 20a п.1: безопасный JSON-каскад', () => {
+  it('чинит висячие запятые в массивах и объектах перед parse', () => {
+    const trailing = tryParseJson('{"issues":[{"line":2,"description":"d"},],"summary":"s",}');
+    expect(trailing.ok).toBe(true);
+    if (trailing.ok) expect(trailing.value).toMatchObject({ issues: [{ line: 2 }], summary: 's' });
+    expect(tryParseJson('[1,2,]')).toMatchObject({ ok: true, value: [1, 2] });
+  });
+
+  it('валидный JSON со строкой "wait, ]" не портится санитайзом (сырой кандидат первее)', () => {
+    const intact = tryParseJson('{"msg":"wait, ] ok"}');
+    expect(intact.ok).toBe(true);
+    if (intact.ok) expect((intact.value as { msg: string }).msg).toBe('wait, ] ok');
+  });
+
+  it('каскад совмещает этапы: markdown-фенс + мусор до/после + висячая запятая', () => {
+    const messy = parseReviewResponse('Думаю…\n```json\n{"issues":[{"line":5,"category":"bug","severity":"high","description":"X","confidence":0.9},],"summary":"ok",}\n```\nНадеюсь помог', 'a.ts');
+    expect(messy.issues[0]).toMatchObject({ line: 5, description: 'X' });
+    expect(messy.summary).toBe('ok');
+  });
+
+  it('balanced-brace идёт ДО greedy: строка с } внутри кавычек режется сканером, а не greedy', () => {
+    const balancedFirst = tryParseJson('мусор {"a":"}"} хвост }');
+    expect(balancedFirst.ok).toBe(true);
+    if (balancedFirst.ok) expect(balancedFirst.value).toEqual({ a: '}' });
+  });
+
+  it('все кандидаты упали → { ok:false, reason, rawTail } без исключения; rawTail = первые 200 символов', () => {
+    const failed = tryParseJson('абракадабра totally not json');
+    expect(failed.ok).toBe(false);
+    if (!failed.ok) {
+      expect(typeof failed.reason).toBe('string');
+      expect(failed.reason.length).toBeGreaterThan(0);
+      expect(failed.rawTail).toBe('абракадабра totally not json');
+    }
+    const long = tryParseJson('x '.repeat(300));
+    expect(long.ok).toBe(false);
+    if (!long.ok) expect(long.rawTail).toHaveLength(200);
+    // parseReviewResponse поднимает ту же информацию в тексте ошибки (для Output)
+    expect(() => parseReviewResponse('абракадабра totally not json', 'a.ts')).toThrow(/malformed JSON[\s\S]*хвост ответа/);
+  });
+});
+
 describe('batch 18.9: gemini live models hard guard', () => {
   it('fetchLiveModels returns the static list for provider=gemini, HTTP is physically impossible', async () => {
     let calls = 0;
