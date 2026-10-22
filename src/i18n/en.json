@@ -120,6 +120,7 @@
   "center.reveal": "show the typed key",
   "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
+  "center.baseUrlIgnored": "Global Base URL is set but ignored for this provider",
   "center.now": "now:",
   "center.secureNote": "Key is securely encrypted in your OS (SecretStorage)",
   "center.nowNone": "key not configured",

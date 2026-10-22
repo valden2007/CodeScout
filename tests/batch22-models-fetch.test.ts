@@ -17,8 +17,10 @@ import {
   keyAuthDiagnostic,
   MODELS_CACHE_TTL_MS,
   MODELS_FETCH_TIMEOUT_MS,
+  resolveBaseUrl,
   sanitizeApiKey
 } from '../src/providers';
+import { buildSettingsHtml, type SettingsState } from '../extension/src/settingsHtml';
 
 const okList = (ids: string[]) => new Response(JSON.stringify({ data: ids.map((id) => ({ id })) }), { status: 200 });
 
@@ -109,23 +111,24 @@ describe('батч 22 п.3: сбои /models без смены redirect-поли
     const metrics: string[] = [];
     await fetchLiveModels('https://api.groq.com/openai/v1', 'k', async () => okList(['a', 'b']), 5000, 'groq', () => undefined, false, (m) => metrics.push(m));
     expect(metrics).toHaveLength(2);
-    expect(metrics[0]).toMatch(/^🔑 groq: key=1 символов, auth=Bearer k, fetch \/models$/);
+    expect(metrics[0]).toMatch(/^🔑 groq: key=1 символов, auth=Bearer k, host=api\.groq\.com, fetch \/models$/);
     expect(metrics[1]).toMatch(/⏱ groq GET \/models: \d+ мс, \d+ байт, HTTP 200, моделей 2/);
   });
 });
 
 describe('батч 22.1: 🔑 pre-fetch диагностика (строка из приёмочного чек-листа)', () => {
-  it('ключ после sanitize: длина и 5-символьный префикс Bearer, без полного ключа', () => {
-    expect(keyAuthDiagnostic('groq', '  "gsk_R2xYZ0abcdefghij"  ')).toBe('🔑 groq: key=20 символов, auth=Bearer gsk_R, fetch /models');
-    expect(keyAuthDiagnostic('openrouter', 'sk-or-v1-abcdef123456')).toBe('🔑 openrouter: key=21 символов, auth=Bearer sk-or, fetch /models');
+  it('ключ после sanitize: длина и 5-символьный префикс Bearer, без полного ключа; батч 22.2 — host целевого URL', () => {
+    expect(keyAuthDiagnostic('groq', '  "gsk_R2xYZ0abcdefghij"  ', 'https://api.groq.com/openai/v1')).toBe('🔑 groq: key=20 символов, auth=Bearer gsk_R, host=api.groq.com, fetch /models');
+    expect(keyAuthDiagnostic('openrouter', 'sk-or-v1-abcdef123456', 'https://openrouter.ai/api/v1')).toBe('🔑 openrouter: key=21 символов, auth=Bearer sk-or, host=openrouter.ai, fetch /models');
     expect(keyAuthDiagnostic(undefined, 'k')).toBe('🔑 custom: key=1 символов, auth=Bearer k, fetch /models');
-    expect(keyAuthDiagnostic('ollama', '')).toBe('🔑 ollama: key=0 символов, auth=— (без ключа), fetch /models');
+    expect(keyAuthDiagnostic('ollama', '', 'http://localhost:11434/v1')).toBe('🔑 ollama: key=0 символов, auth=— (без ключа), host=localhost, fetch /models');
+    expect(keyAuthDiagnostic('groq', 'k', 'не URL')).toBe('🔑 groq: key=1 символов, auth=Bearer k, host=?, fetch /models');
   });
 
   it('fetch идёт с той же санитизацией: в 🔑 длина trimmed-ключа, полный ключ в лог не попадает', async () => {
     const metrics: string[] = [];
     await fetchLiveModels('https://api.groq.com/openai/v1', '\n  gsk_SECRETneverinlog123  \n', async () => okList(['m']), 5000, 'groq', () => undefined, true, (m) => metrics.push(m));
-    expect(metrics[0]).toBe('🔑 groq: key=23 символов, auth=Bearer gsk_S, fetch /models');
+    expect(metrics[0]).toBe('🔑 groq: key=23 символов, auth=Bearer gsk_S, host=api.groq.com, fetch /models');
     expect(metrics.join('\n')).not.toContain('gsk_SECRETneverinlog123');
   });
 
@@ -133,7 +136,7 @@ describe('батч 22.1: 🔑 pre-fetch диагностика (строка и�
     const metrics: string[] = [];
     const models = await fetchLiveModels('https://mock.test/v1', 'AIzaSyDeadbeefabcdef', async () => okList(['gemini-x']), 5000, 'gemini', () => undefined, false, (m) => metrics.push(m));
     expect(models).toEqual(['gemini-x']);
-    expect(metrics[0]).toBe('🔑 gemini: key=20 символов, auth=Bearer AIzaS, fetch /models');
+    expect(metrics[0]).toBe('🔑 gemini: key=20 символов, auth=Bearer AIzaS, host=mock.test, fetch /models');
   });
 
   it('кэш-хит: сеть не дёргалась — ни 🔑, ни ⏱; только 🗂', async () => {
@@ -233,8 +236,9 @@ describe('батч 22 п.1 e2e: «Загружаем модели…» в цен
     expect(state.secrets.get('codescout.model')).toBe('model-a');
     // диагностика fetch: длительность и байты в Output, ключ — никогда
     expect(state.outputLines.some((line) => /⏱ groq GET \/models: \d+ мс, \d+ байт/.test(line))).toBe(true);
-    // батч 22.1: та самая строка чек-листа — в Output ДО fetch, с длиной trimmed-ключа
-    expect(state.outputLines.some((line) => /^🔑 groq: key=12 символов, auth=Bearer gsk_b, fetch \/models$/.test(line))).toBe(true);
+    // батч 22.1/22.2: та самая строка чек-листа — в Output ДО fetch, с длиной
+    // trimmed-ключа и host эндпоинта, который реально будет дёргаться
+    expect(state.outputLines.some((line) => /^🔑 groq: key=12 символов, auth=Bearer gsk_b, host=api\.groq\.com, fetch \/models$/.test(line))).toBe(true);
     expect(state.outputLines.join('\n')).not.toContain('gsk_busy_e2e');
   });
 
@@ -253,6 +257,39 @@ describe('батч 22 п.1 e2e: «Загружаем модели…» в цен
     expect(state.secrets.get('codescout.model')).toBe('keep-me');
   });
 
+  it('батч 22.2 п.1/п.4: baseUrl задан и provider=groq — /models дёргает api.groq.com, оверрайд проигнорирован', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL) => { urls.push(String(url)); return okList(['model-a']); }) as typeof fetch;
+    state.secrets.set('codescout.apiKey', 'CS_B222_GROQ');
+    state.secrets.set('codescout.provider', 'groq');
+    state.secrets.set('codescout.model', 'x');
+    state.set('codescout.baseUrl', 'https://wrong.test/v1');
+    bootAndOpenCenter();
+    state.quickPickAnswers.push('model-a');
+    await (state.commands.get('codescout.chooseModel') as () => Promise<unknown>)();
+    await flush();
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((url) => url.startsWith('https://api.groq.com/openai/v1/'))).toBe(true);
+    expect(urls.join('\n')).not.toContain('wrong.test');
+    // п.2: 🔑-строка делает хост видимым до fetch
+    expect(state.outputLines.some((line) => line.startsWith('🔑 groq:') && line.includes('host=api.groq.com, fetch /models'))).toBe(true);
+  });
+
+  it('батч 22.2 п.4: baseUrl задан и provider=custom — fetch уходит на baseUrl', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL) => { urls.push(String(url)); return okList(['model-a']); }) as typeof fetch;
+    state.secrets.set('codescout.apiKey', 'CS_B222_CUST');
+    state.secrets.set('codescout.provider', 'custom');
+    state.secrets.set('codescout.model', 'x');
+    state.set('codescout.baseUrl', 'https://my-llm.test/v1');
+    bootAndOpenCenter();
+    state.quickPickAnswers.push('model-a');
+    await (state.commands.get('codescout.chooseModel') as () => Promise<unknown>)();
+    await flush();
+    expect(urls[0]).toBe('https://my-llm.test/v1/models');
+    expect(state.outputLines.some((line) => line.startsWith('🔑 custom:') && line.includes('host=my-llm.test, fetch /models'))).toBe(true);
+  });
+
   it('контракт разметки центра: обработчик modelsBusy + перевод вшиты в UI-словарь вебвью', () => {
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
     expect(center).toContain("data.type === 'modelsBusy'");
@@ -264,5 +301,39 @@ describe('батч 22 п.1 e2e: «Загружаем модели…» в цен
     expect(en['models.loading']).toBe('Loading models…');
     expect(en['audit.requestTimeoutHint']).toContain('wait 10s');
     expect(ru['audit.requestTimeoutHint']).toContain('ждут 10 с');
+  });
+});
+
+const CENTER_BASE: SettingsState = { keyMask: '', keyConfigured: false, provider: 'gemini', model: 'm', baseUrl: '', reportLanguage: 'ru', showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, version: '1.4.0', uiTheme: 'auto', accentColor: 'auto', uiDensity: 'standard', uiFontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', customColors: '' };
+
+describe('батч 22.2: скоуп оверрайда baseUrl + предупреждение в центре', () => {
+  it('resolveBaseUrl: для НЕ-custom оверрайд игнорируется и не читается; custom и localhost — применяются', () => {
+    expect(resolveBaseUrl('groq', 'https://wrong.test/v1')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('deepseek', 'https://wrong.test/v1')).toBe('https://api.deepseek.com/v1');
+    // мусорный/невалидный оверрайд для groq не читается вовсе — не валидируется и не роняет провайдер
+    expect(resolveBaseUrl('groq', 'http://wrong.test/v1')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('groq', 'ftp://localhost:21')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('groq', '   ')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('custom', 'https://wrong.test/v1/')).toBe('https://wrong.test/v1');
+    expect(resolveBaseUrl('gemini', 'http://127.0.0.1:1234/v1')).toBe('http://127.0.0.1:1234/v1');
+    expect(() => resolveBaseUrl('custom', 'http://wrong.test/v1')).toThrow('только для localhost');
+    expect(() => resolveBaseUrl('custom', 'ftp://x.test')).toThrow('http(s)');
+    expect(() => resolveBaseUrl('custom')).toThrow('CODESCOUT_BASE_URL');
+  });
+
+  it('центр: жёлтое предупреждение при непустом baseUrl и не-custom провайдере; нет — у custom/localhost/пустого', () => {
+    const shown = buildSettingsHtml({ ...CENTER_BASE, provider: 'gemini', baseUrl: 'https://proxy.test/v1' });
+    expect(shown).toContain('class="scope-warn" id="baseUrlIgnoredWarn"');
+    expect(shown).toContain('Глобальный Base URL задан, но для этого провайдера он игнорируется');
+    for (const [provider, baseUrl] of [['gemini', ''], ['custom', 'https://proxy.test/v1'], ['gemini', 'http://localhost:11434/v1'], ['groq', 'http://127.0.0.1:1234']] as [string, string][]) {
+      expect(buildSettingsHtml({ ...CENTER_BASE, provider, baseUrl })).toContain('class="scope-warn hidden" id="baseUrlIgnoredWarn"');
+    }
+    const en = buildSettingsHtml({ ...CENTER_BASE, provider: 'groq', baseUrl: 'https://proxy.test/v1' }, '', 'ok', 'n', '', undefined, 'en');
+    expect(en).toContain('Global Base URL is set but ignored for this provider');
+    expect(en).not.toMatch(/[\u0400-\u04FF]/);
+    // вебвью-скрипт пересчитывает предупреждение при смене провайдера/значения
+    const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
+    expect(center).toContain("baseUrlInput.addEventListener('input', toggleBaseUrl)");
+    expect(center).toContain('baseUrlIgnoredWarn.classList.toggle');
   });
 });

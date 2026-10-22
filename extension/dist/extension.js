@@ -94,10 +94,19 @@ var MODELS_CACHE_TTL_MS = 10 * 60 * 1e3;
 function logModelsFetch(onMetric, entry) {
   onMetric?.(`\u23F1 ${entry.provider} GET /models: ${entry.ms} \u043C\u0441, ${entry.bytes} \u0431\u0430\u0439\u0442, HTTP ${entry.status}, \u043C\u043E\u0434\u0435\u043B\u0435\u0439 ${entry.models}${entry.error ? ` (${entry.error})` : ""}`);
 }
-function keyAuthDiagnostic(provider, apiKey) {
+function keyAuthDiagnostic(provider, apiKey, targetUrl) {
   const key = sanitizeApiKey(apiKey);
   const auth = key ? `Bearer ${key.slice(0, 5)}` : "\u2014 (\u0431\u0435\u0437 \u043A\u043B\u044E\u0447\u0430)";
-  return `\u{1F511} ${provider ?? "custom"}: key=${key.length} \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432, auth=${auth}, fetch /models`;
+  let host = "";
+  if (targetUrl) {
+    try {
+      host = new URL(targetUrl).hostname;
+    } catch {
+      host = "?";
+    }
+  }
+  const hostPart = host ? `, host=${host}` : "";
+  return `\u{1F511} ${provider ?? "custom"}: key=${key.length} \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432, auth=${auth}${hostPart}, fetch /models`;
 }
 async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric) {
   const controller = new AbortController();
@@ -105,7 +114,7 @@ async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, on
   const started = Date.now();
   try {
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
-    onMetric?.(keyAuthDiagnostic("gemini", apiKey));
+    onMetric?.(keyAuthDiagnostic("gemini", apiKey, safeBase));
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
       // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
@@ -137,7 +146,7 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = MOD
   if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
   const started = Date.now();
-  onMetric?.(keyAuthDiagnostic(provider, apiKey));
+  onMetric?.(keyAuthDiagnostic(provider, apiKey, safeBase));
   try {
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
@@ -345,12 +354,13 @@ function resolveApiKeyPriority(secretKey, provider, env3 = process.env) {
   return secretKey?.trim() || resolveApiKey(provider, void 0, env3) || void 0;
 }
 function resolveBaseUrl(provider, customBaseUrl) {
-  if (customBaseUrl?.trim()) {
-    const url = customBaseUrl.trim().replace(/\/+$/, "");
+  const normalized = normalizeProvider(provider);
+  const override = customBaseUrl?.trim();
+  if (override && (normalized === "custom" || isLocalBaseUrl(override))) {
+    const url = override.replace(/\/+$/, "");
     assertHttpBaseUrl(url);
     return url;
   }
-  const normalized = normalizeProvider(provider);
   if (normalized === "custom") throw new Error("\u0414\u043B\u044F provider custom \u0443\u043A\u0430\u0436\u0438 --base-url \u0438\u043B\u0438 CODESCOUT_BASE_URL.");
   return PROVIDERS[normalized].baseUrl;
 }
@@ -721,6 +731,7 @@ var ru_default = {
   "center.reveal": "\u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447",
   "center.baseUrl": "Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)",
   "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
+  "center.baseUrlIgnored": "\u0413\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0439 Base URL \u0437\u0430\u0434\u0430\u043D, \u043D\u043E \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u043E\u043D \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F",
   "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
   "center.secureNote": "\u041A\u043B\u044E\u0447 \u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E \u0437\u0430\u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D \u0432 \u041E\u0421 (SecretStorage)",
   "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
@@ -1087,6 +1098,7 @@ var en_default = {
   "center.reveal": "show the typed key",
   "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
+  "center.baseUrlIgnored": "Global Base URL is set but ignored for this provider",
   "center.now": "now:",
   "center.secureNote": "Key is securely encrypted in your OS (SecretStorage)",
   "center.nowNone": "key not configured",
@@ -4309,6 +4321,7 @@ function localServiceName(baseUrl) {
   if (match[1] === "1234") return "LM Studio";
   return "localhost";
 }
+var LOCAL_BASE_URL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
 function currentKeyLine(T, state) {
   if (state.keyConfigured) {
     const model = state.model.trim() || T("center.nowModelMissing");
@@ -4326,6 +4339,8 @@ function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce =
   const codiconLink = assets ? `<link rel="stylesheet" href="${assets.codiconCss}">` : "";
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   const providerOptions = providerValues.map((value) => `<option value="${value}"${value === state.provider ? " selected" : ""}>${value}</option>`).join("");
+  const baseUrlTrimmed = (state.baseUrl ?? "").trim();
+  const baseUrlIgnored = state.provider !== "custom" && baseUrlTrimmed !== "" && !LOCAL_BASE_URL_RE.test(baseUrlTrimmed);
   const prefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
   const languageSection = `
@@ -4438,6 +4453,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml2(state.baseUrl)}">
     <p class="hint">${T("center.baseUrlHint")}</p>
   </div>
+  <p class="scope-warn${baseUrlIgnored ? "" : " hidden"}" id="baseUrlIgnoredWarn">${icon2("warning")} ${T("center.baseUrlIgnored")}</p>
   <div class="current-key">${T("center.now")} ${currentKeyLine(T, state)}</div>
   ${state.keyConfigured ? `<div class="key-secure">${icon2("lock")}<span>${T("center.secureNote")}</span></div>` : ""}
   <div class="row">
@@ -4601,6 +4617,7 @@ function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
 const baseUrlInput = document.getElementById('baseUrl');
+const baseUrlIgnoredWarn = document.getElementById('baseUrlIgnoredWarn');
 const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
@@ -4736,8 +4753,21 @@ function clampInt(value, min, max, fallback) {
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
   return String(Math.min(max, Math.max(min, n)));
 }
-function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
+function isLocalOverride(value) {
+  try { const u = new URL(value); return u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1'); } catch (e) { return false; }
+}
+function toggleBaseUrl() {
+  const custom = providerSelect.value === 'custom';
+  baseUrlRow.classList.toggle('hidden', !custom);
+  // Batch 22.2 p.3: the global Base URL only takes effect for custom/local
+  // mode. For every other provider it is ignored \u2014 say it in plain text.
+  if (baseUrlIgnoredWarn) {
+    const value = baseUrlInput.value.trim();
+    baseUrlIgnoredWarn.classList.toggle('hidden', custom || value === '' || isLocalOverride(value));
+  }
+}
 providerSelect.addEventListener('change', toggleBaseUrl);
+baseUrlInput.addEventListener('input', toggleBaseUrl);
 function refreshDirty() {
   const dirty = snapshot() !== initial;
   saveAllBtn.disabled = !dirty;

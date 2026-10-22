@@ -96,6 +96,10 @@ export function localServiceName(baseUrl: string): string | undefined {
   return 'localhost';
 }
 
+// Батч 22.2, п.1/п.3: совпадает с isLocalBaseUrl(providers) — оверрайд
+// codescout.baseUrl реально применяется только к custom и localhost-режиму.
+const LOCAL_BASE_URL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
+
 function currentKeyLine(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   if (state.keyConfigured) {
     const model = state.model.trim() || T('center.nowModelMissing');
@@ -122,6 +126,10 @@ export function buildSettingsHtml(state: SettingsState, statusMessage = '', stat
   const providerOptions = providerValues
     .map((value) => `<option value="${value}"${value === state.provider ? ' selected' : ''}>${value}</option>`)
     .join('');
+  // Батч 22.2, п.3: непустой глобальный Base URL при выбранном НЕ-custom
+  // провайдере игнорируется (скоуп оверрайда — custom/local) — предупреждаем.
+  const baseUrlTrimmed = (state.baseUrl ?? '').trim();
+  const baseUrlIgnored = state.provider !== 'custom' && baseUrlTrimmed !== '' && !LOCAL_BASE_URL_RE.test(baseUrlTrimmed);
   const prefs: UiPrefs = { theme: state.uiTheme, accent: state.accentColor, density: state.uiDensity, fontSize: state.uiFontSize, showConfidence: state.showConfidence, findingsSort: state.findingsSort, reportTheme: state.reportTheme, customColors: normalizeCustomColors(state.customColors) };
   const cc = prefs.customColors;
   // Точка расширения: новый язык = добавить словарь src/i18n/<lang>.json
@@ -238,6 +246,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <input id="baseUrl" type="text" autocomplete="off" placeholder="http://localhost:11434/v1" value="${escapeHtml(state.baseUrl)}">
     <p class="hint">${T('center.baseUrlHint')}</p>
   </div>
+  <p class="scope-warn${baseUrlIgnored ? '' : ' hidden'}" id="baseUrlIgnoredWarn">${icon('warning')} ${T('center.baseUrlIgnored')}</p>
   <div class="current-key">${T('center.now')} ${currentKeyLine(T, state)}</div>
   ${state.keyConfigured ? `<div class="key-secure">${icon('lock')}<span>${T('center.secureNote')}</span></div>` : ''}
   <div class="row">
@@ -398,6 +407,7 @@ function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
 const baseUrlInput = document.getElementById('baseUrl');
+const baseUrlIgnoredWarn = document.getElementById('baseUrlIgnoredWarn');
 const keyInput = document.getElementById('apiKey');
 const langSelect = document.getElementById('reportLanguage');
 const bannerBox = document.getElementById('showBanner');
@@ -533,8 +543,21 @@ function clampInt(value, min, max, fallback) {
   if (!Number.isFinite(n) || n < min) return String(Math.min(max, Math.max(min, Number(fallback))));
   return String(Math.min(max, Math.max(min, n)));
 }
-function toggleBaseUrl() { baseUrlRow.classList.toggle('hidden', providerSelect.value !== 'custom'); }
+function isLocalOverride(value) {
+  try { const u = new URL(value); return u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1'); } catch (e) { return false; }
+}
+function toggleBaseUrl() {
+  const custom = providerSelect.value === 'custom';
+  baseUrlRow.classList.toggle('hidden', !custom);
+  // Batch 22.2 p.3: the global Base URL only takes effect for custom/local
+  // mode. For every other provider it is ignored — say it in plain text.
+  if (baseUrlIgnoredWarn) {
+    const value = baseUrlInput.value.trim();
+    baseUrlIgnoredWarn.classList.toggle('hidden', custom || value === '' || isLocalOverride(value));
+  }
+}
 providerSelect.addEventListener('change', toggleBaseUrl);
+baseUrlInput.addEventListener('input', toggleBaseUrl);
 function refreshDirty() {
   const dirty = snapshot() !== initial;
   saveAllBtn.disabled = !dirty;

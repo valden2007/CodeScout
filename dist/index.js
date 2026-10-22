@@ -34404,10 +34404,22 @@ function logModelsFetch(onMetric, entry) {
 // длина ключа ПОСЛЕ sanitizeApiKey (сразу видно, съели ли пробелы/кавычки)
 // и 5-символьный префикс Authorization (формат gsk_…/sk-or…/AIza…). Полный
 // ключ не логируется никогда — только префикс, как в maskApiKey (17.5).
-function keyAuthDiagnostic(provider, apiKey) {
+// Батч 22.2, п.2: + host целевого URL. Хост — не секрет, но именно он делает
+// ошибку вида «ключ groq, а fetch ушёл на чужой эндпоинт» видимой за 1 секунду.
+function keyAuthDiagnostic(provider, apiKey, targetUrl) {
     const key = sanitizeApiKey(apiKey);
     const auth = key ? `Bearer ${key.slice(0, 5)}` : '— (без ключа)';
-    return `🔑 ${provider ?? 'custom'}: key=${key.length} символов, auth=${auth}, fetch /models`;
+    let host = '';
+    if (targetUrl) {
+        try {
+            host = new URL(targetUrl).hostname;
+        }
+        catch {
+            host = '?';
+        }
+    }
+    const hostPart = host ? `, host=${host}` : '';
+    return `🔑 ${provider ?? 'custom'}: key=${key.length} символов, auth=${auth}${hostPart}, fetch /models`;
 }
 async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric) {
     const controller = new AbortController();
@@ -34415,7 +34427,7 @@ async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, on
     const started = Date.now();
     try {
         const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
-        onMetric?.(keyAuthDiagnostic('gemini', apiKey));
+        onMetric?.(keyAuthDiagnostic('gemini', apiKey, safeBase));
         const response = await fetcher(`${safeBase}/models`, {
             method: 'GET',
             // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
@@ -34456,7 +34468,7 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = MOD
         return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
     const started = Date.now();
-    onMetric?.(keyAuthDiagnostic(provider, apiKey));
+    onMetric?.(keyAuthDiagnostic(provider, apiKey, safeBase));
     try {
         const response = await fetcher(`${safeBase}/models`, {
             method: 'GET',
@@ -34726,13 +34738,19 @@ function resolveApiKey(provider, explicitKey, env = process.env) {
 function resolveApiKeyPriority(secretKey, provider, env = process.env) {
     return secretKey?.trim() || resolveApiKey(provider, undefined, env) || undefined;
 }
+// Батч 22.2, п.1: codescout.baseUrl / --base-url / CODESCOUT_BASE_URL — средство
+// provider custom и локального режима (Ollama/LM Studio на localhost). Для всех
+// остальных витринных провайдеров эндпоинт берётся СТРОГО из
+// PROVIDERS[provider].baseUrl: оверрайд игнорируется и даже не читается
+// (опечатка в глобальном поле не должна уводить groq-ключ на чужой хост).
 function resolveBaseUrl(provider, customBaseUrl) {
-    if (customBaseUrl?.trim()) {
-        const url = customBaseUrl.trim().replace(/\/+$/, '');
+    const normalized = normalizeProvider(provider);
+    const override = customBaseUrl?.trim();
+    if (override && (normalized === 'custom' || isLocalBaseUrl(override))) {
+        const url = override.replace(/\/+$/, '');
         assertHttpBaseUrl(url);
         return url;
     }
-    const normalized = normalizeProvider(provider);
     if (normalized === 'custom')
         throw new Error('Для provider custom укажи --base-url или CODESCOUT_BASE_URL.');
     return PROVIDERS[normalized].baseUrl;

@@ -120,6 +120,7 @@
   "center.reveal": "показать введённый ключ",
   "center.baseUrl": "Base URL (OpenAI-совместимый эндпоинт)",
   "center.baseUrlHint": "Нужен для custom: Ollama, LM Studio, свой прокси. Приоритет: эта настройка > env CODESCOUT_BASE_URL.",
+  "center.baseUrlIgnored": "Глобальный Base URL задан, но для этого провайдера он игнорируется",
   "center.now": "сейчас:",
   "center.secureNote": "Ключ безопасно зашифрован в ОС (SecretStorage)",
   "center.nowNone": "ключ не настроен",

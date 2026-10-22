@@ -869,11 +869,17 @@ describe('E1.2a settings page (skeleton + keys)', () => {
   });
 
   it('persists baseUrl globally with setting-over-env priority and https-only rule', () => {
+    // Батч 22.2, п.1: оверраид читается только для custom и localhost-режима.
     expect(resolveBaseUrl('groq', 'http://localhost:11434/v1/')).toBe('http://localhost:11434/v1');
     expect(resolveBaseUrl('groq', 'http://127.0.0.1:1234/v1')).toBe('http://127.0.0.1:1234/v1');
-    expect(resolveBaseUrl('groq', 'https://custom.test/v1/')).toBe('https://custom.test/v1');
-    expect(() => resolveBaseUrl('groq', 'http://custom.test/v1')).toThrow('только для localhost');
-    expect(() => resolveBaseUrl('groq', 'ftp://localhost:21')).toThrow('http(s)');
+    expect(resolveBaseUrl('custom', 'https://custom.test/v1/')).toBe('https://custom.test/v1');
+    // для витринных провайдеров не-local оверрайд игнорируется и не валидируется
+    expect(resolveBaseUrl('groq', 'https://custom.test/v1/')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('groq', 'http://custom.test/v1')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('groq', 'ftp://localhost:21')).toBe('https://api.groq.com/openai/v1');
+    // https-only guard остаётся на пути, где оверрайд реально читается (custom)
+    expect(() => resolveBaseUrl('custom', 'http://custom.test/v1')).toThrow('только для localhost');
+    expect(() => resolveBaseUrl('custom', 'ftp://localhost:21')).toThrow('http(s)');
     expect(() => resolveBaseUrl('custom')).toThrow('CODESCOUT_BASE_URL');
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('resolveTrustedBaseUrl(context, config)');
