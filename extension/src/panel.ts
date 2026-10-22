@@ -5,7 +5,7 @@ import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx } from './reportHtml';
-import { computeFingerprint, suppressFinding } from './findingsStore';
+import { computeFingerprint, getSuppressed, isSuppressed, suppress, unsuppress } from './findingsStore';
 import { isContactUrlAllowed } from './reportIssue';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { normalizeLang, t, type Lang } from '../../src/i18n';
@@ -114,17 +114,46 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.workspaceState = state;
   }
 
+  private fingerprintOf(issue: ReviewIssue): string {
+    return issue.fingerprint?.trim() || computeFingerprint(issue);
+  }
+
+  // Батч 20b: снятые с вида карточки кэшируются, чтобы «↩ Вернуть»
+  // мгновенно возвращал находку в отчёт без перезапуска скана.
+  private readonly suppressedCache = new Map<string, ReviewIssue>();
+
+  private shiftStats(issues: ReviewIssue[], delta: 1 | -1): void {
+    for (const issue of issues) {
+      if (issue.severity === 'critical' || issue.severity === 'high') this.stats.critical = Math.max(0, this.stats.critical + delta);
+      else if (issue.severity === 'medium') this.stats.medium = Math.max(0, this.stats.medium + delta);
+      else this.stats.low = Math.max(0, this.stats.low + delta);
+    }
+  }
+
   private suppressLocal(fingerprint: string): void {
-    if (this.workspaceState) suppressFinding(this.workspaceState, fingerprint);
-    const fingerprintOf = (issue: ReviewIssue): string => issue.fingerprint?.trim() || computeFingerprint(issue);
-    const visible = this.issues.filter((issue) => fingerprintOf(issue) !== fingerprint);
-    if (visible.length === this.issues.length) return;
-    const removed = this.issues.filter((issue) => fingerprintOf(issue) === fingerprint);
+    const target = this.issues.find((issue) => this.fingerprintOf(issue) === fingerprint);
+    if (!target) return;
+    if (this.workspaceState) suppress(this.workspaceState, target);
+    const entries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    const visible: ReviewIssue[] = [];
+    const removed: ReviewIssue[] = [];
+    // Скрываем все карточки, которые store считает подавленными (зона ±3),
+    // — панель и хост фильтруют одинаково.
+    for (const issue of this.issues) (entries.length && isSuppressed(issue, entries) ? removed : visible).push(issue);
+    if (removed.length === 0) return;
+    for (const issue of removed) this.suppressedCache.set(this.fingerprintOf(issue), issue);
     this.issues = visible;
-    for (const issue of removed) {
-      if (issue.severity === 'critical' || issue.severity === 'high') this.stats.critical = Math.max(0, this.stats.critical - 1);
-      else if (issue.severity === 'medium') this.stats.medium = Math.max(0, this.stats.medium - 1);
-      else this.stats.low = Math.max(0, this.stats.low - 1);
+    this.shiftStats(removed, -1);
+    this.render();
+  }
+
+  private unsuppressLocal(fingerprint: string): void {
+    if (this.workspaceState) unsuppress(this.workspaceState, fingerprint);
+    const cached = this.suppressedCache.get(fingerprint);
+    this.suppressedCache.delete(fingerprint);
+    if (cached) {
+      this.issues.push(cached);
+      this.shiftStats([cached], 1);
     }
     this.render();
   }
@@ -236,6 +265,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       } else if (message.command === 'suppressFinding') {
         const fingerprint = typeof message.fingerprint === 'string' ? message.fingerprint.trim() : '';
         if (fingerprint) this.suppressLocal(fingerprint);
+      } else if (message.command === 'unsuppressFinding') {
+        // Батч 20b: «↩ Вернуть» со вкладки скрытых находок.
+        const fingerprint = typeof message.fingerprint === 'string' ? message.fingerprint.trim() : '';
+        if (fingerprint) this.unsuppressLocal(fingerprint);
       } else if (message.command === 'pickScope') {
         void this.handlePickScope();
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {

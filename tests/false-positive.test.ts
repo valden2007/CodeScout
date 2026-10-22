@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { state, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 import { CodeScoutPanel } from '../extension/src/panel';
-import { computeFingerprint, filterSuppressed, getSuppressedFindings, suppressFinding } from '../extension/src/findingsStore';
+import { computeFingerprint, filterSuppressed, getSuppressed, suppress } from '../extension/src/findingsStore';
 import { parseReviewResponse } from '../src/response-parser';
 import { SYSTEM_PROMPT } from '../src/prompt-builder';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -169,7 +169,7 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     return { panel, receive, html, context };
   }
 
-  it('кнопка «Ложное срабатывание» вызывает suppressFinding и убирает карточку', () => {
+  it('кнопка «Ложное срабатывание» пишет запись с метаданными и убирает карточку', () => {
     const { panel, receive, html, context } = bootPanel();
     const findings = [issue({ description: 'FP-CARD', line: 10 }), issue({ description: 'KEEP-CARD', line: 50 })];
     panel.update(filterSuppressed(findings, mementoOf(context)), stats);
@@ -178,7 +178,22 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     receive({ command: 'suppressFinding', fingerprint });
     expect(html()).not.toContain('FP-CARD');
     expect(html()).toContain('KEEP-CARD');
-    expect(getSuppressedFindings(mementoOf(context))).toEqual([fingerprint]);
+    const stored = getSuppressed(mementoOf(context));
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ id: fingerprint, file: 'src/a.ts', line: 10, severity: 'medium', category: 'bug', description: 'FP-CARD' });
+  });
+
+  it('unsuppressFinding снимает запись и возвращает карточку со статистикой', () => {
+    const { panel, receive, html, context } = bootPanel();
+    const findings = [issue({ description: 'FP-CARD', line: 10, severity: 'high' }), issue({ description: 'KEEP-CARD', line: 50 })];
+    panel.update(filterSuppressed(findings, mementoOf(context)), stats);
+    const fingerprint = computeFingerprint(findings[0]);
+    receive({ command: 'suppressFinding', fingerprint });
+    expect(html()).not.toContain('FP-CARD');
+    receive({ command: 'unsuppressFinding', fingerprint });
+    expect(getSuppressed(mementoOf(context))).toHaveLength(0);
+    expect(html()).toContain('FP-CARD');
+    expect(html()).toContain('KEEP-CARD');
   });
 
   it('скрытая находка не появляется при повторном скане (с сохранением между вызовами)', () => {
@@ -212,13 +227,14 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     expect(extension).not.toContain('codescout.suppressedFindings');
     const panelSource = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panelSource).toContain("message.command === 'suppressFinding'");
+    expect(panelSource).toContain("message.command === 'unsuppressFinding'");
   });
 
   it('подавление через прямые хелперы совпадает с кликом панели (единый fingerprint)', () => {
     const { panel, receive, html, context } = bootPanel();
     const findings = [issue({ description: 'STORE-EQ', line: 11 })];
     panel.update(filterSuppressed(findings, mementoOf(context)), stats);
-    suppressFinding(mementoOf(context), computeFingerprint(findings[0]));
+    suppress(mementoOf(context), findings[0]);
     expect(filterSuppressed(findings, mementoOf(context))).toHaveLength(0);
     receive({ command: 'suppressFinding', fingerprint: 'несуществующий' });
     expect(html()).toContain('STORE-EQ');
