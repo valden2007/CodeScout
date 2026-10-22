@@ -22,19 +22,24 @@ describe('батч 15: RequestTimeoutError дедлайн инференса', (
   const originalTimeout = getDefaultRequestTimeoutMs();
   afterEach(() => setDefaultRequestTimeoutMs(originalTimeout));
 
-  it('зависший провайдер падает в RequestTimeoutError с категорией timeout (конструктор-параметр)', async () => {
+  it('зависший провайдер ретраится 3 раза и падает в RateLimitError с категорией rate_limit_exceeded (конструктор-параметр)', async () => {
     const provider = new OpenAICompatibleProvider('k', 'm', hangFetch, async () => undefined, undefined, 'https://mock.test/v1', undefined, 120);
-    await expect(provider.review('s', 'u')).rejects.toBeInstanceOf(RequestTimeoutError);
+    await expect(provider.review('s', 'u')).rejects.toMatchObject({
+      name: 'RateLimitError',
+      message: expect.stringContaining('Превышен лимит модели m')
+    });
     await provider.review('s', 'u').catch((error: unknown) => {
-      expect(formatError(error, 'ru').category).toBe('timeout');
-      expect(formatError(error, 'ru').message).toContain('1 с');
+      expect(formatError(error, 'ru').category).toBe('rate_limit_exceeded');
     });
   });
 
   it('модульный дефолт setDefaultRequestTimeoutMs применяется без пересоздания провайдера', async () => {
     setDefaultRequestTimeoutMs(1200);
     const provider = new OpenAICompatibleProvider('k', 'm', hangFetch, async () => undefined, undefined, 'https://mock.test/v1');
-    await expect(provider.review('s', 'u')).rejects.toBeInstanceOf(RequestTimeoutError);
+    await expect(provider.review('s', 'u')).rejects.toMatchObject({
+      name: 'RateLimitError',
+      message: expect.stringContaining('Превышен лимит модели m')
+    });
   }, 20000);
 
   it('пользовательский cancel при активном дедлайне остаётся AbortError, не timeout', async () => {

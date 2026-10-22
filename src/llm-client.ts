@@ -44,6 +44,17 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+export function isRetryableError(error: unknown): boolean {
+  if (error instanceof RateLimitError) return true;
+  if (error instanceof RequestTimeoutError) return true;
+  if (error instanceof ProviderHttpError) {
+    return error.status === 502 || error.status === 503 || error.status === 504;
+  }
+  if (isAbortError(error)) return true;
+  const raw = error instanceof Error ? error.message : String(error);
+  return /ECONNRESET|ECONNREFUSED|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
+}
+
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
   if (signal?.aborted) { reject(abortError()); return; }
   const onAbort = (): void => { clearTimeout(timer); reject(abortError()); };
@@ -198,7 +209,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const wait = 2000 - (Date.now() - this.lastRequestAt);
     if (wait > 0) await this.sleeper(wait, this.signal);
     let retryCount = 0;
-    let lastRateLimit: { waitSeconds?: number; details: string } | undefined;
+    let lastRetryableError: { waitSeconds?: number; details: string } | undefined;
 
     while (true) {
       if (this.signal?.aborted) throw abortError();
@@ -249,24 +260,44 @@ export class OpenAICompatibleProvider implements LLMProvider {
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
           // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          // 502/503/504 — ретраим как 429
+          if (response.status === 502 || response.status === 503 || response.status === 504) {
+            throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          }
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
         if (!content) throw new BadResponseError('Модель вернула некорректный формат: пустой ответ', text.trim().slice(0, 300));
         return content;
       } catch (error) {
-        if (timedOut && !this.signal?.aborted) throw new RequestTimeoutError(timeoutMs);
-        if (isAbortError(error)) throw error;
-        if (!(error instanceof RateLimitError)) throw error;
-        lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
+        // Определяем, является ли ошибка ретрайбл
+        let retryableError: Error | undefined;
+        if (timedOut && !this.signal?.aborted) {
+          retryableError = new RequestTimeoutError(timeoutMs);
+        } else if (isAbortError(error)) {
+          // Пользовательский abort (Cancel) — не ретраим
+          if (this.signal?.aborted) throw error;
+          // AbortError от fetcher (сетевой таймаут/обрыв) — ретраим
+          retryableError = new RequestTimeoutError(timeoutMs);
+        } else if (isRetryableError(error)) {
+          retryableError = error instanceof Error ? error : new Error(String(error));
+        }
+        if (!retryableError) throw error;
+        // Ретраим: RateLimitError, RequestTimeoutError, ProviderHttpError 502/503/504, сетевые ошибки
+        const waitSeconds = retryableError instanceof RateLimitError ? retryableError.waitSeconds : undefined;
+        const details = retryableError instanceof RateLimitError ? retryableError.details
+          : retryableError instanceof ProviderHttpError ? retryableError.details
+          : retryableError instanceof RequestTimeoutError ? `timeout ${timeoutMs}ms`
+          : retryableError.message;
+        lastRetryableError = { waitSeconds, details };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-          throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
+          throw new RateLimitError(finalRateLimitMessage(this.model, lastRetryableError.waitSeconds), lastRetryableError.waitSeconds, lastRetryableError.details);
         }
         retryCount += 1;
-        const serverWait = lastRateLimit.waitSeconds ?? 0;
-        const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
-        this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
-        await this.sleeper(waitSeconds * 1000, this.signal);
+        const serverWait = lastRetryableError.waitSeconds ?? 0;
+        const waitSec = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
+        this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds: waitSec });
+        await this.sleeper(waitSec * 1000, this.signal);
       } finally {
         clearTimeout(timer);
         this.signal?.removeEventListener('abort', relayAbort);

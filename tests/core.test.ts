@@ -430,6 +430,94 @@ describe('Groq retry handling', () => {
     const provider = new GroqProvider('key', 'model', async () => new Response('<html>ok?</html>', { status: 200 }), async () => undefined);
     await expect(provider.review('system', 'user')).rejects.toThrow('Модель вернула некорректный формат: пустой ответ');
   });
+
+  it('retries on timeout (AbortError from deadline) with exponential backoff', async () => {
+    const successResponse = success();
+    const events: RetryEvent[] = [];
+    // Simulate timeout by throwing AbortError on first 3 calls
+    let callCount = 0;
+    const provider = new GroqProvider('key', 'model', async () => {
+      callCount++;
+      if (callCount <= 3) {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+      return successResponse;
+    }, async () => undefined, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events).toEqual([
+      { attempt: 1, maxRetries: 3, waitSeconds: 30 },
+      { attempt: 2, maxRetries: 3, waitSeconds: 60 },
+      { attempt: 3, maxRetries: 3, waitSeconds: 120 }
+    ]);
+  });
+
+  it('retries on network error (ECONNRESET) with exponential backoff', async () => {
+    const events: RetryEvent[] = [];
+    let callCount = 0;
+    const provider = new GroqProvider('key', 'model', async () => {
+      callCount++;
+      if (callCount <= 2) {
+        const err = new Error('ECONNRESET: Connection reset by peer');
+        throw err;
+      }
+      return success();
+    }, async () => undefined, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events).toEqual([
+      { attempt: 1, maxRetries: 3, waitSeconds: 30 },
+      { attempt: 2, maxRetries: 3, waitSeconds: 60 }
+    ]);
+  });
+
+  it('retries on 502 Bad Gateway with exponential backoff', async () => {
+    const responses = [
+      new Response(JSON.stringify({ error: { message: 'Bad Gateway' } }), { status: 502 }),
+      new Response(JSON.stringify({ error: { message: 'Service Unavailable' } }), { status: 503 }),
+      success()
+    ];
+    const events: RetryEvent[] = [];
+    const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events).toEqual([
+      { attempt: 1, maxRetries: 3, waitSeconds: 30 },
+      { attempt: 2, maxRetries: 3, waitSeconds: 60 }
+    ]);
+  });
+
+  it('retries on 504 Gateway Timeout with exponential backoff', async () => {
+    const responses = [
+      new Response(JSON.stringify({ error: { message: 'Gateway Timeout' } }), { status: 504 }),
+      success()
+    ];
+    const events: RetryEvent[] = [];
+    const provider = new GroqProvider('key', 'model', async () => responses.shift()!, async () => undefined, (event) => events.push(event));
+    await expect(provider.review('system', 'user')).resolves.toContain('issues');
+    expect(events).toHaveLength(1);
+    expect(events[0].waitSeconds).toBe(30);
+  });
+
+  it('does not retry on 500 Internal Server Error', async () => {
+    let calls = 0;
+    const provider = new GroqProvider('key', 'model', async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: { message: 'Internal Server Error' } }), { status: 500 });
+    }, async () => undefined);
+    await expect(provider.review('system', 'user')).rejects.toThrow('Internal Server Error');
+    expect(calls).toBe(1);
+  });
+
+  it('exhausts retries on persistent network error and throws RateLimitError', async () => {
+    const provider = new GroqProvider('key', 'model', async () => {
+      const err = new Error('ECONNREFUSED: Connection refused');
+      throw err;
+    }, async () => undefined);
+    await expect(provider.review('system', 'user')).rejects.toMatchObject({
+      name: 'RateLimitError',
+      message: expect.stringContaining('Превышен лимит модели model')
+    });
+  });
 });
 
 describe('diff parser', () => {
