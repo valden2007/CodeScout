@@ -14,6 +14,7 @@ import {
   fetchLiveModelsCached,
   GEMINI_MODELS_TIMEOUT_MS,
   GEMINI_STATIC_MODELS,
+  keyAuthDiagnostic,
   MODELS_CACHE_TTL_MS,
   MODELS_FETCH_TIMEOUT_MS,
   sanitizeApiKey
@@ -104,11 +105,48 @@ describe('батч 22 п.3: сбои /models без смены redirect-поли
     expect(metrics.join('\n')).not.toContain('k-secret-не-в-логи');
   });
 
-  it('успешный ответ: метрика с размером тела в байтах и числом моделей', async () => {
+  it('успешный ответ: сначала 🔑-диагностика (длина ключа + префикс), потом метрика с байтами и числом моделей', async () => {
     const metrics: string[] = [];
     await fetchLiveModels('https://api.groq.com/openai/v1', 'k', async () => okList(['a', 'b']), 5000, 'groq', () => undefined, false, (m) => metrics.push(m));
-    expect(metrics).toHaveLength(1);
-    expect(metrics[0]).toMatch(/⏱ groq GET \/models: \d+ мс, \d+ байт, HTTP 200, моделей 2/);
+    expect(metrics).toHaveLength(2);
+    expect(metrics[0]).toMatch(/^🔑 groq: key=1 символов, auth=Bearer k, fetch \/models$/);
+    expect(metrics[1]).toMatch(/⏱ groq GET \/models: \d+ мс, \d+ байт, HTTP 200, моделей 2/);
+  });
+});
+
+describe('батч 22.1: 🔑 pre-fetch диагностика (строка из приёмочного чек-листа)', () => {
+  it('ключ после sanitize: длина и 5-символьный префикс Bearer, без полного ключа', () => {
+    expect(keyAuthDiagnostic('groq', '  "gsk_R2xYZ0abcdefghij"  ')).toBe('🔑 groq: key=20 символов, auth=Bearer gsk_R, fetch /models');
+    expect(keyAuthDiagnostic('openrouter', 'sk-or-v1-abcdef123456')).toBe('🔑 openrouter: key=21 символов, auth=Bearer sk-or, fetch /models');
+    expect(keyAuthDiagnostic(undefined, 'k')).toBe('🔑 custom: key=1 символов, auth=Bearer k, fetch /models');
+    expect(keyAuthDiagnostic('ollama', '')).toBe('🔑 ollama: key=0 символов, auth=— (без ключа), fetch /models');
+  });
+
+  it('fetch идёт с той же санитизацией: в 🔑 длина trimmed-ключа, полный ключ в лог не попадает', async () => {
+    const metrics: string[] = [];
+    await fetchLiveModels('https://api.groq.com/openai/v1', '\n  gsk_SECRETneverinlog123  \n', async () => okList(['m']), 5000, 'groq', () => undefined, true, (m) => metrics.push(m));
+    expect(metrics[0]).toBe('🔑 groq: key=23 символов, auth=Bearer gsk_S, fetch /models');
+    expect(metrics.join('\n')).not.toContain('gsk_SECRETneverinlog123');
+  });
+
+  it('gemini-путь тоже печатает 🔑 до живой попытки', async () => {
+    const metrics: string[] = [];
+    const models = await fetchLiveModels('https://mock.test/v1', 'AIzaSyDeadbeefabcdef', async () => okList(['gemini-x']), 5000, 'gemini', () => undefined, false, (m) => metrics.push(m));
+    expect(models).toEqual(['gemini-x']);
+    expect(metrics[0]).toBe('🔑 gemini: key=20 символов, auth=Bearer AIzaS, fetch /models');
+  });
+
+  it('кэш-хит: сеть не дёргалась — ни 🔑, ни ⏱; только 🗂', async () => {
+    clearModelsCache();
+    const metrics: string[] = [];
+    let calls = 0;
+    const fetcher = (async () => { calls += 1; return okList(['c1']); }) as typeof fetch;
+    await fetchLiveModelsCached('https://api.groq.com/openai/v1', 'k-diag', fetcher, 5000, 'groq', () => undefined, true, (m) => metrics.push(m));
+    const afterFirst = metrics.length;
+    await fetchLiveModelsCached('https://api.groq.com/openai/v1', 'k-diag', fetcher, 5000, 'groq', () => undefined, true, (m) => metrics.push(m));
+    expect(calls).toBe(1);
+    expect(metrics.slice(afterFirst)).toEqual([expect.stringMatching(/^🗂 groq: 1 моделей из кэша/)]);
+    clearModelsCache();
   });
 });
 
@@ -195,6 +233,8 @@ describe('батч 22 п.1 e2e: «Загружаем модели…» в цен
     expect(state.secrets.get('codescout.model')).toBe('model-a');
     // диагностика fetch: длительность и байты в Output, ключ — никогда
     expect(state.outputLines.some((line) => /⏱ groq GET \/models: \d+ мс, \d+ байт/.test(line))).toBe(true);
+    // батч 22.1: та самая строка чек-листа — в Output ДО fetch, с длиной trimmed-ключа
+    expect(state.outputLines.some((line) => /^🔑 groq: key=12 символов, auth=Bearer gsk_b, fetch \/models$/.test(line))).toBe(true);
     expect(state.outputLines.join('\n')).not.toContain('gsk_busy_e2e');
   });
 

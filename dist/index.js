@@ -34400,12 +34400,22 @@ function logModelsFetch(onMetric, entry) {
     // Диагностика (батч 22, п.1): длительность и размер ответа. КЛЮЧ НЕ ПИШЕМ.
     onMetric?.(`⏱ ${entry.provider} GET /models: ${entry.ms} мс, ${entry.bytes} байт, HTTP ${entry.status}, моделей ${entry.models}${entry.error ? ` (${entry.error})` : ''}`);
 }
+// Батч 22.1: pre-fetch диагностика в Output — что РЕАЛЬНО уходит в сеть:
+// длина ключа ПОСЛЕ sanitizeApiKey (сразу видно, съели ли пробелы/кавычки)
+// и 5-символьный префикс Authorization (формат gsk_…/sk-or…/AIza…). Полный
+// ключ не логируется никогда — только префикс, как в maskApiKey (17.5).
+function keyAuthDiagnostic(provider, apiKey) {
+    const key = sanitizeApiKey(apiKey);
+    const auth = key ? `Bearer ${key.slice(0, 5)}` : '— (без ключа)';
+    return `🔑 ${provider ?? 'custom'}: key=${key.length} символов, auth=${auth}, fetch /models`;
+}
 async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
     const started = Date.now();
     try {
         const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+        onMetric?.(keyAuthDiagnostic('gemini', apiKey));
         const response = await fetcher(`${safeBase}/models`, {
             method: 'GET',
             // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
@@ -34446,6 +34456,7 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = MOD
         return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
     const started = Date.now();
+    onMetric?.(keyAuthDiagnostic(provider, apiKey));
     try {
         const response = await fetcher(`${safeBase}/models`, {
             method: 'GET',

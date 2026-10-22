@@ -94,12 +94,18 @@ var MODELS_CACHE_TTL_MS = 10 * 60 * 1e3;
 function logModelsFetch(onMetric, entry) {
   onMetric?.(`\u23F1 ${entry.provider} GET /models: ${entry.ms} \u043C\u0441, ${entry.bytes} \u0431\u0430\u0439\u0442, HTTP ${entry.status}, \u043C\u043E\u0434\u0435\u043B\u0435\u0439 ${entry.models}${entry.error ? ` (${entry.error})` : ""}`);
 }
+function keyAuthDiagnostic(provider, apiKey) {
+  const key = sanitizeApiKey(apiKey);
+  const auth = key ? `Bearer ${key.slice(0, 5)}` : "\u2014 (\u0431\u0435\u0437 \u043A\u043B\u044E\u0447\u0430)";
+  return `\u{1F511} ${provider ?? "custom"}: key=${key.length} \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432, auth=${auth}, fetch /models`;
+}
 async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
   const started = Date.now();
   try {
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
+    onMetric?.(keyAuthDiagnostic("gemini", apiKey));
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
       // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
@@ -131,6 +137,7 @@ async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = MOD
   if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
   const started = Date.now();
+  onMetric?.(keyAuthDiagnostic(provider, apiKey));
   try {
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
