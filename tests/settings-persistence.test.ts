@@ -159,6 +159,78 @@ describe('hotfix: белый список команд webview', () => {
   });
 });
 
+// Батч 18.9: смена провайдера в центре настроек обязана сама открывать
+// меню выбора модели (codescout.chooseModel) — старая модель гарантированно
+// невалидна для нового провайдера. Без смены провайдера попап не показываем.
+describe('батч 18.9: авто-выбор модели при смене провайдера', () => {
+  const realFetch = globalThis.fetch;
+  const realEnv = { base: process.env.CODESCOUT_BASE_URL, groq: process.env.GROQ_API_KEY, gemini: process.env.GEMINI_API_KEY, openai: process.env.OPENAI_API_KEY, go: process.env.OPENCODE_GO_API_KEY };
+  const full = { reportLanguage: 'ru', linksText: '', docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, rateLimitPauses: 3, requestTimeoutSeconds: 60, uiTheme: 'auto', accentColor: 'auto', uiDensity: 'standard', uiFontSize: 'm', findingsSort: 'severity', reportTheme: 'auto', showConfidence: true, customColors: '{}' };
+  beforeEach(() => {
+    state.reset();
+    // Тесты не должны наследовать машинный CODESCOUT_BASE_URL (например
+    // https://api.b.ai/v1) — он перебивает baseUrl провайдера через
+    // readBaseUrlInfo и уводит /models-запросы на сторону.
+    delete process.env.CODESCOUT_BASE_URL;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENCODE_GO_API_KEY;
+    globalThis.fetch = (async (url: string | URL | undefined) => {
+      if (String(url).includes('api.groq.com')) return new Response(JSON.stringify({ data: [{ id: 'llama-3.3-70b-versatile' }] }), { status: 200 });
+      if (String(url).includes('opencode.example')) return new Response(JSON.stringify({ data: [{ id: 'qwen3.8-flash' }] }), { status: 200 });
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    }) as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    if (realEnv.base !== undefined) process.env.CODESCOUT_BASE_URL = realEnv.base;
+    if (realEnv.groq !== undefined) process.env.GROQ_API_KEY = realEnv.groq;
+    if (realEnv.gemini !== undefined) process.env.GEMINI_API_KEY = realEnv.gemini;
+    if (realEnv.openai !== undefined) process.env.OPENAI_API_KEY = realEnv.openai;
+    if (realEnv.go !== undefined) process.env.OPENCODE_GO_API_KEY = realEnv.go;
+  });
+
+  it('gemini → groq: после saveAll сам открывается quickPick модели и выбор пишется', async () => {
+    state.secrets.set('codescout.apiKey', 'AIzaOldKeyForTest');
+    state.secrets.set('codescout.provider', 'gemini');
+    state.secrets.set('codescout.model', 'gemini-1.5-flash');
+    state.quickPickAnswers.push('llama-3.3-70b-versatile');
+    const center = await openCenter();
+    center.send({ command: 'saveAll', ...full, apiKey: 'gsk_TESTKEY123', providerKey: 'groq' });
+    await waitFor(() => state.secrets.get('codescout.provider') === 'groq');
+    await waitFor(() => state.secrets.get('codescout.model') === 'llama-3.3-70b-versatile' && state.secrets.get('codescout.model.userChosen') === 'true');
+    // quickPick был востребован именно авто-вызовом: очередь пуста
+    expect(state.quickPickAnswers).toHaveLength(0);
+    expect(state.errorMessages).toHaveLength(0);
+  }, 20000);
+
+  it('provider не меняется (custom → custom) — меню НЕ открывается', async () => {
+    state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
+    state.secrets.set('codescout.provider', 'custom');
+    state.secrets.set('codescout.model', 'qwen3.8-flash');
+    const center = await openCenter();
+    center.send({ command: 'saveAll', ...full, providerKey: 'custom', baseUrl: 'https://opencode.example/v1' });
+    await waitFor(() => center.html().includes('CS_M•••STS'));
+    await flush(); await flush();
+    expect(state.quickPickAnswers).toHaveLength(0);
+    expect(state.errorMessages).toHaveLength(0);
+    expect(state.secrets.get('codescout.model')).toBe('qwen3.8-flash');
+  }, 20000);
+
+  it('контракт исходников: saveKeyProvider считает providerChanged по SecretStorage и ждёт codescout.chooseModel', () => {
+    const extension = readFileSync('extension/src/extension.ts', 'utf8');
+    expect(extension).toContain('providerChanged');
+    expect(extension).toContain("const oldProvider = oldProviderSecret?.trim() || selection.provider;");
+    expect(extension).toContain('const providerChanged = provider !== oldProvider;');
+    expect(extension).toContain("await vscode.commands.executeCommand('codescout.chooseModel')");
+    expect(extension).toContain('await autoSelectModelAfterProviderChange(context, providerChanged);');
+    expect(extension.match(/autoSelectModelAfterProviderChange\(context, (providerChanged|saved\.providerChanged)\);/g)).toHaveLength(2);
+    const fetchModels = extension.slice(extension.indexOf('async function fetchModels'), extension.indexOf('async function fetchModels') + 900);
+    expect(fetchModels).toContain('fetchLiveModels(baseUrl, selection.key ?? \'\', fetch, 5000, selection.provider)');
+  });
+});
+
 describe('hotfix: панель находок не печатает устаревшую модель при custom', () => {
   it('key-status в панели: пустая модель кастомного провайдера → нейтральный текст', () => {
     const issues: ReviewIssue[] = [];

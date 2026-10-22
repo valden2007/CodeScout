@@ -9,7 +9,7 @@ import { readGitDiff, validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs, validateFlags, missingFlagValueError } from '../src/cli/args';
 import { abortError, GroqProvider, isAbortError, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, fetchLiveModels, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, fetchLiveModels, GEMINI_STATIC_MODELS, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -665,13 +665,22 @@ describe('response parser', () => {
   });
 });
 
-describe('batch 18.8: gemini live models', () => {
-  it('fetchLiveModels intercepts gemini base URL with the static list, no HTTP', async () => {
+describe('batch 18.9: gemini live models hard guard', () => {
+  it('fetchLiveModels returns the static list for provider=gemini, HTTP is physically impossible', async () => {
     let calls = 0;
-    const fetcher = (async () => { calls += 1; return new Response('{}', { status: 200 }); }) as typeof fetch;
-    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', fetcher);
-    expect(calls).toBe(0);
+    const boom = (async () => { calls += 1; throw new Error('network must not be touched'); }) as unknown as typeof fetch;
+    // Первая строка функции: guard до assertHttpBaseUrl и до fetcher —
+    // даже заведомо битый/чужой baseUrl не вызывает fetch.
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', boom, 5000, 'gemini');
     expect(models).toEqual(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']);
+    models.push('mutate-me');
+    expect(GEMINI_STATIC_MODELS).toHaveLength(4);
+    expect(calls).toBe(0);
+    await expect(fetchLiveModels('http://not-even-valid', 'k', boom, 5000, 'gemini')).resolves.toHaveLength(4);
+    const source = readFileSync('src/providers.ts', 'utf8');
+    const body = source.slice(source.indexOf('export async function fetchLiveModels'));
+    expect(body.indexOf("if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];")).toBeLessThan(body.indexOf('assertHttpBaseUrl'));
+    expect(body.indexOf("if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];")).toBeLessThan(body.indexOf('await fetcher'));
   });
 
   it('non-gemini providers still hit GET /models', async () => {
@@ -679,7 +688,7 @@ describe('batch 18.8: gemini live models', () => {
     const models = await fetchLiveModels('https://api.groq.com/openai/v1', 'k', (async (url: string | URL | undefined) => {
       requested = String(url);
       return new Response(JSON.stringify({ data: [{ id: 'llama-3.3-70b-versatile' }] }), { status: 200 });
-    }) as unknown as typeof fetch);
+    }) as unknown as typeof fetch, 5000, 'groq');
     expect(requested).toBe('https://api.groq.com/openai/v1/models');
     expect(models).toEqual(['llama-3.3-70b-versatile']);
   });
@@ -2312,12 +2321,14 @@ describe('G6 fix batch security and robustness', () => {
     expect(html).toContain("command: 'openLink'");
     expect(html).toContain("command: 'chooseModel'");
     expect(html).not.toMatch(/\son(input|change|submit)\s*=/);
-    // Batch 18.8: CSP-safe mailto — ZERO inline onclick (nonce CSP blocks
-    // inline handlers). The mail anchor is id="author-email" href="#" and a
-    // nonce'd addEventListener posts openLink; delegated data-url stays.
+    // Batch 18.9: CSP-immune mailto — ZERO inline onclick, anchor is
+    // href="#" data-action="mailto", a global delegated listener in the
+    // nonce'd script posts openLink with the fixed mailto url.
     expect(html.match(/\sonclick=/g) || []).toHaveLength(0);
-    expect(html).toContain('<a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a>');
-    expect(html).toContain("document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });");
+    expect(html).toContain('<a class="dev-link" href="#" data-action="mailto">work.valden@gmail.com</a>');
+    expect(html).toContain('if (target.closest(\'[data-action="mailto"]\')) {');
+    expect(html).not.toContain('id="author-email"');
+    expect(html).toContain("vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' });");
     const noNonce = buildSettingsHtml(state);
     expect(noNonce).toContain("script-src 'unsafe-inline';");
     expect(noNonce).toContain('<script>');

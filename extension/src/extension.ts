@@ -99,7 +99,9 @@ async function fetchModels(selection: ProviderSelection): Promise<string[]> {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  return fetchLiveModels(baseUrl, selection.key ?? '');
+  // Батч 18.9: provider передаётся явно — внутри fetchLiveModels-first-guard
+  // блокирует HTTP для gemini (у Google нет роута GET /models).
+  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider);
 }
 
 // Возвращает undefined, если пользователь отменил выбор: отмена = возврат
@@ -1017,9 +1019,13 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
   };
 }
 
-async function saveKeyProvider(context: vscode.ExtensionContext, message: SettingsMessage): Promise<string> {
+async function saveKeyProvider(context: vscode.ExtensionContext, message: SettingsMessage): Promise<{ status: string; providerChanged: boolean }> {
   const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
+  // Батч 18.9: oldProvider = реально сохранённый провайдер ДО сохранения
+  // (SecretStorage > манифестный default), а не «gemini» из конфига по умолчанию.
+  const oldProviderSecret = await context.secrets.get(SECRET_PROVIDER);
+  const oldProvider = oldProviderSecret?.trim() || selection.provider;
   const key = message.apiKey?.trim();
   const notes: string[] = [];
   let provider: ProviderName = selection.provider;
@@ -1056,7 +1062,18 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `${t('center.savedKey', lang, { p: provider, m: model || t('center.nowModelMissing', lang) })}${notes.length ? ` (${notes.join('; ')})` : ''}`;
+  const providerChanged = provider !== oldProvider;
+  return { status: `${t('center.savedKey', lang, { p: provider, m: model || t('center.nowModelMissing', lang) })}${notes.length ? ` (${notes.join('; ')})` : ''}`, providerChanged };
+}
+
+// Батч 18.9: провайдер сменился — модель прежнего провайдера гарантированно
+// невалидна, поэтому после применения настроек сами открываем меню выбора
+// модели (codescout.chooseModel). Только когда ключ есть: без ключа команда
+// показывает «сначала ключ» и не должна шуметь.
+async function autoSelectModelAfterProviderChange(context: vscode.ExtensionContext, providerChanged: boolean): Promise<void> {
+  if (!providerChanged) return;
+  if (!(await context.secrets.get(SECRET_KEY))) return;
+  await vscode.commands.executeCommand('codescout.chooseModel');
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -1236,9 +1253,10 @@ export function activate(context: vscode.ExtensionContext): void {
               return;
             }
             if (message.command === 'saveKeyProvider') {
-              const status = await saveKeyProvider(context, message);
+              const saved = await saveKeyProvider(context, message);
               await syncKeyStatus();
-              await render(status);
+              await render(saved.status);
+              await autoSelectModelAfterProviderChange(context, saved.providerChanged);
             } else if (message.command === 'saveAppearance') {
               const config = vscode.workspace.getConfiguration('codescout');
               const language = message.reportLanguage === 'en' ? 'en' : 'ru';
@@ -1281,8 +1299,11 @@ export function activate(context: vscode.ExtensionContext): void {
           } else if (message.command === 'saveAll') {
             const config = vscode.workspace.getConfiguration('codescout');
             const parts: string[] = [];
+            let providerChanged = false;
             if (message.apiKey || message.providerKey || message.baseUrl !== undefined) {
-              parts.push(await saveKeyProvider(context, message));
+              const saved = await saveKeyProvider(context, message);
+              providerChanged = saved.providerChanged;
+              parts.push(saved.status);
               await syncKeyStatus();
             }
             const language = message.reportLanguage === 'en' ? 'en' : 'ru';
@@ -1335,6 +1356,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await config.update('customColors', JSON.stringify(ui.customColors), vscode.ConfigurationTarget.Global);
             parts.push(t('center.savedAll', currentReportLanguage(), { p: auditPasses, ml: maxLines === 0 ? '∞' : maxLines, f: maxFiles, ar: t(autoResume ? 'center.autoIn' : 'center.autoOut', currentReportLanguage()), n: links.length, sc: auditScope || t('center.scopeAll', currentReportLanguage()), L: language.toUpperCase(), ui: `${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}` }));
             await render(parts.join(' · '));
+            await autoSelectModelAfterProviderChange(context, providerChanged);
           } else if (message.command === 'openLink') {
             const url = (message.url ?? '').trim();
             // Батч 18: общий whitelist с панелью (isContactUrlAllowed) —

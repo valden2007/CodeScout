@@ -379,7 +379,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <section id="sec-dev">
   <h2>${icon('account')} ${T('sec.dev')}</h2>
   <div class="about-line">${T('about.devAuthor')} <strong>${T('about.devName')}</strong></div>
-  <div class="about-line">${T('about.devContact')} <a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
+  <div class="about-line">${T('about.devContact')} <a class="dev-link" href="#" data-action="mailto">work.valden@gmail.com</a></div>
   <div class="about-line">${T('about.devGithub')} <a class="dev-link" href="${REPO_URL}" data-url="${REPO_URL}">valden2007/CodeScout</a> — ${T('about.devIssues')}</div>
   <div class="about-line">${T('about.devCard')} <span class="scope-chip"><span>${T('about.devSiteWip')}</span></span></div>
   <p class="hint">${T('about.devCall')}</p>
@@ -666,15 +666,23 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-// Batch 18: one DELEGATED link handler for about/dev buttons and any mailto
-// anchor. preventDefault is mandatory: the webview must never try to navigate
+// Batch 18: one DELEGATED link handler for about/dev buttons (data-url).
+// preventDefault is mandatory: the webview must never try to navigate
 // itself (CSP kills mailto navigation silently -> "dead click" UX). The host
 // opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
-// Batch 18.8: the inline onclick is GONE (nonce CSP blocks inline handlers
-// outright). The mail anchor is a plain href="#" link with id="author-email";
-// a dedicated nonce'd listener posts openLink, the delegated [data-url]
-// listener below stays as the belt-and-braces path for every other link.
-document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });
+// Batch 18.9: the mail anchor is NOT a data-url link anymore — it carries
+// data-action="mailto" and a dedicated global delegated listener below posts
+// the fixed mailto address. No inline onclick (nonce CSP blocks inline
+// handlers outright), no literal mailto: in href (CSP blocks navigation):
+// the click is pure JS -> postMessage -> host openExternal. Belt-and-braces.
+document.addEventListener('click', (e) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (!target) return;
+  if (target.closest('[data-action="mailto"]')) {
+    e.preventDefault();
+    vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' });
+  }
+});
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;

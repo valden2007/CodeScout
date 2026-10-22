@@ -74,12 +74,9 @@ function assertHttpBaseUrl(url) {
   return url;
 }
 var GEMINI_STATIC_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"];
-function isGeminiBaseUrl(url) {
-  return /:\/\/(generativelanguage\.googleapis\.com|aistudio\.googleapis\.com)(:|\/|$)/i.test(url);
-}
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3) {
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider) {
+  if (provider === "gemini") return [...GEMINI_STATIC_MODELS];
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
-  if (isGeminiBaseUrl(safeBase)) return [...GEMINI_STATIC_MODELS];
   const response = await fetcher(`${safeBase}/models`, {
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -4274,7 +4271,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <section id="sec-dev">
   <h2>${icon2("account")} ${T("sec.dev")}</h2>
   <div class="about-line">${T("about.devAuthor")} <strong>${T("about.devName")}</strong></div>
-  <div class="about-line">${T("about.devContact")} <a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
+  <div class="about-line">${T("about.devContact")} <a class="dev-link" href="#" data-action="mailto">work.valden@gmail.com</a></div>
   <div class="about-line">${T("about.devGithub")} <a class="dev-link" href="${CODESCOUT_REPO_URL}" data-url="${CODESCOUT_REPO_URL}">valden2007/CodeScout</a> \u2014 ${T("about.devIssues")}</div>
   <div class="about-line">${T("about.devCard")} <span class="scope-chip"><span>${T("about.devSiteWip")}</span></span></div>
   <p class="hint">${T("about.devCall")}</p>
@@ -4564,15 +4561,23 @@ window.addEventListener('message', (event) => {
   }
 });
 renderChips();
-// Batch 18: one DELEGATED link handler for about/dev buttons and any mailto
-// anchor. preventDefault is mandatory: the webview must never try to navigate
+// Batch 18: one DELEGATED link handler for about/dev buttons (data-url).
+// preventDefault is mandatory: the webview must never try to navigate
 // itself (CSP kills mailto navigation silently -> "dead click" UX). The host
 // opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
-// Batch 18.8: the inline onclick is GONE (nonce CSP blocks inline handlers
-// outright). The mail anchor is a plain href="#" link with id="author-email";
-// a dedicated nonce'd listener posts openLink, the delegated [data-url]
-// listener below stays as the belt-and-braces path for every other link.
-document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });
+// Batch 18.9: the mail anchor is NOT a data-url link anymore \u2014 it carries
+// data-action="mailto" and a dedicated global delegated listener below posts
+// the fixed mailto address. No inline onclick (nonce CSP blocks inline
+// handlers outright), no literal mailto: in href (CSP blocks navigation):
+// the click is pure JS -> postMessage -> host openExternal. Belt-and-braces.
+document.addEventListener('click', (e) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (!target) return;
+  if (target.closest('[data-action="mailto"]')) {
+    e.preventDefault();
+    vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' });
+  }
+});
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
@@ -4666,7 +4671,7 @@ function preferredLiveModel(models, fallback) {
 async function fetchModels(selection) {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  return fetchLiveModels(baseUrl, selection.key ?? "");
+  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider);
 }
 async function chooseLiveModel(selection, placeHolder) {
   let models = [];
@@ -5465,6 +5470,8 @@ async function readSettingsState(context) {
 async function saveKeyProvider(context, message) {
   const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
+  const oldProviderSecret = await context.secrets.get(SECRET_PROVIDER);
+  const oldProvider = oldProviderSecret?.trim() || selection.provider;
   const key = message.apiKey?.trim();
   const notes = [];
   let provider = selection.provider;
@@ -5497,7 +5504,13 @@ async function saveKeyProvider(context, message) {
     model = validated.model;
   }
   await context.secrets.store(SECRET_MODEL, model);
-  return `${t("center.savedKey", lang, { p: provider, m: model || t("center.nowModelMissing", lang) })}${notes.length ? ` (${notes.join("; ")})` : ""}`;
+  const providerChanged = provider !== oldProvider;
+  return { status: `${t("center.savedKey", lang, { p: provider, m: model || t("center.nowModelMissing", lang) })}${notes.length ? ` (${notes.join("; ")})` : ""}`, providerChanged };
+}
+async function autoSelectModelAfterProviderChange(context, providerChanged) {
+  if (!providerChanged) return;
+  if (!await context.secrets.get(SECRET_KEY)) return;
+  await vscode2.commands.executeCommand("codescout.chooseModel");
 }
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
@@ -5664,9 +5677,10 @@ function activate(context) {
               return;
             }
             if (message.command === "saveKeyProvider") {
-              const status = await saveKeyProvider(context, message);
+              const saved = await saveKeyProvider(context, message);
               await syncKeyStatus();
-              await render(status);
+              await render(saved.status);
+              await autoSelectModelAfterProviderChange(context, saved.providerChanged);
             } else if (message.command === "saveAppearance") {
               const config = vscode2.workspace.getConfiguration("codescout");
               const language = message.reportLanguage === "en" ? "en" : "ru";
@@ -5709,8 +5723,11 @@ function activate(context) {
             } else if (message.command === "saveAll") {
               const config = vscode2.workspace.getConfiguration("codescout");
               const parts = [];
+              let providerChanged = false;
               if (message.apiKey || message.providerKey || message.baseUrl !== void 0) {
-                parts.push(await saveKeyProvider(context, message));
+                const saved = await saveKeyProvider(context, message);
+                providerChanged = saved.providerChanged;
+                parts.push(saved.status);
                 await syncKeyStatus();
               }
               const language = message.reportLanguage === "en" ? "en" : "ru";
@@ -5763,6 +5780,7 @@ function activate(context) {
               await config.update("customColors", JSON.stringify(ui.customColors), vscode2.ConfigurationTarget.Global);
               parts.push(t("center.savedAll", currentReportLanguage(), { p: auditPasses, ml: maxLines === 0 ? "\u221E" : maxLines, f: maxFiles, ar: t(autoResume ? "center.autoIn" : "center.autoOut", currentReportLanguage()), n: links.length, sc: auditScope || t("center.scopeAll", currentReportLanguage()), L: language.toUpperCase(), ui: `${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}` }));
               await render(parts.join(" \xB7 "));
+              await autoSelectModelAfterProviderChange(context, providerChanged);
             } else if (message.command === "openLink") {
               const url = (message.url ?? "").trim();
               if (isContactUrlAllowed(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));

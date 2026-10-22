@@ -28,20 +28,15 @@ export function assertHttpBaseUrl(url: string): string {
   return url;
 }
 
-// Батч 18.8: у Google AI Studio в OpenAI-адаптере НЕТ роута GET /models —
-// живой запрос всегда даёт 404/405. Для gemini не дёргаем сеть, отдаём
-// статический список бесплатных/платных моделей endpoint'а.
+// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере НЕТ роута GET /models —
+// живой запрос всегда 404/405. Для provider === 'gemini' сетевой запрос
+// физически не может выполниться: guard стоит ПЕРВОЙ строкой функции и
+// возвращается до валидации URL, до fetcher и до AbortSignal.
 export const GEMINI_STATIC_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash'];
 
-export function isGeminiBaseUrl(url: string): boolean {
-  return /:\/\/(generativelanguage\.googleapis\.com|aistudio\.googleapis\.com)(:|\/|$)/i.test(url);
-}
-
-export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000): Promise<string[]> {
+export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000, provider?: string): Promise<string[]> {
+  if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
-  // Перехват gemini ДО любого HTTP: /models у Google нет — падать/висеть
-  // не на чем, сразу resolve со статическим списком.
-  if (isGeminiBaseUrl(safeBase)) return [...GEMINI_STATIC_MODELS];
   const response = await fetcher(`${safeBase}/models`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
