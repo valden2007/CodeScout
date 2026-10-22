@@ -580,11 +580,11 @@ describe('C4.5 quality fixes', () => {
   });
 
   it('demotes low-confidence critical findings to medium', () => {
-    const result = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"critical","description":"Maybe unsafe","confidence":0.6}]}', 'src/app.ts');
+    const result = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"critical","description":"Maybe unsafe","confidence":60}]}', 'src/app.ts');
     expect(result.issues[0].severity).toBe('medium');
   });
   it('never downgrades security findings even if text mentions indexes', () => {
-    const result = parseReviewResponse('{"issues":[{"line":4,"category":"security","severity":"medium","description":"Missing database index","suggestion":"Add an index for this query","confidence":0.8}]}', 'src/db.ts');
+    const result = parseReviewResponse('{"issues":[{"line":4,"category":"security","severity":"medium","description":"Missing database index","suggestion":"Add an index for this query","confidence":80}]}', 'src/db.ts');
     expect(result.issues[0].category).toBe('security');
   });
 });
@@ -611,9 +611,9 @@ describe('line accuracy', () => {
 
 describe('report formatter', () => {
   const issues = [
-    { file: 'src/app.ts', line: 8, category: 'style' as const, severity: 'low' as const, description: 'Minor naming issue.', suggestion: 'Rename the variable.', confidence: 0.8 },
-    { file: 'src/auth.ts', line: 3, category: 'security' as const, severity: 'critical' as const, description: 'User input reaches a privileged operation.', code: 'run(input)', suggestion: 'Validate input before use.', confidence: 0.95 },
-    { file: 'src/db.ts', line: 14, category: 'performance' as const, severity: 'medium' as const, description: 'This query scans the full table.', suggestion: 'Add an index.', confidence: 0.7 }
+    { file: 'src/app.ts', line: 8, category: 'style' as const, severity: 'low' as const, description: 'Minor naming issue.', suggestion: 'Rename the variable.', confidence: 80 },
+    { file: 'src/auth.ts', line: 3, category: 'security' as const, severity: 'critical' as const, description: 'User input reaches a privileged operation.', code: 'run(input)', suggestion: 'Validate input before use.', confidence: 95 },
+    { file: 'src/db.ts', line: 14, category: 'performance' as const, severity: 'medium' as const, description: 'This query scans the full table.', suggestion: 'Add an index.', confidence: 70 }
   ];
 
   it('sorts issues by severity and maps severity emojis', () => {
@@ -638,8 +638,8 @@ describe('report formatter', () => {
 
 describe('response parser', () => {
   it('parses fenced JSON and normalizes issue fields', () => {
-    const result = parseReviewResponse('```json\n{"issues":[{"line":4,"category":"security","severity":"high","description":"Unsafe input","code":"const token = input.token;","confidence":2}],"summary":"Fix input validation"}\n```', 'src/app.ts');
-    expect(result.issues[0]).toMatchObject({ file: 'src/app.ts', line: 4, category: 'security', severity: 'high', code: 'const token = input.token;', confidence: 1 });
+    const result = parseReviewResponse('```json\n{"issues":[{"line":4,"category":"security","severity":"high","description":"Unsafe input","code":"const token = input.token;","confidence":150}],"summary":"Fix input validation"}\n```', 'src/app.ts');
+    expect(result.issues[0]).toMatchObject({ file: 'src/app.ts', line: 4, category: 'security', severity: 'high', code: 'const token = input.token;', confidence: 100 });
   });
 
   it('rejects malformed JSON', () => {
@@ -2885,8 +2885,8 @@ describe('v1.4b-2 design system (codicons + tokens)', () => {
 
 describe('v1.4b-4 appearance handles', () => {
   const base: ReviewIssue[] = [
-    { file: 'b.ts', line: 5, category: 'bug', severity: 'low', description: 'x', confidence: 0.42 },
-    { file: 'a.ts', line: 9, category: 'bug', severity: 'critical', description: 'y', confidence: 0.9 }
+    { file: 'b.ts', line: 5, category: 'bug', severity: 'low', description: 'x', confidence: 42 },
+    { file: 'a.ts', line: 9, category: 'bug', severity: 'critical', description: 'y', confidence: 90 }
   ];
   const stats = { files: 2, seconds: 1, critical: 1, medium: 0, low: 1 };
   const prefs = (over: UiPrefsInput) => ({ theme: 'auto', accent: 'auto', density: 'standard', fontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', ...over }) as UiPrefs;
@@ -2898,8 +2898,9 @@ describe('v1.4b-4 appearance handles', () => {
     expect(html).toContain('data-fontsize="m"');
     expect(html).toContain('data-accent="auto"');
     expect(html).toContain('data-report-theme="auto"');
-    expect(html).toContain('class="confidence"');
-    expect(html).toContain('42%');
+    // Батч 20b: % живёт внутри бейджа уверенности, отдельного чипа больше нет.
+    expect(html).toContain('class="badge suggested"');
+    expect(html).toContain('(42%)');
   });
 
   it('theme/accent/density/fontsize become body data-attributes', () => {
@@ -2911,10 +2912,11 @@ describe('v1.4b-4 appearance handles', () => {
     expect(html).toContain('data-report-theme="light"');
   });
 
-  it('showConfidence=false hides the % chip', () => {
+  it('showConfidence=false hides the % in badges', () => {
     const html = buildReportHtml(base, stats, false, false, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, '', prefs({ showConfidence: false }));
     expect(html).not.toContain('class="confidence"');
-    expect(html).not.toContain('42%');
+    expect(html).not.toContain('(42%)');
+    expect(html).toContain('class="badge suggested"');
   });
 
   it('findingsSort reorders sections (severity vs file vs line)', () => {
@@ -3300,7 +3302,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
   });
 
   it('EN render of panel and center carries no Russian; RU render still uses the dictionary', () => {
-    const issues: ReviewIssue[] = [{ file: 'src/app.ts', line: 12, code: 'const x = untrusted();', category: 'bug', severity: 'critical', description: 'Missing null check on user', suggestion: 'Add a guard clause', confidence: 0.92 }];
+    const issues: ReviewIssue[] = [{ file: 'src/app.ts', line: 12, code: 'const x = untrusted();', category: 'bug', severity: 'critical', description: 'Missing null check on user', suggestion: 'Add a guard clause', confidence: 92, proof: 'Line 12: user is used unchecked' }];
     const stats = { files: 2, seconds: 3.5, critical: 1, medium: 0, low: 1 };
     const diff = buildFindingsDiff({ savedAt: 1, scanType: 'audit', provider: 'gemini', model: 'm', findings: [{ file: 'src/old.ts', line: 3, category: 'docs', severity: 'low', description: 'gone' }] }, issues, 'en');
     const panelEn = buildReportHtml(issues, stats, true, false, 'Review finished', 'success', 'AIza****1234', true, 'gemini', 'gemini-2.5-flash', false, '🔎 Checking file 1/2: src/app.ts... · ⏱ 5s', true, 'new', diff, 'focus on security', undefined, { done: 1, total: 2, secondsLeft: 45, attempt: 1, maxAttempts: 3 }, true, 3, 90, undefined, 'nonce1', undefined, 'en');

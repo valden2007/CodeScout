@@ -38,7 +38,8 @@ export function stripAnsi(value: string): string {
 }
 
 function confidenceLabel(confidence: number): string {
-  const value = Number.isFinite(confidence) ? Math.round(confidence <= 1 ? confidence * 100 : confidence) : 0;
+  // Батч 20b: шкала уже целые 0..100 — только клампим мусор к краям.
+  const value = Number.isFinite(confidence) ? Math.round(confidence) : 0;
   return `${Math.min(100, Math.max(0, value))}%`;
 }
 

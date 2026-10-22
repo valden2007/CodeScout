@@ -1,16 +1,11 @@
 export type ReviewSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type ReviewCategory = 'bug' | 'security' | 'performance' | 'maintainability' | 'docs' | 'style';
 
-// Батч 14: уровень уверенности находки и её доказательство.
-// confidence (число 0..1) — вероятностная оценка модели;
-// confidenceLevel — бинарная классификация «подтверждено кодом / предположение».
-export type FindingConfidence = 'verified' | 'suggested';
-
-export interface FindingProof {
-  condition?: string;   // При каком условии/входных данных проявляется проблема
-  trace?: string[];     // Шаги/путь выполнения кода до ошибки (1 -> 2 -> 3)
-}
-
+// Батч 20b (ядро доверия): confidence — целое число 0..100, степень уверенности
+// модели в находке; proof — короткое доказательство (цитата из кода или причина).
+// Порог «подтверждено кодом / предположение модели» — в response-parser
+// (CONFIDENCE_VERIFIED_THRESHOLD). fingerprint — идентичность находки для
+// подавления ложных срабатываний (extension/src/findingsStore).
 export interface ReviewConfig {
   provider: string;
   model: string;
@@ -34,10 +29,9 @@ export interface ReviewIssue {
   description: string;
   suggestion?: string;
   code?: string;
-  confidence: number;
+  confidence: number;   // 0..100, целое (валидация в response-parser)
   commitId?: string;
-  confidenceLevel?: FindingConfidence;
-  proof?: FindingProof;
+  proof?: string;       // цитата из кода или причина; '' если доказательств нет
   fingerprint?: string;
 }
 

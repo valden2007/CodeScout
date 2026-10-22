@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { DiffFile, GitHubPullRequestContext, ReviewIssue } from './types';
 import { SUMMARY_MARKER } from './report-formatter';
+import { confidencePercent } from './response-parser';
 import { asyncPool } from './async-pool';
 
 export class GitHubClient {
@@ -61,5 +62,5 @@ export function formatIssue(issue: ReviewIssue): string {
   const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'high' ? '🟠' : issue.severity === 'medium' ? '🟡' : '🟢';
   const code = escapeMarkdown(issue.code ?? `line ${issue.line}`);
   const detail = escapeMarkdown(issue.suggestion ?? issue.description);
-  return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
+  return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${confidencePercent(issue.confidence, 0)}%`;
 }

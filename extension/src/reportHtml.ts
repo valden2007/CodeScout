@@ -1,4 +1,5 @@
 import { ReviewIssue } from '../../src/types';
+import { CONFIDENCE_VERIFIED_THRESHOLD, confidencePercent } from '../../src/response-parser';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefsInput } from './uiPrefs';
 import { computeFingerprint } from './findingsStore';
@@ -79,20 +80,20 @@ function severityClass(severity: ReviewIssue['severity']): string {
   return severity;
 }
 
-// Батч 14: плашка уверенности (verified/suggested), блок доказательства
-// находки и кнопка подавления false positive (fingerprint — для store).
-function confidenceBadge(issue: ReviewIssue, lang: Lang): string {
-  if (issue.confidenceLevel === 'verified') return `<span class="badge verified">${icon('pass')} ${escapeHtml(t('issue.confidenceVerified', lang))}</span>`;
-  return `<span class="badge suggested">${icon('lightbulb')} ${escapeHtml(t('issue.confidenceSuggested', lang))}</span>`;
+// Батч 20b (ядро доверия): плашка из числовой уверенности — >=70 «подтверждено
+// кодом» (зелёная), иначе «предположение модели» (жёлтая); % внутри плашки
+// подчиняется настройке showConfidence. proof — строка-цитата/причина в details.
+function confidenceBadge(issue: ReviewIssue, lang: Lang, showConfidence: boolean): string {
+  const percent = confidencePercent(issue.confidence);
+  const suffix = showConfidence ? ` (${percent}%)` : '';
+  if (percent >= CONFIDENCE_VERIFIED_THRESHOLD) return `<span class="badge verified">${icon('pass')} ${escapeHtml(t('issue.confidenceVerified', lang))}${suffix}</span>`;
+  return `<span class="badge suggested">${icon('lightbulb')} ${escapeHtml(t('issue.confidenceSuggested', lang))}${suffix}</span>`;
 }
 
 function proofBlock(issue: ReviewIssue, lang: Lang): string {
-  const condition = issue.proof?.condition?.trim() ?? '';
-  const trace = (issue.proof?.trace ?? []).filter((step) => typeof step === 'string' && step.trim()).map((step) => step.trim());
-  if (!condition && trace.length === 0) return '';
-  const conditionHtml = condition ? `<p class="proof-cond"><strong>${escapeHtml(t('issue.proofCondition', lang))}:</strong> ${escapeHtml(condition)}</p>` : '';
-  const traceHtml = trace.length ? `<div class="proof-trace-label"><strong>${escapeHtml(t('issue.proofTrace', lang))}</strong></div><ol class="proof-trace">${trace.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>` : '';
-  return `<details class="proof"><summary>${icon('search')} <span>${escapeHtml(t('issue.showProof', lang))}</span></summary><div class="proof-body">${conditionHtml}${traceHtml}</div></details>`;
+  const proof = typeof issue.proof === 'string' ? issue.proof.trim() : '';
+  if (!proof) return '';
+  return `<details class="proof"><summary>${icon('search')} <span>${escapeHtml(t('issue.showProof', lang))}</span></summary><div class="proof-body"><p class="proof-text">${escapeHtml(proof)}</p></div></details>`;
 }
 
 function suppressButton(issue: ReviewIssue, lang: Lang): string {
@@ -105,7 +106,7 @@ function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true, lan
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : '';
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon('arrow-right')} <span>${escapeHtml(issue.suggestion)}</span></div>` : '';
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} ${t('issue.new', lang)}</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang)}${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ''}</div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon('add')} ${t('issue.new', lang)}</span>` : ''}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang, showConfidence)}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
@@ -225,7 +226,6 @@ h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs
 .issue-card.medium { border-left-color: var(--cs-warn); }
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .category { color: var(--cs-desc); font-size: var(--cs-font-1); }
-.confidence { margin-left: auto; color: var(--cs-desc); font-size: var(--cs-font-1); font-variant-numeric: tabular-nums; }
 .location { display: block; margin: 6px 0; color: var(--cs-accent); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); overflow-wrap: anywhere; text-decoration: underline; }
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px solid var(--cs-card-border); border-radius: 3px; background: var(--cs-code-bg); color: var(--cs-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); white-space: pre-wrap; word-break: break-word; }
@@ -235,9 +235,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .proof { margin-top: var(--cs-space-2); }
 .proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
-.proof-cond { margin: 0 0 5px; overflow-wrap: anywhere; }
-.proof-trace { margin: 0; padding-left: 18px; }
-.proof-trace li { margin: 2px 0; overflow-wrap: anywhere; }
+.proof-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
 .fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
 .fp-button:hover { color: var(--cs-error); }

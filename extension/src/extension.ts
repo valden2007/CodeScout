@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { abortError, BadResponseError, createProvider, isAbortError, ProviderHttpError, RateLimitError, requestTimeoutSecondsFromSetting, RetryEvent, setDefaultRequestTimeoutMs, sleep } from '../../src/llm-client';
 import { formatError } from '../../src/error-classifier';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
-import { parseReviewResponse } from '../../src/response-parser';
+import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
 import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl } from '../../src/providers';
@@ -56,7 +56,7 @@ function formatIssue(issue: ReviewIssue): string {
   const location = `${issue.file}:${issue.line}`;
   const code = issue.code ? `\n  code: ${issue.code}` : '';
   const suggestion = issue.suggestion ? `\n  suggestion: ${issue.suggestion}` : '';
-  return `[${severity}] ${issue.category} · ${location} · confidence ${Math.round(issue.confidence * 100)}%\n  ${issue.description}${code}${suggestion}`;
+  return `[${severity}] ${issue.category} · ${location} · confidence ${confidencePercent(issue.confidence, 0)}%\n  ${issue.description}${code}${suggestion}`;
 }
 
 function dumpFindings(output: vscode.OutputChannel, issues: ReviewIssue[], summary: string): void {

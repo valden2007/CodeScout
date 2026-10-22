@@ -1,34 +1,33 @@
-import { ReviewIssue, ReviewResult, ReviewCategory, ReviewSeverity, FindingConfidence, FindingProof } from './types';
+import { ReviewIssue, ReviewResult, ReviewCategory, ReviewSeverity } from './types';
 
 const categories = new Set<ReviewCategory>(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
 const severities = new Set<ReviewSeverity>(['low', 'medium', 'high', 'critical']);
-const PROOF_TRACE_MAX = 12;
-const PROOF_TRACE_ITEM_MAX = 300;
-const PROOF_CONDITION_MAX = 500;
+// Батч 20b (ядро доверия): единая шкала уверенности для всего продукта —
+// целые 0..100. Парсер клампит и лечит мусор, UI/экспортёры только читают.
+export const CONFIDENCE_MIN = 0;
+export const CONFIDENCE_MAX = 100;
+// Мусор/отсутствие поля = 50: «ни да, ни нет», честный нейтральный дефолт.
+export const CONFIDENCE_DEFAULT = 50;
+// >= порога — «подтверждено кодом» (зелёный бейдж), ниже — «предположение модели».
+export const CONFIDENCE_VERIFIED_THRESHOLD = 70;
+// critical допускается только при уверенности не ниже этого значения.
+export const CONFIDENCE_CRITICAL_MIN = 90;
+// Санити-потолок длины доказательства: непроверяемый вывод модели не должен
+// раздувать отчёт; это граница формата, а не продуктовый лимит.
+const PROOF_MAX = 1000;
 
-// Батч 14: старые модели/fallback не знают новых полей — ничего не падаем,
-// отдаём дефолты: confidenceLevel 'suggested', proof {}.
-function parseConfidenceLevel(value: Record<string, unknown>): FindingConfidence {
-  const direct = value.confidenceLevel;
-  if (direct === 'verified' || direct === 'suggested') return direct;
-  // Модели иногда путают поля и кладут строку в numeric confidence — терпим и это.
-  if (value.confidence === 'verified') return 'verified';
-  return 'suggested';
+// Приведение любого значения confidence к шкале 0..100 (целое).
+// Мусор (не число, NaN, Infinity) → fallback. Все отображения (% в панели,
+// GitHub-комменты, CLI, Output) идут через эту функцию — дублей логики нет.
+export function confidencePercent(value: unknown, fallback = CONFIDENCE_DEFAULT): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.round(Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, value)));
 }
 
-function parseProof(raw: unknown): FindingProof {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const value = raw as Record<string, unknown>;
-  const proof: FindingProof = {};
-  if (typeof value.condition === 'string' && value.condition.trim()) proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
-  if (Array.isArray(value.trace)) {
-    const trace = value.trace
-      .filter((step): step is string => typeof step === 'string' && step.trim().length > 0)
-      .map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX))
-      .slice(0, PROOF_TRACE_MAX);
-    if (trace.length) proof.trace = trace;
-  }
-  return proof;
+// proof — строка (цитата из кода или причина). При отсутствии/мусоре = ''.
+function parseProof(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.trim().slice(0, PROOF_MAX);
 }
 
 function findBalancedJson(text: string): string | undefined {
@@ -133,13 +132,12 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     const description = typeof value.description === 'string' ? value.description.trim() : '';
     if (!description) return [];
     const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
-    const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+    const confidence = confidencePercent(value.confidence);
     const code = typeof value.code === 'string' ? value.code.trim() : undefined;
     const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
-    const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-    const confidenceLevel = parseConfidenceLevel(value);
+    const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
     const proof = parseProof(value.proof);
-    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
+    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
   return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }

@@ -48,7 +48,7 @@ function toTuiIssue(issue: ReviewIssue): Issue {
   return {
     severity,
     category: issue.category,
-    confidence: Math.round(issue.confidence * 100),
+    confidence: Math.round(issue.confidence),
     line: issue.line,
     code: issue.code ?? issue.description,
     suggestion: issue.suggestion ?? issue.description

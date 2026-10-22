@@ -1,4 +1,5 @@
 import { ReviewIssue, ReviewSeverity } from './types';
+import { confidencePercent } from './response-parser';
 
 export const SUMMARY_MARKER = '<!-- codescout-summary -->';
 const MAX_COMMENT_LENGTH = 60_000;
@@ -61,7 +62,7 @@ export function buildSummaryComment(issues: ReviewIssue[], filesAnalyzed: number
     const title = safeIssueTitle(issue);
     const codeLine = issue.code ?? `line ${issue.line}`;
     const suggestion = issue.suggestion ? `\n→ ${escapeHtml(issue.suggestion)}` : '';
-    const confidence = typeof issue.confidence === 'number' && Number.isFinite(issue.confidence) ? Math.round(issue.confidence * 100) : 0;
+    const confidence = confidencePercent(issue.confidence, 0);
     return `<details><summary>${emoji} <strong>${escapeHtml(title)}</strong> — ${inlineCode(`${issue.file}:${issue.line}`)}</summary>\n\n${inlineCode(codeLine)}${suggestion}\n\nConfidence: ${confidence}%\n</details>`;
   }).join('\n\n');
   const report = `${SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s${truncatedNote ? `\n\n${escapeHtml(truncatedNote)}` : ''}\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;

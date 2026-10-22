@@ -1,5 +1,6 @@
-// Батч 14: false-positive suppression + proof of finding — интеграция.
-// e2e через реальный activate() + CodeScoutPanel на vscode-stub (как path-guard).
+// Батч 20b: ядро доверия — proof + confidence 0..100, бейджи по числовому
+// порогу, подавление ложных срабатываний. e2e через реальный activate() +
+// CodeScoutPanel на vscode-stub (как path-guard).
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,83 +36,92 @@ function createView(): { view: unknown; receive: (message: unknown) => void; htm
 const stats = { files: 2, seconds: 1.5, critical: 0, medium: 2, low: 0 };
 
 function issue(overrides: Partial<ReviewIssue>): ReviewIssue {
-  return { file: 'src/a.ts', line: 10, category: 'bug', severity: 'medium', description: 'd', confidence: 0.7, ...overrides };
+  return { file: 'src/a.ts', line: 10, category: 'bug', severity: 'medium', description: 'd', confidence: 70, ...overrides };
+}
+
+function reportWith(issues: ReviewIssue[], lang: 'ru' | 'en' = 'ru'): string {
+  return buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, lang);
 }
 
 function mementoOf(context: unknown) {
   return (context as { workspaceState: never }).workspaceState;
 }
 
-describe('батч 14: промпт и парсер proof/confidence', () => {
-  it('системный промпт требует proof и confidenceLevel', () => {
-    expect(SYSTEM_PROMPT).toContain('"confidenceLevel":"verified|suggested"');
-    expect(SYSTEM_PROMPT).toContain('"proof"');
-    expect(SYSTEM_PROMPT).toContain('"condition"');
-    expect(SYSTEM_PROMPT).toContain('"trace"');
-    expect(SYSTEM_PROMPT).toContain('When X happens');
-    expect(SYSTEM_PROMPT).toContain('concrete code path');
-  });
-
-  it('парсер: отсутствие proof/confidence → defaults без падения (обратная совместимость)', () => {
-    const result = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"medium","description":"Legacy model","confidence":0.8}],"summary":"ok"}', 'src/a.ts');
-    expect(result.issues).toHaveLength(1);
-    expect(result.issues[0].confidenceLevel).toBe('suggested');
-    expect(result.issues[0].proof).toEqual({});
-    expect(result.issues[0].confidence).toBe(0.8);
-  });
-
-  it('парсер: корректные поля читаются как есть', () => {
-    const result = parseReviewResponse(JSON.stringify({ issues: [{ line: 4, category: 'bug', severity: 'high', description: 'NPE', confidence: 0.95, confidenceLevel: 'verified', proof: { condition: 'When user is null', trace: ['Line 10: assign', 'Line 25: use'] } }], summary: '' }), 'src/a.ts');
-    expect(result.issues[0].confidenceLevel).toBe('verified');
-    expect(result.issues[0].proof).toEqual({ condition: 'When user is null', trace: ['Line 10: assign', 'Line 25: use'] });
-  });
-
-  it('парсер: мусор в proof не роняет разбор, трассируются только строки', () => {
-    const result = parseReviewResponse(JSON.stringify({ issues: [{ line: 4, description: 'x', proof: 'не объект' }] }), 'src/b.ts');
-    expect(result.issues[0].proof).toEqual({});
-    const messy = parseReviewResponse(JSON.stringify({ issues: [{ line: 4, description: 'y', confidenceLevel: 'bogus', proof: { condition: 7, trace: [null, 5, ' шаг ', '   ', 'z'.repeat(1000)] } }] }), 'src/b.ts');
-    expect(messy.issues[0].confidenceLevel).toBe('suggested');
-    expect(messy.issues[0].proof).toEqual({ trace: ['шаг', 'z'.repeat(300)] });
-  });
-
-  it('парсер: строка вместо числа в confidence не ломает разбор и читается как verified', () => {
-    const result = parseReviewResponse('{"issues":[{"line":4,"description":"z","confidence":"verified"}]}', 'src/c.ts');
-    expect(result.issues[0].confidence).toBe(0.7);
-    expect(result.issues[0].confidenceLevel).toBe('verified');
+describe('батч 20b: промпт требует proof (строку) и confidence 0..100', () => {
+  it('в системном промпте объявлены proof-строка и целая шкала уверенности', () => {
+    expect(SYSTEM_PROMPT).toContain('"proof":"string"');
+    expect(SYSTEM_PROMPT).toContain('"confidence":0');
+    expect(SYSTEM_PROMPT).toContain('INTEGER from 0 to 100');
+    expect(SYSTEM_PROMPT).toContain('empty string');
+    expect(SYSTEM_PROMPT).toContain('at least 90');
+    expect(SYSTEM_PROMPT).not.toContain('confidenceLevel');
   });
 });
 
-describe('батч 14: плашки confidence и доказательство в UI', () => {
-  it('verified → зелёная плашка, suggested → жёлтая, отсутствие поля → suggested', () => {
-    const html = buildReportHtml(
-      [issue({ description: 'VER-CARD', confidenceLevel: 'verified' }), issue({ description: 'SUG-CARD', confidenceLevel: 'suggested' }), issue({ description: 'DEF-CARD' })],
-      stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, 'ru'
-    );
-    expect(html).toContain('Подтверждено кодом');
-    expect(html).toContain('Предположение модели');
+describe('батч 20b: парсер — clamping confidence и proof', () => {
+  it('отсутствие/мусор confidence = 50, proof = пустая строка', () => {
+    const missing = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"medium","description":"No fields"}],"summary":"ok"}', 'src/a.ts');
+    expect(missing.issues[0].confidence).toBe(50);
+    expect(missing.issues[0].proof).toBe('');
+    const junk = parseReviewResponse('{"issues":[{"line":4,"description":"Junk","confidence":"very sure"}]}', 'src/a.ts');
+    expect(junk.issues[0].confidence).toBe(50);
+    const nanish = parseReviewResponse('{"issues":[{"line":4,"description":"NaN","confidence":null}]}', 'src/a.ts');
+    expect(nanish.issues[0].confidence).toBe(50);
+  });
+
+  it('confidence клампится в 0..100 и округляется до целого', () => {
+    const high = parseReviewResponse('{"issues":[{"line":4,"description":"over","confidence":150}]}', 'src/a.ts');
+    expect(high.issues[0].confidence).toBe(100);
+    const negative = parseReviewResponse('{"issues":[{"line":4,"description":"under","confidence":-20}]}', 'src/a.ts');
+    expect(negative.issues[0].confidence).toBe(0);
+    const float = parseReviewResponse('{"issues":[{"line":4,"description":"round","confidence":76.4}]}', 'src/a.ts');
+    expect(float.issues[0].confidence).toBe(76);
+    const zero = parseReviewResponse('{"issues":[{"line":4,"description":"zero","confidence":0}]}', 'src/a.ts');
+    expect(zero.issues[0].confidence).toBe(0);
+  });
+
+  it('proof читается строкой, мусор не роняет разбор, длина ограничена', () => {
+    const ok = parseReviewResponse(JSON.stringify({ issues: [{ line: 4, description: 'NPE', proof: 'Line 12: session.user used without null check' }] }), 'src/a.ts');
+    expect(ok.issues[0].proof).toBe('Line 12: session.user used without null check');
+    const objProof = parseReviewResponse('{"issues":[{"line":4,"description":"x","proof":{"condition":"old shape"}}]}', 'src/b.ts');
+    expect(objProof.issues[0].proof).toBe('');
+    const longProof = parseReviewResponse(JSON.stringify({ issues: [{ line: 4, description: 'y', proof: 'p'.repeat(5000) }] }), 'src/b.ts');
+    expect(longProof.issues[0].proof).toHaveLength(1000);
+  });
+
+  it('critical при confidence < 90 понижается до medium, при 90 остаётся', () => {
+    const weak = parseReviewResponse('{"issues":[{"line":4,"category":"bug","severity":"critical","description":"Maybe unsafe","confidence":89}]}', 'src/app.ts');
+    expect(weak.issues[0].severity).toBe('medium');
+    const strong = parseReviewResponse('{"issues":[{"line":4,"category":"security","severity":"critical","description":"Real exploit","confidence":90,"proof":"hardcoded key"}]}', 'src/app.ts');
+    expect(strong.issues[0].severity).toBe('critical');
+    expect(strong.issues[0].proof).toBe('hardcoded key');
+  });
+});
+
+describe('батч 20b: плашки уверенности и доказательство в UI', () => {
+  it('confidence >= 70 → зелёная плашка с процентом, < 70 → жёлтая', () => {
+    const html = reportWith([issue({ description: 'VER-CARD', confidence: 85 }), issue({ description: 'SUG-CARD', confidence: 69 })]);
+    expect(html).toContain('Подтверждено кодом (85%)');
+    expect(html).toContain('Предположение модели (69%)');
     expect(html).toContain('badge verified');
     expect(html).toContain('badge suggested');
     expect(html).toContain('codicon-lightbulb');
   });
 
-  it('proof раскрывается блоком с условием и трассой; пустой proof — без кнопки', () => {
-    const html = buildReportHtml(
-      [issue({ description: 'PROOF-CARD', proof: { condition: 'При null-входе', trace: ['Строка 10: присваивание', 'Строка 25: использование'] } }), issue({ description: 'EMPTY-PROOF', proof: {} })],
-      stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, 'ru'
-    );
+  it('proof раскрывается details-блоком; пустой proof — без кнопки', () => {
+    const html = reportWith([
+      issue({ description: 'PROOF-CARD', proof: 'Line 10: password = secret123 is hardcoded' }),
+      issue({ description: 'EMPTY-PROOF', proof: '' })
+    ]);
     expect(html).toContain('Показать доказательство');
-    expect(html).toContain('При null-входе');
-    expect(html).toContain('Строка 25: использование');
-    expect(html).toContain('Путь выполнения');
+    expect(html).toContain('Line 10: password = secret123 is hardcoded');
+    expect(html).toContain('<details class="proof"><summary>');
     expect(html.split('Показать доказательство')).toHaveLength(2);
   });
 
   it('EN-версия плашек и кнопок без кириллицы', () => {
-    const html = buildReportHtml(
-      [issue({ description: 'X', confidenceLevel: 'verified', proof: { condition: 'null input', trace: ['Line 1: a'] } })],
-      stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, 'en'
-    );
-    expect(html).toContain('Verified by code');
+    const html = reportWith([issue({ description: 'X', confidence: 75, proof: 'Line 1: const t = token;' })], 'en');
+    expect(html).toContain('Verified by code (75%)');
     expect(html).toContain('False positive');
     expect(html).toContain('Show proof');
     expect(html).not.toMatch(/[\u0400-\u04FF]/);
@@ -119,7 +129,7 @@ describe('батч 14: плашки confidence и доказательство �
 
   it('у каждой карточки есть кнопка «Ложное срабатывание» с fingerprint', () => {
     const item = issue({ description: 'FP-UI', line: 10 });
-    const html = buildReportHtml([item], stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, 'ru');
+    const html = reportWith([item]);
     expect(html).toContain('data-command="suppressFinding"');
     expect(html).toContain(`data-fingerprint="${computeFingerprint(item)}"`);
     expect(html).toContain('codicon-thumbsdown');
@@ -139,7 +149,7 @@ describe('батч 14: плашки confidence и доказательство �
   });
 });
 
-describe('батч 14: интеграция pipeline (скрытые находки не возвращаются)', () => {
+describe('батч 20b: интеграция pipeline (скрытые находки не возвращаются)', () => {
   let root = '';
   beforeEach(() => {
     state.reset();
@@ -175,7 +185,7 @@ describe('батч 14: интеграция pipeline (скрытые наход�
     const { panel, receive, html, context } = bootPanel();
     panel.update(filterSuppressed([issue({ description: 'FP-CARD', line: 10 })], mementoOf(context)), stats);
     receive({ command: 'suppressFinding', fingerprint: computeFingerprint(issue({ line: 10 })) });
-    // «повторный скан»: модель сдвинула строку на +2 — fingerprint тот же
+    // «повторный скан»: модель сдвинула строку на +2 — подавление срабатывает по допуску ±3
     const rescan = filterSuppressed([issue({ description: 'FP-CARD', line: 12 })], mementoOf(context));
     expect(rescan).toHaveLength(0);
     panel.update(rescan, stats);
