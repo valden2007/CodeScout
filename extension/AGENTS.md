@@ -579,6 +579,25 @@ pre-design now.
     checkpoint closes a file only after ALL passes. Output logs are now
     "🔎 файл X/Y: name — старт…" / "✅ файл X/Y: name — готово за Ns"
     (one start per file, real per-file seconds) and "🔄 круг P/T: файл X"
-    for extra passes. Tests: 156.
+     for extra passes. Tests: 156.
+ 28. Ядро доверия / Trust Engine (20b): confidence — ЦЕЛОЕ 0..100 в
+     промпте/парсере/типах (CONFIDENCE_DEFAULT=50 при мусоре, кламп 0..100;
+     порог verified CONFIDENCE_VERIFIED_THRESHOLD=70; critical только при
+     >=90). proof — строка-цитата/причина (при отсутствии ''). Старые
+     confidenceLevel/FindingProof (батч 14) удалены из types.ts. Бейдж:
+     >=70 зелёный «✅ Подтверждено кодом (N%)», <70 жёлтый «💭 Предположение
+     модели (N%)» (codicons вместо эмодзи в вебвью). showConfidence теперь
+     прячет (N%) из бейджа. findingsStore v2: записи с метаданными
+     (id/file/line/severity/category/description/hiddenAt) в workspaceState,
+     допуск ±3 строки (LINE_TOLERANCE=3, zoneMatches, НЕ бакет), API
+     suppress/unsuppress/getSuppressed/filterSuppressed/isSuppressed +
+     legacyBucketFingerprint для совместимости с батчем 14. Вкладка
+     «Скрытые находки» (details) с кнопкой «↩ Вернуть»
+     (unsuppressFinding + data-action=restore); панель кэширует снятые
+     карточки и возвращает их в отчёт со статистикой. Кнопка подавления —
+     data-action=suppress. reviewFiles сигнатуру НЕ менял: хост режет
+     подавленные filterSuppressed(...context.workspaceState) пост-обработкой
+     в 4 местах. Тесты: clamping, ±3-допуск, фильтрация, e2e возврат.
+     Tests: 466.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

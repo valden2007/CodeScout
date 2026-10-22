@@ -2,7 +2,7 @@ import { ReviewIssue } from '../../src/types';
 import { CONFIDENCE_VERIFIED_THRESHOLD, confidencePercent } from '../../src/response-parser';
 import type { AuditResumeView, FindingsDiffView } from './projectAudit';
 import { uiBodyAttrs, uiTokensCss, normalizeUiPrefs, type UiPrefsInput } from './uiPrefs';
-import { computeFingerprint } from './findingsStore';
+import { computeFingerprint, type SuppressedEntry } from './findingsStore';
 import { t, type Lang } from '../../src/i18n';
 
 export interface AutoResumeIndicator {
@@ -98,7 +98,22 @@ function proofBlock(issue: ReviewIssue, lang: Lang): string {
 
 function suppressButton(issue: ReviewIssue, lang: Lang): string {
   const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
-  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t('issue.falsePositiveTip', lang))}">${icon('thumbsdown')}<span>${escapeHtml(t('issue.falsePositive', lang))}</span></button></div>`;
+  // Батч 20b: data-action — семантическое действие кнопки (делегат читает
+  // data-command как команду хосту, data-action остаётся декларативным).
+  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-action="suppress" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t('issue.falsePositiveTip', lang))}">${icon('thumbsdown')}<span>${escapeHtml(t('issue.falsePositive', lang))}</span></button></div>`;
+}
+
+// Батч 20b: вкладка скрытых находок — что подавлено как «ложное
+// срабатывание» и кнопка «↩ Вернуть» (unsuppressFinding по id записи).
+function suppressedBlockHtml(suppressed: SuppressedEntry[], lang: Lang): string {
+  if (!suppressed.length) return '';
+  const rows = suppressed.map((entry) => {
+    const location = entry.file ? `<span class="suppressed-file">${escapeHtml(`${entry.file}:${entry.line}`)}</span>` : '';
+    const zone = entry.file ? `<span class="category">${escapeHtml(entry.severity)} · ${escapeHtml(entry.category)}</span>` : `<span class="category">${escapeHtml(t('issue.suppressedLegacy', lang))}</span>`;
+    const description = entry.description ? `<div class="suppressed-desc">${escapeHtml(entry.description.slice(0, 140))}</div>` : '';
+    return `<li><div class="suppressed-info">${location}${zone}${description}</div><button class="cs-btn secondary" type="button" data-command="unsuppressFinding" data-action="restore" data-fingerprint="${escapeHtml(entry.id)}" title="${escapeHtml(t('issue.restoreTip', lang))}">${icon('arrow-left')}<span>${escapeHtml(t('issue.restore', lang))}</span></button></li>`;
+  }).join('');
+  return `<details class="suppressed-block"><summary>${icon('eye-closed')} <span>${escapeHtml(t('issue.suppressedTitle', lang, { n: suppressed.length }))}</span></summary><div class="suppressed-hint">${escapeHtml(t('issue.suppressedHint', lang))}</div><ul class="suppressed-list">${rows}</ul></details>`;
 }
 
 function issueCard(issue: ReviewIssue, isNew = false, showConfidence = true, lang: Lang = 'ru'): string {
@@ -252,6 +267,15 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .fixed-block ul { margin: var(--cs-space-2) 0; padding-left: 18px; color: var(--cs-desc); font-size: var(--cs-font-2); }
 .fixed-block li { margin: var(--cs-space-1) 0; overflow-wrap: anywhere; }
 .hidden { display: none; }
+.suppressed-block { margin-top: 18px; }
+.suppressed-block summary { cursor: pointer; color: var(--cs-desc); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.suppressed-hint { margin: var(--cs-space-2) 0; color: var(--cs-desc); font-size: var(--cs-font-1); }
+.suppressed-list { margin: 0; padding: 0; list-style: none; }
+.suppressed-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--cs-space-2); margin: var(--cs-space-1) 0; padding: var(--cs-space-2); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); }
+.suppressed-info { min-width: 0; flex: 1 1 auto; }
+.suppressed-file { display: block; color: var(--cs-accent); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); overflow-wrap: anywhere; }
+.suppressed-desc { color: var(--cs-desc); font-size: var(--cs-font-1); overflow-wrap: anywhere; }
+.suppressed-list button { flex: 0 0 auto; width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); }
 .custom-form { margin-top: 10px; padding: 10px; border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-1); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
 .custom-form label { display: block; margin: 0 0 5px; color: var(--cs-desc); font-size: var(--cs-font-1); }
 .custom-form textarea, .custom-form select, .custom-form input { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; font-size: var(--cs-font-2); }
@@ -281,7 +305,7 @@ export interface ScanErrorInfo {
   hint?: string;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = '', errorInfo?: ScanErrorInfo): string {
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = '', errorInfo?: ScanErrorInfo, suppressed?: SuppressedEntry[]): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -378,7 +402,7 @@ ${headHtml(assets, nonce)}
     <div class="pills"><span class="pill critical">${icon('error')} ${stats.critical}</span><span class="pill medium">${icon('warning')} ${stats.medium}</span><span class="pill low">${icon('pass')} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T('search.placeholder')}" autocomplete="off" spellcheck="false"></div>` : ''}
-  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}${notRecheckedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${suppressedBlockHtml(suppressed ?? [], lang)}${fixedBlock}${notRecheckedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};
@@ -610,6 +634,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, suppressed?: SuppressedEntry[]): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, '', undefined, suppressed);
 }

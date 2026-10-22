@@ -558,6 +558,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       cspSource: webview.cspSource
     };
     const nonce = randomBytes(16).toString('hex');
+    const suppressedEntries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
     const ux: PanelUx = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
@@ -565,7 +566,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries);
   }
 }

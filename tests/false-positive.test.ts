@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { state, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 import { CodeScoutPanel } from '../extension/src/panel';
-import { computeFingerprint, filterSuppressed, getSuppressed, suppress } from '../extension/src/findingsStore';
+import { computeFingerprint, filterSuppressed, getSuppressed, suppress, type SuppressedEntry } from '../extension/src/findingsStore';
 import { parseReviewResponse } from '../src/response-parser';
 import { SYSTEM_PROMPT } from '../src/prompt-builder';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -35,13 +35,48 @@ function createView(): { view: unknown; receive: (message: unknown) => void; htm
 
 const stats = { files: 2, seconds: 1.5, critical: 0, medium: 2, low: 0 };
 
-function issue(overrides: Partial<ReviewIssue>): ReviewIssue {
+function issue(overrides: Partial<ReviewIssue> = {}): ReviewIssue {
   return { file: 'src/a.ts', line: 10, category: 'bug', severity: 'medium', description: 'd', confidence: 70, ...overrides };
 }
 
-function reportWith(issues: ReviewIssue[], lang: 'ru' | 'en' = 'ru'): string {
-  return buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, lang);
+function reportWith(issues: ReviewIssue[], lang: 'ru' | 'en' = 'ru', suppressed?: SuppressedEntry[]): string {
+  return buildReportHtml(issues, stats, false, false, '', 'retry', 'k', true, 'gemini', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'nonce', undefined, lang, {}, '', undefined, suppressed);
 }
+
+const entry = (overrides: Partial<SuppressedEntry>): SuppressedEntry => ({ id: 'fp-1', file: 'src/a.ts', line: 10, severity: 'medium', category: 'bug', description: 'Hidden finding', hiddenAt: 5, ...overrides });
+
+describe('батч 20b: вкладка «Скрытые находки»', () => {
+  it('список скрытых рендерится с кнопкой «Вернуть» и data-action', () => {
+    const html = reportWith([issue({ description: 'VISIBLE' })], 'ru', [entry({ id: 'fp-alpha' }), entry({ id: 'fp-beta', file: '', description: '' })]);
+    expect(html).toContain('Скрытые находки (2)');
+    expect(html).toContain('data-command="unsuppressFinding"');
+    expect(html).toContain('data-action="restore"');
+    expect(html).toContain('data-fingerprint="fp-alpha"');
+    expect(html).toContain('Вернуть');
+    expect(html).toContain('codicon-arrow-left');
+    // пустое описание у второй записи — фолбэк «старая версия»
+    expect(html).toContain('Запись подавления из старой версии');
+  });
+
+  it('кнопка подавления несёт data-action=suppress и fingerprint', () => {
+    const html = reportWith([issue({ description: 'CARD', line: 10 })]);
+    expect(html).toContain('data-action="suppress"');
+    expect(html).toContain(`data-fingerprint="${computeFingerprint(issue({ line: 10 }))}"`);
+  });
+
+  it('EN-версия вкладки без кириллицы', () => {
+    const html = reportWith([issue({ description: 'CARD' })], 'en', [entry({ file: 'src/a.ts', description: 'Proofless' })]);
+    expect(html).toContain('Hidden findings (1)');
+    expect(html).toContain('Restore');
+    expect(html).not.toMatch(/[\u0400-\u04FF]/);
+  });
+
+  it('пустой список — вкладки нет', () => {
+    expect(reportWith([issue()], 'ru', [])).not.toContain('Скрытые находки');
+    expect(reportWith([issue()])).not.toContain('unsuppressFinding');
+  });
+});
+
 
 function mementoOf(context: unknown) {
   return (context as { workspaceState: never }).workspaceState;
@@ -173,11 +208,14 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     const { panel, receive, html, context } = bootPanel();
     const findings = [issue({ description: 'FP-CARD', line: 10 }), issue({ description: 'KEEP-CARD', line: 50 })];
     panel.update(filterSuppressed(findings, mementoOf(context)), stats);
-    expect(html()).toContain('FP-CARD');
+    expect(html()).toContain('<div class="description">FP-CARD</div>');
     const fingerprint = computeFingerprint(findings[0]);
     receive({ command: 'suppressFinding', fingerprint });
-    expect(html()).not.toContain('FP-CARD');
+    expect(html()).not.toContain('<div class="description">FP-CARD</div>');
     expect(html()).toContain('KEEP-CARD');
+    // вкладка скрытых показывает, что именно подавлено
+    expect(html()).toContain('Скрытые находки (1)');
+    expect(html()).toContain('FP-CARD');
     const stored = getSuppressed(mementoOf(context));
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ id: fingerprint, file: 'src/a.ts', line: 10, severity: 'medium', category: 'bug', description: 'FP-CARD' });
@@ -189,10 +227,11 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     panel.update(filterSuppressed(findings, mementoOf(context)), stats);
     const fingerprint = computeFingerprint(findings[0]);
     receive({ command: 'suppressFinding', fingerprint });
-    expect(html()).not.toContain('FP-CARD');
+    expect(html()).not.toContain('<div class="description">FP-CARD</div>');
     receive({ command: 'unsuppressFinding', fingerprint });
     expect(getSuppressed(mementoOf(context))).toHaveLength(0);
-    expect(html()).toContain('FP-CARD');
+    expect(html()).toContain('<div class="description">FP-CARD</div>');
+    expect(html()).not.toContain('Скрытые находки');
     expect(html()).toContain('KEEP-CARD');
   });
 
@@ -204,12 +243,12 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     const rescan = filterSuppressed([issue({ description: 'FP-CARD', line: 12 })], mementoOf(context));
     expect(rescan).toHaveLength(0);
     panel.update(rescan, stats);
-    expect(html()).not.toContain('FP-CARD');
+    expect(html()).not.toContain('<div class="description">FP-CARD</div>');
     // подавленное переживает «перезапуск» панели: новый activate на том же сторе
     const { panel: revived, html: revivedHtml } = bootPanel();
     const shown = filterSuppressed([issue({ description: 'FP-CARD', line: 10 }), issue({ description: 'FRESH', line: 30 })], mementoOf(context));
     revived.update(shown, stats);
-    expect(revivedHtml()).not.toContain('FP-CARD');
+    expect(revivedHtml()).not.toContain('<div class="description">FP-CARD</div>');
     expect(revivedHtml()).toContain('FRESH');
   });
 
