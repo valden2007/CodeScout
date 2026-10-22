@@ -236,7 +236,7 @@
   "progress.file.custom": "🎯 Custom review: file",
   "progress.fileLine": "{label} {index}/{total}: {file}... · ⏱ {s}s",
   "status.thinking": "🤖 Model is thinking... · ⏱ {s}s",
-  "status.retry": "⏳ Request limit. Waiting {s}s before retry {a}/{m} (night mode, model {model})...",
+  "status.retry": "⏳ Request limit. Waiting {s}s before retry {a}/{m} (auto-wait, model {model})...",
   "status.cancelled": "⛔ Scan stopped by user",
   "diff.summary": "🆕 new: {n} · ✅ fixed: {f} · ⏳ not rechecked: {r} · 🔁 unchanged: {s}",
   "notRechecked.title": "Not rechecked in this scan ({n})",

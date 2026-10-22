@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 import { CodeScoutPanel } from '../extension/src/panel';
-import { OpenAICompatibleProvider, RateLimitError, RequestTimeoutError, requestTimeoutSecondsFromSetting, setDefaultRequestTimeoutMs, getDefaultRequestTimeoutMs } from '../src/llm-client';
+import { OpenAICompatibleProvider, RateLimitError, RequestTimeoutError, RETRY_DELAYS_SECONDS, requestTimeoutSecondsFromSetting, setDefaultRequestTimeoutMs, getDefaultRequestTimeoutMs } from '../src/llm-client';
 import { fetchLiveModels } from '../src/providers';
 import { formatError } from '../src/error-classifier';
 import { buildReportHtml } from '../extension/src/reportHtml';
@@ -24,22 +24,19 @@ describe('батч 15: RequestTimeoutError дедлайн инференса', (
 
   it('зависший провайдер ретраится 3 раза и падает в RateLimitError с категорией rate_limit_exceeded (конструктор-параметр)', async () => {
     const provider = new OpenAICompatibleProvider('k', 'm', hangFetch, async () => undefined, undefined, 'https://mock.test/v1', undefined, 120);
-    await expect(provider.review('s', 'u')).rejects.toMatchObject({
-      name: 'RateLimitError',
-      message: expect.stringContaining('Превышен лимит модели m')
-    });
-    await provider.review('s', 'u').catch((error: unknown) => {
-      expect(formatError(error, 'ru').category).toBe('rate_limit_exceeded');
-    });
+    const error = await provider.review('s', 'u').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as RateLimitError).message).toContain('Превышен лимит модели m');
+    // Батч 18.7: у сетевых/таймаутных ретраев waitSeconds не undefined — верхняя ступень лестницы.
+    expect((error as RateLimitError).waitSeconds).toBe(RETRY_DELAYS_SECONDS[RETRY_DELAYS_SECONDS.length - 1]);
+    expect(formatError(error, 'ru').category).toBe('rate_limit_exceeded');
   });
 
   it('модульный дефолт setDefaultRequestTimeoutMs применяется без пересоздания провайдера', async () => {
     setDefaultRequestTimeoutMs(1200);
     const provider = new OpenAICompatibleProvider('k', 'm', hangFetch, async () => undefined, undefined, 'https://mock.test/v1');
-    await expect(provider.review('s', 'u')).rejects.toMatchObject({
-      name: 'RateLimitError',
-      message: expect.stringContaining('Превышен лимит модели m')
-    });
+    await expect(provider.review('s', 'u')).rejects.toBeInstanceOf(RateLimitError);
+    await expect(provider.review('s', 'u')).rejects.toThrow(/Превышен лимит модели m/);
   }, 20000);
 
   it('пользовательский cancel при активном дедлайне остаётся AbortError, не timeout', async () => {

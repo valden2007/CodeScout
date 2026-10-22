@@ -247,6 +247,16 @@ function abortError() {
 function isAbortError(error) {
   return error instanceof Error && error.name === "AbortError";
 }
+function isRetryableError(error) {
+  if (error instanceof RateLimitError) return true;
+  if (error instanceof RequestTimeoutError) return true;
+  if (error instanceof ProviderHttpError) {
+    return error.status === 502 || error.status === 503 || error.status === 504;
+  }
+  if (isAbortError(error)) return true;
+  const raw = error instanceof Error ? error.message : String(error);
+  return /ECONNRESET|ECONNREFUSED|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
+}
 var sleep = (ms, signal) => new Promise((resolve5, reject) => {
   if (signal?.aborted) {
     reject(abortError());
@@ -345,7 +355,7 @@ var OpenAICompatibleProvider = class {
     const wait = 2e3 - (Date.now() - this.lastRequestAt);
     if (wait > 0) await this.sleeper(wait, this.signal);
     let retryCount = 0;
-    let lastRateLimit;
+    let lastRetryableError;
     while (true) {
       if (this.signal?.aborted) throw abortError();
       this.lastRequestAt = Date.now();
@@ -393,24 +403,37 @@ var OpenAICompatibleProvider = class {
           }
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          if (response.status === 502 || response.status === 503 || response.status === 504) {
+            throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          }
           throw new Error(details);
         }
         const content = data.choices?.[0]?.message?.content;
         if (!content) throw new BadResponseError("\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442: \u043F\u0443\u0441\u0442\u043E\u0439 \u043E\u0442\u0432\u0435\u0442", text.trim().slice(0, 300));
         return content;
       } catch (error) {
-        if (timedOut && !this.signal?.aborted) throw new RequestTimeoutError(timeoutMs);
-        if (isAbortError(error)) throw error;
-        if (!(error instanceof RateLimitError)) throw error;
-        lastRateLimit = { waitSeconds: error.waitSeconds, details: error.details };
+        let retryableError;
+        if (timedOut && !this.signal?.aborted) {
+          retryableError = new RequestTimeoutError(timeoutMs);
+        } else if (isAbortError(error)) {
+          if (this.signal?.aborted) throw error;
+          retryableError = new RequestTimeoutError(timeoutMs);
+        } else if (isRetryableError(error)) {
+          retryableError = error instanceof Error ? error : new Error(String(error));
+        }
+        if (!retryableError) throw error;
+        const waitSeconds = retryableError instanceof RateLimitError ? retryableError.waitSeconds : void 0;
+        const details = retryableError instanceof RateLimitError ? retryableError.details : retryableError instanceof ProviderHttpError ? retryableError.details : retryableError instanceof RequestTimeoutError ? `timeout ${timeoutMs}ms` : retryableError.message;
+        lastRetryableError = { waitSeconds, details };
         if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-          throw new RateLimitError(finalRateLimitMessage(this.model, lastRateLimit.waitSeconds));
+          const finalWaitSeconds = lastRetryableError.waitSeconds ?? RETRY_DELAYS_SECONDS[RETRY_DELAYS_SECONDS.length - 1];
+          throw new RateLimitError(finalRateLimitMessage(this.model, finalWaitSeconds), finalWaitSeconds, lastRetryableError.details);
         }
         retryCount += 1;
-        const serverWait = lastRateLimit.waitSeconds ?? 0;
-        const waitSeconds = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
-        this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds });
-        await this.sleeper(waitSeconds * 1e3, this.signal);
+        const serverWait = lastRetryableError.waitSeconds ?? 0;
+        const waitSec = Math.max(RETRY_DELAYS_SECONDS[retryCount - 1], serverWait);
+        this.onRetry?.({ attempt: retryCount, maxRetries: RETRY_DELAYS_SECONDS.length, waitSeconds: waitSec });
+        await this.sleeper(waitSec * 1e3, this.signal);
       } finally {
         clearTimeout(timer);
         this.signal?.removeEventListener("abort", relayAbort);
@@ -663,7 +686,7 @@ var ru_default = {
   "progress.file.custom": "\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B",
   "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}\u0441",
   "status.thinking": "\u{1F916} \u041C\u043E\u0434\u0435\u043B\u044C \u0434\u0443\u043C\u0430\u0435\u0442... \xB7 \u23F1 {s}\u0441",
-  "status.retry": "\u23F3 \u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432. \u041E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 \u043F\u0435\u0440\u0435\u0434 \u043F\u043E\u0432\u0442\u043E\u0440\u043E\u043C {a}/{m} (\u041D\u043E\u0447\u043D\u043E\u0439 \u0440\u0435\u0436\u0438\u043C, \u043C\u043E\u0434\u0435\u043B\u044C {model})...",
+  "status.retry": "\u23F3 \u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432. \u041E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 {s}\u0441 \u043F\u0435\u0440\u0435\u0434 \u043F\u043E\u0432\u0442\u043E\u0440\u043E\u043C {a}/{m} (\u0410\u0432\u0442\u043E-\u043E\u0436\u0438\u0434\u0430\u043D\u0438\u0435, \u043C\u043E\u0434\u0435\u043B\u044C {model})...",
   "status.cancelled": "\u26D4 \u0421\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C",
   "diff.summary": "\u{1F195} \u043D\u043E\u0432\u044B\u0445: {n} \xB7 \u2705 \u043F\u043E\u0447\u0438\u043D\u0435\u043D\u043E: {f} \xB7 \u23F3 \u043D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: {r} \xB7 \u{1F501} \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {s}",
   "notRechecked.title": "\u041D\u0435 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u0441\u043A\u0430\u043D\u0435 ({n})",
@@ -1024,7 +1047,7 @@ var en_default = {
   "progress.file.custom": "\u{1F3AF} Custom review: file",
   "progress.fileLine": "{label} {index}/{total}: {file}... \xB7 \u23F1 {s}s",
   "status.thinking": "\u{1F916} Model is thinking... \xB7 \u23F1 {s}s",
-  "status.retry": "\u23F3 Request limit. Waiting {s}s before retry {a}/{m} (night mode, model {model})...",
+  "status.retry": "\u23F3 Request limit. Waiting {s}s before retry {a}/{m} (auto-wait, model {model})...",
   "status.cancelled": "\u26D4 Scan stopped by user",
   "diff.summary": "\u{1F195} new: {n} \xB7 \u2705 fixed: {f} \xB7 \u23F3 not rechecked: {r} \xB7 \u{1F501} unchanged: {s}",
   "notRechecked.title": "Not rechecked in this scan ({n})",

@@ -368,10 +368,10 @@ describe('universal providers', () => {
     expect(resolveApiKey('gemini', undefined, { GEMINI_API_KEY: 'env-key' })).toBe('env-key');
   });
 
-  it('includes the selected model in status text (night-mode wording, батч 17)', () => {
+  it('includes the selected model in status text (auto-wait wording, батч 17)', () => {
     expect(reviewStatus('qwen2.5-coder')).toContain('qwen2.5-coder');
     expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('⏳ Лимит запросов. Ожидание 30с перед повтором');
-    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('Ночной режим');
+    expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('Авто-ожидание');
     expect(reviewStatus('qwen2.5-coder', { attempt: 1, maxRetries: 3, waitSeconds: 30 })).toContain('qwen2.5-coder');
   });
 });

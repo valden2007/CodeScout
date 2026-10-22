@@ -59,15 +59,17 @@ describe('батч 17: exponential backoff 30/60/120 на 429', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('UI-статус: понятный ночной текст в RU и EN без кириллицы', () => {
+  it('UI-статус: текст авто-ожидания в RU и EN без кириллицы', () => {
     const vars = { model: 'minimax-free', s: 30, a: 1, m: 3 };
     const ru = t('status.retry', 'ru', vars);
     expect(ru).toContain('⏳ Лимит запросов. Ожидание 30с перед повтором');
-    expect(ru).toContain('Ночной режим');
+    expect(ru).toContain('Авто-ожидание');
+    expect(ru).not.toContain('Ночной режим');
     expect(ru).toContain('minimax-free');
     const en = t('status.retry', 'en', vars);
     expect(en).toContain('⏳ Request limit. Waiting 30s before retry');
-    expect(en).toContain('night mode');
+    expect(en).toContain('auto-wait');
+    expect(en).not.toContain('night mode');
     expect(en).not.toMatch(/[\u0400-\u04FF]/);
   });
 

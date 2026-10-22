@@ -86017,7 +86017,11 @@ class OpenAICompatibleProvider {
                             : retryableError.message;
                 lastRetryableError = { waitSeconds, details };
                 if (retryCount >= RETRY_DELAYS_SECONDS.length) {
-                    throw new RateLimitError(finalRateLimitMessage(this.model, lastRetryableError.waitSeconds), lastRetryableError.waitSeconds, lastRetryableError.details);
+                    // Батч 18.7: финальный waitSeconds не может быть undefined — у
+                    // сетевых/таймаутных ретраев серверной подсказки нет, подставляем
+                    // верхнюю ступень лестницы, чтобы UI не печатал «undefinedс».
+                    const finalWaitSeconds = lastRetryableError.waitSeconds ?? RETRY_DELAYS_SECONDS[RETRY_DELAYS_SECONDS.length - 1];
+                    throw new RateLimitError(finalRateLimitMessage(this.model, finalWaitSeconds), finalWaitSeconds, lastRetryableError.details);
                 }
                 retryCount += 1;
                 const serverWait = lastRetryableError.waitSeconds ?? 0;
@@ -86393,7 +86397,7 @@ function toTuiIssue(issue) {
 }
 function reviewStatus(model, retry) {
     return retry
-        ? `⏳ Лимит запросов. Ожидание ${retry.waitSeconds}с перед повтором ${retry.attempt}/${retry.maxRetries} (Ночной режим, модель ${model})...`
+        ? `⏳ Лимит запросов. Ожидание ${retry.waitSeconds}с перед повтором ${retry.attempt}/${retry.maxRetries} (Авто-ожидание, модель ${model})...`
         : `🤖 Отправляю запрос в ${model}...`;
 }
 async function reviewFiles(files, args, apiKey, onRetry) {
