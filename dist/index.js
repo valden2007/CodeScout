@@ -34206,14 +34206,48 @@ function assertHttpBaseUrl(url) {
     }
     return url;
 }
-// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере НЕТ роута GET /models —
-// живой запрос всегда 404/405. Для provider === 'gemini' сетевой запрос
-// физически не может выполниться: guard стоит ПЕРВОЙ строкой функции и
-// возвращается до валидации URL, до fetcher и до AbortSignal.
+// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере роут GET /models
+// исторически был недоступен — поэтому стоял жёсткий guard «только статика».
+// Батч 20a, п.2: guard смягчён до УМНОГО МОКА — сначала живая попытка
+// GET {base}/models с AbortController и таймаутом GEMINI_MODELS_TIMEOUT_MS,
+// при любом провале (таймаут/404/сеть/битый URL/пустой список) — откат на
+// GEMINI_STATIC_MODELS + предупреждение в лог/Output. Выбор моделей больше
+// не блокируется недоступностью адаптера.
 const GEMINI_STATIC_MODELS = (/* unused pure expression or super */ null && (['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']));
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5000, provider) {
-    if (provider === 'gemini')
+// Потолок живой попытки для Gemini (батч 20a): дольше 3с пользователь
+// ждать не обязан — статика подхватывается мгновенно после abort.
+const GEMINI_MODELS_TIMEOUT_MS = 3000;
+async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
+    try {
+        const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+        const response = await fetcher(`${safeBase}/models`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: controller.signal,
+            // SSRF-контракт батча 17.5 действует и здесь: 3xx = ошибка, ключ не уезжает по редиректу.
+            redirect: 'manual'
+        });
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status}`);
+        const models = parseLiveModels(await response.json());
+        if (!models.length)
+            throw new Error('пустой список моделей в ответе');
+        return models;
+    }
+    catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        onWarn(`⚠️ Gemini /models недоступен (${detail}) — отдаю статический список моделей`);
         return [...GEMINI_STATIC_MODELS];
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5000, provider, onWarn = (message) => console.warn(message)) {
+    if (provider === 'gemini')
+        return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
     const response = await fetcher(`${safeBase}/models`, {
         method: 'GET',
@@ -34965,15 +34999,21 @@ function stripMarkdownFences(text) {
     const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     return (fenced ? fenced[1] : text).trim();
 }
-function extractJson(raw) {
-    const body = stripMarkdownFences(raw);
-    if (/^["\-[0-9]/.test(body))
-        return body;
-    return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+// Батч 20a: санитайз висячих запятых — «[1,2,]» и «{"a":1,}» лечатся regex
+// `,\s*([\]}]) → $1`. Применяется ВТОРЫМ проходом на кандидате, который уже
+// не парсится как есть: валидный JSON со строкой вида "wait, }" не портится
+// (первым всегда пробуем оригинал, sanitized-вариант подхватывается только
+// когда сырой кандидат упал).
+function stripTrailingCommas(text) {
+    return text.replace(/,(\s*[\]}])/g, '$1');
 }
-// Батч 18.8: единая точка «достать JSON из ответа модели». Порядок fallback:
-// 1) чистый текст; 2) после снятия markdown-обёрток ```json … ```;
-// 3) сбалансированный сканер; 4) greedy-вырезка первый [/{ … последний ]/}.
+const RAW_TAIL_LIMIT = 200;
+// Батч 20a (контракт каскада): кандидаты СТРОГО в порядке
+// 1) чистый текст → 2) снятие markdown-фенсов → 3) balanced-brace сканер →
+// 4) greedy slice (первый [/{ … последний ]/}) — последним, он самый ryzy.
+// Перед parse каждого кандидата — попытка санитайза висячих запятых.
+// Если всё упало → { ok:false, reason, rawTail } для вывода в Output, без
+// падения: старые форматы ответов (без новых полей) парсятся по-прежнему.
 function tryParseJson(raw) {
     const candidates = [];
     const seen = new Set();
@@ -34989,30 +35029,25 @@ function tryParseJson(raw) {
     push(stripped);
     push(findBalancedJson(stripped) ?? '');
     push(findGreedyJsonSpan(stripped) ?? '');
-    let lastError;
+    let lastReason = 'в ответе не найдено JSON-подобного текста';
     for (const candidate of candidates) {
-        try {
-            return { ok: true, value: JSON.parse(candidate) };
-        }
-        catch (error) {
-            lastError = error;
+        for (const variant of [candidate, stripTrailingCommas(candidate)]) {
+            try {
+                return { ok: true, value: JSON.parse(variant) };
+            }
+            catch (error) {
+                lastReason = error instanceof Error ? error.message : String(error);
+            }
         }
     }
-    return { ok: false, lastError };
+    return { ok: false, reason: lastReason, rawTail: raw.trim().slice(0, RAW_TAIL_LIMIT) };
 }
 function parseReviewResponse(raw, filename) {
-    let parsed;
     const outcome = tryParseJson(raw);
-    if (outcome.ok)
-        parsed = outcome.value;
-    else {
-        try {
-            parsed = JSON.parse(extractJson(raw));
-        }
-        catch {
-            throw new Error(`LLM returned malformed JSON for ${filename}`);
-        }
+    if (!outcome.ok) {
+        throw new Error(`LLM returned malformed JSON for ${filename} · ${outcome.reason} · хвост ответа: ${outcome.rawTail}`);
     }
+    const parsed = outcome.value;
     if (parsed === null)
         throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
     if (Array.isArray(parsed))

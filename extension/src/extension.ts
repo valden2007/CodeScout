@@ -31,6 +31,11 @@ const SECRET_FULL_AUDIT_WELCOME = 'codescout.fullAuditWelcomeShown';
 const CONTEXT_FILE = '.codescout/context.json';
 const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext']);
 
+// Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
+// про vscode не знает, расширение подставляет свой Output-канал (заполняется
+// в activate). До активации предупреждение уходит в console.warn.
+let hostOutput: vscode.OutputChannel | undefined;
+
 interface ScanResult {
   issues: ReviewIssue[];
   filesAnalyzed: number;
@@ -99,9 +104,11 @@ async function fetchModels(selection: ProviderSelection): Promise<string[]> {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  // Батч 18.9: provider передаётся явно — внутри fetchLiveModels-first-guard
-  // блокирует HTTP для gemini (у Google нет роута GET /models).
-  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider);
+  // Батч 20a, п.2: provider передаётся явно — внутри fetchLiveModels для
+  // gemini работает умный мок: живая попытка GET /models (AbortController,
+  // 3000ms) при любом провале отдаёт GEMINI_STATIC_MODELS; onWarn пишет
+  // предупреждение в Output-канал расширения.
+  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)));
 }
 
 // Возвращает undefined, если пользователь отменил выбор: отмена = возврат
@@ -1083,6 +1090,7 @@ async function autoSelectModelAfterProviderChange(context: vscode.ExtensionConte
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeScout');
+  hostOutput = output;
   // Хвост Output (последние 50 строк) нужен диагностику reportIssue; сам
   // канал VS Code не отдаёт содержимое обратно, поэтому зеркалируем appendLine.
   const outputTail: string[] = [];

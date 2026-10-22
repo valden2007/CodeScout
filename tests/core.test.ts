@@ -9,7 +9,7 @@ import { readGitDiff, validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs, validateFlags, missingFlagValueError } from '../src/cli/args';
 import { abortError, GroqProvider, isAbortError, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, fetchLiveModels, GEMINI_STATIC_MODELS, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, fetchLiveModels, GEMINI_MODELS_TIMEOUT_MS, GEMINI_STATIC_MODELS, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -709,22 +709,62 @@ describe('батч 20a п.1: безопасный JSON-каскад', () => {
   });
 });
 
-describe('batch 18.9: gemini live models hard guard', () => {
-  it('fetchLiveModels returns the static list for provider=gemini, HTTP is physically impossible', async () => {
-    let calls = 0;
-    const boom = (async () => { calls += 1; throw new Error('network must not be touched'); }) as unknown as typeof fetch;
-    // Первая строка функции: guard до assertHttpBaseUrl и до fetcher —
-    // даже заведомо битый/чужой baseUrl не вызывает fetch.
-    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', boom, 5000, 'gemini');
+// Батч 20a, п.2: умный мок Gemini — живая попытка GET /models (AbortController,
+// ≤3000ms), при любом провале — GEMINI_STATIC_MODELS + предупреждение в onWarn.
+describe('батч 20a п.2: умный мок Gemini', () => {
+  it('успех: возвращаем распарсенные живые модели, предупреждений нет', async () => {
+    const warnings: string[] = [];
+    let requested = '';
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', (async (url: string | URL | undefined) => {
+      requested = String(url);
+      return new Response(JSON.stringify({ data: [{ id: 'gemini-2.5-pro' }, { id: 'gemini-1.5-flash' }] }), { status: 200 });
+    }) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m));
+    expect(requested).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1/models');
+    expect(models).toEqual(['gemini-2.5-pro', 'gemini-1.5-flash']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('404: адаптер без роота /models — статика + warning с HTTP-статусом', async () => {
+    const warnings: string[] = [];
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'k', (async () => new Response('', { status: 404 })) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m));
     expect(models).toEqual(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']);
+    expect(warnings.join('\n')).toContain('404');
+  });
+
+  it('таймаут: висячий fetch прерывается AbortController и отдаётся статика', async () => {
+    const warnings: string[] = [];
+    const started = Date.now();
+    const models = await fetchLiveModels('https://mock.test/v1', 'k', (async (_url: string | URL | undefined, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    })) as unknown as typeof fetch, 100, 'gemini', (m) => warnings.push(m));
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(models).toEqual([...GEMINI_STATIC_MODELS]);
+    expect(warnings.join('\n')).toContain('aborted');
+  });
+
+  it('сетевая ошибка / битый URL / пустой список — везде статика + warning', async () => {
+    const warnings: string[] = [];
+    const boom = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
+    await expect(fetchLiveModels('https://mock.test/v1', 'k', boom, 5000, 'gemini', (m) => warnings.push(m))).resolves.toHaveLength(4);
+    await expect(fetchLiveModels('http://not-even-valid', 'k', boom, 5000, 'gemini', (m) => warnings.push(m))).resolves.toHaveLength(4);
+    await expect(fetchLiveModels('https://mock.test/v1', 'k', (async () => new Response(JSON.stringify({ data: [] }), { status: 200 })) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m))).resolves.toHaveLength(4);
+    expect(warnings).toHaveLength(3);
+  });
+
+  it('fallback не мутирует модульный GEMINI_STATIC_MODELS', async () => {
+    const models = await fetchLiveModels('https://mock.test/v1', 'k', (async () => { throw new Error('down'); }) as unknown as typeof fetch, 5000, 'gemini', () => undefined);
     models.push('mutate-me');
     expect(GEMINI_STATIC_MODELS).toHaveLength(4);
-    expect(calls).toBe(0);
-    await expect(fetchLiveModels('http://not-even-valid', 'k', boom, 5000, 'gemini')).resolves.toHaveLength(4);
+  });
+
+  it('контракт источника: AbortController + потолок 3000ms в gemini-ветке', () => {
+    expect(GEMINI_MODELS_TIMEOUT_MS).toBe(3000);
     const source = readFileSync('src/providers.ts', 'utf8');
-    const body = source.slice(source.indexOf('export async function fetchLiveModels'));
-    expect(body.indexOf("if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];")).toBeLessThan(body.indexOf('assertHttpBaseUrl'));
-    expect(body.indexOf("if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];")).toBeLessThan(body.indexOf('await fetcher'));
+    const body = source.slice(source.indexOf('async function fetchGeminiModels'), source.indexOf('async function fetchGeminiModels') + 1600);
+    expect(body).toContain('new AbortController()');
+    expect(body).toContain('controller.abort()');
+    expect(body).toContain('GEMINI_MODELS_TIMEOUT_MS');
+    expect(body).toContain('GEMINI_STATIC_MODELS');
   });
 
   it('non-gemini providers still hit GET /models', async () => {

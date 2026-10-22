@@ -227,7 +227,8 @@ describe('батч 18.9: авто-выбор модели при смене пр
     expect(extension).toContain('await autoSelectModelAfterProviderChange(context, providerChanged);');
     expect(extension.match(/autoSelectModelAfterProviderChange\(context, (providerChanged|saved\.providerChanged)\);/g)).toHaveLength(2);
     const fetchModels = extension.slice(extension.indexOf('async function fetchModels'), extension.indexOf('async function fetchModels') + 900);
-    expect(fetchModels).toContain('fetchLiveModels(baseUrl, selection.key ?? \'\', fetch, 5000, selection.provider)');
+    // Батч 20a, п.2: первые 5 аргументов прежние + onWarn в Output (умный мок Gemini)
+    expect(fetchModels).toContain("fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)))");
   });
 });
 

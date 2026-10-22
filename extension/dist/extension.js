@@ -74,8 +74,33 @@ function assertHttpBaseUrl(url) {
   return url;
 }
 var GEMINI_STATIC_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"];
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider) {
-  if (provider === "gemini") return [...GEMINI_STATIC_MODELS];
+var GEMINI_MODELS_TIMEOUT_MS = 3e3;
+async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
+  try {
+    const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
+    const response = await fetcher(`${safeBase}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+      // SSRF-контракт батча 17.5 действует и здесь: 3xx = ошибка, ключ не уезжает по редиректу.
+      redirect: "manual"
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const models = parseLiveModels(await response.json());
+    if (!models.length) throw new Error("\u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0432 \u043E\u0442\u0432\u0435\u0442\u0435");
+    return models;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    onWarn(`\u26A0\uFE0F Gemini /models \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D (${detail}) \u2014 \u043E\u0442\u0434\u0430\u044E \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439`);
+    return [...GEMINI_STATIC_MODELS];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider, onWarn = (message) => console.warn(message)) {
+  if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
   const response = await fetcher(`${safeBase}/models`, {
     method: "GET",
@@ -1461,11 +1486,10 @@ function stripMarkdownFences(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   return (fenced ? fenced[1] : text).trim();
 }
-function extractJson(raw) {
-  const body = stripMarkdownFences(raw);
-  if (/^["\-[0-9]/.test(body)) return body;
-  return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+function stripTrailingCommas(text) {
+  return text.replace(/,(\s*[\]}])/g, "$1");
 }
+var RAW_TAIL_LIMIT = 200;
 function tryParseJson(raw) {
   const candidates = [];
   const seen = /* @__PURE__ */ new Set();
@@ -1481,27 +1505,24 @@ function tryParseJson(raw) {
   push(stripped);
   push(findBalancedJson(stripped) ?? "");
   push(findGreedyJsonSpan(stripped) ?? "");
-  let lastError;
+  let lastReason = "\u0432 \u043E\u0442\u0432\u0435\u0442\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E JSON-\u043F\u043E\u0434\u043E\u0431\u043D\u043E\u0433\u043E \u0442\u0435\u043A\u0441\u0442\u0430";
   for (const candidate of candidates) {
-    try {
-      return { ok: true, value: JSON.parse(candidate) };
-    } catch (error) {
-      lastError = error;
+    for (const variant of [candidate, stripTrailingCommas(candidate)]) {
+      try {
+        return { ok: true, value: JSON.parse(variant) };
+      } catch (error) {
+        lastReason = error instanceof Error ? error.message : String(error);
+      }
     }
   }
-  return { ok: false, lastError };
+  return { ok: false, reason: lastReason, rawTail: raw.trim().slice(0, RAW_TAIL_LIMIT) };
 }
 function parseReviewResponse(raw, filename) {
-  let parsed;
   const outcome = tryParseJson(raw);
-  if (outcome.ok) parsed = outcome.value;
-  else {
-    try {
-      parsed = JSON.parse(extractJson(raw));
-    } catch {
-      throw new Error(`LLM returned malformed JSON for ${filename}`);
-    }
+  if (!outcome.ok) {
+    throw new Error(`LLM returned malformed JSON for ${filename} \xB7 ${outcome.reason} \xB7 \u0445\u0432\u043E\u0441\u0442 \u043E\u0442\u0432\u0435\u0442\u0430: ${outcome.rawTail}`);
   }
+  const parsed = outcome.value;
   if (parsed === null) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON null \u0432\u043C\u0435\u0441\u0442\u043E \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u0440\u0435\u0432\u044C\u044E`);
   if (Array.isArray(parsed)) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON-\u043C\u0430\u0441\u0441\u0438\u0432, \u043E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F \u043E\u0431\u044A\u0435\u043A\u0442 \u0441 \u043F\u043E\u043B\u0435\u043C "issues"`);
   if (typeof parsed !== "object") throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 \u043D\u0435 JSON-\u043E\u0431\u044A\u0435\u043A\u0442 (\u043F\u043E\u043B\u0443\u0447\u0435\u043D ${typeof parsed})`);
@@ -4679,6 +4700,7 @@ var SECRET_MODEL_CHOSEN = "codescout.model.userChosen";
 var SECRET_FULL_AUDIT_WELCOME = "codescout.fullAuditWelcomeShown";
 var CONTEXT_FILE = ".codescout/context.json";
 var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext"]);
+var hostOutput;
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
   const location = `${issue.file}:${issue.line}`;
@@ -4727,7 +4749,7 @@ function preferredLiveModel(models, fallback) {
 async function fetchModels(selection) {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider);
+  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider, (message) => hostOutput ? hostOutput.appendLine(message) : console.warn(message));
 }
 async function chooseLiveModel(selection, placeHolder) {
   let models = [];
@@ -5573,6 +5595,7 @@ async function autoSelectModelAfterProviderChange(context, providerChanged) {
 }
 function activate(context) {
   const output = vscode2.window.createOutputChannel("CodeScout");
+  hostOutput = output;
   const outputTail = [];
   const realAppendLine = output.appendLine.bind(output);
   const realClear = output.clear.bind(output);

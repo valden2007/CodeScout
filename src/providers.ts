@@ -28,14 +28,46 @@ export function assertHttpBaseUrl(url: string): string {
   return url;
 }
 
-// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере НЕТ роута GET /models —
-// живой запрос всегда 404/405. Для provider === 'gemini' сетевой запрос
-// физически не может выполниться: guard стоит ПЕРВОЙ строкой функции и
-// возвращается до валидации URL, до fetcher и до AbortSignal.
+// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере роут GET /models
+// исторически был недоступен — поэтому стоял жёсткий guard «только статика».
+// Батч 20a, п.2: guard смягчён до УМНОГО МОКА — сначала живая попытка
+// GET {base}/models с AbortController и таймаутом GEMINI_MODELS_TIMEOUT_MS,
+// при любом провале (таймаут/404/сеть/битый URL/пустой список) — откат на
+// GEMINI_STATIC_MODELS + предупреждение в лог/Output. Выбор моделей больше
+// не блокируется недоступностью адаптера.
 export const GEMINI_STATIC_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash'];
 
-export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000, provider?: string): Promise<string[]> {
-  if (provider === 'gemini') return [...GEMINI_STATIC_MODELS];
+// Потолок живой попытки для Gemini (батч 20a): дольше 3с пользователь
+// ждать не обязан — статика подхватывается мгновенно после abort.
+export const GEMINI_MODELS_TIMEOUT_MS = 3000;
+
+async function fetchGeminiModels(baseUrl: string, apiKey: string, fetcher: typeof fetch, timeoutMs: number, onWarn: (message: string) => void): Promise<string[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
+  try {
+    const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+    const response = await fetcher(`${safeBase}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+      // SSRF-контракт батча 17.5 действует и здесь: 3xx = ошибка, ключ не уезжает по редиректу.
+      redirect: 'manual'
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const models = parseLiveModels(await response.json());
+    if (!models.length) throw new Error('пустой список моделей в ответе');
+    return models;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    onWarn(`⚠️ Gemini /models недоступен (${detail}) — отдаю статический список моделей`);
+    return [...GEMINI_STATIC_MODELS];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000, provider?: string, onWarn: (message: string) => void = (message): void => console.warn(message)): Promise<string[]> {
+  if (provider === 'gemini') return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
   const response = await fetcher(`${safeBase}/models`, {
     method: 'GET',
