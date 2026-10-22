@@ -8,7 +8,7 @@ import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../s
 import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { defaultModel, detectProvider, fetchLiveModels, isLocalBaseUrl, keyUrl, maskApiKey, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl, SK_AMBIGUOUS_OPTIONS } from '../../src/providers';
+import { defaultModel, detectProvider, fetchLiveModelsCached, isLocalBaseUrl, keyUrl, maskApiKey, MODELS_FETCH_TIMEOUT_MS, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl, sanitizeApiKey, SK_AMBIGUOUS_OPTIONS } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
@@ -118,18 +118,33 @@ function preferredLiveModel(models: string[], fallback: string): string {
   return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
 }
 
+// Батч 22, п.1: на время живого GET /models центр настроек показывает в
+// селект-зоне «Загружаем модели…» и блокирует управление (modelsBusy).
+function notifyModelsBusy(busy: boolean): void {
+  if (!settingsPanel) return;
+  void settingsPanel.webview.postMessage({ type: 'modelsBusy', busy, label: t('models.loading', currentReportLanguage()) });
+}
+
 async function fetchModels(selection: ProviderSelection, tolerateErrors = true): Promise<string[]> {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
   // Батч 20a, п.2: provider передаётся явно — внутри fetchLiveModels для
   // gemini работает умный мок: живая попытка GET /models (AbortController,
-  // 3000ms) при любом провале отдаёт GEMINI_STATIC_MODELS; onWarn пишет
-  // предупреждение в Output-канал расширения.
-  // Батч 21, п.3: tolerateErrors=true (выбор моделей) — 401/404/таймаут
-  // дают пустой список, а не падение UI. Тест подключения и мастер зовут
-  // с false: там ошибка — сигнал пользователю.
-  return fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)), tolerateErrors);
+  // 10000ms — батч 22) при любом провале отдаёт GEMINI_STATIC_MODELS; onWarn
+  // пишет предупреждение в Output-канал расширения.
+  // Батч 21, п.3: tolerateErrors=true (выбор моделей) — 401/404/таймаут/
+  // редирект дают пустой список, а не падение UI. Тест подключения и мастер
+  // зовут с false: там ошибка — сигнал пользователю.
+  // Батч 22: таймаут 10с, sanitizeApiKey в одной точке, Accept: json,
+  // кэш списков (TTL 10 мин, только путь выбора), в Output — длительность
+  // fetch и размер ответа в байтах (без ключа!).
+  notifyModelsBusy(true);
+  try {
+    return await fetchLiveModelsCached(baseUrl, sanitizeApiKey(selection.key ?? ''), fetch, MODELS_FETCH_TIMEOUT_MS, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)), tolerateErrors, (message) => hostOutput?.appendLine(message));
+  } finally {
+    notifyModelsBusy(false);
+  }
 }
 
 // Батч 21, п.2: голое `sk-` — неоднозначный префикс (OpenAI, DeepSeek,

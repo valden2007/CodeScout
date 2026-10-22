@@ -30,6 +30,7 @@ class StubState {
   // (e2e развилки неоднозначного sk-). Пустая очередь = undefined, как раньше.
   inputBoxAnswers: unknown[] = [];
   quickPickCalls: unknown[][] = [];
+  inputBoxCalls: unknown[][] = [];
 
   reset(): void {
     this.config.clear();
@@ -53,6 +54,7 @@ class StubState {
     this.quickPickAnswers = [];
     this.inputBoxAnswers = [];
     this.quickPickCalls = [];
+    this.inputBoxCalls = [];
   }
 
   set(sectionKey: string, value: unknown): void {
@@ -136,7 +138,7 @@ export const window = {
   async showErrorMessage(message?: unknown, ..._args: unknown[]): Promise<undefined> { state.errorMessages.push(String(message ?? '')); return undefined; },
   async showInformationMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showWarningMessage(..._args: unknown[]): Promise<unknown> { return state.warningAnswers.shift(); },
-  async showInputBox(..._args: unknown[]): Promise<unknown> { return state.inputBoxAnswers.shift(); },
+  async showInputBox(...args: unknown[]): Promise<unknown> { state.inputBoxCalls.push(args); return state.inputBoxAnswers.shift(); },
   async showQuickPick(...args: unknown[]): Promise<unknown> { state.quickPickCalls.push(args); return state.quickPickAnswers.shift(); },
   async showOpenDialog(..._args: unknown[]): Promise<undefined> { return undefined; },
   async showTextDocument(document?: { __path?: string }): Promise<unknown> { return { revealRange: () => {}, selection: undefined, __path: document?.__path }; }

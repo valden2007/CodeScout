@@ -35,37 +35,76 @@ export function assertHttpBaseUrl(url: string): string {
   return url;
 }
 
-// Батч 18.8/18.9: у Google AI Studio в OpenAI-адаптере роут GET /models
-// исторически был недоступен — поэтому стоял жёсткий guard «только статика».
-// Батч 20a, п.2: guard смягчён до УМНОГО МОКА — сначала живая попытка
+// Батч 22, п.2: ЕДИНСТВЕННАЯ точка санитизации API-ключа. Невидимые
+// пробелы/переносы после вставки из чата или файл-в-файл — подтверждённая
+// причина 401 (Groq), окружающие кавычки — частый артефакт копирования из
+// JSON/ENV. Одинаково для /models и review-запросов (llm-client зовёт то же).
+export function sanitizeApiKey(key: string): string {
+  let value = key.trim();
+  let changed = true;
+  while (changed && value.length >= 2) {
+    changed = false;
+    for (const [open, close] of [['"', '"'], ["'", "'"], ['`', '`']] as const) {
+      if (value.startsWith(open) && value.endsWith(close)) {
+        value = value.slice(1, -1).trim();
+        changed = true;
+      }
+    }
+  }
+  return value;
+}
+
+// Батч 20a, п.2: guard Gemini смягчён до УМНОГО МОКА — сначала живая попытка
 // GET {base}/models с AbortController и таймаутом GEMINI_MODELS_TIMEOUT_MS,
-// при любом провале (таймаут/404/сеть/битый URL/пустой список) — откат на
-// GEMINI_STATIC_MODELS + предупреждение в лог/Output. Выбор моделей больше
-// не блокируется недоступностью адаптера.
+// при любом провале (таймаут/404/сеть/битый URL/пустой список/редирект) —
+// откат на GEMINI_STATIC_MODELS + предупреждение в лог/Output.
+// Батч 22, п.1: потолок 3000 → 10000мс — OpenRouter/Groq отдают большие
+// списки моделей дольше 3 секунд, и раньше это ложно считалось сбоем.
 export const GEMINI_STATIC_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+export const GEMINI_MODELS_TIMEOUT_MS = 10000;
+// Батч 22, п.1: общий таймаут живого GET /models для всех платформ.
+export const MODELS_FETCH_TIMEOUT_MS = 10000;
+// Батч 22, п.1: кэш списка моделей на инстанс (Map<provider+baseUrl+key>).
+// Повторное открытие Центра настроек не гоняет гигантский JSON повторно.
+export const MODELS_CACHE_TTL_MS = 10 * 60 * 1000;
 
-// Потолок живой попытки для Gemini (батч 20a): дольше 3с пользователь
-// ждать не обязан — статика подхватывается мгновенно после abort.
-export const GEMINI_MODELS_TIMEOUT_MS = 3000;
+export interface ModelsFetchLog {
+  provider: string;
+  ms: number;
+  bytes: number;
+  status: number;
+  models: number;
+  error?: string;
+}
 
-async function fetchGeminiModels(baseUrl: string, apiKey: string, fetcher: typeof fetch, timeoutMs: number, onWarn: (message: string) => void): Promise<string[]> {
+function logModelsFetch(onMetric: ((message: string) => void) | undefined, entry: ModelsFetchLog): void {
+  // Диагностика (батч 22, п.1): длительность и размер ответа. КЛЮЧ НЕ ПИШЕМ.
+  onMetric?.(`⏱ ${entry.provider} GET /models: ${entry.ms} мс, ${entry.bytes} байт, HTTP ${entry.status}, моделей ${entry.models}${entry.error ? ` (${entry.error})` : ''}`);
+}
+
+async function fetchGeminiModels(baseUrl: string, apiKey: string, fetcher: typeof fetch, timeoutMs: number, onWarn: (message: string) => void, onMetric?: (message: string) => void): Promise<string[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
+  const started = Date.now();
   try {
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
     const response = await fetcher(`${safeBase}/models`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}` },
+      // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
+      headers: { Authorization: `Bearer ${sanitizeApiKey(apiKey)}`, Accept: 'application/json' },
       signal: controller.signal,
       // SSRF-контракт батча 17.5 действует и здесь: 3xx = ошибка, ключ не уезжает по редиректу.
       redirect: 'manual'
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const models = parseLiveModels(await response.json());
+    const text = await response.text();
+    if (!response.ok) throw new Error(redirectError(response.status) ?? `HTTP ${response.status}`);
+    const models = parseLiveModels(JSON.parse(text) as unknown);
+    logModelsFetch(onMetric, { provider: 'gemini', ms: Date.now() - started, bytes: new TextEncoder().encode(text).length, status: response.status, models: models.length });
     if (!models.length) throw new Error('пустой список моделей в ответе');
     return models;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    logModelsFetch(onMetric, { provider: 'gemini', ms: Date.now() - started, bytes: 0, status: 0, models: 0, error: detail });
     onWarn(`⚠️ Gemini /models недоступен (${detail}) — отдаю статический список моделей`);
     return [...GEMINI_STATIC_MODELS];
   } finally {
@@ -73,33 +112,75 @@ async function fetchGeminiModels(baseUrl: string, apiKey: string, fetcher: typeo
   }
 }
 
-export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = 5000, provider?: string, onWarn: (message: string) => void = (message): void => console.warn(message), tolerateErrors = false): Promise<string[]> {
-  if (provider === 'gemini') return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
+// Батч 22, п.3: редирект при redirect:'manual' — НЕ «просто HTTP 3xx»,
+// а категоризированная ошибка «провайдер ответил редиректом». Политика
+// manual сохранена для ВСЕХ платформ, включая custom (SSRF-замок 17.5).
+function redirectError(status: number): string | undefined {
+  if (status < 300 || status >= 400) return undefined;
+  return `Провайдер ответил редиректом (HTTP ${status}) — разыгрывать Location при redirect:'manual' запрещено (SSRF-замок)`;
+}
+
+export async function fetchLiveModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = MODELS_FETCH_TIMEOUT_MS, provider?: string, onWarn: (message: string) => void = (message): void => console.warn(message), tolerateErrors = false, onMetric?: (message: string) => void): Promise<string[]> {
+  if (provider === 'gemini') return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+  const started = Date.now();
   try {
     const response = await fetcher(`${safeBase}/models`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+      // Батч 22, п.2: sanitizeApiKey в одной точке (401 из-за пробелов/переносов)
+      // + Accept: application/json (п.2). Батч 17.5 (SSRF): Authorization не
+      // уезжает по 3xx-редиректу — переходы запрещены, 3xx = ошибка.
+      headers: { Authorization: `Bearer ${sanitizeApiKey(apiKey)}`, Accept: 'application/json' },
+      // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3);
+      // потолок — 10000мс (батч 22, п.1: большие списки OpenRouter/Groq).
       signal: AbortSignal.timeout(timeoutMs),
-      // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
-      // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
       redirect: 'manual'
     });
-    if (!response.ok) throw new Error(`Не удалось получить список моделей: HTTP ${response.status}`);
-    return parseLiveModels(await response.json());
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(redirectError(response.status) ?? `Не удалось получить список моделей: HTTP ${response.status}`);
+    }
+    const models = parseLiveModels(JSON.parse(text) as unknown);
+    logModelsFetch(onMetric, { provider: provider ?? 'custom', ms: Date.now() - started, bytes: new TextEncoder().encode(text).length, status: response.status, models: models.length });
+    return models;
   } catch (error) {
-    // Батч 21, п.3: все top-12 платформ OpenAI-совместимы (GET /models +
-    // Bearer). Интерфейс выбора модели не имеет права падать на 401/404/
-    // таймауте/битом JSON — при tolerateErrors тихо отдаём пустой список
-    // (UI предложит ввести модель вручную). CLI/Action и «тест подключения»
-    // зовут без флага: там ошибка — полезный сигнал, он летит наружу.
-    // Битый baseUrl валидируется строго всегда (см. assertHttpBaseUrl выше).
-    if (!tolerateErrors) throw error;
+    // Батч 21, п.3 + батч 22, п.3: все top-12 платформ OpenAI-совместимы.
+    // Интерфейс выбора модели не имеет права падать на 401/404/таймаут/
+    // редирект/битый JSON — при tolerateErrors тихо отдаём пустой список
+    // (UI предложит ввести модель вручную + подсказка). Тест подключения и
+    // CLI/Action зовут без флага: там ошибка — полезный сигнал, она летит
+    // наружу. Битый baseUrl валидируется строго всегда (см. выше).
     const detail = error instanceof Error ? error.message : String(error);
+    logModelsFetch(onMetric, { provider: provider ?? 'custom', ms: Date.now() - started, bytes: 0, status: 0, models: 0, error: detail });
+    if (!tolerateErrors) throw error;
     onWarn(`⚠️ ${provider ?? 'провайдер'} /models недоступен (${detail}) — отдаю пустой список, выбор модели не блокируется`);
     return [];
   }
+}
+
+// Батч 22, п.1: кэш живых списков моделей. Ключ — provider+baseUrl+ключ
+// (только в памяти процесса, в логи не попадает). Кэшируются ТОЛЬКО
+// успешные непустые ответы пути выбора моделей (tolerateErrors=true):
+// «тест подключения» обязан каждый раз ходить в сеть, чтобы честный 401
+// не прятался за свежим кэшем. TTL — 10 минут.
+const liveModelsCache = new Map<string, { models: string[]; ts: number }>();
+
+export function clearModelsCache(): void {
+  liveModelsCache.clear();
+}
+
+export async function fetchLiveModelsCached(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch, timeoutMs = MODELS_FETCH_TIMEOUT_MS, provider?: string, onWarn: (message: string) => void = (message): void => console.warn(message), tolerateErrors = true, onMetric?: (message: string) => void): Promise<string[]> {
+  const cacheKey = `${provider ?? 'custom'}|${baseUrl.trim().replace(/\/+$/, '')}|${sanitizeApiKey(apiKey)}`;
+  if (tolerateErrors) {
+    const hit = liveModelsCache.get(cacheKey);
+    if (hit && Date.now() - hit.ts < MODELS_CACHE_TTL_MS) {
+      onMetric?.(`🗂 ${provider ?? 'custom'}: ${hit.models.length} моделей из кэша (TTL ${Math.round(MODELS_CACHE_TTL_MS / 60000)} мин), сеть не дёргалась`);
+      return [...hit.models];
+    }
+  }
+  const models = await fetchLiveModels(baseUrl, apiKey, fetcher, timeoutMs, provider, onWarn, tolerateErrors, onMetric);
+  if (tolerateErrors && models.length) liveModelsCache.set(cacheKey, { models: [...models], ts: Date.now() });
+  return models;
 }
 
 // Локальный режим (батч 13, п.2): localhost-серверы (Ollama, LM Studio) не

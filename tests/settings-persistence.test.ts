@@ -226,11 +226,15 @@ describe('батч 18.9: авто-выбор модели при смене пр
     expect(extension).toContain("await vscode.commands.executeCommand('codescout.chooseModel')");
     expect(extension).toContain('await autoSelectModelAfterProviderChange(context, providerChanged);');
     expect(extension.match(/autoSelectModelAfterProviderChange\(context, (providerChanged|saved\.providerChanged)\);/g)).toHaveLength(2);
-    const fetchModels = extension.slice(extension.indexOf('async function fetchModels'), extension.indexOf('async function fetchModels') + 1300);
-    // Батч 20a, п.2: первые 5 аргументов прежние + onWarn в Output (умный мок Gemini).
-    // Батч 21, п.3: 7-й аргумент tolerateErrors — выбор моделей не падает,
-    // тест подключения/мастер вызывают с false.
-    expect(fetchModels).toContain("fetchLiveModels(baseUrl, selection.key ?? '', fetch, 5000, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)), tolerateErrors)");
+    const fetchModels = extension.slice(extension.indexOf('async function fetchModels'), extension.indexOf('async function fetchModels') + 2000);
+    // Батч 20a, п.2: provider+onWarn в Output (умный мок Gemini).
+    // Батч 21, п.3: tolerateErrors — выбор моделей не падает, тест
+    // подключения/мастер вызывают с false.
+    // Батч 22: кэш (fetchLiveModelsCached), 10с таймаут, sanitizeApiKey,
+    // onMetric — длительность/байты в Output.
+    expect(fetchModels).toContain("fetchLiveModelsCached(baseUrl, sanitizeApiKey(selection.key ?? ''), fetch, MODELS_FETCH_TIMEOUT_MS, selection.provider, (message) => (hostOutput ? hostOutput.appendLine(message) : console.warn(message)), tolerateErrors, (message) => hostOutput?.appendLine(message))");
+    expect(fetchModels).toContain('notifyModelsBusy(true)');
+    expect(fetchModels).toContain('notifyModelsBusy(false)');
   });
 });
 

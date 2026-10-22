@@ -9,7 +9,7 @@ import { readGitDiff, validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs, validateFlags, missingFlagValueError } from '../src/cli/args';
 import { abortError, GroqProvider, isAbortError, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, fetchLiveModels, GEMINI_MODELS_TIMEOUT_MS, GEMINI_STATIC_MODELS, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, fetchLiveModels, GEMINI_MODELS_TIMEOUT_MS, GEMINI_STATIC_MODELS, maskApiKey, MODELS_CACHE_TTL_MS, MODELS_FETCH_TIMEOUT_MS, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -710,7 +710,7 @@ describe('батч 20a п.1: безопасный JSON-каскад', () => {
 });
 
 // Батч 20a, п.2: умный мок Gemini — живая попытка GET /models (AbortController,
-// ≤3000ms), при любом провале — GEMINI_STATIC_MODELS + предупреждение в onWarn.
+// ≤10000ms — потолок поднят в батче 22, п.1), при любом провале — GEMINI_STATIC_MODELS + предупреждение в onWarn.
 describe('батч 20a п.2: умный мок Gemini', () => {
   it('успех: возвращаем распарсенные живые модели, предупреждений нет', async () => {
     const warnings: string[] = [];
@@ -757,10 +757,12 @@ describe('батч 20a п.2: умный мок Gemini', () => {
     expect(GEMINI_STATIC_MODELS).toHaveLength(4);
   });
 
-  it('контракт источника: AbortController + потолок 3000ms в gemini-ветке', () => {
-    expect(GEMINI_MODELS_TIMEOUT_MS).toBe(3000);
+  it('контракт источника: AbortController + потолок 10000ms в gemini-ветке (батч 22)', () => {
+    expect(GEMINI_MODELS_TIMEOUT_MS).toBe(10000);
+    expect(MODELS_FETCH_TIMEOUT_MS).toBe(10000);
+    expect(MODELS_CACHE_TTL_MS).toBe(600000);
     const source = readFileSync('src/providers.ts', 'utf8');
-    const body = source.slice(source.indexOf('async function fetchGeminiModels'), source.indexOf('async function fetchGeminiModels') + 1600);
+    const body = source.slice(source.indexOf('async function fetchGeminiModels'), source.indexOf('async function fetchGeminiModels') + 2400);
     expect(body).toContain('new AbortController()');
     expect(body).toContain('controller.abort()');
     expect(body).toContain('GEMINI_MODELS_TIMEOUT_MS');

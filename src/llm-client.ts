@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { LLMProvider } from './types';
-import { completionUrl, normalizeProvider, resolveBaseUrl } from './providers';
+import { completionUrl, normalizeProvider, resolveBaseUrl, sanitizeApiKey } from './providers';
 
 interface GroqResponse {
   choices?: Array<{ message?: { content?: string } }>;
@@ -202,6 +202,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
     private readonly signal?: AbortSignal,
     private readonly requestTimeoutMs?: number
   ) {
+    // Батч 22, п.2: ключ санитизируется в ОДНОЙ точке (providers.sanitizeApiKey)
+    // и здесь, и в /models — review-запросы и список моделей ведут себя одинаково.
+    this.apiKey = sanitizeApiKey(apiKey);
     this.endpoint = completionUrl(baseUrl);
   }
 

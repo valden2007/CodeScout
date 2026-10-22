@@ -393,7 +393,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </div>
 <script${nonceAttr}>
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -626,6 +626,21 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  // Batch 22 p.1: live GET /models can take up to 10s — during the fetch the
+  // provider select, baseUrl and the live-models button are disabled and the
+  // button shows the loading label (already translated, sent by the host).
+  if (data.type === 'modelsBusy') {
+    const busy = data.busy === true;
+    providerSelect.disabled = busy;
+    baseUrlInput.disabled = busy;
+    const modelBtn = document.getElementById('chooseModel');
+    if (modelBtn) {
+      modelBtn.disabled = busy;
+      const label = modelBtn.querySelector('span:last-child');
+      if (label) label.textContent = busy ? (data.label || L('models.loading')) : L('center.liveModels');
+    }
+    return;
+  }
   if (data.type === 'connResult') {
     const btn = document.getElementById('testConnection');
     if (btn) {

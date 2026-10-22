@@ -73,53 +73,104 @@ function assertHttpBaseUrl(url) {
   }
   return url;
 }
+function sanitizeApiKey(key) {
+  let value = key.trim();
+  let changed = true;
+  while (changed && value.length >= 2) {
+    changed = false;
+    for (const [open, close] of [['"', '"'], ["'", "'"], ["`", "`"]]) {
+      if (value.startsWith(open) && value.endsWith(close)) {
+        value = value.slice(1, -1).trim();
+        changed = true;
+      }
+    }
+  }
+  return value;
+}
 var GEMINI_STATIC_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"];
-var GEMINI_MODELS_TIMEOUT_MS = 3e3;
-async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn) {
+var GEMINI_MODELS_TIMEOUT_MS = 1e4;
+var MODELS_FETCH_TIMEOUT_MS = 1e4;
+var MODELS_CACHE_TTL_MS = 10 * 60 * 1e3;
+function logModelsFetch(onMetric, entry) {
+  onMetric?.(`\u23F1 ${entry.provider} GET /models: ${entry.ms} \u043C\u0441, ${entry.bytes} \u0431\u0430\u0439\u0442, HTTP ${entry.status}, \u043C\u043E\u0434\u0435\u043B\u0435\u0439 ${entry.models}${entry.error ? ` (${entry.error})` : ""}`);
+}
+async function fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, GEMINI_MODELS_TIMEOUT_MS));
+  const started = Date.now();
   try {
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
+      // Батч 22, п.2: ключ санитизирован в одной точке + честный Accept.
+      headers: { Authorization: `Bearer ${sanitizeApiKey(apiKey)}`, Accept: "application/json" },
       signal: controller.signal,
       // SSRF-контракт батча 17.5 действует и здесь: 3xx = ошибка, ключ не уезжает по редиректу.
       redirect: "manual"
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const models = parseLiveModels(await response.json());
+    const text = await response.text();
+    if (!response.ok) throw new Error(redirectError(response.status) ?? `HTTP ${response.status}`);
+    const models = parseLiveModels(JSON.parse(text));
+    logModelsFetch(onMetric, { provider: "gemini", ms: Date.now() - started, bytes: new TextEncoder().encode(text).length, status: response.status, models: models.length });
     if (!models.length) throw new Error("\u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0432 \u043E\u0442\u0432\u0435\u0442\u0435");
     return models;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    logModelsFetch(onMetric, { provider: "gemini", ms: Date.now() - started, bytes: 0, status: 0, models: 0, error: detail });
     onWarn(`\u26A0\uFE0F Gemini /models \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D (${detail}) \u2014 \u043E\u0442\u0434\u0430\u044E \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439`);
     return [...GEMINI_STATIC_MODELS];
   } finally {
     clearTimeout(timer);
   }
 }
-async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3, provider, onWarn = (message) => console.warn(message), tolerateErrors = false) {
-  if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn);
+function redirectError(status) {
+  if (status < 300 || status >= 400) return void 0;
+  return `\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u043C (HTTP ${status}) \u2014 \u0440\u0430\u0437\u044B\u0433\u0440\u044B\u0432\u0430\u0442\u044C Location \u043F\u0440\u0438 redirect:'manual' \u0437\u0430\u043F\u0440\u0435\u0449\u0435\u043D\u043E (SSRF-\u0437\u0430\u043C\u043E\u043A)`;
+}
+async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = MODELS_FETCH_TIMEOUT_MS, provider, onWarn = (message) => console.warn(message), tolerateErrors = false, onMetric) {
+  if (provider === "gemini") return fetchGeminiModels(baseUrl, apiKey, fetcher, timeoutMs, onWarn, onMetric);
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
+  const started = Date.now();
   try {
     const response = await fetcher(`${safeBase}/models`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3)
+      // Батч 22, п.2: sanitizeApiKey в одной точке (401 из-за пробелов/переносов)
+      // + Accept: application/json (п.2). Батч 17.5 (SSRF): Authorization не
+      // уезжает по 3xx-редиректу — переходы запрещены, 3xx = ошибка.
+      headers: { Authorization: `Bearer ${sanitizeApiKey(apiKey)}`, Accept: "application/json" },
+      // Зависший сервер не должен делать настройку бесконечной (батч 13, п.3);
+      // потолок — 10000мс (батч 22, п.1: большие списки OpenRouter/Groq).
       signal: AbortSignal.timeout(timeoutMs),
-      // Батч 17.5 (SSRF): Authorization не уезжает по 3xx-редиректу на
-      // внутренние адреса облака — переходы запрещены, 3xx = ошибка.
       redirect: "manual"
     });
-    if (!response.ok) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
-    return parseLiveModels(await response.json());
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(redirectError(response.status) ?? `\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439: HTTP ${response.status}`);
+    }
+    const models = parseLiveModels(JSON.parse(text));
+    logModelsFetch(onMetric, { provider: provider ?? "custom", ms: Date.now() - started, bytes: new TextEncoder().encode(text).length, status: response.status, models: models.length });
+    return models;
   } catch (error) {
-    if (!tolerateErrors) throw error;
     const detail = error instanceof Error ? error.message : String(error);
+    logModelsFetch(onMetric, { provider: provider ?? "custom", ms: Date.now() - started, bytes: 0, status: 0, models: 0, error: detail });
+    if (!tolerateErrors) throw error;
     onWarn(`\u26A0\uFE0F ${provider ?? "\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440"} /models \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D (${detail}) \u2014 \u043E\u0442\u0434\u0430\u044E \u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A, \u0432\u044B\u0431\u043E\u0440 \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435 \u0431\u043B\u043E\u043A\u0438\u0440\u0443\u0435\u0442\u0441\u044F`);
     return [];
   }
+}
+var liveModelsCache = /* @__PURE__ */ new Map();
+async function fetchLiveModelsCached(baseUrl, apiKey, fetcher = fetch, timeoutMs = MODELS_FETCH_TIMEOUT_MS, provider, onWarn = (message) => console.warn(message), tolerateErrors = true, onMetric) {
+  const cacheKey = `${provider ?? "custom"}|${baseUrl.trim().replace(/\/+$/, "")}|${sanitizeApiKey(apiKey)}`;
+  if (tolerateErrors) {
+    const hit = liveModelsCache.get(cacheKey);
+    if (hit && Date.now() - hit.ts < MODELS_CACHE_TTL_MS) {
+      onMetric?.(`\u{1F5C2} ${provider ?? "custom"}: ${hit.models.length} \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0438\u0437 \u043A\u044D\u0448\u0430 (TTL ${Math.round(MODELS_CACHE_TTL_MS / 6e4)} \u043C\u0438\u043D), \u0441\u0435\u0442\u044C \u043D\u0435 \u0434\u0451\u0440\u0433\u0430\u043B\u0430\u0441\u044C`);
+      return [...hit.models];
+    }
+  }
+  const models = await fetchLiveModels(baseUrl, apiKey, fetcher, timeoutMs, provider, onWarn, tolerateErrors, onMetric);
+  if (tolerateErrors && models.length) liveModelsCache.set(cacheKey, { models: [...models], ts: Date.now() });
+  return models;
 }
 function isLocalBaseUrl(url) {
   const value = url?.trim() || "";
@@ -436,6 +487,7 @@ var OpenAICompatibleProvider = class {
     this.onRetry = onRetry;
     this.signal = signal;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.apiKey = sanitizeApiKey(apiKey);
     this.endpoint = completionUrl(baseUrl);
   }
   lastRequestAt = 0;
@@ -808,6 +860,7 @@ var ru_default = {
   "notify.customDone": "CodeScout: \u0441\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u043E, \u043D\u0430\u0439\u0434\u0435\u043D\u043E {n}",
   "model.inputFetchFailed": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C /models. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
   "model.inputEmpty": "\u0421\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u043F\u0443\u0441\u0442. \u0412\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
+  "models.loading": "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
   "model.pickTitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0438\u0437 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445",
   "model.pickTitleShort": "\u0412\u044B\u0431\u0435\u0440\u0438 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C",
   "custom.focusPrompt": "\u0427\u0442\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C? \u041E\u043F\u0438\u0448\u0438 \u0444\u043E\u043A\u0443\u0441 \u0440\u0435\u0432\u044C\u044E \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439",
@@ -879,7 +932,7 @@ var ru_default = {
   "err.retry": "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u043F\u043E\u043F\u044B\u0442\u043A\u0443",
   "err.openSettings": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
   "audit.requestTimeout": "\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043A \u043C\u043E\u0434\u0435\u043B\u0438, \u0441\u0435\u043A (10-600)",
-  "audit.requestTimeoutHint": "\u0416\u0451\u0441\u0442\u043A\u0438\u0439 \u0434\u0435\u0434\u043B\u0430\u0439\u043D \u043E\u0434\u043D\u043E\u0433\u043E HTTP-\u0432\u044B\u0437\u043E\u0432\u0430 \u0438\u043D\u0444\u0435\u0440\u0435\u043D\u0441\u0430: \u0437\u0430\u0432\u0438\u0441\u0448\u0438\u0439 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043F\u043E\u0434\u0432\u0435\u0441\u0438\u0442 \u0441\u043A\u0430\u043D. \u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u0438 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0432\u0441\u0435\u0433\u0434\u0430 \u0436\u0434\u0443\u0442 5 \u0441.",
+  "audit.requestTimeoutHint": "\u0416\u0451\u0441\u0442\u043A\u0438\u0439 \u0434\u0435\u0434\u043B\u0430\u0439\u043D \u043E\u0434\u043D\u043E\u0433\u043E HTTP-\u0432\u044B\u0437\u043E\u0432\u0430 \u0438\u043D\u0444\u0435\u0440\u0435\u043D\u0441\u0430: \u0437\u0430\u0432\u0438\u0441\u0448\u0438\u0439 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043F\u043E\u0434\u0432\u0435\u0441\u0438\u0442 \u0441\u043A\u0430\u043D. \u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u0438 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439 \u0432\u0441\u0435\u0433\u0434\u0430 \u0436\u0434\u0443\u0442 10 \u0441.",
   "wizard.title": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 CodeScout",
   "wizard.subtitle": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0440\u0435\u0436\u0438\u043C \u0440\u0430\u0431\u043E\u0442\u044B",
   "wizard.cloud": "\u2601\uFE0F \u041E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C",
@@ -1173,6 +1226,7 @@ var en_default = {
   "notify.customDone": "CodeScout: custom review finished, {n} found",
   "model.inputFetchFailed": "Failed to fetch /models. Type a model manually",
   "model.inputEmpty": "The model list is empty. Type a model manually",
+  "models.loading": "Loading models\u2026",
   "model.pickTitle": "Choose a model from the available ones",
   "model.pickTitleShort": "Pick an available model",
   "custom.focusPrompt": "What to check? Describe the review focus in one line",
@@ -1244,7 +1298,7 @@ var en_default = {
   "err.retry": "Retry",
   "err.openSettings": "Open settings",
   "audit.requestTimeout": "Model request timeout, seconds (10-600)",
-  "audit.requestTimeoutHint": "Hard deadline for a single inference HTTP call: a hung provider will not freeze the scan. Connection checks and the model list always wait 5s.",
+  "audit.requestTimeoutHint": "Hard deadline for a single inference HTTP call: a hung provider will not freeze the scan. Connection checks and the model list always wait 10s.",
   "wizard.title": "CodeScout Setup",
   "wizard.subtitle": "Choose your working mode",
   "wizard.cloud": "\u2601\uFE0F Cloud mode",
@@ -4532,7 +4586,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 </div>
 <script${nonceAttr}>
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -4768,6 +4822,21 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  // Batch 22 p.1: live GET /models can take up to 10s \u2014 during the fetch the
+  // provider select, baseUrl and the live-models button are disabled and the
+  // button shows the loading label (already translated, sent by the host).
+  if (data.type === 'modelsBusy') {
+    const busy = data.busy === true;
+    providerSelect.disabled = busy;
+    baseUrlInput.disabled = busy;
+    const modelBtn = document.getElementById('chooseModel');
+    if (modelBtn) {
+      modelBtn.disabled = busy;
+      const label = modelBtn.querySelector('span:last-child');
+      if (label) label.textContent = busy ? (data.label || L('models.loading')) : L('center.liveModels');
+    }
+    return;
+  }
   if (data.type === 'connResult') {
     const btn = document.getElementById('testConnection');
     if (btn) {
@@ -4932,10 +5001,19 @@ function buildStats(issues, filesAnalyzed, durationMs) {
 function preferredLiveModel(models, fallback) {
   return models.find((model) => /instruct|coder/i.test(model)) || models[0] || fallback;
 }
+function notifyModelsBusy(busy) {
+  if (!settingsPanel) return;
+  void settingsPanel.webview.postMessage({ type: "modelsBusy", busy, label: t("models.loading", currentReportLanguage()) });
+}
 async function fetchModels(selection, tolerateErrors = true) {
   const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
-  return fetchLiveModels(baseUrl, selection.key ?? "", fetch, 5e3, selection.provider, (message) => hostOutput ? hostOutput.appendLine(message) : console.warn(message), tolerateErrors);
+  notifyModelsBusy(true);
+  try {
+    return await fetchLiveModelsCached(baseUrl, sanitizeApiKey(selection.key ?? ""), fetch, MODELS_FETCH_TIMEOUT_MS, selection.provider, (message) => hostOutput ? hostOutput.appendLine(message) : console.warn(message), tolerateErrors, (message) => hostOutput?.appendLine(message));
+  } finally {
+    notifyModelsBusy(false);
+  }
 }
 async function pickSkProvider() {
   const picked = await vscode2.window.showQuickPick(
