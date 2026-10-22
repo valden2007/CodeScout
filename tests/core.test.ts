@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseUnifiedDiff, shouldReviewFile, splitPatch } from '../src/diff-parser';
-import { parseReviewResponse } from '../src/response-parser';
+import { parseReviewResponse, tryParseJson } from '../src/response-parser';
 import { GitHubClient } from '../src/github-client';
 import { buildSummaryComment, escapeHtml } from '../src/report-formatter';
 import { numberPatch } from '../src/line-numbering';
@@ -9,7 +9,7 @@ import { readGitDiff, validateGitPath } from '../src/tui/DiffReader';
 import { filesWithIssues } from '../src/tui/App';
 import { parseArgs, validateFlags, missingFlagValueError } from '../src/cli/args';
 import { abortError, GroqProvider, isAbortError, OpenAICompatibleProvider, RetryEvent } from '../src/llm-client';
-import { completionUrl, detectProvider, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
+import { completionUrl, detectProvider, fetchLiveModels, maskApiKey, normalizeProvider, parseLiveModels, resolveApiKey, resolveApiKeyPriority, resolveBaseUrl } from '../src/providers';
 import { reviewStatus } from '../src/tui/App';
 import { stripAnsi } from '../src/tui/components';
 import { buildEmptyReportHtml, buildReportHtml } from '../extension/src/reportHtml';
@@ -644,6 +644,44 @@ describe('response parser', () => {
 
   it('rejects malformed JSON', () => {
     expect(() => parseReviewResponse('not json', 'src/app.ts')).toThrow('malformed JSON');
+  });
+
+  // Батч 18.8: «болтливые» бесплатные модели — markdown-обёртки и текст до/после.
+  it('batch 18.8: strips markdown fences and chatty prose around JSON', () => {
+    const fencedJunk = parseReviewResponse('Вот ваш результат:\n\n```json\n{"issues":[{"line":3,"category":"bug","severity":"high","description":"Null deref","confidence":0.9}],"summary":"done"}\n```\nНадеюсь, помог!', 'src/app.ts');
+    expect(fencedJunk.issues[0]).toMatchObject({ line: 3, description: 'Null deref' });
+    expect(fencedJunk.summary).toBe('done');
+    const bareFence = parseReviewResponse('```\n{"issues":[],"summary":"ok"}\n```', 'a.ts');
+    expect(bareFence.summary).toBe('ok');
+  });
+
+  it('batch 18.8: greedy fallback cuts first [ or { to last ] or }', () => {
+    const greedy = parseReviewResponse('Sure! {"issues":[{"line":1,"category":"bug","severity":"low","description":"d","confidence":0.5}]} // note: { see docs }', 'a.ts');
+    expect(greedy.issues).toHaveLength(1);
+    expect(greedy.summary).toBe('');
+    const outcome = tryParseJson('prefix {"issues":[],"summary":"s"} suffix [meta]');
+    expect(outcome.ok).toBe(true);
+    expect(() => parseReviewResponse('{"issues":[} oops', 'a.ts')).toThrow('malformed JSON');
+  });
+});
+
+describe('batch 18.8: gemini live models', () => {
+  it('fetchLiveModels intercepts gemini base URL with the static list, no HTTP', async () => {
+    let calls = 0;
+    const fetcher = (async () => { calls += 1; return new Response('{}', { status: 200 }); }) as typeof fetch;
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', fetcher);
+    expect(calls).toBe(0);
+    expect(models).toEqual(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']);
+  });
+
+  it('non-gemini providers still hit GET /models', async () => {
+    let requested = '';
+    const models = await fetchLiveModels('https://api.groq.com/openai/v1', 'k', (async (url: string | URL | undefined) => {
+      requested = String(url);
+      return new Response(JSON.stringify({ data: [{ id: 'llama-3.3-70b-versatile' }] }), { status: 200 });
+    }) as unknown as typeof fetch);
+    expect(requested).toBe('https://api.groq.com/openai/v1/models');
+    expect(models).toEqual(['llama-3.3-70b-versatile']);
   });
 });
 
@@ -2274,11 +2312,12 @@ describe('G6 fix batch security and robustness', () => {
     expect(html).toContain("command: 'openLink'");
     expect(html).toContain("command: 'chooseModel'");
     expect(html).not.toMatch(/\son(input|change|submit)\s*=/);
-    // Batch 18.5: bulletproof mailto — exactly ONE inline onclick, the mail
-    // anchor posting openLink (href="mailto:" removed; delegated data-url
-    // handler stays as the nonce-CSP fallback).
-    expect(html.match(/\sonclick=/g) || []).toHaveLength(1);
-    expect(html).toContain('<a class="dev-link" href="#" data-url="mailto:work.valden@gmail.com" onclick="vscode.postMessage({ command: \'openLink\', url: \'mailto:work.valden@gmail.com\' }); event.stopPropagation(); return false;">work.valden@gmail.com</a>');
+    // Batch 18.8: CSP-safe mailto — ZERO inline onclick (nonce CSP blocks
+    // inline handlers). The mail anchor is id="author-email" href="#" and a
+    // nonce'd addEventListener posts openLink; delegated data-url stays.
+    expect(html.match(/\sonclick=/g) || []).toHaveLength(0);
+    expect(html).toContain('<a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a>');
+    expect(html).toContain("document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });");
     const noNonce = buildSettingsHtml(state);
     expect(noNonce).toContain("script-src 'unsafe-inline';");
     expect(noNonce).toContain('<script>');

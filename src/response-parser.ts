@@ -57,20 +57,58 @@ function findBalancedJson(text: string): string | undefined {
   return undefined;
 }
 
+// Батч 18.8: greedy-эвристика для «болтливых» бесплатных моделей — если
+// сбалансированный сканер не сработал (обрезанный/вложенный мусор),
+// вырезаем от ПЕРВОГО [ или { до ПОСЛЕДНЕГО ] или } включительно.
+function findGreedyJsonSpan(text: string): string | undefined {
+  const firstOpen = text.search(/[[{]/);
+  if (firstOpen < 0) return undefined;
+  const lastBracket = Math.max(text.lastIndexOf(']'), text.lastIndexOf('}'));
+  if (lastBracket <= firstOpen) return undefined;
+  return text.slice(firstOpen, lastBracket + 1);
+}
+
+function stripMarkdownFences(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  return (fenced ? fenced[1] : text).trim();
+}
+
 function extractJson(raw: string): string {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const body = fenced ? fenced[1] : raw;
-  const trimmed = body.trimStart();
-  if (trimmed.startsWith('"') || trimmed.startsWith('-') || /^[0-9]/.test(trimmed)) return trimmed;
-  return findBalancedJson(body) ?? trimmed;
+  const body = stripMarkdownFences(raw);
+  if (/^["\-[0-9]/.test(body)) return body;
+  return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+}
+
+// Батч 18.8: единая точка «достать JSON из ответа модели». Порядок fallback:
+// 1) чистый текст; 2) после снятия markdown-обёрток ```json … ```;
+// 3) сбалансированный сканер; 4) greedy-вырезка первый [/{ … последний ]/}.
+export function tryParseJson(raw: string): { ok: true; value: unknown } | { ok: false; lastError: unknown } {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string): void => {
+    if (value && !seen.has(value)) { seen.add(value); candidates.push(value); }
+  };
+  const trimmed = raw.trim();
+  push(trimmed);
+  const stripped = stripMarkdownFences(trimmed);
+  push(stripped);
+  push(findBalancedJson(stripped) ?? '');
+  push(findGreedyJsonSpan(stripped) ?? '');
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try { return { ok: true, value: JSON.parse(candidate) as unknown }; }
+    catch (error) { lastError = error; }
+  }
+  return { ok: false, lastError };
 }
 
 export function parseReviewResponse(raw: string, filename: string): ReviewResult {
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(extractJson(raw));
-  } catch {
-    throw new Error(`LLM returned malformed JSON for ${filename}`);
+  const outcome = tryParseJson(raw);
+  if (outcome.ok) parsed = outcome.value;
+  else {
+    try { parsed = JSON.parse(extractJson(raw)); }
+    catch { throw new Error(`LLM returned malformed JSON for ${filename}`); }
   }
   if (parsed === null) throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
   if (Array.isArray(parsed)) throw new Error(`Ответ модели для ${filename} — JSON-массив, ожидается объект с полем "issues"`);

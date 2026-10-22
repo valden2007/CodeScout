@@ -73,8 +73,13 @@ function assertHttpBaseUrl(url) {
   }
   return url;
 }
+var GEMINI_STATIC_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"];
+function isGeminiBaseUrl(url) {
+  return /:\/\/(generativelanguage\.googleapis\.com|aistudio\.googleapis\.com)(:|\/|$)/i.test(url);
+}
 async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5e3) {
   const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ""));
+  if (isGeminiBaseUrl(safeBase)) return [...GEMINI_STATIC_MODELS];
   const response = await fetcher(`${safeBase}/models`, {
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -1441,19 +1446,57 @@ function findBalancedJson(text) {
   }
   return void 0;
 }
+function findGreedyJsonSpan(text) {
+  const firstOpen = text.search(/[[{]/);
+  if (firstOpen < 0) return void 0;
+  const lastBracket = Math.max(text.lastIndexOf("]"), text.lastIndexOf("}"));
+  if (lastBracket <= firstOpen) return void 0;
+  return text.slice(firstOpen, lastBracket + 1);
+}
+function stripMarkdownFences(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  return (fenced ? fenced[1] : text).trim();
+}
 function extractJson(raw) {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const body = fenced ? fenced[1] : raw;
-  const trimmed = body.trimStart();
-  if (trimmed.startsWith('"') || trimmed.startsWith("-") || /^[0-9]/.test(trimmed)) return trimmed;
-  return findBalancedJson(body) ?? trimmed;
+  const body = stripMarkdownFences(raw);
+  if (/^["\-[0-9]/.test(body)) return body;
+  return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+}
+function tryParseJson(raw) {
+  const candidates = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (value) => {
+    if (value && !seen.has(value)) {
+      seen.add(value);
+      candidates.push(value);
+    }
+  };
+  const trimmed = raw.trim();
+  push(trimmed);
+  const stripped = stripMarkdownFences(trimmed);
+  push(stripped);
+  push(findBalancedJson(stripped) ?? "");
+  push(findGreedyJsonSpan(stripped) ?? "");
+  let lastError;
+  for (const candidate of candidates) {
+    try {
+      return { ok: true, value: JSON.parse(candidate) };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return { ok: false, lastError };
 }
 function parseReviewResponse(raw, filename) {
   let parsed;
-  try {
-    parsed = JSON.parse(extractJson(raw));
-  } catch {
-    throw new Error(`LLM returned malformed JSON for ${filename}`);
+  const outcome = tryParseJson(raw);
+  if (outcome.ok) parsed = outcome.value;
+  else {
+    try {
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      throw new Error(`LLM returned malformed JSON for ${filename}`);
+    }
   }
   if (parsed === null) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON null \u0432\u043C\u0435\u0441\u0442\u043E \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u0440\u0435\u0432\u044C\u044E`);
   if (Array.isArray(parsed)) throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 JSON-\u043C\u0430\u0441\u0441\u0438\u0432, \u043E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F \u043E\u0431\u044A\u0435\u043A\u0442 \u0441 \u043F\u043E\u043B\u0435\u043C "issues"`);
@@ -4231,7 +4274,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <section id="sec-dev">
   <h2>${icon2("account")} ${T("sec.dev")}</h2>
   <div class="about-line">${T("about.devAuthor")} <strong>${T("about.devName")}</strong></div>
-  <div class="about-line">${T("about.devContact")} <a class="dev-link" href="#" data-url="mailto:work.valden@gmail.com" onclick="vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); event.stopPropagation(); return false;">work.valden@gmail.com</a></div>
+  <div class="about-line">${T("about.devContact")} <a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
   <div class="about-line">${T("about.devGithub")} <a class="dev-link" href="${CODESCOUT_REPO_URL}" data-url="${CODESCOUT_REPO_URL}">valden2007/CodeScout</a> \u2014 ${T("about.devIssues")}</div>
   <div class="about-line">${T("about.devCard")} <span class="scope-chip"><span>${T("about.devSiteWip")}</span></span></div>
   <p class="hint">${T("about.devCall")}</p>
@@ -4525,11 +4568,11 @@ renderChips();
 // anchor. preventDefault is mandatory: the webview must never try to navigate
 // itself (CSP kills mailto navigation silently -> "dead click" UX). The host
 // opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
-// Batch 18.5: the mail anchor ALSO carries an inline onclick (no href=mailto:,
-// href="#" only) so the click posts openLink even when sandboxed delegated
-// capture misfires. Under the nonce CSP the inline handler is blocked and this
-// listener stays as the fallback (data-url); with inline allowed the onclick
-// stopPropagation()s so openLink is posted exactly once.
+// Batch 18.8: the inline onclick is GONE (nonce CSP blocks inline handlers
+// outright). The mail anchor is a plain href="#" link with id="author-email";
+// a dedicated nonce'd listener posts openLink, the delegated [data-url]
+// listener below stays as the belt-and-braces path for every other link.
+document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;

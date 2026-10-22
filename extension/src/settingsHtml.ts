@@ -379,7 +379,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 <section id="sec-dev">
   <h2>${icon('account')} ${T('sec.dev')}</h2>
   <div class="about-line">${T('about.devAuthor')} <strong>${T('about.devName')}</strong></div>
-  <div class="about-line">${T('about.devContact')} <a class="dev-link" href="#" data-url="mailto:work.valden@gmail.com" onclick="vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); event.stopPropagation(); return false;">work.valden@gmail.com</a></div>
+  <div class="about-line">${T('about.devContact')} <a class="dev-link" id="author-email" href="#" data-url="mailto:work.valden@gmail.com">work.valden@gmail.com</a></div>
   <div class="about-line">${T('about.devGithub')} <a class="dev-link" href="${REPO_URL}" data-url="${REPO_URL}">valden2007/CodeScout</a> — ${T('about.devIssues')}</div>
   <div class="about-line">${T('about.devCard')} <span class="scope-chip"><span>${T('about.devSiteWip')}</span></span></div>
   <p class="hint">${T('about.devCall')}</p>
@@ -670,11 +670,11 @@ renderChips();
 // anchor. preventDefault is mandatory: the webview must never try to navigate
 // itself (CSP kills mailto navigation silently -> "dead click" UX). The host
 // opens whitelisted URLs via openExternal. Keep this script Cyrillic-free.
-// Batch 18.5: the mail anchor ALSO carries an inline onclick (no href=mailto:,
-// href="#" only) so the click posts openLink even when sandboxed delegated
-// capture misfires. Under the nonce CSP the inline handler is blocked and this
-// listener stays as the fallback (data-url); with inline allowed the onclick
-// stopPropagation()s so openLink is posted exactly once.
+// Batch 18.8: the inline onclick is GONE (nonce CSP blocks inline handlers
+// outright). The mail anchor is a plain href="#" link with id="author-email";
+// a dedicated nonce'd listener posts openLink, the delegated [data-url]
+// listener below stays as the belt-and-braces path for every other link.
+document.getElementById('author-email')?.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openLink', url: 'mailto:work.valden@gmail.com' }); });
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;

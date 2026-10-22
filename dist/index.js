@@ -34175,8 +34175,19 @@ function assertHttpBaseUrl(url) {
     }
     return url;
 }
+// Батч 18.8: у Google AI Studio в OpenAI-адаптере НЕТ роута GET /models —
+// живой запрос всегда даёт 404/405. Для gemini не дёргаем сеть, отдаём
+// статический список бесплатных/платных моделей endpoint'а.
+const GEMINI_STATIC_MODELS = (/* unused pure expression or super */ null && (['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']));
+function isGeminiBaseUrl(url) {
+    return /:\/\/(generativelanguage\.googleapis\.com|aistudio\.googleapis\.com)(:|\/|$)/i.test(url);
+}
 async function fetchLiveModels(baseUrl, apiKey, fetcher = fetch, timeoutMs = 5000) {
     const safeBase = assertHttpBaseUrl(baseUrl.replace(/\/+$/, ''));
+    // Перехват gemini ДО любого HTTP: /models у Google нет — падать/висеть
+    // не на чем, сразу resolve со статическим списком.
+    if (isGeminiBaseUrl(safeBase))
+        return [...GEMINI_STATIC_MODELS];
     const response = await fetcher(`${safeBase}/models`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${apiKey}` },
@@ -34898,21 +34909,69 @@ function findBalancedJson(text) {
     }
     return undefined;
 }
+// Батч 18.8: greedy-эвристика для «болтливых» бесплатных моделей — если
+// сбалансированный сканер не сработал (обрезанный/вложенный мусор),
+// вырезаем от ПЕРВОГО [ или { до ПОСЛЕДНЕГО ] или } включительно.
+function findGreedyJsonSpan(text) {
+    const firstOpen = text.search(/[[{]/);
+    if (firstOpen < 0)
+        return undefined;
+    const lastBracket = Math.max(text.lastIndexOf(']'), text.lastIndexOf('}'));
+    if (lastBracket <= firstOpen)
+        return undefined;
+    return text.slice(firstOpen, lastBracket + 1);
+}
+function stripMarkdownFences(text) {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    return (fenced ? fenced[1] : text).trim();
+}
 function extractJson(raw) {
-    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    const body = fenced ? fenced[1] : raw;
-    const trimmed = body.trimStart();
-    if (trimmed.startsWith('"') || trimmed.startsWith('-') || /^[0-9]/.test(trimmed))
-        return trimmed;
-    return findBalancedJson(body) ?? trimmed;
+    const body = stripMarkdownFences(raw);
+    if (/^["\-[0-9]/.test(body))
+        return body;
+    return findBalancedJson(body) ?? findGreedyJsonSpan(body) ?? body;
+}
+// Батч 18.8: единая точка «достать JSON из ответа модели». Порядок fallback:
+// 1) чистый текст; 2) после снятия markdown-обёрток ```json … ```;
+// 3) сбалансированный сканер; 4) greedy-вырезка первый [/{ … последний ]/}.
+function tryParseJson(raw) {
+    const candidates = [];
+    const seen = new Set();
+    const push = (value) => {
+        if (value && !seen.has(value)) {
+            seen.add(value);
+            candidates.push(value);
+        }
+    };
+    const trimmed = raw.trim();
+    push(trimmed);
+    const stripped = stripMarkdownFences(trimmed);
+    push(stripped);
+    push(findBalancedJson(stripped) ?? '');
+    push(findGreedyJsonSpan(stripped) ?? '');
+    let lastError;
+    for (const candidate of candidates) {
+        try {
+            return { ok: true, value: JSON.parse(candidate) };
+        }
+        catch (error) {
+            lastError = error;
+        }
+    }
+    return { ok: false, lastError };
 }
 function parseReviewResponse(raw, filename) {
     let parsed;
-    try {
-        parsed = JSON.parse(extractJson(raw));
-    }
-    catch {
-        throw new Error(`LLM returned malformed JSON for ${filename}`);
+    const outcome = tryParseJson(raw);
+    if (outcome.ok)
+        parsed = outcome.value;
+    else {
+        try {
+            parsed = JSON.parse(extractJson(raw));
+        }
+        catch {
+            throw new Error(`LLM returned malformed JSON for ${filename}`);
+        }
     }
     if (parsed === null)
         throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
