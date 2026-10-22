@@ -558,8 +558,11 @@ var ru_default = {
   "issue.falsePositive": "\u041B\u043E\u0436\u043D\u043E\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u0435",
   "issue.falsePositiveTip": "\u0421\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u2014 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435",
   "issue.showProof": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
-  "issue.proofCondition": "\u0423\u0441\u043B\u043E\u0432\u0438\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F",
-  "issue.proofTrace": "\u041F\u0443\u0442\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F",
+  "issue.suppressedTitle": "\u0421\u043A\u0440\u044B\u0442\u044B\u0435 \u043D\u0430\u0445\u043E\u0434\u043A\u0438 ({n})",
+  "issue.suppressedHint": "\u0421\u043A\u0440\u044B\u0442\u044B\u0435 \u043A\u0430\u043A \u043B\u043E\u0436\u043D\u044B\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0432 \u043E\u0442\u0447\u0451\u0442\u0430\u0445 \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0435 \u2014 \u0442\u043E\u0442 \u0436\u0435 \u0444\u0430\u0439\u043B, severity, \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F \u0438 \u0441\u0442\u0440\u043E\u043A\u0430 \u0432 \u0434\u043E\u043F\u0443\u0441\u043A\u0435 \xB13. \xAB\u0412\u0435\u0440\u043D\u0443\u0442\u044C\xBB \u2014 \u0432\u0435\u0440\u043D\u0443\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u0432 \u043E\u0442\u0447\u0451\u0442.",
+  "issue.restore": "\u0412\u0435\u0440\u043D\u0443\u0442\u044C",
+  "issue.restoreTip": "\u041F\u0435\u0440\u0435\u0441\u0442\u0430\u0442\u044C \u0441\u043A\u0440\u044B\u0432\u0430\u0442\u044C \u044D\u0442\u0443 \u043D\u0430\u0445\u043E\u0434\u043A\u0443",
+  "issue.suppressedLegacy": "\u0417\u0430\u043F\u0438\u0441\u044C \u043F\u043E\u0434\u0430\u0432\u043B\u0435\u043D\u0438\u044F \u0438\u0437 \u0441\u0442\u0430\u0440\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438",
   "empty.onboardTitle": "\u041F\u0440\u0438\u0432\u0435\u0442! \u042D\u0442\u043E CodeScout",
   "empty.step1Prefix": "\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0432 ",
   "empty.step1Link": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Google AI Studio",
@@ -919,8 +922,11 @@ var en_default = {
   "issue.falsePositive": "False positive",
   "issue.falsePositiveTip": "Hide finding \u2014 do not show it again in this workspace",
   "issue.showProof": "Show proof",
-  "issue.proofCondition": "Trigger condition",
-  "issue.proofTrace": "Execution trace",
+  "issue.suppressedTitle": "Hidden findings ({n})",
+  "issue.suppressedHint": "Findings hidden as false positives stay out of this project's reports: a match is the same file, severity, category and a line within \xB13. Restore brings a finding back.",
+  "issue.restore": "Restore",
+  "issue.restoreTip": "Stop hiding this finding",
+  "issue.suppressedLegacy": "Legacy suppression entry",
   "empty.onboardTitle": "Hi! This is CodeScout",
   "empty.step1Prefix": "Get a provider API key at ",
   "empty.step1Link": "Open Google AI Studio",
@@ -1354,7 +1360,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. For each finding, ALSO provide proof of finding and a confidence class: "proof":{"condition":"When X happens (e.g., null input, race condition)","trace":["Line 10: variable assigned","Line 25: used without check"]} \u2014 the concrete trigger condition and the execution path leading to the defect; and "confidenceLevel":"verified" ONLY when the trace is a concrete code path you can point at in the patch, otherwise "confidenceLevel":"suggested" (pattern/heuristic guess). When you cannot prove anything, keep "confidenceLevel":"suggested" and give an empty proof: {"condition":"","trace":[]}. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0,"confidenceLevel":"verified|suggested","proof":{"condition":"string","trace":["string"]}}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 \u2014 how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
@@ -1427,25 +1433,19 @@ Return JSON only. Keep descriptions concise and explain why the issue matters. P
 // ../src/response-parser.ts
 var categories = /* @__PURE__ */ new Set(["bug", "security", "performance", "maintainability", "docs", "style"]);
 var severities = /* @__PURE__ */ new Set(["low", "medium", "high", "critical"]);
-var PROOF_TRACE_MAX = 12;
-var PROOF_TRACE_ITEM_MAX = 300;
-var PROOF_CONDITION_MAX = 500;
-function parseConfidenceLevel(value) {
-  const direct = value.confidenceLevel;
-  if (direct === "verified" || direct === "suggested") return direct;
-  if (value.confidence === "verified") return "verified";
-  return "suggested";
+var CONFIDENCE_MIN = 0;
+var CONFIDENCE_MAX = 100;
+var CONFIDENCE_DEFAULT = 50;
+var CONFIDENCE_VERIFIED_THRESHOLD = 70;
+var CONFIDENCE_CRITICAL_MIN = 90;
+var PROOF_MAX = 1e3;
+function confidencePercent(value, fallback = CONFIDENCE_DEFAULT) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.round(Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, value)));
 }
 function parseProof(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const value = raw;
-  const proof = {};
-  if (typeof value.condition === "string" && value.condition.trim()) proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
-  if (Array.isArray(value.trace)) {
-    const trace = value.trace.filter((step) => typeof step === "string" && step.trim().length > 0).map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX)).slice(0, PROOF_TRACE_MAX);
-    if (trace.length) proof.trace = trace;
-  }
-  return proof;
+  if (typeof raw !== "string") return "";
+  return raw.trim().slice(0, PROOF_MAX);
 }
 function findBalancedJson(text) {
   const start = text.search(/[[{]/);
@@ -1536,13 +1536,12 @@ function parseReviewResponse(raw, filename) {
     const description = typeof value.description === "string" ? value.description.trim() : "";
     if (!description) return [];
     const line = typeof value.line === "number" && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
-    const confidence = typeof value.confidence === "number" && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+    const confidence = confidencePercent(value.confidence);
     const code = typeof value.code === "string" ? value.code.trim() : void 0;
     const suggestion = typeof value.suggestion === "string" ? value.suggestion.trim() : void 0;
-    const severity = rawSeverity === "critical" && confidence < 0.9 ? "medium" : rawSeverity;
-    const confidenceLevel = parseConfidenceLevel(value);
+    const severity = rawSeverity === "critical" && confidence < CONFIDENCE_CRITICAL_MIN ? "medium" : rawSeverity;
     const proof = parseProof(value.proof);
-    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
+    return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
   return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1 };
 }
@@ -1943,31 +1942,93 @@ ${CS_FONTSIZE}`;
 // src/findingsStore.ts
 var import_node_crypto2 = require("node:crypto");
 var SUPPRESSED_KEY = "codescout.suppressedFindings";
-var LINE_BUCKET = 7;
-function computeFingerprint(issue) {
-  const line = Number.isFinite(issue.line) && issue.line >= 1 ? Math.floor(issue.line) : 1;
-  const bucket = Math.floor((line - 1) / LINE_BUCKET);
-  const file = String(issue.file ?? "").trim().replaceAll("\\", "/").toLowerCase();
-  const raw = `${file}\0${issue.severity}\0${issue.category}\0${bucket}`;
+var LINE_TOLERANCE = 3;
+var LEGACY_LINE_BUCKET = 7;
+var DESCRIPTION_MAX = 400;
+function hashHex(raw) {
   return (0, import_node_crypto2.createHash)("sha1").update(raw, "utf8").digest("hex").slice(0, 16);
 }
-function readSuppressed(workspaceState) {
-  const value = workspaceState.get(SUPPRESSED_KEY);
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim().length > 0) : [];
+function normalizeFile(file) {
+  return String(file ?? "").trim().replaceAll("\\", "/").toLowerCase();
 }
-function suppressFinding(workspaceState, fingerprint) {
-  const fp = String(fingerprint ?? "").trim();
+function normalizeLine(line) {
+  return Number.isFinite(line) && line >= 1 ? Math.floor(line) : 1;
+}
+function computeFingerprint(issue) {
+  const raw = `${normalizeFile(issue.file)}\0${issue.severity}\0${issue.category}\0${normalizeLine(issue.line)}`;
+  return hashHex(raw);
+}
+function legacyBucketFingerprint(issue) {
+  const bucket = Math.floor((normalizeLine(issue.line) - 1) / LEGACY_LINE_BUCKET);
+  const raw = `${normalizeFile(issue.file)}\0${issue.severity}\0${issue.category}\0${bucket}`;
+  return hashHex(raw);
+}
+function zoneMatches(entry, issue) {
+  if (!entry.file) return false;
+  return normalizeFile(issue.file) === entry.file && String(issue.severity) === entry.severity && String(issue.category) === entry.category && Math.abs(normalizeLine(issue.line) - entry.line) <= LINE_TOLERANCE;
+}
+function readEntries(workspaceState) {
+  const value = workspaceState.get(SUPPRESSED_KEY);
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const id2 = item.trim();
+      if (id2) out.push({ id: id2, file: "", line: 0, severity: "low", category: "bug", description: "", hiddenAt: 0 });
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const raw = item;
+    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    if (!id) continue;
+    out.push({
+      id,
+      file: normalizeFile(String(raw.file ?? "")),
+      line: Number.isFinite(raw.line) ? Math.floor(raw.line) : 0,
+      severity: String(raw.severity ?? ""),
+      category: String(raw.category ?? ""),
+      description: typeof raw.description === "string" ? raw.description.slice(0, DESCRIPTION_MAX) : "",
+      hiddenAt: Number.isFinite(raw.hiddenAt) ? raw.hiddenAt : 0
+    });
+  }
+  return out;
+}
+function getSuppressed(workspaceState) {
+  return readEntries(workspaceState).sort((a, b) => b.hiddenAt - a.hiddenAt);
+}
+function isSuppressed(issue, entries) {
+  const fp = computeFingerprint(issue);
+  const legacy = legacyBucketFingerprint(issue);
+  return entries.some((entry) => entry.id === fp || entry.id === legacy || zoneMatches(entry, issue));
+}
+function suppress(workspaceState, issue) {
+  const entry = {
+    id: computeFingerprint(issue),
+    file: normalizeFile(issue.file),
+    line: normalizeLine(issue.line),
+    severity: String(issue.severity),
+    category: String(issue.category),
+    description: String(issue.description ?? "").trim().slice(0, DESCRIPTION_MAX),
+    hiddenAt: Date.now()
+  };
+  const kept = readEntries(workspaceState).filter((item) => item.id !== entry.id && !zoneMatches(item, issue));
+  void workspaceState.update(SUPPRESSED_KEY, [...kept, entry]);
+  return entry;
+}
+function unsuppress(workspaceState, id) {
+  const fp = String(id ?? "").trim();
   if (!fp) return;
-  const list = readSuppressed(workspaceState);
-  if (list.includes(fp)) return;
-  void workspaceState.update(SUPPRESSED_KEY, [...list, fp]);
+  const list = readEntries(workspaceState);
+  const next = list.filter((item) => item.id !== fp);
+  if (next.length === list.length) return;
+  void workspaceState.update(SUPPRESSED_KEY, next);
 }
 function filterSuppressed(findings, workspaceState) {
-  const suppressed = new Set(readSuppressed(workspaceState));
+  const entries = readEntries(workspaceState);
   const visible = [];
   for (const issue of findings) {
     const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
-    if (suppressed.has(fingerprint)) continue;
+    if (isSuppressed(issue, entries)) continue;
     visible.push(issue.fingerprint === fingerprint ? issue : { ...issue, fingerprint });
   }
   return visible;
@@ -2006,28 +2067,37 @@ function severityClass(severity) {
   if (severity === "critical" || severity === "high") return "critical";
   return severity;
 }
-function confidenceBadge(issue, lang) {
-  if (issue.confidenceLevel === "verified") return `<span class="badge verified">${icon("pass")} ${escapeHtml(t("issue.confidenceVerified", lang))}</span>`;
-  return `<span class="badge suggested">${icon("lightbulb")} ${escapeHtml(t("issue.confidenceSuggested", lang))}</span>`;
+function confidenceBadge(issue, lang, showConfidence) {
+  const percent = confidencePercent(issue.confidence);
+  const suffix = showConfidence ? ` (${percent}%)` : "";
+  if (percent >= CONFIDENCE_VERIFIED_THRESHOLD) return `<span class="badge verified">${icon("pass")} ${escapeHtml(t("issue.confidenceVerified", lang))}${suffix}</span>`;
+  return `<span class="badge suggested">${icon("lightbulb")} ${escapeHtml(t("issue.confidenceSuggested", lang))}${suffix}</span>`;
 }
 function proofBlock(issue, lang) {
-  const condition = issue.proof?.condition?.trim() ?? "";
-  const trace = (issue.proof?.trace ?? []).filter((step) => typeof step === "string" && step.trim()).map((step) => step.trim());
-  if (!condition && trace.length === 0) return "";
-  const conditionHtml = condition ? `<p class="proof-cond"><strong>${escapeHtml(t("issue.proofCondition", lang))}:</strong> ${escapeHtml(condition)}</p>` : "";
-  const traceHtml = trace.length ? `<div class="proof-trace-label"><strong>${escapeHtml(t("issue.proofTrace", lang))}</strong></div><ol class="proof-trace">${trace.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>` : "";
-  return `<details class="proof"><summary>${icon("search")} <span>${escapeHtml(t("issue.showProof", lang))}</span></summary><div class="proof-body">${conditionHtml}${traceHtml}</div></details>`;
+  const proof = typeof issue.proof === "string" ? issue.proof.trim() : "";
+  if (!proof) return "";
+  return `<details class="proof"><summary>${icon("search")} <span>${escapeHtml(t("issue.showProof", lang))}</span></summary><div class="proof-body"><p class="proof-text">${escapeHtml(proof)}</p></div></details>`;
 }
 function suppressButton(issue, lang) {
   const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
-  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t("issue.falsePositiveTip", lang))}">${icon("thumbsdown")}<span>${escapeHtml(t("issue.falsePositive", lang))}</span></button></div>`;
+  return `<div class="issue-actions"><button class="fp-button cs-btn secondary" type="button" data-command="suppressFinding" data-action="suppress" data-fingerprint="${escapeHtml(fingerprint)}" title="${escapeHtml(t("issue.falsePositiveTip", lang))}">${icon("thumbsdown")}<span>${escapeHtml(t("issue.falsePositive", lang))}</span></button></div>`;
+}
+function suppressedBlockHtml(suppressed, lang) {
+  if (!suppressed.length) return "";
+  const rows = suppressed.map((entry) => {
+    const location = entry.file ? `<span class="suppressed-file">${escapeHtml(`${entry.file}:${entry.line}`)}</span>` : "";
+    const zone = entry.file ? `<span class="category">${escapeHtml(entry.severity)} \xB7 ${escapeHtml(entry.category)}</span>` : `<span class="category">${escapeHtml(t("issue.suppressedLegacy", lang))}</span>`;
+    const description = entry.description ? `<div class="suppressed-desc">${escapeHtml(entry.description.slice(0, 140))}</div>` : "";
+    return `<li><div class="suppressed-info">${location}${zone}${description}</div><button class="cs-btn secondary" type="button" data-command="unsuppressFinding" data-action="restore" data-fingerprint="${escapeHtml(entry.id)}" title="${escapeHtml(t("issue.restoreTip", lang))}">${icon("arrow-left")}<span>${escapeHtml(t("issue.restore", lang))}</span></button></li>`;
+  }).join("");
+  return `<details class="suppressed-block"><summary>${icon("eye-closed")} <span>${escapeHtml(t("issue.suppressedTitle", lang, { n: suppressed.length }))}</span></summary><div class="suppressed-hint">${escapeHtml(t("issue.suppressedHint", lang))}</div><ul class="suppressed-list">${rows}</ul></details>`;
 }
 function issueCard(issue, isNew = false, showConfidence = true, lang = "ru") {
   const severity = severityClass(issue.severity);
   const code = issue.code ? `<pre><code>${escapeHtml(issue.code)}</code></pre>` : "";
   const suggestion = issue.suggestion ? `<div class="suggestion">${icon("arrow-right")} <span>${escapeHtml(issue.suggestion)}</span></div>` : "";
   return `<article class="issue-card ${severity}">
-  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon("add")} ${t("issue.new", lang)}</span>` : ""}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang)}${showConfidence ? `<span class="confidence">${Math.round(issue.confidence * 100)}%</span>` : ""}</div>
+  <div class="issue-top"><span class="badge ${severity}">${severityIcon(issue.severity)} ${severityLabel(issue.severity)}</span>${isNew ? `<span class="badge new">${icon("add")} ${t("issue.new", lang)}</span>` : ""}<span class="category">${escapeHtml(issue.category)}</span>${confidenceBadge(issue, lang, showConfidence)}</div>
   <a class="location" href="#" data-command="openFile" data-file="${escapeHtml(issue.file)}" data-line="${issue.line}">${escapeHtml(issue.file)}:${issue.line}</a>
   <div class="description">${escapeHtml(issue.description)}</div>
   ${code}
@@ -2142,7 +2212,6 @@ h2 { margin: 0 0 var(--cs-space-2); color: var(--cs-accent); font-size: var(--cs
 .issue-card.medium { border-left-color: var(--cs-warn); }
 .issue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .category { color: var(--cs-desc); font-size: var(--cs-font-1); }
-.confidence { margin-left: auto; color: var(--cs-desc); font-size: var(--cs-font-1); font-variant-numeric: tabular-nums; }
 .location { display: block; margin: 6px 0; color: var(--cs-accent); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); overflow-wrap: anywhere; text-decoration: underline; }
 .description { margin-top: 5px; }
 pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px solid var(--cs-card-border); border-radius: 3px; background: var(--cs-code-bg); color: var(--cs-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); white-space: pre-wrap; word-break: break-word; }
@@ -2152,9 +2221,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .proof { margin-top: var(--cs-space-2); }
 .proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
-.proof-cond { margin: 0 0 5px; overflow-wrap: anywhere; }
-.proof-trace { margin: 0; padding-left: 18px; }
-.proof-trace li { margin: 2px 0; overflow-wrap: anywhere; }
+.proof-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
 .fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
 .fp-button:hover { color: var(--cs-error); }
@@ -2171,6 +2238,15 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .fixed-block ul { margin: var(--cs-space-2) 0; padding-left: 18px; color: var(--cs-desc); font-size: var(--cs-font-2); }
 .fixed-block li { margin: var(--cs-space-1) 0; overflow-wrap: anywhere; }
 .hidden { display: none; }
+.suppressed-block { margin-top: 18px; }
+.suppressed-block summary { cursor: pointer; color: var(--cs-desc); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.suppressed-hint { margin: var(--cs-space-2) 0; color: var(--cs-desc); font-size: var(--cs-font-1); }
+.suppressed-list { margin: 0; padding: 0; list-style: none; }
+.suppressed-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--cs-space-2); margin: var(--cs-space-1) 0; padding: var(--cs-space-2); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-card); background: var(--cs-card-bg); }
+.suppressed-info { min-width: 0; flex: 1 1 auto; }
+.suppressed-file { display: block; color: var(--cs-accent); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-1); overflow-wrap: anywhere; }
+.suppressed-desc { color: var(--cs-desc); font-size: var(--cs-font-1); overflow-wrap: anywhere; }
+.suppressed-list button { flex: 0 0 auto; width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); }
 .custom-form { margin-top: 10px; padding: 10px; border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-1); background: var(--cs-card-bg); box-shadow: var(--cs-shadow); }
 .custom-form label { display: block; margin: 0 0 5px; color: var(--cs-desc); font-size: var(--cs-font-1); }
 .custom-form textarea, .custom-form select, .custom-form input { width: 100%; padding: 6px var(--cs-space-2); border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); background: var(--cs-input-bg); font: inherit; font-size: var(--cs-font-2); }
@@ -2191,7 +2267,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo, suppressed) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -2273,7 +2349,7 @@ ${headHtml(assets, nonce)}
     <div class="pills"><span class="pill critical">${icon("error")} ${stats.critical}</span><span class="pill medium">${icon("warning")} ${stats.medium}</span><span class="pill low">${icon("pass")} ${stats.low}</span></div>
   </header>
   ${sections ? `<div class="search-line"><input id="fileSearch" type="search" placeholder="${T("search.placeholder")}" autocomplete="off" spellcheck="false"></div>` : ""}
-  <main>${summaryCard}${customBanner}${diffSummary}${body}${fixedBlock}${notRecheckedBlock}</main>
+  <main>${summaryCard}${customBanner}${diffSummary}${body}${suppressedBlockHtml(suppressed ?? [], lang)}${fixedBlock}${notRecheckedBlock}</main>
     <script${nonceAttr}>
     const vscode = acquireVsCodeApi();
     const UI = ${clientDict};
@@ -2504,8 +2580,8 @@ ${headHtml(assets, nonce)}
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}) {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, suppressed) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, "", void 0, suppressed);
 }
 
 // src/reportIssue.ts
@@ -2640,17 +2716,40 @@ var CodeScoutPanel = class {
   attachWorkspaceState(state) {
     this.workspaceState = state;
   }
+  fingerprintOf(issue) {
+    return issue.fingerprint?.trim() || computeFingerprint(issue);
+  }
+  // Батч 20b: снятые с вида карточки кэшируются, чтобы «↩ Вернуть»
+  // мгновенно возвращал находку в отчёт без перезапуска скана.
+  suppressedCache = /* @__PURE__ */ new Map();
+  shiftStats(issues, delta) {
+    for (const issue of issues) {
+      if (issue.severity === "critical" || issue.severity === "high") this.stats.critical = Math.max(0, this.stats.critical + delta);
+      else if (issue.severity === "medium") this.stats.medium = Math.max(0, this.stats.medium + delta);
+      else this.stats.low = Math.max(0, this.stats.low + delta);
+    }
+  }
   suppressLocal(fingerprint) {
-    if (this.workspaceState) suppressFinding(this.workspaceState, fingerprint);
-    const fingerprintOf = (issue) => issue.fingerprint?.trim() || computeFingerprint(issue);
-    const visible = this.issues.filter((issue) => fingerprintOf(issue) !== fingerprint);
-    if (visible.length === this.issues.length) return;
-    const removed = this.issues.filter((issue) => fingerprintOf(issue) === fingerprint);
+    const target = this.issues.find((issue) => this.fingerprintOf(issue) === fingerprint);
+    if (!target) return;
+    if (this.workspaceState) suppress(this.workspaceState, target);
+    const entries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    const visible = [];
+    const removed = [];
+    for (const issue of this.issues) (entries.length && isSuppressed(issue, entries) ? removed : visible).push(issue);
+    if (removed.length === 0) return;
+    for (const issue of removed) this.suppressedCache.set(this.fingerprintOf(issue), issue);
     this.issues = visible;
-    for (const issue of removed) {
-      if (issue.severity === "critical" || issue.severity === "high") this.stats.critical = Math.max(0, this.stats.critical - 1);
-      else if (issue.severity === "medium") this.stats.medium = Math.max(0, this.stats.medium - 1);
-      else this.stats.low = Math.max(0, this.stats.low - 1);
+    this.shiftStats(removed, -1);
+    this.render();
+  }
+  unsuppressLocal(fingerprint) {
+    if (this.workspaceState) unsuppress(this.workspaceState, fingerprint);
+    const cached = this.suppressedCache.get(fingerprint);
+    this.suppressedCache.delete(fingerprint);
+    if (cached) {
+      this.issues.push(cached);
+      this.shiftStats([cached], 1);
     }
     this.render();
   }
@@ -2754,6 +2853,9 @@ var CodeScoutPanel = class {
       } else if (message.command === "suppressFinding") {
         const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
         if (fingerprint) this.suppressLocal(fingerprint);
+      } else if (message.command === "unsuppressFinding") {
+        const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
+        if (fingerprint) this.unsuppressLocal(fingerprint);
       } else if (message.command === "pickScope") {
         void this.handlePickScope();
       } else if (message.command === "openFile" && message.file && message.line !== void 0) {
@@ -3020,13 +3122,14 @@ var CodeScoutPanel = class {
       cspSource: webview.cspSource
     };
     const nonce = (0, import_node_crypto3.randomBytes)(16).toString("hex");
+    const suppressedEntries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
     const ux = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries);
   }
 };
 
@@ -4708,7 +4811,7 @@ function formatIssue(issue) {
   code: ${issue.code}` : "";
   const suggestion = issue.suggestion ? `
   suggestion: ${issue.suggestion}` : "";
-  return `[${severity}] ${issue.category} \xB7 ${location} \xB7 confidence ${Math.round(issue.confidence * 100)}%
+  return `[${severity}] ${issue.category} \xB7 ${location} \xB7 confidence ${confidencePercent(issue.confidence, 0)}%
   ${issue.description}${code}${suggestion}`;
 }
 function dumpFindings(output, issues, summary) {

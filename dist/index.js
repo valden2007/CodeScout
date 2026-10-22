@@ -34031,7 +34031,165 @@ function splitPatch(patch, maxCharacters = 45000) {
     return chunks;
 }
 
+;// CONCATENATED MODULE: ./src/response-parser.ts
+const categories = new Set(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
+const severities = new Set(['low', 'medium', 'high', 'critical']);
+// Батч 20b (ядро доверия): единая шкала уверенности для всего продукта —
+// целые 0..100. Парсер клампит и лечит мусор, UI/экспортёры только читают.
+const CONFIDENCE_MIN = 0;
+const CONFIDENCE_MAX = 100;
+// Мусор/отсутствие поля = 50: «ни да, ни нет», честный нейтральный дефолт.
+const CONFIDENCE_DEFAULT = 50;
+// >= порога — «подтверждено кодом» (зелёный бейдж), ниже — «предположение модели».
+const CONFIDENCE_VERIFIED_THRESHOLD = 70;
+// critical допускается только при уверенности не ниже этого значения.
+const CONFIDENCE_CRITICAL_MIN = 90;
+// Санити-потолок длины доказательства: непроверяемый вывод модели не должен
+// раздувать отчёт; это граница формата, а не продуктовый лимит.
+const PROOF_MAX = 1000;
+// Приведение любого значения confidence к шкале 0..100 (целое).
+// Мусор (не число, NaN, Infinity) → fallback. Все отображения (% в панели,
+// GitHub-комменты, CLI, Output) идут через эту функцию — дублей логики нет.
+function confidencePercent(value, fallback = CONFIDENCE_DEFAULT) {
+    if (typeof value !== 'number' || !Number.isFinite(value))
+        return fallback;
+    return Math.round(Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, value)));
+}
+// proof — строка (цитата из кода или причина). При отсутствии/мусоре = ''.
+function parseProof(raw) {
+    if (typeof raw !== 'string')
+        return '';
+    return raw.trim().slice(0, PROOF_MAX);
+}
+function findBalancedJson(text) {
+    const start = text.search(/[[{]/);
+    if (start < 0)
+        return undefined;
+    const open = text[start];
+    const close = open === '{' ? '}' : ']';
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i++) {
+        const char = text[i];
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (char === '\\')
+                escaped = true;
+            else if (char === '"')
+                inString = false;
+            continue;
+        }
+        if (char === '"') {
+            inString = true;
+            continue;
+        }
+        if (char === open)
+            depth += 1;
+        else if (char === close) {
+            depth -= 1;
+            if (depth === 0)
+                return text.slice(start, i + 1);
+        }
+    }
+    return undefined;
+}
+// Батч 18.8: greedy-эвристика для «болтливых» бесплатных моделей — если
+// сбалансированный сканер не сработал (обрезанный/вложенный мусор),
+// вырезаем от ПЕРВОГО [ или { до ПОСЛЕДНЕГО ] или } включительно.
+function findGreedyJsonSpan(text) {
+    const firstOpen = text.search(/[[{]/);
+    if (firstOpen < 0)
+        return undefined;
+    const lastBracket = Math.max(text.lastIndexOf(']'), text.lastIndexOf('}'));
+    if (lastBracket <= firstOpen)
+        return undefined;
+    return text.slice(firstOpen, lastBracket + 1);
+}
+function stripMarkdownFences(text) {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    return (fenced ? fenced[1] : text).trim();
+}
+// Батч 20a: санитайз висячих запятых — «[1,2,]» и «{"a":1,}» лечатся regex
+// `,\s*([\]}]) → $1`. Применяется ВТОРЫМ проходом на кандидате, который уже
+// не парсится как есть: валидный JSON со строкой вида "wait, }" не портится
+// (первым всегда пробуем оригинал, sanitized-вариант подхватывается только
+// когда сырой кандидат упал).
+function stripTrailingCommas(text) {
+    return text.replace(/,(\s*[\]}])/g, '$1');
+}
+const RAW_TAIL_LIMIT = 200;
+// Батч 20a (контракт каскада): кандидаты СТРОГО в порядке
+// 1) чистый текст → 2) снятие markdown-фенсов → 3) balanced-brace сканер →
+// 4) greedy slice (первый [/{ … последний ]/}) — последним, он самый ryzy.
+// Перед parse каждого кандидата — попытка санитайза висячих запятых.
+// Если всё упало → { ok:false, reason, rawTail } для вывода в Output, без
+// падения: старые форматы ответов (без новых полей) парсятся по-прежнему.
+function tryParseJson(raw) {
+    const candidates = [];
+    const seen = new Set();
+    const push = (value) => {
+        if (value && !seen.has(value)) {
+            seen.add(value);
+            candidates.push(value);
+        }
+    };
+    const trimmed = raw.trim();
+    push(trimmed);
+    const stripped = stripMarkdownFences(trimmed);
+    push(stripped);
+    push(findBalancedJson(stripped) ?? '');
+    push(findGreedyJsonSpan(stripped) ?? '');
+    let lastReason = 'в ответе не найдено JSON-подобного текста';
+    for (const candidate of candidates) {
+        for (const variant of [candidate, stripTrailingCommas(candidate)]) {
+            try {
+                return { ok: true, value: JSON.parse(variant) };
+            }
+            catch (error) {
+                lastReason = error instanceof Error ? error.message : String(error);
+            }
+        }
+    }
+    return { ok: false, reason: lastReason, rawTail: raw.trim().slice(0, RAW_TAIL_LIMIT) };
+}
+function parseReviewResponse(raw, filename) {
+    const outcome = tryParseJson(raw);
+    if (!outcome.ok) {
+        throw new Error(`LLM returned malformed JSON for ${filename} · ${outcome.reason} · хвост ответа: ${outcome.rawTail}`);
+    }
+    const parsed = outcome.value;
+    if (parsed === null)
+        throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
+    if (Array.isArray(parsed))
+        throw new Error(`Ответ модели для ${filename} — JSON-массив, ожидается объект с полем "issues"`);
+    if (typeof parsed !== 'object')
+        throw new Error(`Ответ модели для ${filename} — не JSON-объект (получен ${typeof parsed})`);
+    const object = parsed;
+    const rawIssues = Array.isArray(object.issues) ? object.issues : [];
+    const issues = rawIssues.flatMap((item) => {
+        if (!item || typeof item !== 'object')
+            return [];
+        const value = item;
+        const category = categories.has(value.category) ? value.category : 'bug';
+        const rawSeverity = severities.has(value.severity) ? value.severity : 'medium';
+        const description = typeof value.description === 'string' ? value.description.trim() : '';
+        if (!description)
+            return [];
+        const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
+        const confidence = confidencePercent(value.confidence);
+        const code = typeof value.code === 'string' ? value.code.trim() : undefined;
+        const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
+        const severity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
+        const proof = parseProof(value.proof);
+        return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
+    });
+    return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
+}
+
 ;// CONCATENATED MODULE: ./src/report-formatter.ts
+
 const SUMMARY_MARKER = '<!-- codescout-summary -->';
 const MAX_COMMENT_LENGTH = 60_000;
 const SEVERITY_META = {
@@ -34087,7 +34245,7 @@ function report_formatter_buildSummaryComment(issues, filesAnalyzed, durationMs,
         const title = safeIssueTitle(issue);
         const codeLine = issue.code ?? `line ${issue.line}`;
         const suggestion = issue.suggestion ? `\n→ ${escapeHtml(issue.suggestion)}` : '';
-        const confidence = typeof issue.confidence === 'number' && Number.isFinite(issue.confidence) ? Math.round(issue.confidence * 100) : 0;
+        const confidence = confidencePercent(issue.confidence, 0);
         return `<details><summary>${emoji} <strong>${escapeHtml(title)}</strong> — ${inlineCode(`${issue.file}:${issue.line}`)}</summary>\n\n${inlineCode(codeLine)}${suggestion}\n\nConfidence: ${confidence}%\n</details>`;
     }).join('\n\n');
     const report = `${SUMMARY_MARKER}\n## 🕵️ CodeScout Report\n\n**${issues.length} issue${issues.length === 1 ? '' : 's'}** in ${filesAnalyzed} file${filesAnalyzed === 1 ? '' : 's'} · analyzed in ${seconds}s${truncatedNote ? `\n\n${escapeHtml(truncatedNote)}` : ''}\n\n| Severity | Category | Description | Location |\n| --- | --- | --- | --- |\n${rows}${details ? `\n\n${details}` : ''}`;
@@ -34110,6 +34268,7 @@ async function asyncPool(limit, items, worker) {
 }
 
 ;// CONCATENATED MODULE: ./src/github-client.ts
+
 
 
 class GitHubClient {
@@ -34175,7 +34334,7 @@ function formatIssue(issue) {
     const emoji = issue.severity === 'critical' ? '🔴' : issue.severity === 'high' ? '🟠' : issue.severity === 'medium' ? '🟡' : '🟢';
     const code = escapeMarkdown(issue.code ?? `line ${issue.line}`);
     const detail = escapeMarkdown(issue.suggestion ?? issue.description);
-    return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${Math.round(issue.confidence * 100)}%`;
+    return `${emoji} **${issue.severity.toUpperCase()} · ${issue.category}**\n\`${code}\`\n→ ${detail}\nConfidence: ${confidencePercent(issue.confidence, 0)}%`;
 }
 
 // EXTERNAL MODULE: external "node:crypto"
@@ -34816,7 +34975,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. For each finding, ALSO provide proof of finding and a confidence class: "proof":{"condition":"When X happens (e.g., null input, race condition)","trace":["Line 10: variable assigned","Line 25: used without check"]} — the concrete trigger condition and the execution path leading to the defect; and "confidenceLevel":"verified" ONLY when the trace is a concrete code path you can point at in the patch, otherwise "confidenceLevel":"suggested" (pattern/heuristic guess). When you cannot prove anything, keep "confidenceLevel":"suggested" and give an empty proof: {"condition":"","trace":[]}. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0,"confidenceLevel":"verified|suggested","proof":{"condition":"string","trace":["string"]}}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 — how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
     return value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -34913,168 +35072,6 @@ async function postIssues(client, issues, filesAnalyzed, durationMs) {
 }
 function formatSummary(issues, filesAnalyzed, durationMs = 0) {
     return buildSummaryComment(issues, filesAnalyzed, durationMs);
-}
-
-;// CONCATENATED MODULE: ./src/response-parser.ts
-const categories = new Set(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
-const severities = new Set(['low', 'medium', 'high', 'critical']);
-const PROOF_TRACE_MAX = 12;
-const PROOF_TRACE_ITEM_MAX = 300;
-const PROOF_CONDITION_MAX = 500;
-// Батч 14: старые модели/fallback не знают новых полей — ничего не падаем,
-// отдаём дефолты: confidenceLevel 'suggested', proof {}.
-function parseConfidenceLevel(value) {
-    const direct = value.confidenceLevel;
-    if (direct === 'verified' || direct === 'suggested')
-        return direct;
-    // Модели иногда путают поля и кладут строку в numeric confidence — терпим и это.
-    if (value.confidence === 'verified')
-        return 'verified';
-    return 'suggested';
-}
-function parseProof(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-        return {};
-    const value = raw;
-    const proof = {};
-    if (typeof value.condition === 'string' && value.condition.trim())
-        proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
-    if (Array.isArray(value.trace)) {
-        const trace = value.trace
-            .filter((step) => typeof step === 'string' && step.trim().length > 0)
-            .map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX))
-            .slice(0, PROOF_TRACE_MAX);
-        if (trace.length)
-            proof.trace = trace;
-    }
-    return proof;
-}
-function findBalancedJson(text) {
-    const start = text.search(/[[{]/);
-    if (start < 0)
-        return undefined;
-    const open = text[start];
-    const close = open === '{' ? '}' : ']';
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let i = start; i < text.length; i++) {
-        const char = text[i];
-        if (inString) {
-            if (escaped)
-                escaped = false;
-            else if (char === '\\')
-                escaped = true;
-            else if (char === '"')
-                inString = false;
-            continue;
-        }
-        if (char === '"') {
-            inString = true;
-            continue;
-        }
-        if (char === open)
-            depth += 1;
-        else if (char === close) {
-            depth -= 1;
-            if (depth === 0)
-                return text.slice(start, i + 1);
-        }
-    }
-    return undefined;
-}
-// Батч 18.8: greedy-эвристика для «болтливых» бесплатных моделей — если
-// сбалансированный сканер не сработал (обрезанный/вложенный мусор),
-// вырезаем от ПЕРВОГО [ или { до ПОСЛЕДНЕГО ] или } включительно.
-function findGreedyJsonSpan(text) {
-    const firstOpen = text.search(/[[{]/);
-    if (firstOpen < 0)
-        return undefined;
-    const lastBracket = Math.max(text.lastIndexOf(']'), text.lastIndexOf('}'));
-    if (lastBracket <= firstOpen)
-        return undefined;
-    return text.slice(firstOpen, lastBracket + 1);
-}
-function stripMarkdownFences(text) {
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    return (fenced ? fenced[1] : text).trim();
-}
-// Батч 20a: санитайз висячих запятых — «[1,2,]» и «{"a":1,}» лечатся regex
-// `,\s*([\]}]) → $1`. Применяется ВТОРЫМ проходом на кандидате, который уже
-// не парсится как есть: валидный JSON со строкой вида "wait, }" не портится
-// (первым всегда пробуем оригинал, sanitized-вариант подхватывается только
-// когда сырой кандидат упал).
-function stripTrailingCommas(text) {
-    return text.replace(/,(\s*[\]}])/g, '$1');
-}
-const RAW_TAIL_LIMIT = 200;
-// Батч 20a (контракт каскада): кандидаты СТРОГО в порядке
-// 1) чистый текст → 2) снятие markdown-фенсов → 3) balanced-brace сканер →
-// 4) greedy slice (первый [/{ … последний ]/}) — последним, он самый ryzy.
-// Перед parse каждого кандидата — попытка санитайза висячих запятых.
-// Если всё упало → { ok:false, reason, rawTail } для вывода в Output, без
-// падения: старые форматы ответов (без новых полей) парсятся по-прежнему.
-function tryParseJson(raw) {
-    const candidates = [];
-    const seen = new Set();
-    const push = (value) => {
-        if (value && !seen.has(value)) {
-            seen.add(value);
-            candidates.push(value);
-        }
-    };
-    const trimmed = raw.trim();
-    push(trimmed);
-    const stripped = stripMarkdownFences(trimmed);
-    push(stripped);
-    push(findBalancedJson(stripped) ?? '');
-    push(findGreedyJsonSpan(stripped) ?? '');
-    let lastReason = 'в ответе не найдено JSON-подобного текста';
-    for (const candidate of candidates) {
-        for (const variant of [candidate, stripTrailingCommas(candidate)]) {
-            try {
-                return { ok: true, value: JSON.parse(variant) };
-            }
-            catch (error) {
-                lastReason = error instanceof Error ? error.message : String(error);
-            }
-        }
-    }
-    return { ok: false, reason: lastReason, rawTail: raw.trim().slice(0, RAW_TAIL_LIMIT) };
-}
-function parseReviewResponse(raw, filename) {
-    const outcome = tryParseJson(raw);
-    if (!outcome.ok) {
-        throw new Error(`LLM returned malformed JSON for ${filename} · ${outcome.reason} · хвост ответа: ${outcome.rawTail}`);
-    }
-    const parsed = outcome.value;
-    if (parsed === null)
-        throw new Error(`Ответ модели для ${filename} — JSON null вместо объекта ревью`);
-    if (Array.isArray(parsed))
-        throw new Error(`Ответ модели для ${filename} — JSON-массив, ожидается объект с полем "issues"`);
-    if (typeof parsed !== 'object')
-        throw new Error(`Ответ модели для ${filename} — не JSON-объект (получен ${typeof parsed})`);
-    const object = parsed;
-    const rawIssues = Array.isArray(object.issues) ? object.issues : [];
-    const issues = rawIssues.flatMap((item) => {
-        if (!item || typeof item !== 'object')
-            return [];
-        const value = item;
-        const category = categories.has(value.category) ? value.category : 'bug';
-        const rawSeverity = severities.has(value.severity) ? value.severity : 'medium';
-        const description = typeof value.description === 'string' ? value.description.trim() : '';
-        if (!description)
-            return [];
-        const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
-        const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
-        const code = typeof value.code === 'string' ? value.code.trim() : undefined;
-        const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
-        const severity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-        const confidenceLevel = parseConfidenceLevel(value);
-        const proof = parseProof(value.proof);
-        return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
-    });
-    return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
 
 ;// CONCATENATED MODULE: ./src/action.ts

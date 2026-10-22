@@ -85733,7 +85733,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 0.90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. For each finding, ALSO provide proof of finding and a confidence class: "proof":{"condition":"When X happens (e.g., null input, race condition)","trace":["Line 10: variable assigned","Line 25: used without check"]} — the concrete trigger condition and the execution path leading to the defect; and "confidenceLevel":"verified" ONLY when the trace is a concrete code path you can point at in the patch, otherwise "confidenceLevel":"suggested" (pattern/heuristic guess). When you cannot prove anything, keep "confidenceLevel":"suggested" and give an empty proof: {"condition":"","trace":[]}. Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0.0,"confidenceLevel":"verified|suggested","proof":{"condition":"string","trace":["string"]}}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 — how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
     return value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -86100,36 +86100,32 @@ function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
 ;// CONCATENATED MODULE: ./src/response-parser.ts
 const categories = new Set(['bug', 'security', 'performance', 'maintainability', 'docs', 'style']);
 const severities = new Set(['low', 'medium', 'high', 'critical']);
-const PROOF_TRACE_MAX = 12;
-const PROOF_TRACE_ITEM_MAX = 300;
-const PROOF_CONDITION_MAX = 500;
-// Батч 14: старые модели/fallback не знают новых полей — ничего не падаем,
-// отдаём дефолты: confidenceLevel 'suggested', proof {}.
-function parseConfidenceLevel(value) {
-    const direct = value.confidenceLevel;
-    if (direct === 'verified' || direct === 'suggested')
-        return direct;
-    // Модели иногда путают поля и кладут строку в numeric confidence — терпим и это.
-    if (value.confidence === 'verified')
-        return 'verified';
-    return 'suggested';
+// Батч 20b (ядро доверия): единая шкала уверенности для всего продукта —
+// целые 0..100. Парсер клампит и лечит мусор, UI/экспортёры только читают.
+const CONFIDENCE_MIN = 0;
+const CONFIDENCE_MAX = 100;
+// Мусор/отсутствие поля = 50: «ни да, ни нет», честный нейтральный дефолт.
+const CONFIDENCE_DEFAULT = 50;
+// >= порога — «подтверждено кодом» (зелёный бейдж), ниже — «предположение модели».
+const CONFIDENCE_VERIFIED_THRESHOLD = 70;
+// critical допускается только при уверенности не ниже этого значения.
+const CONFIDENCE_CRITICAL_MIN = 90;
+// Санити-потолок длины доказательства: непроверяемый вывод модели не должен
+// раздувать отчёт; это граница формата, а не продуктовый лимит.
+const PROOF_MAX = 1000;
+// Приведение любого значения confidence к шкале 0..100 (целое).
+// Мусор (не число, NaN, Infinity) → fallback. Все отображения (% в панели,
+// GitHub-комменты, CLI, Output) идут через эту функцию — дублей логики нет.
+function confidencePercent(value, fallback = CONFIDENCE_DEFAULT) {
+    if (typeof value !== 'number' || !Number.isFinite(value))
+        return fallback;
+    return Math.round(Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, value)));
 }
+// proof — строка (цитата из кода или причина). При отсутствии/мусоре = ''.
 function parseProof(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-        return {};
-    const value = raw;
-    const proof = {};
-    if (typeof value.condition === 'string' && value.condition.trim())
-        proof.condition = value.condition.trim().slice(0, PROOF_CONDITION_MAX);
-    if (Array.isArray(value.trace)) {
-        const trace = value.trace
-            .filter((step) => typeof step === 'string' && step.trim().length > 0)
-            .map((step) => step.trim().slice(0, PROOF_TRACE_ITEM_MAX))
-            .slice(0, PROOF_TRACE_MAX);
-        if (trace.length)
-            proof.trace = trace;
-    }
-    return proof;
+    if (typeof raw !== 'string')
+        return '';
+    return raw.trim().slice(0, PROOF_MAX);
 }
 function findBalancedJson(text) {
     const start = text.search(/[[{]/);
@@ -86248,13 +86244,12 @@ function parseReviewResponse(raw, filename) {
         if (!description)
             return [];
         const line = typeof value.line === 'number' && Number.isFinite(value.line) ? Math.max(1, Math.floor(value.line)) : 1;
-        const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? Math.min(1, Math.max(0, value.confidence)) : 0.7;
+        const confidence = confidencePercent(value.confidence);
         const code = typeof value.code === 'string' ? value.code.trim() : undefined;
         const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
-        const severity = rawSeverity === 'critical' && confidence < 0.9 ? 'medium' : rawSeverity;
-        const confidenceLevel = parseConfidenceLevel(value);
+        const severity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
         const proof = parseProof(value.proof);
-        return [{ file: filename, line, category, severity, description, code, suggestion, confidence, confidenceLevel, proof }];
+        return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
     });
     return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
 }
@@ -86511,7 +86506,8 @@ function components_stripAnsi(value) {
     return value.replace(ANSI_PATTERN, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 }
 function confidenceLabel(confidence) {
-    const value = Number.isFinite(confidence) ? Math.round(confidence <= 1 ? confidence * 100 : confidence) : 0;
+    // Батч 20b: шкала уже целые 0..100 — только клампим мусор к краям.
+    const value = Number.isFinite(confidence) ? Math.round(confidence) : 0;
     return `${Math.min(100, Math.max(0, value))}%`;
 }
 function Header({ path, filesAnalyzed = 0 }) {
@@ -86558,7 +86554,7 @@ function toTuiIssue(issue) {
     return {
         severity,
         category: issue.category,
-        confidence: Math.round(issue.confidence * 100),
+        confidence: Math.round(issue.confidence),
         line: issue.line,
         code: issue.code ?? issue.description,
         suggestion: issue.suggestion ?? issue.description
