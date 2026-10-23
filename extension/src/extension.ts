@@ -15,7 +15,8 @@ import { CodeScoutPanel } from './panel';
 import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, makeDocsResolver, maxRequestKTokensFromSetting, mergeCheckpointIssues, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, splitAuditChunk, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, splitAuditChunk, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget } from './auditResume';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -602,16 +603,32 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     const waitController = new AbortController();
     activeAbortController?.abort();
     activeAbortController = waitController;
+    // Батч 25: «Стоп» в паузе авто-догона — чекпоинт помечается 'cancelled'
+    // и НЕ удаляется: остаток можно догнать любым провайдером.
+    const markCancelled = (): void => {
+      const root = getWorkspaceRoot();
+      if (!root) return;
+      const saved = readAuditProgress(root);
+      if (saved && saved.checked.length > 0) {
+        saved.state = 'cancelled';
+        try {
+          writeAuditProgress(root, saved);
+        } catch {
+          // диск недоступен — память панели уже показывает баннер
+        }
+      }
+    };
     try {
       await sleep(decision.waitSeconds * 1000, waitController.signal);
     } catch {
+      markCancelled();
       output.appendLine('🤖 авто-догон остановлен пользователем');
       panel.setAutoResume(undefined);
       return;
     } finally {
       if (activeAbortController === waitController) activeAbortController = undefined;
     }
-    if (autoResumeCancelled) { panel.setAutoResume(undefined); return; }
+    if (autoResumeCancelled) { markCancelled(); panel.setAutoResume(undefined); return; }
     isResume = true;
   }
 }
@@ -682,15 +699,27 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const docsForFile = (docs.sections?.length ?? 0) > 0 ? makeDocsResolver(docs.sections ?? [], docBudgetBytes, (message) => output.appendLine(message)) : undefined;
     if (projectPrompt.rulesLoaded) output.appendLine('📚 Загружены правила проекта');
     else output.appendLine('ℹ️ Правил нет — дефолт');
-    let initial: AuditCheckpoint = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
+    // Батч 25: scopeHash = git HEAD + план файлов аудита. Догон разрешён
+    // ЛЮБЫМ провайдером/моделью (tags в чекпоинте), но только на неизменном
+    // скоупе; старый чекпоинт без hash = 'untracked' — не блокируем.
+    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles);
+    let initial: AuditCheckpoint = { startedAt: Date.now(), model: auditSelection.model, provider: auditSelection.provider, scopeHash: currentScopeHash, state: 'running', checked: [], remaining: planFiles };
     if (resume) {
       const saved = readAuditProgress(workspaceRoot);
       if (!saved) output.appendLine('ℹ️ Прогресса не найдено — запускаю с нуля');
-      else if (saved.model !== auditSelection.model) {
-        output.appendLine(`ℹ️ Модель сменилась (${saved.model} → ${auditSelection.model}) — чекпоинт не подходит, начинаю заново`);
-        clearAuditProgress(workspaceRoot);
-      } else {
-        initial = pruneAuditCheckpoint(saved, planFiles);
+      else {
+        const verdict = checkpointScopeVerdict(saved, currentScopeHash);
+        if (verdict === 'changed') {
+          output.appendLine(`⛔ Скоуп изменился после остановки (${saved.scopeHash} → ${currentScopeHash}) — догон некорректен, нужен новый аудит`);
+          panel.setScanning(false);
+          const blocked = progressView(saved);
+          if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
+          return { kind: 'done' };
+        }
+        initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: 'running' };
+        const tag = lastCheckpointTag(saved);
+        if (tag.provider && tag.provider !== auditSelection.provider) output.appendLine(`🔀 Догон другим провайдером: было ${tag.provider} · ${tag.model ?? '?'}, стало ${auditSelection.provider} · ${auditSelection.model} — проверенные файлы НЕ перепроверяются`);
+        else if (tag.model && tag.model !== auditSelection.model) output.appendLine(`🔀 Догон другой моделью: ${tag.model} → ${auditSelection.model} — проверенные файлы НЕ перепроверяются`);
         output.appendLine(`▶️ Продолжаю аудит: проверено ${initial.checked.length} файлов, осталось ${planFiles.length - initial.checked.length}`);
       }
     } else {
@@ -718,14 +747,14 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
-    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), (filename, fileIssues) => {
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => { state.skipped = [...new Set([...(state.skipped ?? []), filename])]; output.appendLine(`⚠️ Пропущен файл: ${filename}`); }, (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
       chunkProgress.set(filename, acc);
       if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
         doneNames.add(filename);
-        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() });
         persist();
         // В медиану ETA попадает ЧИСТАЯ длительность файла: время пауз
         // rate-limit вычитается и учитывается отдельно (лестница в ETA).
@@ -736,7 +765,9 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
     }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive);
-    const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
+    // Батч 25: находки с метками нахождателей + zone-мердж (±3) — догон
+    // другим провайдером не дублирует то, что уже лежит в чекпоинте.
+    const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
@@ -744,6 +775,9 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     // Финальный отчёт = единый источник для панели (task 5).
     writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
     if (result.skippedFiles > 0) {
+      // Батч 25: остановка rate-limit — чекпоинт остаётся с состоянием
+      // 'interrupted'; догон возможен любым провайдером (см. resume-ветку).
+      state.state = 'interrupted';
       persist();
       output.appendLine(`ℹ️ Скипнуто ${result.skippedFiles} файлов (rate-limit/ошибки) — чекпоинт сохранён, можно догнать кнопкой «▶️ Продолжить»`);
     } else {
@@ -765,6 +799,16 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     dumpFindings(output, mergedIssues, `Итог аудита: ${mergedIssues.length} находок, проверено файлов: ${filesAnalyzed}`);
     return resumeView ? { kind: 'interrupted', view: resumeView } : { kind: 'done' };
   } catch (error) {
+    // Батч 25: ЛЮБАЯ остановка (cancel пользователя, crash) оставляет
+    // чекпоинт с честным состоянием — 'cancelled'/'interrupted', НЕ удаление.
+    if (progress && workspaceRoot && progress.checked.length > 0) {
+      progress.state = isAbortError(error) ? 'cancelled' : 'interrupted';
+      try {
+        writeAuditProgress(workspaceRoot, progress);
+      } catch {
+        // диск мог отвалиться — в памяти состояние уже проставлено
+      }
+    }
     const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : undefined;
     if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
@@ -1465,6 +1509,29 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.testSample', () => { lastScanKind = 'sample'; return runScan(() => runSampleReview(context, output, panel)); }),
     vscode.commands.registerCommand('codescout.scanFull', () => { lastScanKind = 'audit'; return runScan(() => runFullAudit(context, output, panel)); }),
     vscode.commands.registerCommand('codescout.resumeAudit', () => { lastScanKind = 'audit'; return runScan(() => runFullAudit(context, output, panel, true)); }),
+    // Батч 25: «Продолжить другими…» — выбор провайдера/модели (живой список
+    // через fetchLiveModelsCached) и догон чекпоинта. Логика выбора — в
+    // auditResume.pickResumeTarget, guard скоупа — внутри runFullAuditOnce.
+    vscode.commands.registerCommand('codescout.resumeAuditOther', async () => {
+      const lang = currentReportLanguage();
+      const config = vscode.workspace.getConfiguration('codescout');
+      const target = await pickResumeTarget({
+        lang,
+        resolveKeyFor: async (provider) => resolveApiKeyPriority(await context.secrets.get(SECRET_KEY), provider),
+        resolveBaseUrlFor: async (provider) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config)),
+        persistSelection: async (provider, model) => {
+          await context.secrets.store(SECRET_PROVIDER, provider);
+          await context.secrets.store(SECRET_MODEL, model);
+          await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+        },
+        log: (message) => output.appendLine(message)
+      });
+      if (!target) return undefined;
+      await syncKeyStatus();
+      output.appendLine(`🔀 Догон аудита: ${target.provider} · ${target.model}`);
+      lastScanKind = 'audit';
+      return runScan(() => runFullAudit(context, output, panel, true));
+    }),
     vscode.commands.registerCommand('codescout.restartAudit', async () => {
       const lang = currentReportLanguage();
       const answer = await vscode.window.showWarningMessage(t('restart.confirm', lang), { modal: true }, t('restart.confirmBtn', lang));

@@ -100,11 +100,14 @@ describe('v1.4b-15 персистентные частичные результ�
     await flush();
     expect(revived.html()).toContain('ALPHA_DESC');
     expect(revived.html()).toContain('BETA_DESC');
-    expect(revived.html()).toContain('Аудит оборвался');
+    // Батч 25: чекпоинт с тегами → баннер «остановлен (provider · model)»
+    expect(revived.html()).toContain('Аудит остановлен: проверено 2 из 3 файлов');
+    expect(revived.html()).toContain('gemini · gemini-1.5-flash');
     expect(revived.html()).toContain('находок 2');
     expect(revived.html()).toContain('data-command="resumeAudit"');
+    expect(revived.html()).toContain('data-command="resumeAuditOther"');
     expect(revived.html()).toContain('data-command="restartAudit"');
-    expect(revived.html()).toContain('Продолжить (2 из 3)');
+    expect(revived.html()).toContain('Продолжить текущими');
     // находки на диске и в панели совпадают посимвольно (тот же source of truth)
     for (const finding of results!.findings) expect(revived.html()).toContain(finding.description);
 

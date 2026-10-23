@@ -599,5 +599,27 @@ pre-design now.
      подавленные filterSuppressed(...context.workspaceState) пост-обработкой
      в 4 местах. Тесты: clamping, ±3-допуск, фильтрация, e2e возврат.
      Tests: 466.
+ 29. Cross-provider resume (батч 25): чекпоинт переживает ЛЮБУЮ остановку
+     (cancel/rate-limit/crash/reload) с состоянием state='cancelled'/
+     'interrupted' — НЕ удаляется. AuditCheckpoint += scopeHash (git HEAD +
+     sorted план-файлы, getGitHead проверяет toplevel==workspace, timeout
+     5с), provider, skipped[], state; каждый checked-файл помечен
+     {provider, model, ts}. ReviewIssue += foundBy {provider, model} —
+     печатается в proof-блоке карточки («Нашла: groq · …»). Баннер
+     «Аудит остановлен: проверено X из Y (provider · model)» + три кнопки:
+     resumeAudit «Продолжить текущими», resumeAuditOther «Продолжить
+     другими…» (QuickPick PROVIDER_ORDER → QuickPick живых моделей через
+     fetchLiveModelsCached → persist в SecretStorage), restartAudit с
+     модалкой. Догон: старые model-mismatch-отказ удалён — checkedFiles не
+     перепроверяются, новые находки мерджатся mergeFindingsByZone
+     (file+severity+category ±3, findingsStore.sameFindingZone — первый
+      вход выигрывает); «Стоп» в паузе авто-догона тоже помечает cancelled.
+      Guard скоупа: при догоне scopeHash пересчитывается; не совпал →
+     красный баннер «Скоуп изменился после остановки — догон некорректен»
+     + «Новый аудит» (scanFull) / «Начать заново»; legacy-чекпоинт без
+     hash = untracked (не блокируем, hash проставится). Логика resume —
+     extension/src/auditResume.ts (git/hash/verdict/picker), extension.ts
+     только подключает; reviewFiles сигнатура не тронута. e2e:
+     tests/audit-resume.test.ts. Tests: 514.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

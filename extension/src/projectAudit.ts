@@ -7,6 +7,7 @@ import { StringDecoder } from 'node:string_decoder';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
 import { t, type Lang } from '../../src/i18n';
+import { mergeFindingsByZone } from './findingsStore';
 
 function controlSafe(value: string): string {
   return value
@@ -991,14 +992,38 @@ export interface AuditResumeView {
   model: string;
   startedAt: number;
   findings?: number;
+  // Батч 25: провайдер последней проверки — баннер «остановлен (provider · model)».
+  provider?: string;
+  // Батч 25: guard скоупа — scopeHash не совпал, догон заблокирован.
+  scopeMismatch?: boolean;
+}
+
+// Батч 25 (cross-provider resume): чекпоинт переживает ЛЮБУЮ остановку и
+// хранит метку нахождателя на каждый проверенный файл + scopeHash для
+// guard'а скоупа. Поля provider/scopeHash/state/skipped опциональны —
+// старые файлы формата 1.3a читаются как «untracked» и легаси-теги.
+export type AuditCheckpointState = 'running' | 'cancelled' | 'interrupted' | 'done';
+
+export interface AuditCheckedEntry {
+  file: string;
+  issues: ReviewIssue[];
+  provider?: string;
+  model?: string;
+  ts?: number;
 }
 
 export interface AuditCheckpoint {
   startedAt: number;
   model: string;
-  checked: Array<{ file: string; issues: ReviewIssue[] }>;
+  provider?: string;
+  scopeHash?: string;
+  state?: AuditCheckpointState;
+  checked: AuditCheckedEntry[];
   remaining: string[];
+  skipped?: string[];
 }
+
+const CHECKPOINT_STATES = new Set<AuditCheckpointState>(['running', 'cancelled', 'interrupted', 'done']);
 
 export function writeAuditProgress(workspaceRoot: string, progress: AuditCheckpoint): void {
   const directory = join(workspaceRoot, '.codescout');
@@ -1015,8 +1040,20 @@ export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | unde
     return {
       startedAt: parsed.startedAt,
       model: parsed.model,
-      checked: parsed.checked.filter((entry) => entry && typeof entry.file === 'string' && Array.isArray(entry.issues)),
-      remaining: parsed.remaining.filter((file): file is string => typeof file === 'string')
+      ...(typeof parsed.provider === 'string' && parsed.provider ? { provider: parsed.provider } : {}),
+      ...(typeof parsed.scopeHash === 'string' && parsed.scopeHash ? { scopeHash: parsed.scopeHash } : {}),
+      ...(CHECKPOINT_STATES.has(parsed.state as AuditCheckpointState) ? { state: parsed.state as AuditCheckpointState } : {}),
+      checked: parsed.checked
+        .filter((entry) => entry && typeof entry.file === 'string' && Array.isArray(entry.issues))
+        .map((entry) => ({
+          file: entry.file,
+          issues: entry.issues,
+          ...(typeof entry.provider === 'string' && entry.provider ? { provider: entry.provider } : {}),
+          ...(typeof entry.model === 'string' && entry.model ? { model: entry.model } : {}),
+          ...(Number.isFinite(entry.ts) ? { ts: entry.ts as number } : {})
+        })),
+      remaining: parsed.remaining.filter((file): file is string => typeof file === 'string'),
+      ...(Array.isArray(parsed.skipped) ? { skipped: parsed.skipped.filter((file): file is string => typeof file === 'string') } : {})
     };
   } catch {
     return undefined;
@@ -1045,12 +1082,46 @@ export function mergeCheckpointIssues(progress: AuditCheckpoint): ReviewIssue[] 
   return progress.checked.flatMap((entry) => entry.issues);
 }
 
+// Батч 25: кто проверял последние файлы — метка для баннера (provider · model).
+// Берём ТЕГ последнего проверенного файла; если тегов нет (либер legacy-чекпоинт),
+// падаем на provider/model самого чекпоинта.
+export function lastCheckpointTag(progress: AuditCheckpoint): { provider?: string; model?: string } {
+  for (let index = progress.checked.length - 1; index >= 0; index -= 1) {
+    const entry = progress.checked[index];
+    if (entry?.provider) return { provider: entry.provider, model: entry.model };
+  }
+  return { provider: progress.provider, model: progress.model };
+}
+
+// Батч 25: находки чекпоинта с меткой нахождателя + zone-мердж (±3 строки).
+// Первый вход (checked по порядку) выигрывает — догон другим провайдером не
+// дублирует уже найденное.
+export function collectCheckpointFindings(progress: AuditCheckpoint): ReviewIssue[] {
+  const tagged: ReviewIssue[] = [];
+  for (const entry of progress.checked) {
+    const provider = entry.provider ?? progress.provider;
+    const model = entry.model ?? progress.model;
+    for (const issue of entry.issues) {
+      tagged.push(provider ? { ...issue, foundBy: { provider, ...(model ? { model } : {}) } } : issue);
+    }
+  }
+  return mergeFindingsByZone([], tagged);
+}
+
 export function progressView(progress: AuditCheckpoint | undefined): AuditResumeView | undefined {
   if (!progress) return undefined;
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return undefined;
-  return { done, total, model: progress.model, startedAt: progress.startedAt, findings: mergeCheckpointIssues(progress).length };
+  const tag = lastCheckpointTag(progress);
+  return {
+    done,
+    total,
+    model: tag.model ?? progress.model,
+    ...(tag.provider ? { provider: tag.provider } : {}),
+    startedAt: progress.startedAt,
+    findings: collectCheckpointFindings(progress).length
+  };
 }
 
 export interface AuditResults {
@@ -1085,7 +1156,7 @@ export function writeAuditResults(workspaceRoot: string, results: AuditResults):
 
 export function writeAuditResultsFromCheckpoint(workspaceRoot: string, progress: AuditCheckpoint, total: number): void {
   writeAuditResults(workspaceRoot, {
-    findings: dedupeIssues(mergeCheckpointIssues(progress)),
+    findings: collectCheckpointFindings(progress),
     checkedFiles: progress.checked.length,
     total,
     model: progress.model,

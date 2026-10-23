@@ -21,6 +21,13 @@ export interface DiffFile {
   patch: string;
 }
 
+// Батч 25: метка нахождателя — провайдер/модель, чей ответ породил находку.
+// Нужна для cross-provider resume: в смешанном отчёте видно, кто что нашёл.
+export interface FindingSource {
+  provider: string;
+  model?: string;
+}
+
 export interface ReviewIssue {
   file: string;
   line: number;
@@ -33,6 +40,7 @@ export interface ReviewIssue {
   commitId?: string;
   proof?: string;       // цитата из кода или причина; '' если доказательств нет
   fingerprint?: string;
+  foundBy?: FindingSource;
 }
 
 export interface ReviewResult {

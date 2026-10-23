@@ -77,6 +77,25 @@ function zoneMatches(entry: SuppressedEntry, issue: FingerprintSource): boolean 
     && Math.abs(normalizeLine(issue.line) - entry.line) <= LINE_TOLERANCE;
 }
 
+// Батч 25: публичный матчер зон для cross-provider resume — две находки
+// считаются одной, если совпадают file+severity+category и строки в ±3.
+export function sameFindingZone(a: FingerprintSource, b: FingerprintSource): boolean {
+  return normalizeFile(a.file) === normalizeFile(b.file)
+    && String(a.severity) === String(b.severity)
+    && String(a.category) === String(b.category)
+    && Math.abs(normalizeLine(a.line) - normalizeLine(b.line)) <= LINE_TOLERANCE;
+}
+
+// Слияние списков находок по fingerprint-зонам (file+severity+category ±3):
+// первыми идут «старые» (checked из чекпоинта) — новые-дублики отсекаются.
+export function mergeFindingsByZone<T extends FingerprintSource>(base: readonly T[], incoming: readonly T[]): T[] {
+  const kept: T[] = [...base];
+  for (const issue of incoming) {
+    if (!kept.some((entry) => sameFindingZone(entry, issue))) kept.push(issue);
+  }
+  return kept;
+}
+
 function readEntries(workspaceState: vscode.Memento): SuppressedEntry[] {
   const value = workspaceState.get<unknown[]>(SUPPRESSED_KEY);
   if (!Array.isArray(value)) return [];

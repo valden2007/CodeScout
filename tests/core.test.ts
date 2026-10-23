@@ -1297,15 +1297,26 @@ describe('E1.3a audit checkpoints', () => {
     expect(progressView({ startedAt: 1, model: 'm', checked: [], remaining: [] })).toBeUndefined();
   });
 
-  it('renders resume banner with two buttons and hides it by default', () => {
+  it('renders resume banner with three buttons and hides it by default', () => {
     const withResume = buildReportHtml(issue, { files: 2, seconds: 1, critical: 1, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'groq/llama', false, '', false, 'new', undefined, '', { done: 21, total: 26, model: 'groq/llama', startedAt: Date.now() });
-    expect(withResume).toContain('codicon-play'); expect(withResume).toContain('Продолжить (21 из 26)');
+    expect(withResume).toContain('codicon-play'); expect(withResume).toContain('Продолжить текущими');
+    expect(withResume).toContain('codicon-rocket'); expect(withResume).toContain('Продолжить другими');
     expect(withResume).toContain('codicon-refresh'); expect(withResume).toContain('Начать заново');
     expect(withResume).toContain('codicon-debug-alt'); expect(withResume).toContain('Аудит оборвался');
+    // Батч 25: с меткой провайдера — новый текст «остановлен (provider · model)»
+    const stopped = buildReportHtml(issue, { files: 2, seconds: 1, critical: 1, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'groq/llama', false, '', false, 'new', undefined, '', { done: 21, total: 26, model: 'groq/llama', provider: 'groq', startedAt: Date.now() });
+    expect(stopped).toContain('Аудит остановлен: проверено 21 из 26 файлов (groq · groq/llama)');
+    expect(stopped).toContain('data-command="resumeAuditOther"');
+    // Батч 25: guard скоупа — заблоканный догон показывает другой баннер
+    const blocked = buildReportHtml(issue, { files: 2, seconds: 1, critical: 1, medium: 0, low: 0 }, false, false, '', 'retry', 'k', true, 'groq', 'groq/llama', false, '', false, 'new', undefined, '', { done: 21, total: 26, model: 'groq/llama', provider: 'groq', startedAt: Date.now(), scopeMismatch: true });
+    expect(blocked).toContain('Скоуп изменился после остановки');
+    expect(blocked).toContain('data-command="scanFull"');
+    expect(blocked).toContain('Новый аудит');
+    expect(blocked).not.toContain('data-command="resumeAuditOther"');
     const plain = buildReportHtml(issue, { files: 1, seconds: 1, critical: 1, medium: 0, low: 0 });
     expect(plain).not.toContain('resumeAudit');
     expect(buildEmptyReportHtml('', false)).not.toContain('resumeAudit');
-    expect(buildEmptyReportHtml('', false, 'gemini', 'm', false, 'new', { done: 5, total: 9, model: 'm', startedAt: 1 })).toContain('Продолжить (5 из 9)');
+    expect(buildEmptyReportHtml('', false, 'gemini', 'm', false, 'new', { done: 5, total: 9, model: 'm', startedAt: 1 })).toContain('Продолжить текущими');
   });
 
   it('wires resume/restart through panel, extension and manifest', () => {
@@ -1314,14 +1325,20 @@ describe('E1.3a audit checkpoints', () => {
     expect(extension).toContain("registerCommand('codescout.restartAudit'");
     expect(extension).toContain('panel.setAuditResume(savedProgress)');
     expect(extension).toContain('onFileChecked?.(file.filename, deduped)');
-    expect(extension).toContain('state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) })');
-    expect(extension).toContain('const mergedIssues = dedupeIssues(mergeCheckpointIssues(state))');
+    // Батч 25: каждый проверенный файл чекпоинта помечен {provider, model, ts}
+    expect(extension).toContain("state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() })");
+    // Батч 25: мердж с метками нахождателей и zone-мерджем (±3)
+    expect(extension).toContain('const mergedIssues = collectCheckpointFindings(state)');
+    // Батч 25: guard скоупа — scopeHash пересчитывается при догоне
+    expect(extension).toContain('checkpointScopeVerdict(saved, currentScopeHash)');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain("message.command === 'resumeAudit'");
+    expect(panel).toContain("message.command === 'resumeAuditOther'");
     expect(panel).toContain("message.command === 'restartAudit'");
     expect(panel).toContain('this.auditResume = undefined');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('codescout.resumeAudit');
+    expect(manifest).toContain('codescout.resumeAuditOther');
     expect(manifest).toContain('codescout.restartAudit');
   });
 });
@@ -1515,7 +1532,7 @@ describe('E1.3f maxLines setting and chunking', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("get<number>('maxLines', 0)");
     expect(extension).toContain('чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)');
-    expect(extension).toContain('dedupeIssues(mergeCheckpointIssues(state))');
+    expect(extension).toContain('collectCheckpointFindings(state)');
     expect(extension).toContain('>${auditMaxLines} строк, codescout.maxLines)');
     expect(extension).toContain("update('maxLines', maxLines, vscode.ConfigurationTarget.Global)");
     const manifest = readFileSync('extension/package.json', 'utf8');

@@ -90,10 +90,17 @@ function confidenceBadge(issue: ReviewIssue, lang: Lang, showConfidence: boolean
   return `<span class="badge suggested">${icon('lightbulb')} ${escapeHtml(t('issue.confidenceSuggested', lang))}${suffix}</span>`;
 }
 
+// Батч 25: в proof-блоке печатается метка провайдера/модели, которые нашли
+// находку (cross-provider resume: видно, чей ответ что породил). Если proof
+// пуст, но метка есть — блок всё равно открывается («Found by: …»).
 function proofBlock(issue: ReviewIssue, lang: Lang): string {
   const proof = typeof issue.proof === 'string' ? issue.proof.trim() : '';
-  if (!proof) return '';
-  return `<details class="proof"><summary>${icon('search')} <span>${escapeHtml(t('issue.showProof', lang))}</span></summary><div class="proof-body"><p class="proof-text">${escapeHtml(proof)}</p></div></details>`;
+  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` · ${issue.foundBy.model}` : ''}` : '';
+  if (!proof && !source) return '';
+  const summaryLabel = proof ? escapeHtml(t('issue.showProof', lang)) : `${escapeHtml(t('issue.foundBy', lang))} ${escapeHtml(source)}`;
+  const proofText = proof ? `<p class="proof-text">${escapeHtml(proof)}</p>` : '';
+  const sourceLine = source ? `<div class="proof-source">${icon('robot')} <span>${escapeHtml(t('issue.foundBy', lang))}</span> <span>${escapeHtml(source)}</span></div>` : '';
+  return `<details class="proof"><summary>${icon('search')} <span>${summaryLabel}</span></summary><div class="proof-body">${proofText}${sourceLine}</div></details>`;
 }
 
 function suppressButton(issue: ReviewIssue, lang: Lang): string {
@@ -251,6 +258,8 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
 .proof-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.proof-source { margin: 5px 0 0; display: flex; align-items: center; gap: 5px; color: var(--cs-desc); }
+.proof-source .codicon { color: var(--cs-accent); }
 .issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
 .fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
 .fp-button:hover { color: var(--cs-error); }
@@ -289,6 +298,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .custom-actions { margin-top: var(--cs-space-2); }
 .custom-actions button { width: auto; padding: 6px var(--cs-space-3); text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--cs-warn); border-left: 3px solid var(--cs-warn); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-warn) 10%, transparent); font-size: var(--cs-font-2); }
+.audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
 .search-line { margin-top: 10px; }
@@ -366,7 +376,10 @@ ${headHtml(assets, nonce)}
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `${icon('pass')} ${escapeHtml(provider)} · ${escapeHtml(model.trim() || T('center.nowModelMissing'))} · ${escapeHtml(keyMask)} (${T('key.ready')})` : `${icon('error')} ${T('key.missing')}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('key.andModel')}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon('beaker')} ${T('testBadge')}</span>` : ''}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === 'error' && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ''}${escapeHtml(showStatus)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon('lightbulb')} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ''}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon('sync')}<span>${T('err.retry')}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon('settings-gear')}<span>${T('err.openSettings')}</span></button></div></div>` : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>${T('status.model404')}</span></button>` : ''}${diagnosticDetails ? `<details class="diag-block"><summary>${T('diag.title')}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ''}</div>` : ''}</div>
-    ${resumeView ? `<div class="audit-resume"><strong>${icon('debug-alt')} ${T('resume.title', { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== undefined ? ` ${T('resume.findings', { n: resumeView.findings })}` : ''}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continue', { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>` : ''}
+    ${resumeView ? (resumeView.scopeMismatch
+      ? `<div class="audit-resume scope"><strong>${icon('warning')} ${T('resume.scopeChanged')}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon('telescope')}<span>${T('resume.newAudit')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`
+      : `<div class="audit-resume"><strong>${icon('debug-alt')} ${resumeView.provider ? T('resume.stopped', { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T('resume.title', { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== undefined ? ` ${T('resume.findings', { n: resumeView.findings })}` : ''}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continueSame')}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon('rocket')}<span>${T('resume.continueOther')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`)
+      : ''}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('diff')}<span>${T('actions.scanUncommitted')}</span></button>

@@ -45,9 +45,9 @@ __export(extension_exports, {
   reviewFiles: () => reviewFiles
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode2 = __toESM(require("vscode"));
+var vscode3 = __toESM(require("vscode"));
 var import_node_fs5 = require("node:fs");
-var import_node_crypto4 = require("node:crypto");
+var import_node_crypto5 = require("node:crypto");
 var import_node_path4 = require("node:path");
 
 // ../src/llm-client.ts
@@ -641,8 +641,13 @@ var ru_default = {
   "banner.update": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C",
   "banner.later": "\u041F\u043E\u0437\u0436\u0435",
   "resume.title": "\u0410\u0443\u0434\u0438\u0442 \u043E\u0431\u043E\u0440\u0432\u0430\u043B\u0441\u044F: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E {done} \u0438\u0437 {total} \u0444\u0430\u0439\u043B\u043E\u0432 ({model})",
+  "resume.stopped": "\u0410\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E {done} \u0438\u0437 {total} \u0444\u0430\u0439\u043B\u043E\u0432 ({provider} \xB7 {model})",
   "resume.findings": "\xB7 \u043D\u0430\u0445\u043E\u0434\u043E\u043A {n}",
   "resume.continue": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C ({done} \u0438\u0437 {total})",
+  "resume.continueSame": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u043C\u0438",
+  "resume.continueOther": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u0438\u043C\u0438\u2026",
+  "resume.scopeChanged": "\u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D",
+  "resume.newAudit": "\u041D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
   "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
   "restart.confirm": "\u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A \u0430\u0443\u0434\u0438\u0442\u0430 \u0443\u0434\u0430\u043B\u0438\u0442 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
   "restart.confirmBtn": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0438 \u043D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
@@ -692,6 +697,7 @@ var ru_default = {
   "issue.falsePositive": "\u041B\u043E\u0436\u043D\u043E\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u0435",
   "issue.falsePositiveTip": "\u0421\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u2014 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E \u0432 \u044D\u0442\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0435",
   "issue.showProof": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
+  "issue.foundBy": "\u041D\u0430\u0448\u043B\u0430:",
   "issue.suppressedTitle": "\u0421\u043A\u0440\u044B\u0442\u044B\u0435 \u043D\u0430\u0445\u043E\u0434\u043A\u0438 ({n})",
   "issue.suppressedHint": "\u0421\u043A\u0440\u044B\u0442\u044B\u0435 \u043A\u0430\u043A \u043B\u043E\u0436\u043D\u044B\u0435 \u0441\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u043D\u0438\u044F \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0432 \u043E\u0442\u0447\u0451\u0442\u0430\u0445 \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u043E\u0435\u043A\u0442\u0430: \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0435 \u2014 \u0442\u043E\u0442 \u0436\u0435 \u0444\u0430\u0439\u043B, severity, \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F \u0438 \u0441\u0442\u0440\u043E\u043A\u0430 \u0432 \u0434\u043E\u043F\u0443\u0441\u043A\u0435 \xB13. \xAB\u0412\u0435\u0440\u043D\u0443\u0442\u044C\xBB \u2014 \u0432\u0435\u0440\u043D\u0443\u0442\u044C \u043D\u0430\u0445\u043E\u0434\u043A\u0443 \u0432 \u043E\u0442\u0447\u0451\u0442.",
   "issue.restore": "\u0412\u0435\u0440\u043D\u0443\u0442\u044C",
@@ -1008,8 +1014,13 @@ var en_default = {
   "banner.update": "Refresh",
   "banner.later": "Later",
   "resume.title": "Audit interrupted: checked {done} of {total} files ({model})",
+  "resume.stopped": "Audit stopped: checked {done} of {total} files ({provider} \xB7 {model})",
   "resume.findings": "\xB7 {n} findings",
   "resume.continue": "Continue ({done} of {total})",
+  "resume.continueSame": "Continue with current",
+  "resume.continueOther": "Continue with other\u2026",
+  "resume.scopeChanged": "Scope changed after stop \u2014 catch-up would be invalid",
+  "resume.newAudit": "New audit",
   "resume.restart": "Start over",
   "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",
   "restart.confirmBtn": "Delete and restart",
@@ -1059,6 +1070,7 @@ var en_default = {
   "issue.falsePositive": "False positive",
   "issue.falsePositiveTip": "Hide finding \u2014 do not show it again in this workspace",
   "issue.showProof": "Show proof",
+  "issue.foundBy": "Found by:",
   "issue.suppressedTitle": "Hidden findings ({n})",
   "issue.suppressedHint": "Findings hidden as false positives stay out of this project's reports: a match is the same file, severity, category and a line within \xB13. Restore brings a finding back.",
   "issue.restore": "Restore",
@@ -2107,6 +2119,16 @@ function zoneMatches(entry, issue) {
   if (!entry.file) return false;
   return normalizeFile(issue.file) === entry.file && String(issue.severity) === entry.severity && String(issue.category) === entry.category && Math.abs(normalizeLine(issue.line) - entry.line) <= LINE_TOLERANCE;
 }
+function sameFindingZone(a, b) {
+  return normalizeFile(a.file) === normalizeFile(b.file) && String(a.severity) === String(b.severity) && String(a.category) === String(b.category) && Math.abs(normalizeLine(a.line) - normalizeLine(b.line)) <= LINE_TOLERANCE;
+}
+function mergeFindingsByZone(base, incoming) {
+  const kept = [...base];
+  for (const issue of incoming) {
+    if (!kept.some((entry) => sameFindingZone(entry, issue))) kept.push(issue);
+  }
+  return kept;
+}
 function readEntries(workspaceState) {
   const value = workspaceState.get(SUPPRESSED_KEY);
   if (!Array.isArray(value)) return [];
@@ -2215,8 +2237,12 @@ function confidenceBadge(issue, lang, showConfidence) {
 }
 function proofBlock(issue, lang) {
   const proof = typeof issue.proof === "string" ? issue.proof.trim() : "";
-  if (!proof) return "";
-  return `<details class="proof"><summary>${icon("search")} <span>${escapeHtml(t("issue.showProof", lang))}</span></summary><div class="proof-body"><p class="proof-text">${escapeHtml(proof)}</p></div></details>`;
+  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` \xB7 ${issue.foundBy.model}` : ""}` : "";
+  if (!proof && !source) return "";
+  const summaryLabel = proof ? escapeHtml(t("issue.showProof", lang)) : `${escapeHtml(t("issue.foundBy", lang))} ${escapeHtml(source)}`;
+  const proofText = proof ? `<p class="proof-text">${escapeHtml(proof)}</p>` : "";
+  const sourceLine = source ? `<div class="proof-source">${icon("robot")} <span>${escapeHtml(t("issue.foundBy", lang))}</span> <span>${escapeHtml(source)}</span></div>` : "";
+  return `<details class="proof"><summary>${icon("search")} <span>${summaryLabel}</span></summary><div class="proof-body">${proofText}${sourceLine}</div></details>`;
 }
 function suppressButton(issue, lang) {
   const fingerprint = issue.fingerprint?.trim() || computeFingerprint(issue);
@@ -2362,6 +2388,8 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .proof summary { cursor: pointer; color: var(--cs-accent); font-size: var(--cs-font-1); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .proof-body { margin-top: 5px; padding: var(--cs-space-2); border-left: 2px solid var(--cs-accent); color: var(--cs-desc); font-size: var(--cs-font-1); }
 .proof-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.proof-source { margin: 5px 0 0; display: flex; align-items: center; gap: 5px; color: var(--cs-desc); }
+.proof-source .codicon { color: var(--cs-accent); }
 .issue-actions { display: flex; justify-content: flex-end; gap: var(--cs-space-2); margin-top: var(--cs-space-2); }
 .fp-button { flex: 0 0 auto; width: auto; padding: 3px var(--cs-space-2); font-size: var(--cs-font-1); color: var(--cs-desc); }
 .fp-button:hover { color: var(--cs-error); }
@@ -2400,6 +2428,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .custom-actions { margin-top: var(--cs-space-2); }
 .custom-actions button { width: auto; padding: 6px var(--cs-space-3); text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--cs-warn); border-left: 3px solid var(--cs-warn); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-warn) 10%, transparent); font-size: var(--cs-font-2); }
+.audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
 .search-line { margin-top: 10px; }
@@ -2453,7 +2482,7 @@ ${headHtml(assets, nonce)}
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
-    ${resumeView ? `<div class="audit-resume"><strong>${icon("debug-alt")} ${T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continue", { done: resumeView.done, total: resumeView.total })}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -2947,6 +2976,8 @@ var CodeScoutPanel = class {
         this.render();
       } else if (message.command === "resumeAudit") {
         void vscode.commands.executeCommand("codescout.resumeAudit");
+      } else if (message.command === "resumeAuditOther") {
+        void vscode.commands.executeCommand("codescout.resumeAuditOther");
       } else if (message.command === "restartAudit") {
         void vscode.commands.executeCommand("codescout.restartAudit");
       } else if (message.command === "setApiKey") {
@@ -4142,6 +4173,7 @@ function buildFindingsDiff(previous, issues, lang = "ru", checkedFiles = /* @__P
   const summary = t("diff.summary", lang, { n: newOnes.length, f: fixed.length, r: notRechecked.length, s: issues.length - newOnes.length });
   return { summary, newKeys: newOnes.map(findingKey), fixed, notRechecked };
 }
+var CHECKPOINT_STATES = /* @__PURE__ */ new Set(["running", "cancelled", "interrupted", "done"]);
 function writeAuditProgress(workspaceRoot, progress) {
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
   (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
@@ -4157,8 +4189,18 @@ function readAuditProgress(workspaceRoot) {
     return {
       startedAt: parsed.startedAt,
       model: parsed.model,
-      checked: parsed.checked.filter((entry) => entry && typeof entry.file === "string" && Array.isArray(entry.issues)),
-      remaining: parsed.remaining.filter((file) => typeof file === "string")
+      ...typeof parsed.provider === "string" && parsed.provider ? { provider: parsed.provider } : {},
+      ...typeof parsed.scopeHash === "string" && parsed.scopeHash ? { scopeHash: parsed.scopeHash } : {},
+      ...CHECKPOINT_STATES.has(parsed.state) ? { state: parsed.state } : {},
+      checked: parsed.checked.filter((entry) => entry && typeof entry.file === "string" && Array.isArray(entry.issues)).map((entry) => ({
+        file: entry.file,
+        issues: entry.issues,
+        ...typeof entry.provider === "string" && entry.provider ? { provider: entry.provider } : {},
+        ...typeof entry.model === "string" && entry.model ? { model: entry.model } : {},
+        ...Number.isFinite(entry.ts) ? { ts: entry.ts } : {}
+      })),
+      remaining: parsed.remaining.filter((file) => typeof file === "string"),
+      ...Array.isArray(parsed.skipped) ? { skipped: parsed.skipped.filter((file) => typeof file === "string") } : {}
     };
   } catch {
     return void 0;
@@ -4179,15 +4221,38 @@ function pruneAuditCheckpoint(progress, validFiles) {
   const done = new Set(checked.map((entry) => entry.file));
   return { ...progress, checked, remaining: progress.remaining.filter((file) => !done.has(file)) };
 }
-function mergeCheckpointIssues(progress) {
-  return progress.checked.flatMap((entry) => entry.issues);
+function lastCheckpointTag(progress) {
+  for (let index = progress.checked.length - 1; index >= 0; index -= 1) {
+    const entry = progress.checked[index];
+    if (entry?.provider) return { provider: entry.provider, model: entry.model };
+  }
+  return { provider: progress.provider, model: progress.model };
+}
+function collectCheckpointFindings(progress) {
+  const tagged = [];
+  for (const entry of progress.checked) {
+    const provider = entry.provider ?? progress.provider;
+    const model = entry.model ?? progress.model;
+    for (const issue of entry.issues) {
+      tagged.push(provider ? { ...issue, foundBy: { provider, ...model ? { model } : {} } } : issue);
+    }
+  }
+  return mergeFindingsByZone([], tagged);
 }
 function progressView(progress) {
   if (!progress) return void 0;
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return void 0;
-  return { done, total, model: progress.model, startedAt: progress.startedAt, findings: mergeCheckpointIssues(progress).length };
+  const tag = lastCheckpointTag(progress);
+  return {
+    done,
+    total,
+    model: tag.model ?? progress.model,
+    ...tag.provider ? { provider: tag.provider } : {},
+    startedAt: progress.startedAt,
+    findings: collectCheckpointFindings(progress).length
+  };
 }
 var AUDIT_RESULTS_FILE = "audit-results.json";
 function writeJsonAtomic(directory, fileName, data) {
@@ -4204,7 +4269,7 @@ function writeAuditResults(workspaceRoot, results) {
 }
 function writeAuditResultsFromCheckpoint(workspaceRoot, progress, total) {
   writeAuditResults(workspaceRoot, {
-    findings: dedupeIssues(mergeCheckpointIssues(progress)),
+    findings: collectCheckpointFindings(progress),
     checkedFiles: progress.checked.length,
     total,
     model: progress.model,
@@ -4281,6 +4346,77 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
   } catch {
     return "";
   }
+}
+
+// src/auditResume.ts
+var import_node_child_process2 = require("node:child_process");
+var import_node_crypto4 = require("node:crypto");
+var vscode2 = __toESM(require("vscode"));
+var GIT_HEAD_PROBE_TIMEOUT_MS = 5e3;
+function pathKey(value) {
+  return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+function getGitHead(workspaceRoot) {
+  try {
+    const top = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "--show-toplevel"], { cwd: workspaceRoot, encoding: "utf8", timeout: GIT_HEAD_PROBE_TIMEOUT_MS, windowsHide: true });
+    if (top.status !== 0) return "";
+    const topPath = String(top.stdout ?? "").trim();
+    if (!topPath || pathKey(topPath) !== pathKey(workspaceRoot)) return "";
+    const head = (0, import_node_child_process2.spawnSync)("git", ["rev-parse", "HEAD"], { cwd: workspaceRoot, encoding: "utf8", timeout: GIT_HEAD_PROBE_TIMEOUT_MS, windowsHide: true });
+    if (head.status !== 0) return "";
+    const sha = String(head.stdout ?? "").trim();
+    return /^[0-9a-f]{7,40}$/i.test(sha) ? sha : "";
+  } catch {
+    return "";
+  }
+}
+function computeScopeHash(head, files) {
+  const list = [...new Set(files.map((file) => file.replace(/\\/g, "/")))].sort();
+  return (0, import_node_crypto4.createHash)("sha256").update(`head:${head}
+files:
+${list.join("\n")}
+`, "utf8").digest("hex").slice(0, 16);
+}
+function checkpointScopeVerdict(progress, currentHash) {
+  if (!progress?.scopeHash) return "untracked";
+  return progress.scopeHash === currentHash ? "ok" : "changed";
+}
+async function pickResumeTarget(deps) {
+  const pickedProvider = await vscode2.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t("key.pickProvider", deps.lang), ignoreFocusOut: true });
+  if (!pickedProvider) return void 0;
+  const provider = pickedProvider;
+  let baseUrl = "";
+  try {
+    baseUrl = await deps.resolveBaseUrlFor(provider);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    return void 0;
+  }
+  const key = await deps.resolveKeyFor(provider);
+  if (!key && !isLocalBaseUrl(baseUrl)) {
+    void vscode2.window.showErrorMessage(t("key.needFirst", deps.lang));
+    return void 0;
+  }
+  let models = [];
+  try {
+    models = await fetchLiveModelsCached(baseUrl, sanitizeApiKey(key ?? ""), fetch, MODELS_FETCH_TIMEOUT_MS, provider, deps.log, true, deps.log);
+  } catch (error) {
+    deps.log(`\u26A0\uFE0F ${provider} /models \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  let model = "";
+  if (models.length > 0) {
+    const preferred = models.find((candidate) => /instruct|coder/i.test(candidate)) || models[0];
+    const picked = await vscode2.window.showQuickPick([preferred, ...models.filter((candidate) => candidate !== preferred)], { placeHolder: t("model.pickTitle", deps.lang), ignoreFocusOut: true });
+    if (!picked) return void 0;
+    model = String(picked);
+  } else {
+    const manual = await vscode2.window.showInputBox({ prompt: t("model.inputEmpty", deps.lang), value: defaultModel(provider), ignoreFocusOut: true });
+    if (manual === void 0) return void 0;
+    model = manual.trim() || defaultModel(provider);
+  }
+  await deps.persistSelection(provider, model);
+  return { provider, model };
 }
 
 // src/settingsHtml.ts
@@ -5024,7 +5160,7 @@ function docLimitsFromCount(count, fallback = 5) {
   return Math.min(50, Math.max(1, rounded));
 }
 function getWorkspaceRoot() {
-  return vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return vscode3.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 function buildStats(issues, filesAnalyzed, durationMs) {
   return {
@@ -5053,7 +5189,7 @@ async function fetchModels(selection, tolerateErrors = true) {
   }
 }
 async function pickSkProvider() {
-  const picked = await vscode2.window.showQuickPick(
+  const picked = await vscode3.window.showQuickPick(
     SK_AMBIGUOUS_OPTIONS.map((option) => ({
       label: option.label,
       description: option.provider === "custom" ? "" : resolveBaseUrl(option.provider)
@@ -5070,17 +5206,17 @@ async function chooseLiveModel(selection, placeHolder) {
   try {
     models = await fetchModels(selection);
   } catch {
-    const manual = await vscode2.window.showInputBox({ prompt: t("model.inputFetchFailed", currentReportLanguage()), value: selection.model });
+    const manual = await vscode3.window.showInputBox({ prompt: t("model.inputFetchFailed", currentReportLanguage()), value: selection.model });
     if (manual === void 0) return void 0;
     return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
   if (models.length === 0) {
-    const manual = await vscode2.window.showInputBox({ prompt: t("model.inputEmpty", currentReportLanguage()), value: selection.model });
+    const manual = await vscode3.window.showInputBox({ prompt: t("model.inputEmpty", currentReportLanguage()), value: selection.model });
     if (manual === void 0) return void 0;
     return { model: manual.trim() || selection.model, userChosen: Boolean(manual.trim()) };
   }
   const preferred = preferredLiveModel(models, selection.model);
-  const picked = await vscode2.window.showQuickPick([preferred, ...models.filter((model) => model !== preferred)], { placeHolder, matchOnDescription: true });
+  const picked = await vscode3.window.showQuickPick([preferred, ...models.filter((model) => model !== preferred)], { placeHolder, matchOnDescription: true });
   if (!picked) return void 0;
   return { model: picked, userChosen: true };
 }
@@ -5113,7 +5249,7 @@ async function confirmWorkspaceBaseUrl(context, baseUrl) {
   const trusted = await context.globalState.get(TRUSTED_BASE_URLS_KEY) ?? [];
   if (trusted.includes(baseUrl)) return true;
   const lang = currentReportLanguage();
-  const answer = await vscode2.window.showWarningMessage(
+  const answer = await vscode3.window.showWarningMessage(
     t("trust.prompt", lang, { url: baseUrl }),
     { modal: true },
     t("trust.accept", lang),
@@ -5129,12 +5265,12 @@ async function resolveTrustedBaseUrl(context, config) {
   const { baseUrl, fromWorkspace } = readBaseUrlInfo(config);
   if (!baseUrl) return "";
   if (!fromWorkspace) return baseUrl;
-  if (!vscode2.workspace.isTrusted) throw new Error(t("trust.errUntrusted", currentReportLanguage()));
+  if (!vscode3.workspace.isTrusted) throw new Error(t("trust.errUntrusted", currentReportLanguage()));
   if (!await confirmWorkspaceBaseUrl(context, baseUrl)) throw new Error(t("trust.errNotConfirmed", currentReportLanguage()));
   return baseUrl;
 }
 async function resolveExtensionSelection(context) {
-  const config = vscode2.workspace.getConfiguration("codescout");
+  const config = vscode3.workspace.getConfiguration("codescout");
   const secretKey = await context.secrets.get(SECRET_KEY);
   const secretProvider = await context.secrets.get(SECRET_PROVIDER);
   const secretModel = await context.secrets.get(SECRET_MODEL);
@@ -5191,12 +5327,12 @@ function rateLimitPausesFromSetting(value) {
 }
 var migratedLegacyApiKeys = [];
 async function migrateApiKeyFromSettings(context) {
-  const config = vscode2.workspace.getConfiguration("codescout");
+  const config = vscode3.workspace.getConfiguration("codescout");
   const inspected = config.inspect("apiKey");
   const layers = [
-    { value: inspected?.workspaceFolderValue, target: vscode2.ConfigurationTarget.WorkspaceFolder },
-    { value: inspected?.workspaceValue, target: vscode2.ConfigurationTarget.Workspace },
-    { value: inspected?.globalValue, target: vscode2.ConfigurationTarget.Global }
+    { value: inspected?.workspaceFolderValue, target: vscode3.ConfigurationTarget.WorkspaceFolder },
+    { value: inspected?.workspaceValue, target: vscode3.ConfigurationTarget.Workspace },
+    { value: inspected?.globalValue, target: vscode3.ConfigurationTarget.Global }
   ];
   const found = layers.filter((layer) => Boolean(layer.value?.trim()));
   if (found.length === 0) return;
@@ -5225,10 +5361,10 @@ async function reportScanFailure(context, output, panel, error, logPrefix = "Err
   const redacted = raw ? redactSecrets(raw, await secretKeyValues(context)) : "";
   output.appendLine(`${logPrefix}: ${redacted || formatted.title}`);
   panel.setError(formatted.message, redacted || void 0, { category: formatted.category, title: formatted.title, hint: formatted.actionHint });
-  void vscode2.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
+  void vscode3.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
 }
 function applyRequestTimeoutSetting() {
-  const seconds = requestTimeoutSecondsFromSetting(vscode2.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
+  const seconds = requestTimeoutSecondsFromSetting(vscode3.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
   setDefaultRequestTimeoutMs(seconds * 1e3);
 }
 async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}) {
@@ -5373,7 +5509,7 @@ async function runSampleReview(context, output, panel) {
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
     output.appendLine(`${summary}`);
     for (const issue of result.issues) output.appendLine(formatIssue(issue));
-    void vscode2.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
+    void vscode3.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
   } catch (error) {
     if (isAbortError(error)) {
       panel.setCancelled();
@@ -5386,7 +5522,7 @@ async function runSampleReview(context, output, panel) {
 }
 var autoResumeCancelled = false;
 function autoResumeEnabled() {
-  return vscode2.workspace.getConfiguration("codescout").get("autoResume", false);
+  return vscode3.workspace.getConfiguration("codescout").get("autoResume", false);
 }
 async function runFullAudit(context, output, panel, resume = false) {
   autoResumeCancelled = false;
@@ -5404,7 +5540,7 @@ async function runFullAudit(context, output, panel, resume = false) {
       panel.setAutoResume(void 0);
       return;
     }
-    const config = vscode2.workspace.getConfiguration("codescout");
+    const config = vscode3.workspace.getConfiguration("codescout");
     const maxAttempts = autoResumeLimitFromSetting(config.get("autoResumeMaxAttempts"), 1e3);
     const maxMinutes = autoResumeLimitFromSetting(config.get("autoResumeMaxMinutes"), 1e4);
     const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now(), maxAttempts, maxMinutes);
@@ -5422,9 +5558,22 @@ async function runFullAudit(context, output, panel, resume = false) {
     const waitController = new AbortController();
     activeAbortController?.abort();
     activeAbortController = waitController;
+    const markCancelled = () => {
+      const root = getWorkspaceRoot();
+      if (!root) return;
+      const saved = readAuditProgress(root);
+      if (saved && saved.checked.length > 0) {
+        saved.state = "cancelled";
+        try {
+          writeAuditProgress(root, saved);
+        } catch {
+        }
+      }
+    };
     try {
       await sleep(decision.waitSeconds * 1e3, waitController.signal);
     } catch {
+      markCancelled();
       output.appendLine("\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C");
       panel.setAutoResume(void 0);
       return;
@@ -5432,6 +5581,7 @@ async function runFullAudit(context, output, panel, resume = false) {
       if (activeAbortController === waitController) activeAbortController = void 0;
     }
     if (autoResumeCancelled) {
+      markCancelled();
       panel.setAutoResume(void 0);
       return;
     }
@@ -5455,7 +5605,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
   let progress;
   let planFiles = [];
   try {
-    const auditConfig = vscode2.workspace.getConfiguration("codescout");
+    const auditConfig = vscode3.workspace.getConfiguration("codescout");
     const auditMaxFiles = auditConfig.get("maxFiles", 100);
     const auditMaxLines = auditConfig.get("maxLines", 0);
     const auditPasses = auditPassesFromSetting(auditConfig.get("auditPasses"));
@@ -5501,15 +5651,24 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const docsForFile = (docs.sections?.length ?? 0) > 0 ? makeDocsResolver(docs.sections ?? [], docBudgetBytes, (message) => output.appendLine(message)) : void 0;
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    let initial = { startedAt: Date.now(), model: auditSelection.model, checked: [], remaining: planFiles };
+    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles);
+    let initial = { startedAt: Date.now(), model: auditSelection.model, provider: auditSelection.provider, scopeHash: currentScopeHash, state: "running", checked: [], remaining: planFiles };
     if (resume) {
       const saved = readAuditProgress(workspaceRoot);
       if (!saved) output.appendLine("\u2139\uFE0F \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u2014 \u0437\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441 \u043D\u0443\u043B\u044F");
-      else if (saved.model !== auditSelection.model) {
-        output.appendLine(`\u2139\uFE0F \u041C\u043E\u0434\u0435\u043B\u044C \u0441\u043C\u0435\u043D\u0438\u043B\u0430\u0441\u044C (${saved.model} \u2192 ${auditSelection.model}) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u043D\u0435 \u043F\u043E\u0434\u0445\u043E\u0434\u0438\u0442, \u043D\u0430\u0447\u0438\u043D\u0430\u044E \u0437\u0430\u043D\u043E\u0432\u043E`);
-        clearAuditProgress(workspaceRoot);
-      } else {
-        initial = pruneAuditCheckpoint(saved, planFiles);
+      else {
+        const verdict = checkpointScopeVerdict(saved, currentScopeHash);
+        if (verdict === "changed") {
+          output.appendLine(`\u26D4 \u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 (${saved.scopeHash} \u2192 ${currentScopeHash}) \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D, \u043D\u0443\u0436\u0435\u043D \u043D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
+          panel.setScanning(false);
+          const blocked = progressView(saved);
+          if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
+          return { kind: "done" };
+        }
+        initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: "running" };
+        const tag = lastCheckpointTag(saved);
+        if (tag.provider && tag.provider !== auditSelection.provider) output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u0434\u0440\u0443\u0433\u0438\u043C \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u043E\u043C: \u0431\u044B\u043B\u043E ${tag.provider} \xB7 ${tag.model ?? "?"}, \u0441\u0442\u0430\u043B\u043E ${auditSelection.provider} \xB7 ${auditSelection.model} \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B \u041D\u0415 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E\u0442\u0441\u044F`);
+        else if (tag.model && tag.model !== auditSelection.model) output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u0434\u0440\u0443\u0433\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u044C\u044E: ${tag.model} \u2192 ${auditSelection.model} \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B \u041D\u0415 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E\u0442\u0441\u044F`);
         output.appendLine(`\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E \u0430\u0443\u0434\u0438\u0442: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${initial.checked.length} \u0444\u0430\u0439\u043B\u043E\u0432, \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${planFiles.length - initial.checked.length}`);
       }
     } else {
@@ -5541,14 +5700,17 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         fileStartedAt.set(filename, Date.now());
         output.appendLine(`\u{1F50E} \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \u2014 \u0441\u0442\u0430\u0440\u0442\u2026`);
       }
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), (filename, fileIssues) => {
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => {
+      state.skipped = [.../* @__PURE__ */ new Set([...state.skipped ?? [], filename])];
+      output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`);
+    }, (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
       chunkProgress.set(filename, acc);
       if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
         doneNames.add(filename);
-        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues) });
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() });
         persist();
         const pausedMs = (pauseByFile.get(filename) ?? 0) * 1e3;
         pauseByFile.delete(filename);
@@ -5565,13 +5727,14 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
     }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive);
-    const mergedIssues = dedupeIssues(mergeCheckpointIssues(state));
+    const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
     writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
     writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
     writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
     if (result.skippedFiles > 0) {
+      state.state = "interrupted";
       persist();
       output.appendLine(`\u2139\uFE0F \u0421\u043A\u0438\u043F\u043D\u0443\u0442\u043E ${result.skippedFiles} \u0444\u0430\u0439\u043B\u043E\u0432 (rate-limit/\u043E\u0448\u0438\u0431\u043A\u0438) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D, \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u0433\u043D\u0430\u0442\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB`);
     } else {
@@ -5584,13 +5747,20 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
     const resumeView = result.skippedFiles > 0 ? progressView(state) : void 0;
     if (resumeView) panel.setAuditResume(resumeView);
-    await vscode2.commands.executeCommand("codescout.panel.focus");
+    await vscode3.commands.executeCommand("codescout.panel.focus");
     output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)`);
     output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
     output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
     dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
     return resumeView ? { kind: "interrupted", view: resumeView } : { kind: "done" };
   } catch (error) {
+    if (progress && workspaceRoot && progress.checked.length > 0) {
+      progress.state = isAbortError(error) ? "cancelled" : "interrupted";
+      try {
+        writeAuditProgress(workspaceRoot, progress);
+      } catch {
+      }
+    }
     const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : void 0;
     if (resumeView) panel.setAuditResume(resumeView);
     if (isAbortError(error)) {
@@ -5608,16 +5778,16 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
   const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
-    void vscode2.window.showErrorMessage(t("panel.errNoWorkspaceCustom", lang));
+    void vscode3.window.showErrorMessage(t("panel.errNoWorkspaceCustom", lang));
     return;
   }
   let focus = (focusArg ?? "").trim();
   let scope = scopeArg === "active" || scopeArg === "list" ? scopeArg : "all";
   const globs = scopeArg === void 0 && focusArg === void 0 ? [] : (globsArg ?? "").split(",").map((glob) => glob.trim()).filter(Boolean);
   if (!focus) {
-    focus = (await vscode2.window.showInputBox({ prompt: t("custom.focusPrompt", lang), placeHolder: t("custom.focusPlaceholder", lang) }))?.trim() ?? "";
+    focus = (await vscode3.window.showInputBox({ prompt: t("custom.focusPrompt", lang), placeHolder: t("custom.focusPlaceholder", lang) }))?.trim() ?? "";
     if (!focus) return;
-    const picked = await vscode2.window.showQuickPick(
+    const picked = await vscode3.window.showQuickPick(
       [
         { label: t("form.scopeAll", lang), value: "all" },
         { label: t("form.scopeActive", lang), value: "active" },
@@ -5628,7 +5798,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     if (!picked) return;
     scope = picked.value;
     if (scope === "list") {
-      const globsInput = await vscode2.window.showInputBox({ prompt: t("custom.globsPrompt", lang), placeHolder: "src/**/*.ts, tests/*.py" });
+      const globsInput = await vscode3.window.showInputBox({ prompt: t("custom.globsPrompt", lang), placeHolder: "src/**/*.ts, tests/*.py" });
       globs.length = 0;
       globs.push(...(globsInput ?? "").split(",").map((glob) => glob.trim()).filter(Boolean));
     }
@@ -5641,7 +5811,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
   output.appendLine(`\u{1F3AF} \u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E: ${focus}`);
   panel.setScanning(true);
   try {
-    const reviewConfig = vscode2.workspace.getConfiguration("codescout");
+    const reviewConfig = vscode3.workspace.getConfiguration("codescout");
     const maxFiles = reviewConfig.get("maxFiles", 100);
     const maxLines = reviewConfig.get("maxLines", 0);
     const customPauses = rateLimitPausesFromSetting(reviewConfig.get("rateLimitPauses"));
@@ -5651,7 +5821,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       onAdaptiveSplit: (filename, from, to) => output.appendLine(`\u{1FAB6} \u0447\u0430\u043D\u043A \u0442\u044F\u0436\u0451\u043B: \u0434\u0435\u043B\u044E ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename}`),
       onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`)
     };
-    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode2.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
+    const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode3.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);
     if (collection.files.length === 0) {
       panel.setError(scope === "list" ? t("panel.errNoGlobMatch", lang, { globs: globs.join(", ") }) : t("panel.errNoFiles", lang));
@@ -5671,9 +5841,9 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), void 0, customAdaptive);
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
-    await vscode2.commands.executeCommand("codescout.panel.focus");
+    await vscode3.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0433\u043E \u0440\u0435\u0432\u044C\u044E: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
-    void vscode2.window.showInformationMessage(t("notify.customDone", lang, { n: result.issues.length }));
+    void vscode3.window.showInformationMessage(t("notify.customDone", lang, { n: result.issues.length }));
   } catch (error) {
     if (isAbortError(error)) {
       panel.setCancelled();
@@ -5688,11 +5858,11 @@ async function runSelectionReview(context, output, panel, uri) {
   const lang = currentReportLanguage();
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
-    void vscode2.window.showErrorMessage(t("panel.errNoWorkspaceReview", lang));
+    void vscode3.window.showErrorMessage(t("panel.errNoWorkspaceReview", lang));
     return;
   }
   if (!uri) {
-    void vscode2.window.showErrorMessage(t("panel.errUseExplorer", lang));
+    void vscode3.window.showErrorMessage(t("panel.errUseExplorer", lang));
     return;
   }
   const target = uri.fsPath;
@@ -5700,12 +5870,12 @@ async function runSelectionReview(context, output, panel, uri) {
   try {
     isDirectory = (0, import_node_fs5.statSync)(target).isDirectory();
   } catch {
-    void vscode2.window.showErrorMessage(t("panel.errPathUnreadable", lang, { path: target }));
+    void vscode3.window.showErrorMessage(t("panel.errPathUnreadable", lang, { path: target }));
     return;
   }
   const rel = (0, import_node_path4.relative)(workspaceRoot, (0, import_node_path4.resolve)(target)).replaceAll("\\", "/");
   if (!rel || rel.startsWith("..")) {
-    void vscode2.window.showErrorMessage(t("panel.errPathOutside", lang));
+    void vscode3.window.showErrorMessage(t("panel.errPathOutside", lang));
     return;
   }
   const globs = isDirectory ? `${rel}/**` : rel;
@@ -5735,7 +5905,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
     const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
     panel.update(visibleIssues, stats);
-    await vscode2.commands.executeCommand("codescout.panel.focus");
+    await vscode3.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043A\u043E\u043C\u043C\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine("No issues found.");
     else {
@@ -5743,7 +5913,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
       output.appendLine("");
       for (const issue of result.issues) output.appendLine(formatIssue(issue));
     }
-    void vscode2.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
+    void vscode3.window.showInformationMessage(`CodeScout: ${result.issues.length} issues found`);
   } catch (error) {
     if (isAbortError(error)) {
       panel.setCancelled();
@@ -5763,22 +5933,22 @@ async function openOrCreateRules(workspaceRoot) {
     (0, import_node_fs5.mkdirSync)(directory, { recursive: true });
     (0, import_node_fs5.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
   }
-  const document = await vscode2.workspace.openTextDocument(vscode2.Uri.file(rulesPath));
-  await vscode2.window.showTextDocument(document, { preview: false });
+  const document = await vscode3.workspace.openTextDocument(vscode3.Uri.file(rulesPath));
+  await vscode3.window.showTextDocument(document, { preview: false });
   return rulesPath;
 }
 function currentReportLanguage() {
-  return vscode2.workspace.getConfiguration("codescout").get("language") === "en" ? "en" : "ru";
+  return vscode3.workspace.getConfiguration("codescout").get("language") === "en" ? "en" : "ru";
 }
 function effectiveFileCooldownSeconds(auditPasses) {
-  const explicit = vscode2.workspace.getConfiguration("codescout").inspect("fileCooldownSeconds")?.globalValue;
+  const explicit = vscode3.workspace.getConfiguration("codescout").inspect("fileCooldownSeconds")?.globalValue;
   return fileCooldownSecondsFromSetting(explicit, auditPasses);
 }
 function auditBannerEnabled() {
-  return vscode2.workspace.getConfiguration("codescout").get("showAuditBanner", true);
+  return vscode3.workspace.getConfiguration("codescout").get("showAuditBanner", true);
 }
 function readUiPrefs() {
-  const config = vscode2.workspace.getConfiguration("codescout");
+  const config = vscode3.workspace.getConfiguration("codescout");
   return normalizeUiPrefs({
     theme: config.get("uiTheme", "auto"),
     accent: config.get("accentColor", "auto"),
@@ -5795,15 +5965,15 @@ var settingsConfigSubscription;
 var rerenderSettings = () => {
 };
 async function migrateLanguageSetting(context) {
-  const config = vscode2.workspace.getConfiguration("codescout");
+  const config = vscode3.workspace.getConfiguration("codescout");
   const done = await context.secrets.get("codescout.languageMigrated") === "true";
   if (done) return;
   const legacy = config.inspect("reportLanguage");
   const legacyValue = legacy?.globalValue ?? legacy?.workspaceValue;
   const currentLang = config.inspect("language");
   const hasLang = Boolean(currentLang?.globalValue || currentLang?.workspaceValue);
-  if (legacyValue && !hasLang) await config.update("language", legacyValue === "en" ? "en" : "ru", vscode2.ConfigurationTarget.Global);
-  if (legacyValue) await config.update("reportLanguage", void 0, vscode2.ConfigurationTarget.Global);
+  if (legacyValue && !hasLang) await config.update("language", legacyValue === "en" ? "en" : "ru", vscode3.ConfigurationTarget.Global);
+  if (legacyValue) await config.update("reportLanguage", void 0, vscode3.ConfigurationTarget.Global);
   await context.secrets.store("codescout.languageMigrated", "true");
 }
 async function runConnectionTest(context) {
@@ -5823,7 +5993,7 @@ async function runConnectionTest(context) {
 }
 async function fileIsDirectory(uri) {
   try {
-    return (await vscode2.workspace.fs.stat(uri)).type === vscode2.FileType.Directory;
+    return (await vscode3.workspace.fs.stat(uri)).type === vscode3.FileType.Directory;
   } catch {
     return false;
   }
@@ -5836,21 +6006,21 @@ async function readSettingsState(context) {
     keyConfigured: Boolean(key?.trim()),
     provider: selection.provider,
     model: selection.model,
-    baseUrl: vscode2.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
+    baseUrl: vscode3.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled(),
-    docLinks: vscode2.workspace.getConfiguration("codescout").get("docLinks") ?? [],
-    docMaxKb: docLimitsFromKb(vscode2.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
-    docMaxLinks: docLimitsFromCount(vscode2.workspace.getConfiguration("codescout").get("docMaxLinks")),
-    maxLines: Math.max(0, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxLines", 0) || 0)),
-    maxFiles: Math.max(1, Math.round(vscode2.workspace.getConfiguration("codescout").get("maxFiles", 100) || 100)),
-    autoResume: vscode2.workspace.getConfiguration("codescout").get("autoResume", false),
-    autoResumeMaxAttempts: autoResumeLimitFromSetting(vscode2.workspace.getConfiguration("codescout").get("autoResumeMaxAttempts"), 1e3),
-    autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode2.workspace.getConfiguration("codescout").get("autoResumeMaxMinutes"), 1e4),
-    auditScope: vscode2.workspace.getConfiguration("codescout").get("auditScope") ?? "",
-    auditPasses: auditPassesFromSetting(vscode2.workspace.getConfiguration("codescout").get("auditPasses")),
-    rateLimitPauses: rateLimitPausesFromSetting(vscode2.workspace.getConfiguration("codescout").get("rateLimitPauses")),
-    requestTimeoutSeconds: requestTimeoutSecondsFromSetting(vscode2.workspace.getConfiguration("codescout").get("requestTimeoutSeconds")),
+    docLinks: vscode3.workspace.getConfiguration("codescout").get("docLinks") ?? [],
+    docMaxKb: docLimitsFromKb(vscode3.workspace.getConfiguration("codescout").get("docMaxKb")) / 1024,
+    docMaxLinks: docLimitsFromCount(vscode3.workspace.getConfiguration("codescout").get("docMaxLinks")),
+    maxLines: Math.max(0, Math.round(vscode3.workspace.getConfiguration("codescout").get("maxLines", 0) || 0)),
+    maxFiles: Math.max(1, Math.round(vscode3.workspace.getConfiguration("codescout").get("maxFiles", 100) || 100)),
+    autoResume: vscode3.workspace.getConfiguration("codescout").get("autoResume", false),
+    autoResumeMaxAttempts: autoResumeLimitFromSetting(vscode3.workspace.getConfiguration("codescout").get("autoResumeMaxAttempts"), 1e3),
+    autoResumeMaxMinutes: autoResumeLimitFromSetting(vscode3.workspace.getConfiguration("codescout").get("autoResumeMaxMinutes"), 1e4),
+    auditScope: vscode3.workspace.getConfiguration("codescout").get("auditScope") ?? "",
+    auditPasses: auditPassesFromSetting(vscode3.workspace.getConfiguration("codescout").get("auditPasses")),
+    rateLimitPauses: rateLimitPausesFromSetting(vscode3.workspace.getConfiguration("codescout").get("rateLimitPauses")),
+    requestTimeoutSeconds: requestTimeoutSecondsFromSetting(vscode3.workspace.getConfiguration("codescout").get("requestTimeoutSeconds")),
     version: String(context.extension.packageJSON.version ?? "0.0.0"),
     uiTheme: readUiPrefs().theme,
     accentColor: readUiPrefs().accent,
@@ -5897,7 +6067,7 @@ async function saveKeyProvider(context, message) {
   }
   await context.secrets.store(SECRET_PROVIDER, provider);
   const baseUrl = message.baseUrl?.trim() || "";
-  await vscode2.workspace.getConfiguration("codescout").update("baseUrl", baseUrl, vscode2.ConfigurationTarget.Global);
+  await vscode3.workspace.getConfiguration("codescout").update("baseUrl", baseUrl, vscode3.ConfigurationTarget.Global);
   if (provider === "custom" && !baseUrl) notes.push(t("center.noteCustomNoUrl", lang));
   const storedKey = key || await context.secrets.get(SECRET_KEY);
   if (storedKey) {
@@ -5911,10 +6081,10 @@ async function saveKeyProvider(context, message) {
 async function autoSelectModelAfterProviderChange(context, providerChanged) {
   if (!providerChanged) return;
   if (!await context.secrets.get(SECRET_KEY)) return;
-  await vscode2.commands.executeCommand("codescout.chooseModel");
+  await vscode3.commands.executeCommand("codescout.chooseModel");
 }
 function activate(context) {
-  const output = vscode2.window.createOutputChannel("CodeScout");
+  const output = vscode3.window.createOutputChannel("CodeScout");
   hostOutput = output;
   const outputTail = [];
   const realAppendLine = output.appendLine.bind(output);
@@ -5947,7 +6117,7 @@ function activate(context) {
   };
   context.subscriptions.push(output);
   applyRequestTimeoutSetting();
-  context.subscriptions.push(vscode2.workspace.onDidChangeConfiguration((event) => {
+  context.subscriptions.push(vscode3.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration("codescout.requestTimeoutSeconds")) applyRequestTimeoutSetting();
   }));
   const syncKeyStatus = async () => {
@@ -5969,28 +6139,28 @@ function activate(context) {
   const activateRoot = getWorkspaceRoot();
   panel.setFirstAuditDone(activateRoot ? (0, import_node_fs5.existsSync)((0, import_node_path4.join)(activateRoot, CONTEXT_FILE)) : void 0);
   context.subscriptions.push(
-    vscode2.window.registerWebviewViewProvider("codescout.panel", panel),
-    vscode2.commands.registerCommand("codescout.openSettings", () => vscode2.commands.executeCommand("workbench.action.openSettings", "codescout")),
-    vscode2.commands.registerCommand("codescout.dismissOnboarding", async () => {
+    vscode3.window.registerWebviewViewProvider("codescout.panel", panel),
+    vscode3.commands.registerCommand("codescout.openSettings", () => vscode3.commands.executeCommand("workbench.action.openSettings", "codescout")),
+    vscode3.commands.registerCommand("codescout.dismissOnboarding", async () => {
       await context.globalState.update("codescout.onboardingDismissed", true);
       panel.setOnboardingHidden(true);
     }),
-    vscode2.commands.registerCommand("codescout.openAuditReport", async () => {
+    vscode3.commands.registerCommand("codescout.openAuditReport", async () => {
       output.show(true);
-      await vscode2.commands.executeCommand("codescout.panel.focus");
+      await vscode3.commands.executeCommand("codescout.panel.focus");
     }),
-    vscode2.commands.registerCommand("codescout.reportIssue", async () => {
+    vscode3.commands.registerCommand("codescout.reportIssue", async () => {
       const confirmLang = currentReportLanguage();
-      const answer = await vscode2.window.showWarningMessage(t("issue.logsWarn", confirmLang), { modal: true }, t("issue.logsWarnBtn", confirmLang));
+      const answer = await vscode3.window.showWarningMessage(t("issue.logsWarn", confirmLang), { modal: true }, t("issue.logsWarnBtn", confirmLang));
       if (answer !== t("issue.logsWarnBtn", confirmLang)) return;
-      const cfg = vscode2.workspace.getConfiguration("codescout");
+      const cfg = vscode3.workspace.getConfiguration("codescout");
       const keyValues = await secretKeyValues(context);
       const safe = (value) => redactSecrets(value, keyValues);
       const preRedactedOutputTail = outputTail.map((line) => redactSecrets(line, keyValues));
       const preRedactedLastScanError = lastScanError ? redactSecrets(lastScanError, keyValues) : void 0;
       const body = buildIssueBody(currentReportLanguage(), {
         extVersion: safe(String(context.extension.packageJSON.version ?? "0.0.0")),
-        vscodeVersion: safe(vscode2.version),
+        vscodeVersion: safe(vscode3.version),
         os: safe(`${(0, import_node_os.platform)()} ${(0, import_node_os.release)()}`),
         provider: safe(cfg.get("provider") || "auto"),
         model: safe(cfg.get("model") || ""),
@@ -6002,21 +6172,21 @@ function activate(context) {
         outputTail: preRedactedOutputTail,
         lastScanError: preRedactedLastScanError
       });
-      await vscode2.env.openExternal(vscode2.Uri.parse(reportIssueUrl(body)));
+      await vscode3.env.openExternal(vscode3.Uri.parse(reportIssueUrl(body)));
     }),
-    vscode2.commands.registerCommand("codescout.toggleLanguage", async () => {
-      const config = vscode2.workspace.getConfiguration("codescout");
+    vscode3.commands.registerCommand("codescout.toggleLanguage", async () => {
+      const config = vscode3.workspace.getConfiguration("codescout");
       const next = config.get("language") === "en" ? "ru" : "en";
-      await config.update("language", next, vscode2.ConfigurationTarget.Global);
+      await config.update("language", next, vscode3.ConfigurationTarget.Global);
       panel.forceLanguageRefresh();
       rerenderSettings();
     }),
-    vscode2.commands.registerCommand("codescout.openSettingsPage", async (anchor) => {
+    vscode3.commands.registerCommand("codescout.openSettingsPage", async (anchor) => {
       const render = async (status = "", statusKind = "ok") => {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
-          const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode2.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto4.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
+          const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode3.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto5.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
         }
       };
       rerenderSettings = () => {
@@ -6024,13 +6194,13 @@ function activate(context) {
       };
       const panelDisposed = settingsPanel?.disposed === true;
       if (!settingsPanel || panelDisposed) {
-        settingsPanel = vscode2.window.createWebviewPanel("codescout.settings", t("title.center", currentReportLanguage()), vscode2.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
+        settingsPanel = vscode3.window.createWebviewPanel("codescout.settings", t("title.center", currentReportLanguage()), vscode3.ViewColumn.One, { enableScripts: true, localResourceRoots: [context.extensionUri] });
         settingsPanel.onDidDispose(() => {
           settingsConfigSubscription?.dispose();
           settingsConfigSubscription = void 0;
           settingsPanel = void 0;
         });
-        settingsConfigSubscription = vscode2.workspace.onDidChangeConfiguration((event) => {
+        settingsConfigSubscription = vscode3.workspace.onDidChangeConfiguration((event) => {
           const watched = ["uiTheme", "accentColor", "uiDensity", "uiFontSize", "showConfidence", "findingsSort", "reportTheme", "customColors", "autoResume", "autoResumeMaxAttempts", "autoResumeMaxMinutes", "auditScope", "auditPasses", "maxLines", "maxFiles", "docLinks", "docMaxKb", "docMaxLinks", "rateLimitPauses", "requestTimeoutSeconds", "language", "showAuditBanner"];
           if (!watched.some((key) => event.affectsConfiguration(`codescout.${key}`))) return;
           void render();
@@ -6064,7 +6234,7 @@ function activate(context) {
                 await settingsPanel?.webview.postMessage({ type: "scopePickResult", globs: [], outside: [], noWorkspace: true });
                 return;
               }
-              const picked = await vscode2.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode2.Uri.file(workspaceRoot), openLabel: t("dialog.addToScope", currentReportLanguage()) });
+              const picked = await vscode3.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true, defaultUri: vscode3.Uri.file(workspaceRoot), openLabel: t("dialog.addToScope", currentReportLanguage()) });
               const globs = [];
               const outside = [];
               for (const uri of picked ?? []) {
@@ -6084,18 +6254,18 @@ function activate(context) {
               await render(saved.status);
               await autoSelectModelAfterProviderChange(context, saved.providerChanged);
             } else if (message.command === "saveAppearance") {
-              const config = vscode2.workspace.getConfiguration("codescout");
+              const config = vscode3.workspace.getConfiguration("codescout");
               const language = message.reportLanguage === "en" ? "en" : "ru";
               const banner = message.showAuditBanner !== false;
-              await config.update("language", language, vscode2.ConfigurationTarget.Global);
-              await config.update("showAuditBanner", banner, vscode2.ConfigurationTarget.Global);
+              await config.update("language", language, vscode3.ConfigurationTarget.Global);
+              await config.update("showAuditBanner", banner, vscode3.ConfigurationTarget.Global);
               await render(t("center.savedLang", currentReportLanguage(), { L: language.toUpperCase(), B: t(banner ? "center.on" : "center.off", currentReportLanguage()) }));
             } else if (message.command === "clearApiKey") {
-              await vscode2.commands.executeCommand("codescout.clearApiKey");
+              await vscode3.commands.executeCommand("codescout.clearApiKey");
               await render(t("center.keyCleared", currentReportLanguage()));
             } else if (message.command === "chooseModel") {
               await render(t("center.connecting", currentReportLanguage()), "retry");
-              await vscode2.commands.executeCommand("codescout.chooseModel");
+              await vscode3.commands.executeCommand("codescout.chooseModel");
               await render(t("center.modelRefresh", currentReportLanguage()));
             } else if (message.command === "testConnection") {
               const result = await runConnectionTest(context);
@@ -6111,19 +6281,19 @@ function activate(context) {
               const auditPasses = auditPassesFromSetting(message.auditPasses);
               const autoResumeMaxAttempts = autoResumeLimitFromSetting(message.autoResumeMaxAttempts, 1e3);
               const autoResumeMaxMinutes = autoResumeLimitFromSetting(message.autoResumeMaxMinutes, 1e4);
-              const config = vscode2.workspace.getConfiguration("codescout");
-              await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
-              await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
-              await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
-              await config.update("maxLines", maxLines, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResume", autoResume, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResumeMaxAttempts", autoResumeMaxAttempts, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode2.ConfigurationTarget.Global);
-              await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
-              await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
+              const config = vscode3.workspace.getConfiguration("codescout");
+              await config.update("docLinks", links, vscode3.ConfigurationTarget.Global);
+              await config.update("docMaxKb", maxKb, vscode3.ConfigurationTarget.Global);
+              await config.update("docMaxLinks", maxLinks, vscode3.ConfigurationTarget.Global);
+              await config.update("maxLines", maxLines, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResume", autoResume, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxAttempts", autoResumeMaxAttempts, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode3.ConfigurationTarget.Global);
+              await config.update("auditScope", auditScope, vscode3.ConfigurationTarget.Global);
+              await config.update("auditPasses", auditPasses, vscode3.ConfigurationTarget.Global);
               await render(t("center.savedProject", currentReportLanguage(), { n: links.length, kb: maxKb, max: maxLinks, ml: maxLines === 0 ? t("center.maxLinesNo", currentReportLanguage()) : t("center.maxLinesN", currentReportLanguage(), { n: maxLines }), p: auditPasses, ar: autoResume ? `${t("center.on", currentReportLanguage())} (${autoResumeBadgeDetail(autoResumeMaxAttempts, autoResumeMaxMinutes, currentReportLanguage())})` : t("center.off", currentReportLanguage()), sc: auditScope || t("center.scopeAll", currentReportLanguage()) }));
             } else if (message.command === "saveAll") {
-              const config = vscode2.workspace.getConfiguration("codescout");
+              const config = vscode3.workspace.getConfiguration("codescout");
               const parts = [];
               let providerChanged = false;
               if (message.apiKey || message.providerKey || message.baseUrl !== void 0) {
@@ -6134,8 +6304,8 @@ function activate(context) {
               }
               const language = message.reportLanguage === "en" ? "en" : "ru";
               const banner = message.showAuditBanner !== false;
-              await config.update("language", language, vscode2.ConfigurationTarget.Global);
-              await config.update("showAuditBanner", banner, vscode2.ConfigurationTarget.Global);
+              await config.update("language", language, vscode3.ConfigurationTarget.Global);
+              await config.update("showAuditBanner", banner, vscode3.ConfigurationTarget.Global);
               const links = (message.linksText ?? "").split(/\r?\n/).map((link) => link.trim()).filter(Boolean);
               const maxKb = docLimitsFromKb(message.docMaxKb) / 1024;
               const maxLinks = docLimitsFromCount(message.docMaxLinks);
@@ -6159,36 +6329,36 @@ function activate(context) {
                 reportTheme: message.reportTheme,
                 customColors: message.customColors
               });
-              await config.update("docLinks", links, vscode2.ConfigurationTarget.Global);
-              await config.update("docMaxKb", maxKb, vscode2.ConfigurationTarget.Global);
-              await config.update("docMaxLinks", maxLinks, vscode2.ConfigurationTarget.Global);
-              await config.update("maxLines", maxLines, vscode2.ConfigurationTarget.Global);
-              await config.update("maxFiles", maxFiles, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResume", autoResume, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResumeMaxAttempts", autoResumeMaxAttempts, vscode2.ConfigurationTarget.Global);
-              await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode2.ConfigurationTarget.Global);
-              await config.update("auditScope", auditScope, vscode2.ConfigurationTarget.Global);
-              await config.update("auditPasses", auditPasses, vscode2.ConfigurationTarget.Global);
-              await config.update("rateLimitPauses", rateLimitPauses, vscode2.ConfigurationTarget.Global);
-              await config.update("requestTimeoutSeconds", requestTimeoutSeconds, vscode2.ConfigurationTarget.Global);
+              await config.update("docLinks", links, vscode3.ConfigurationTarget.Global);
+              await config.update("docMaxKb", maxKb, vscode3.ConfigurationTarget.Global);
+              await config.update("docMaxLinks", maxLinks, vscode3.ConfigurationTarget.Global);
+              await config.update("maxLines", maxLines, vscode3.ConfigurationTarget.Global);
+              await config.update("maxFiles", maxFiles, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResume", autoResume, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxAttempts", autoResumeMaxAttempts, vscode3.ConfigurationTarget.Global);
+              await config.update("autoResumeMaxMinutes", autoResumeMaxMinutes, vscode3.ConfigurationTarget.Global);
+              await config.update("auditScope", auditScope, vscode3.ConfigurationTarget.Global);
+              await config.update("auditPasses", auditPasses, vscode3.ConfigurationTarget.Global);
+              await config.update("rateLimitPauses", rateLimitPauses, vscode3.ConfigurationTarget.Global);
+              await config.update("requestTimeoutSeconds", requestTimeoutSeconds, vscode3.ConfigurationTarget.Global);
               applyRequestTimeoutSetting();
-              await config.update("uiTheme", ui.theme, vscode2.ConfigurationTarget.Global);
-              await config.update("accentColor", ui.accent, vscode2.ConfigurationTarget.Global);
-              await config.update("uiDensity", ui.density, vscode2.ConfigurationTarget.Global);
-              await config.update("uiFontSize", ui.fontSize, vscode2.ConfigurationTarget.Global);
-              await config.update("showConfidence", ui.showConfidence, vscode2.ConfigurationTarget.Global);
-              await config.update("findingsSort", ui.findingsSort, vscode2.ConfigurationTarget.Global);
-              await config.update("reportTheme", ui.reportTheme, vscode2.ConfigurationTarget.Global);
-              await config.update("customColors", JSON.stringify(ui.customColors), vscode2.ConfigurationTarget.Global);
+              await config.update("uiTheme", ui.theme, vscode3.ConfigurationTarget.Global);
+              await config.update("accentColor", ui.accent, vscode3.ConfigurationTarget.Global);
+              await config.update("uiDensity", ui.density, vscode3.ConfigurationTarget.Global);
+              await config.update("uiFontSize", ui.fontSize, vscode3.ConfigurationTarget.Global);
+              await config.update("showConfidence", ui.showConfidence, vscode3.ConfigurationTarget.Global);
+              await config.update("findingsSort", ui.findingsSort, vscode3.ConfigurationTarget.Global);
+              await config.update("reportTheme", ui.reportTheme, vscode3.ConfigurationTarget.Global);
+              await config.update("customColors", JSON.stringify(ui.customColors), vscode3.ConfigurationTarget.Global);
               parts.push(t("center.savedAll", currentReportLanguage(), { p: auditPasses, ml: maxLines === 0 ? "\u221E" : maxLines, f: maxFiles, ar: t(autoResume ? "center.autoIn" : "center.autoOut", currentReportLanguage()), n: links.length, sc: auditScope || t("center.scopeAll", currentReportLanguage()), L: language.toUpperCase(), ui: `${ui.theme}/${ui.accent}/${ui.density}/${ui.fontSize}` }));
               await render(parts.join(" \xB7 "));
               await autoSelectModelAfterProviderChange(context, providerChanged);
             } else if (message.command === "openLink") {
               const url = (message.url ?? "").trim();
-              if (isContactUrlAllowed(url)) await vscode2.env.openExternal(vscode2.Uri.parse(url));
+              if (isContactUrlAllowed(url)) await vscode3.env.openExternal(vscode3.Uri.parse(url));
               await render("");
             } else if (message.command === "reportIssue") {
-              await vscode2.commands.executeCommand("codescout.reportIssue");
+              await vscode3.commands.executeCommand("codescout.reportIssue");
               await render("");
             } else if (message.command === "openRules") {
               try {
@@ -6203,35 +6373,58 @@ function activate(context) {
           });
         });
       } else {
-        settingsPanel.reveal(vscode2.ViewColumn.One);
+        settingsPanel.reveal(vscode3.ViewColumn.One);
       }
       await render();
     }),
-    vscode2.commands.registerCommand("codescout.scanUncommitted", () => {
+    vscode3.commands.registerCommand("codescout.scanUncommitted", () => {
       lastScanWasLastCommit = false;
       lastScanKind = "review";
       return runScan(() => runReview(context, false, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.scanLastCommit", () => {
+    vscode3.commands.registerCommand("codescout.scanLastCommit", () => {
       lastScanWasLastCommit = true;
       lastScanKind = "review";
       return runScan(() => runReview(context, true, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.testSample", () => {
+    vscode3.commands.registerCommand("codescout.testSample", () => {
       lastScanKind = "sample";
       return runScan(() => runSampleReview(context, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.scanFull", () => {
+    vscode3.commands.registerCommand("codescout.scanFull", () => {
       lastScanKind = "audit";
       return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.resumeAudit", () => {
+    vscode3.commands.registerCommand("codescout.resumeAudit", () => {
       lastScanKind = "audit";
       return runScan(() => runFullAudit(context, output, panel, true));
     }),
-    vscode2.commands.registerCommand("codescout.restartAudit", async () => {
+    // Батч 25: «Продолжить другими…» — выбор провайдера/модели (живой список
+    // через fetchLiveModelsCached) и догон чекпоинта. Логика выбора — в
+    // auditResume.pickResumeTarget, guard скоупа — внутри runFullAuditOnce.
+    vscode3.commands.registerCommand("codescout.resumeAuditOther", async () => {
       const lang = currentReportLanguage();
-      const answer = await vscode2.window.showWarningMessage(t("restart.confirm", lang), { modal: true }, t("restart.confirmBtn", lang));
+      const config = vscode3.workspace.getConfiguration("codescout");
+      const target = await pickResumeTarget({
+        lang,
+        resolveKeyFor: async (provider) => resolveApiKeyPriority(await context.secrets.get(SECRET_KEY), provider),
+        resolveBaseUrlFor: async (provider) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config)),
+        persistSelection: async (provider, model) => {
+          await context.secrets.store(SECRET_PROVIDER, provider);
+          await context.secrets.store(SECRET_MODEL, model);
+          await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
+        },
+        log: (message) => output.appendLine(message)
+      });
+      if (!target) return void 0;
+      await syncKeyStatus();
+      output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u0430\u0443\u0434\u0438\u0442\u0430: ${target.provider} \xB7 ${target.model}`);
+      lastScanKind = "audit";
+      return runScan(() => runFullAudit(context, output, panel, true));
+    }),
+    vscode3.commands.registerCommand("codescout.restartAudit", async () => {
+      const lang = currentReportLanguage();
+      const answer = await vscode3.window.showWarningMessage(t("restart.confirm", lang), { modal: true }, t("restart.confirmBtn", lang));
       if (answer !== t("restart.confirmBtn", lang)) return;
       const root = getWorkspaceRoot();
       if (root) {
@@ -6241,44 +6434,44 @@ function activate(context) {
       panel.setAuditResume(void 0);
       return runScan(() => runFullAudit(context, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.customReview", (focus, scope, globs) => {
+    vscode3.commands.registerCommand("codescout.customReview", (focus, scope, globs) => {
       lastScanKind = "custom";
       lastCustomArgs = { focus: focus ?? "", scope: scope ?? "all", globs: globs ?? "" };
       return runScan(() => runCustomReview(context, output, panel, focus, scope, globs));
     }),
-    vscode2.commands.registerCommand("codescout.reviewSelection", (uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
+    vscode3.commands.registerCommand("codescout.reviewSelection", (uri) => runScan(() => runSelectionReview(context, output, panel, uri))),
     // Батч 15: «Повторить попытку» с карточки ошибки — перезапуск последнего
     // скана того же типа (review/audit/custom/sample), если скан не идёт.
-    vscode2.commands.registerCommand("codescout.retryScan", () => {
+    vscode3.commands.registerCommand("codescout.retryScan", () => {
       if (panel.isScanRunning()) return void 0;
       if (lastScanKind === "audit") return runScan(() => runFullAudit(context, output, panel));
       if (lastScanKind === "sample") return runScan(() => runSampleReview(context, output, panel));
       if (lastScanKind === "custom") return runScan(() => runCustomReview(context, output, panel, lastCustomArgs?.focus, lastCustomArgs?.scope, lastCustomArgs?.globs));
       return runScan(() => runReview(context, lastScanWasLastCommit, output, panel));
     }),
-    vscode2.commands.registerCommand("codescout.resetOnboarding", async () => {
+    vscode3.commands.registerCommand("codescout.resetOnboarding", async () => {
       await context.secrets.delete(SECRET_FULL_AUDIT_WELCOME);
       await context.globalState.update("codescout.onboardingDismissed", void 0);
       panel.setOnboardingHidden(false);
       const workspaceRoot = getWorkspaceRoot();
       if (workspaceRoot && (0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
-        const answer = await vscode2.window.showWarningMessage(t("onboarding.resetConfirm", currentReportLanguage()), { modal: true }, t("common.delete", currentReportLanguage()));
+        const answer = await vscode3.window.showWarningMessage(t("onboarding.resetConfirm", currentReportLanguage()), { modal: true }, t("common.delete", currentReportLanguage()));
         if (answer === t("common.delete", currentReportLanguage())) (0, import_node_fs5.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
       }
       if (workspaceRoot) panel.setFirstAuditDone((0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE)));
       if (workspaceRoot) panel.setWelcomeBanner(true, "new");
-      void vscode2.window.showInformationMessage(t("onboarding.resetDone", currentReportLanguage()));
+      void vscode3.window.showInformationMessage(t("onboarding.resetDone", currentReportLanguage()));
     }),
-    vscode2.commands.registerCommand("codescout.cancelScan", () => {
+    vscode3.commands.registerCommand("codescout.cancelScan", () => {
       autoResumeCancelled = true;
       panel.setAutoResume(void 0);
       activeAbortController?.abort();
       panel.setCancelled();
       output.appendLine("Scan cancelled by user");
     }),
-    vscode2.commands.registerCommand("codescout.setApiKey", async () => {
+    vscode3.commands.registerCommand("codescout.setApiKey", async () => {
       const lang = currentReportLanguage();
-      const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("key.inputPrompt", lang) });
+      const key = await vscode3.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("key.inputPrompt", lang) });
       if (!key?.trim()) return;
       const detected = detectProvider(key);
       const autoDetected = Boolean(detected && !detected.ambiguous);
@@ -6289,7 +6482,7 @@ function activate(context) {
         selection = chosen;
       }
       if (!selection) {
-        const picked = await vscode2.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t("key.pickProvider", lang) });
+        const picked = await vscode3.window.showQuickPick([...PROVIDER_ORDER], { placeHolder: t("key.pickProvider", lang) });
         if (!picked) return;
         selection = { provider: picked, model: defaultModel(picked) };
       }
@@ -6301,15 +6494,15 @@ function activate(context) {
       await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
       const source = autoDetected ? t("key.sourceAuto", lang) : t("key.sourceManual", lang);
-      void vscode2.window.showInformationMessage(t("key.savedNotify", lang, { p: selection.provider, m: selection.model, s: source }));
+      void vscode3.window.showInformationMessage(t("key.savedNotify", lang, { p: selection.provider, m: selection.model, s: source }));
     }),
     // P0 Astra-3: выбор модели меняет ТОЛЬКО модель. Отмена = возврат без
     // действия (модель прежняя, запрос не уходит). Сканирование — отдельной
     // кнопкой «Повторить с этой моделью» (codescout.rerunWithModel).
-    vscode2.commands.registerCommand("codescout.chooseModel", async () => {
+    vscode3.commands.registerCommand("codescout.chooseModel", async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
-        void vscode2.window.showErrorMessage(t("key.needFirst", currentReportLanguage()));
+        void vscode3.window.showErrorMessage(t("key.needFirst", currentReportLanguage()));
         return;
       }
       const chosen = await chooseLiveModel(current, t("model.pickTitleShort", currentReportLanguage()));
@@ -6318,28 +6511,28 @@ function activate(context) {
       await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
       panel.setKey(maskApiKey(current.key), current.provider, chosen.model);
     }),
-    vscode2.commands.registerCommand("codescout.rerunWithModel", () => runScan(() => runReview(context, lastScanWasLastCommit, output, panel))),
-    vscode2.commands.registerCommand("codescout.clearApiKey", async () => {
+    vscode3.commands.registerCommand("codescout.rerunWithModel", () => runScan(() => runReview(context, lastScanWasLastCommit, output, panel))),
+    vscode3.commands.registerCommand("codescout.clearApiKey", async () => {
       const lang = currentReportLanguage();
-      const answer = await vscode2.window.showWarningMessage(t("key.deleteConfirm", lang), { modal: true }, t("common.delete", lang));
+      const answer = await vscode3.window.showWarningMessage(t("key.deleteConfirm", lang), { modal: true }, t("common.delete", lang));
       if (answer !== t("common.delete", lang)) return;
       await context.secrets.delete(SECRET_KEY);
       await context.secrets.delete(SECRET_PROVIDER);
       await context.secrets.delete(SECRET_MODEL);
       await context.secrets.delete(SECRET_MODEL_CHOSEN);
       panel.setKey(void 0);
-      void vscode2.window.showInformationMessage(t("key.deletedNotify", lang));
+      void vscode3.window.showInformationMessage(t("key.deletedNotify", lang));
     }),
     // Батч 13: мастер первого запуска (облачный/локальный/пропуск).
     // Батч 21: список расширен top-12 zero-config платформами.
-    vscode2.commands.registerCommand("codescout.onboardCloud", async () => {
+    vscode3.commands.registerCommand("codescout.onboardCloud", async () => {
       const lang = currentReportLanguage();
-      const picked = await vscode2.window.showQuickPick(Object.keys(WIZARD_PROVIDER_LABELS), { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
+      const picked = await vscode3.window.showQuickPick(Object.keys(WIZARD_PROVIDER_LABELS), { placeHolder: t("wizard.cloudProvider", lang), ignoreFocusOut: true });
       if (!picked) return;
       const providerName = WIZARD_PROVIDER_LABELS[picked];
-      const key = await vscode2.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
+      const key = await vscode3.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("wizard.keyPrompt", lang) });
       if (!key?.trim()) {
-        void vscode2.window.showErrorMessage(t("key.needFirst", lang));
+        void vscode3.window.showErrorMessage(t("key.needFirst", lang));
         return;
       }
       const trimmed = key.trim();
@@ -6347,9 +6540,9 @@ function activate(context) {
       const det = auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
       let baseUrl = "";
       if (providerName === "custom") {
-        baseUrl = (await vscode2.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: "http://localhost:11434/v1", ignoreFocusOut: true }))?.trim() || "";
+        baseUrl = (await vscode3.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: "http://localhost:11434/v1", ignoreFocusOut: true }))?.trim() || "";
         if (!baseUrl) {
-          void vscode2.window.showErrorMessage(t("wizard.urlPrompt", lang));
+          void vscode3.window.showErrorMessage(t("wizard.urlPrompt", lang));
           return;
         }
       }
@@ -6363,45 +6556,45 @@ function activate(context) {
         await context.globalState.update("codescout.onboardingDismissed", true);
         panel.setOnboardingHidden(true);
         panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
-        void vscode2.window.showInformationMessage(`${t("center.connected", lang, { n: models.length })}`);
+        void vscode3.window.showInformationMessage(`${t("center.connected", lang, { n: models.length })}`);
       } catch (error) {
         const formatted = formatError(error, lang);
-        void vscode2.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
+        void vscode3.window.showErrorMessage(`CodeScout: ${formatted.title} \u2014 ${formatted.message}`);
       }
     }),
-    vscode2.commands.registerCommand("codescout.onboardLocal", async () => {
+    vscode3.commands.registerCommand("codescout.onboardLocal", async () => {
       const lang = currentReportLanguage();
-      const kind = await vscode2.window.showQuickPick(["Ollama", "LM Studio"], { placeHolder: t("wizard.localPick", lang) });
+      const kind = await vscode3.window.showQuickPick(["Ollama", "LM Studio"], { placeHolder: t("wizard.localPick", lang) });
       if (!kind) return;
       const defaultUrl = kind === "Ollama" ? "http://localhost:11434" : "http://localhost:1234";
-      const url = (await vscode2.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: defaultUrl, ignoreFocusOut: true }))?.trim();
+      const url = (await vscode3.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: defaultUrl, ignoreFocusOut: true }))?.trim();
       if (!url) return;
       const probe = await probeLocalServer(url);
       if (!probe.ok) {
-        const retry = await vscode2.window.showWarningMessage(t("wizard.localFail", lang, { n: 0 }), { modal: false }, t("wizard.retry", lang));
+        const retry = await vscode3.window.showWarningMessage(t("wizard.localFail", lang, { n: 0 }), { modal: false }, t("wizard.retry", lang));
         if (retry === t("wizard.retry", lang)) {
-          vscode2.commands.executeCommand("codescout.onboardLocal");
+          vscode3.commands.executeCommand("codescout.onboardLocal");
         }
         return;
       }
-      await vscode2.workspace.getConfiguration("codescout").update("provider", "custom", vscode2.ConfigurationTarget.Global);
-      await vscode2.workspace.getConfiguration("codescout").update("baseUrl", probe.baseUrl, vscode2.ConfigurationTarget.Global);
+      await vscode3.workspace.getConfiguration("codescout").update("provider", "custom", vscode3.ConfigurationTarget.Global);
+      await vscode3.workspace.getConfiguration("codescout").update("baseUrl", probe.baseUrl, vscode3.ConfigurationTarget.Global);
       await context.secrets.store(SECRET_MODEL, probe.models[0] || defaultModel("custom"));
       await context.secrets.store(SECRET_MODEL_CHOSEN, "true");
       await context.globalState.update("codescout.onboardingDismissed", true);
       panel.setOnboardingHidden(true);
       panel.setKey(true, "custom", probe.models[0] || defaultModel("custom"));
-      void vscode2.window.showInformationMessage(t("wizard.localSuccess", lang, { n: probe.models.length }));
+      void vscode3.window.showInformationMessage(t("wizard.localSuccess", lang, { n: probe.models.length }));
     }),
-    vscode2.commands.registerCommand("codescout.onboardSkip", async () => {
+    vscode3.commands.registerCommand("codescout.onboardSkip", async () => {
       await context.globalState.update("codescout.onboardingDismissed", true);
       panel.setOnboardingHidden(true);
-      void vscode2.commands.executeCommand("codescout.openSettingsPage");
+      void vscode3.commands.executeCommand("codescout.openSettingsPage");
     }),
     // Батч 13, п.3: тест подключения в центре настроек.
-    vscode2.commands.registerCommand("codescout.testConnection", async () => {
+    vscode3.commands.registerCommand("codescout.testConnection", async () => {
       const result = await runConnectionTest(context);
-      void (result.ok ? vscode2.window.showInformationMessage(result.message) : vscode2.window.showErrorMessage(result.message));
+      void (result.ok ? vscode3.window.showInformationMessage(result.message) : vscode3.window.showErrorMessage(result.message));
     })
   );
   void (async () => {
@@ -6427,7 +6620,7 @@ function activate(context) {
   })().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Init error: ${message}`);
-    void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
+    void vscode3.window.showErrorMessage(`CodeScout: ${message}`);
   });
 }
 function deactivate() {

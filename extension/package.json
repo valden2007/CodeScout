@@ -50,6 +50,7 @@
     "onCommand:codescout.openSettings",
     "onCommand:codescout.openSettingsPage",
     "onCommand:codescout.resumeAudit",
+    "onCommand:codescout.resumeAuditOther",
     "onCommand:codescout.restartAudit"
   ],
   "contributes": {
@@ -119,6 +120,10 @@
       {
         "command": "codescout.resumeAudit",
         "title": "CodeScout: продолжить прерванный аудит"
+      },
+      {
+        "command": "codescout.resumeAuditOther",
+        "title": "CodeScout: догнать прерванный аудит другим провайдером/моделью"
       },
       {
         "command": "codescout.restartAudit",

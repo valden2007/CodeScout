@@ -214,6 +214,9 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         this.render();
       } else if (message.command === 'resumeAudit') {
         void vscode.commands.executeCommand('codescout.resumeAudit');
+      } else if (message.command === 'resumeAuditOther') {
+        // Батч 25: «Продолжить другими…» — выбор провайдера/модели для догона.
+        void vscode.commands.executeCommand('codescout.resumeAuditOther');
       } else if (message.command === 'restartAudit') {
         void vscode.commands.executeCommand('codescout.restartAudit');
       } else if (message.command === 'setApiKey') {
