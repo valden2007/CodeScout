@@ -537,6 +537,11 @@ async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boo
 
 let activeAbortController: AbortController | undefined;
 let lastScanError: string | undefined;
+// Батч 26: живой чекпоинт текущего аудита + флаг «аудит идёт». Нужны, чтобы
+// команда cancelScan рисовала баннер догона СРАЗУ, не дожидаясь, пока abort
+// дойдёт до catch в runFullAuditOnce (немедленный баннер без reload).
+let liveAuditCheckpoint: AuditCheckpoint | undefined;
+let auditRunActive = false;
 
 async function runSampleReview(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel): Promise<void> {
   const controller = new AbortController();
@@ -574,10 +579,12 @@ function autoResumeEnabled(): boolean {
 
 async function runFullAudit(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, resume = false): Promise<void> {
   autoResumeCancelled = false;
+  auditRunActive = true;
   panel.setAutoResume(undefined);
   let isResume = resume;
   let autonomyStartedAt = Date.now();
   let lastAttempt = 0;
+  try {
   for (;;) {
     const outcome = await runFullAuditOnce(context, output, panel, isResume);
     if (outcome.kind === 'done') { panel.setAutoResume(undefined); return; }
@@ -605,11 +612,13 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     activeAbortController = waitController;
     // Батч 25: «Стоп» в паузе авто-догона — чекпоинт помечается 'cancelled'
     // и НЕ удаляется: остаток можно догнать любым провайдером.
+    // Батч 26: и при 0 проверенных (остаток = весь план) — reload обязан
+    // восстановить баннер, поэтому состояние пишем, пока есть remaining.
     const markCancelled = (): void => {
       const root = getWorkspaceRoot();
       if (!root) return;
       const saved = readAuditProgress(root);
-      if (saved && saved.checked.length > 0) {
+      if (saved && (saved.checked.length > 0 || saved.remaining.length > 0)) {
         saved.state = 'cancelled';
         try {
           writeAuditProgress(root, saved);
@@ -631,6 +640,9 @@ async function runFullAudit(context: vscode.ExtensionContext, output: vscode.Out
     if (autoResumeCancelled) { markCancelled(); panel.setAutoResume(undefined); return; }
     isResume = true;
   }
+  } finally {
+    auditRunActive = false;
+  }
 }
 
 async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode.OutputChannel, panel: CodeScoutPanel, resume = false): Promise<AuditOutcome> {
@@ -648,6 +660,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
   }
   output.appendLine(resume ? 'CodeScout: resuming full project audit...' : 'CodeScout: starting full project audit...');
   let progress: AuditCheckpoint | undefined;
+  liveAuditCheckpoint = undefined;
   let planFiles: string[] = [];
   try {
     const auditConfig = vscode.workspace.getConfiguration('codescout');
@@ -728,6 +741,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     }
     progress = initial;
     const state = initial;
+    liveAuditCheckpoint = progress;
     const doneNames = new Set(state.checked.map((entry) => entry.file));
     const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
     const chunkTotals = new Map<string, number>();
@@ -782,6 +796,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       output.appendLine(`ℹ️ Скипнуто ${result.skippedFiles} файлов (rate-limit/ошибки) — чекпоинт сохранён, можно догнать кнопкой «▶️ Продолжить»`);
     } else {
       clearAuditProgress(workspaceRoot);
+      liveAuditCheckpoint = undefined;
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
     // Батч 14: панель получает только непдавленные находки; диск (context/
@@ -801,7 +816,9 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
   } catch (error) {
     // Батч 25: ЛЮБАЯ остановка (cancel пользователя, crash) оставляет
     // чекпоинт с честным состоянием — 'cancelled'/'interrupted', НЕ удаление.
-    if (progress && workspaceRoot && progress.checked.length > 0) {
+    // Батч 26: и при 0 проверенных файлов — чекпоинт уже лежит на диске
+    // (persist в начале), помечаем состояние всегда, иначе reload теряет баннер.
+    if (progress && workspaceRoot) {
       progress.state = isAbortError(error) ? 'cancelled' : 'interrupted';
       try {
         writeAuditProgress(workspaceRoot, progress);
@@ -809,9 +826,15 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         // диск мог отвалиться — в памяти состояние уже проставлено
       }
     }
-    const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : undefined;
+    const resumeView = progressView(progress);
+    if (isAbortError(error)) {
+      // Батч 26: cancel — баннер догона обязателен даже при 0 проверенных;
+      // setCancelled рисует красную карточку, она остаётся ВЫШЕ баннера.
+      if (resumeView) panel.setAuditResume(resumeView);
+      panel.setCancelled();
+      return { kind: 'done' };
+    }
     if (resumeView) panel.setAuditResume(resumeView);
-    if (isAbortError(error)) { panel.setCancelled(); return { kind: 'done' }; }
     await reportScanFailure(context, output, panel, error);
     return { kind: 'interrupted', view: resumeView };
   } finally {
@@ -1578,6 +1601,13 @@ export function activate(context: vscode.ExtensionContext): void {
       activeAbortController?.abort();
       panel.setCancelled();
       output.appendLine('Scan cancelled by user');
+      // Батч 26: немедленный баннер догона БЕЗ reload — и в скане, и в паузе
+      // авто-догона. Рисуем из живого чекпоинта сразу, не дожидаясь, пока
+      // abort дойдёт до catch; catch потом обновит его финальным состоянием.
+      if (auditRunActive && liveAuditCheckpoint) {
+        const view = progressView(liveAuditCheckpoint);
+        if (view) panel.setAuditResume(view);
+      }
     }),
     vscode.commands.registerCommand('codescout.setApiKey', async () => {
       const lang = currentReportLanguage();
@@ -1717,7 +1747,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const savedResults = readAuditResults(workspaceRoot);
     if (savedResults) {
       const complete = savedResults.checkedFiles >= savedResults.total;
-      const resume = complete ? undefined : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
+      // Батч 26: чекпоинт приоритетнее «полноты» результатов: если он есть —
+      // баннер догона показываем всегда; при 0 проверенных файлов количество
+      // находок в баннере берём из last-good результатов (находки не затираются).
+      const resume = savedProgress ?? (complete ? undefined : { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length });
+      if (savedProgress && savedProgress.done === 0 && savedResults.findings.length > 0 && (savedProgress.findings ?? 0) === 0) {
+        savedProgress.findings = savedResults.findings.length;
+      }
       const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
       const visibleFindings = filterSuppressed(savedResults.findings, context.workspaceState);
       panel.restoreAuditResults(visibleFindings, buildStats(visibleFindings, savedResults.checkedFiles, elapsedMs), resume);

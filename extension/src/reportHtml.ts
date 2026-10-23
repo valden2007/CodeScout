@@ -360,10 +360,12 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
           : `<div class="empty"><div class="empty-icon">${icon('pass')}</div><strong>${T('empty.cleanTitle', { n: stats.files })}</strong><small>${T('empty.cleanHint')}</small><button class="primary-action cs-btn" type="button" data-command="testSample">${icon('beaker')}<span>${T('empty.testSample')}</span></button>${emptyActions}</div>`);
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   // Приоритет баннеров (v1.4b-16): скан > прерван > остановлен > пусто.
-  // Во время скана resume-баннер прячем; resume-баннер прячет статус («остановлено»).
+  // Во время скана resume-баннер прячем. Батч 26: красная карточка статуса
+  // («Сканирование остановлено пользователем», карточка ошибки) остаётся
+  // ВЫШЕ resume-баннера, а не вместо него; не-error статусы баннер глушит.
   const resumeView = !isScanning && auditResume ? auditResume : undefined;
   const showResume = Boolean(resumeView);
-  const showStatus = showResume ? '' : statusMessage;
+  const showStatus = showResume && statusKind !== 'error' ? '' : statusMessage;
   const clientDict = JSON.stringify(['actions.customReview', 'actions.customReviewCollapse', 'auto.line', 'auto.lineRetry', 'auto.attemptOf', 'auto.attempt', 'status.model404', 'form.pickOutside', 'form.pickNoWorkspace', 'progress.eta', 'progress.etaPending', 'progress.filesDone', 'progress.pass'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>));
   const summaryCard = ux.summary ? `<div class="summary-card"><div class="summary-head">${icon('check')} <strong>${T('summary.title')}</strong></div><div class="summary-meta">${escapeHtml(T('summary.meta', { i: ux.summary.issues, f: ux.summary.files, t: formatEtaSeconds(ux.summary.seconds) }))}</div><div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon('output')}<span>${T('summary.open')}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon('refresh')}<span>${T('summary.again')}</span></button></div></div>` : '';
   return `<!DOCTYPE html>

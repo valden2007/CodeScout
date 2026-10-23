@@ -2466,7 +2466,7 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
   const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   const resumeView = !isScanning && auditResume ? auditResume : void 0;
   const showResume = Boolean(resumeView);
-  const showStatus = showResume ? "" : statusMessage;
+  const showStatus = showResume && statusKind !== "error" ? "" : statusMessage;
   const clientDict = JSON.stringify(["actions.customReview", "actions.customReviewCollapse", "auto.line", "auto.lineRetry", "auto.attemptOf", "auto.attempt", "status.model404", "form.pickOutside", "form.pickNoWorkspace", "progress.eta", "progress.etaPending", "progress.filesDone", "progress.pass"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
@@ -5492,6 +5492,8 @@ async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThink
 }
 var activeAbortController;
 var lastScanError;
+var liveAuditCheckpoint;
+var auditRunActive = false;
 async function runSampleReview(context, output, panel) {
   const controller = new AbortController();
   activeAbortController?.abort();
@@ -5526,66 +5528,71 @@ function autoResumeEnabled() {
 }
 async function runFullAudit(context, output, panel, resume = false) {
   autoResumeCancelled = false;
+  auditRunActive = true;
   panel.setAutoResume(void 0);
   let isResume = resume;
   let autonomyStartedAt = Date.now();
   let lastAttempt = 0;
-  for (; ; ) {
-    const outcome = await runFullAuditOnce(context, output, panel, isResume);
-    if (outcome.kind === "done") {
-      panel.setAutoResume(void 0);
-      return;
-    }
-    if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view) {
-      panel.setAutoResume(void 0);
-      return;
-    }
-    const config = vscode3.workspace.getConfiguration("codescout");
-    const maxAttempts = autoResumeLimitFromSetting(config.get("autoResumeMaxAttempts"), 1e3);
-    const maxMinutes = autoResumeLimitFromSetting(config.get("autoResumeMaxMinutes"), 1e4);
-    const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now(), maxAttempts, maxMinutes);
-    if (!decision) {
-      output.appendLine(`\u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (${maxAttempts > 0 ? `${maxAttempts} \u043F\u043E\u043F\u044B\u0442\u043E\u043A` : ""}${maxAttempts > 0 && maxMinutes > 0 ? " / " : ""}${maxMinutes > 0 ? `${maxMinutes} \u043C\u0438\u043D` : ""}) \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A: \u043A\u043D\u043E\u043F\u043A\u0438 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB \u0432 \u0431\u0430\u043D\u043D\u0435\u0440\u0435`);
-      panel.setAutoResume(void 0);
-      return;
-    }
-    lastAttempt = decision.attempt;
-    output.appendLine(`\u{1F916} rate-limit:_resume \u0447\u0435\u0440\u0435\u0437 ${decision.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ""})`);
-    const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
-    const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
-    panel.setScanning(true, true);
-    panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
-    const waitController = new AbortController();
-    activeAbortController?.abort();
-    activeAbortController = waitController;
-    const markCancelled = () => {
-      const root = getWorkspaceRoot();
-      if (!root) return;
-      const saved = readAuditProgress(root);
-      if (saved && saved.checked.length > 0) {
-        saved.state = "cancelled";
-        try {
-          writeAuditProgress(root, saved);
-        } catch {
-        }
+  try {
+    for (; ; ) {
+      const outcome = await runFullAuditOnce(context, output, panel, isResume);
+      if (outcome.kind === "done") {
+        panel.setAutoResume(void 0);
+        return;
       }
-    };
-    try {
-      await sleep(decision.waitSeconds * 1e3, waitController.signal);
-    } catch {
-      markCancelled();
-      output.appendLine("\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C");
-      panel.setAutoResume(void 0);
-      return;
-    } finally {
-      if (activeAbortController === waitController) activeAbortController = void 0;
+      if (!autoResumeEnabled() || autoResumeCancelled || !outcome.view) {
+        panel.setAutoResume(void 0);
+        return;
+      }
+      const config = vscode3.workspace.getConfiguration("codescout");
+      const maxAttempts = autoResumeLimitFromSetting(config.get("autoResumeMaxAttempts"), 1e3);
+      const maxMinutes = autoResumeLimitFromSetting(config.get("autoResumeMaxMinutes"), 1e4);
+      const decision = autoResumeDecision(lastAttempt + 1, autonomyStartedAt, Date.now(), maxAttempts, maxMinutes);
+      if (!decision) {
+        output.appendLine(`\u{1F916} \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (${maxAttempts > 0 ? `${maxAttempts} \u043F\u043E\u043F\u044B\u0442\u043E\u043A` : ""}${maxAttempts > 0 && maxMinutes > 0 ? " / " : ""}${maxMinutes > 0 ? `${maxMinutes} \u043C\u0438\u043D` : ""}) \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A: \u043A\u043D\u043E\u043F\u043A\u0438 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB \u0432 \u0431\u0430\u043D\u043D\u0435\u0440\u0435`);
+        panel.setAutoResume(void 0);
+        return;
+      }
+      lastAttempt = decision.attempt;
+      output.appendLine(`\u{1F916} rate-limit:_resume \u0447\u0435\u0440\u0435\u0437 ${decision.waitSeconds}\u0441 (\u043F\u043E\u043F\u044B\u0442\u043A\u0430 ${decision.attempt}${maxAttempts > 0 ? `/${maxAttempts}` : ""})`);
+      const etaRemaining = Math.max(0, outcome.view.total - outcome.view.done);
+      const etaSeconds = auditEtaSeconds(panel.getFileDurations(), etaRemaining, decision.waitSeconds, ladderRemainingSeconds(AUTO_RESUME_LADDER_SECONDS, decision.attempt));
+      panel.setScanning(true, true);
+      panel.setAutoResume({ done: outcome.view.done, total: outcome.view.total, secondsLeft: decision.waitSeconds, attempt: decision.attempt, maxAttempts, etaSeconds });
+      const waitController = new AbortController();
+      activeAbortController?.abort();
+      activeAbortController = waitController;
+      const markCancelled = () => {
+        const root = getWorkspaceRoot();
+        if (!root) return;
+        const saved = readAuditProgress(root);
+        if (saved && (saved.checked.length > 0 || saved.remaining.length > 0)) {
+          saved.state = "cancelled";
+          try {
+            writeAuditProgress(root, saved);
+          } catch {
+          }
+        }
+      };
+      try {
+        await sleep(decision.waitSeconds * 1e3, waitController.signal);
+      } catch {
+        markCancelled();
+        output.appendLine("\u{1F916} \u0430\u0432\u0442\u043E-\u0434\u043E\u0433\u043E\u043D \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C");
+        panel.setAutoResume(void 0);
+        return;
+      } finally {
+        if (activeAbortController === waitController) activeAbortController = void 0;
+      }
+      if (autoResumeCancelled) {
+        markCancelled();
+        panel.setAutoResume(void 0);
+        return;
+      }
+      isResume = true;
     }
-    if (autoResumeCancelled) {
-      markCancelled();
-      panel.setAutoResume(void 0);
-      return;
-    }
-    isResume = true;
+  } finally {
+    auditRunActive = false;
   }
 }
 async function runFullAuditOnce(context, output, panel, resume = false) {
@@ -5603,6 +5610,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
   }
   output.appendLine(resume ? "CodeScout: resuming full project audit..." : "CodeScout: starting full project audit...");
   let progress;
+  liveAuditCheckpoint = void 0;
   let planFiles = [];
   try {
     const auditConfig = vscode3.workspace.getConfiguration("codescout");
@@ -5677,6 +5685,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     }
     progress = initial;
     const state = initial;
+    liveAuditCheckpoint = progress;
     const doneNames = new Set(state.checked.map((entry) => entry.file));
     const toReview = audit.files.filter((file) => !doneNames.has(file.filename));
     const chunkTotals = /* @__PURE__ */ new Map();
@@ -5739,6 +5748,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       output.appendLine(`\u2139\uFE0F \u0421\u043A\u0438\u043F\u043D\u0443\u0442\u043E ${result.skippedFiles} \u0444\u0430\u0439\u043B\u043E\u0432 (rate-limit/\u043E\u0448\u0438\u0431\u043A\u0438) \u2014 \u0447\u0435\u043A\u043F\u043E\u0438\u043D\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D, \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u0433\u043D\u0430\u0442\u044C \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \xAB\u25B6\uFE0F \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\xBB`);
     } else {
       clearAuditProgress(workspaceRoot);
+      liveAuditCheckpoint = void 0;
     }
     const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
     const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
@@ -5754,19 +5764,20 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
     return resumeView ? { kind: "interrupted", view: resumeView } : { kind: "done" };
   } catch (error) {
-    if (progress && workspaceRoot && progress.checked.length > 0) {
+    if (progress && workspaceRoot) {
       progress.state = isAbortError(error) ? "cancelled" : "interrupted";
       try {
         writeAuditProgress(workspaceRoot, progress);
       } catch {
       }
     }
-    const resumeView = progress && progress.checked.length > 0 ? progressView(progress) : void 0;
-    if (resumeView) panel.setAuditResume(resumeView);
+    const resumeView = progressView(progress);
     if (isAbortError(error)) {
+      if (resumeView) panel.setAuditResume(resumeView);
       panel.setCancelled();
       return { kind: "done" };
     }
+    if (resumeView) panel.setAuditResume(resumeView);
     await reportScanFailure(context, output, panel, error);
     return { kind: "interrupted", view: resumeView };
   } finally {
@@ -6468,6 +6479,10 @@ function activate(context) {
       activeAbortController?.abort();
       panel.setCancelled();
       output.appendLine("Scan cancelled by user");
+      if (auditRunActive && liveAuditCheckpoint) {
+        const view = progressView(liveAuditCheckpoint);
+        if (view) panel.setAuditResume(view);
+      }
     }),
     vscode3.commands.registerCommand("codescout.setApiKey", async () => {
       const lang = currentReportLanguage();
@@ -6609,7 +6624,10 @@ function activate(context) {
     const savedResults = readAuditResults(workspaceRoot);
     if (savedResults) {
       const complete = savedResults.checkedFiles >= savedResults.total;
-      const resume = complete ? void 0 : savedProgress ?? { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length };
+      const resume = savedProgress ?? (complete ? void 0 : { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length });
+      if (savedProgress && savedProgress.done === 0 && savedResults.findings.length > 0 && (savedProgress.findings ?? 0) === 0) {
+        savedProgress.findings = savedResults.findings.length;
+      }
       const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
       const visibleFindings = filterSuppressed(savedResults.findings, context.workspaceState);
       panel.restoreAuditResults(visibleFindings, buildStats(visibleFindings, savedResults.checkedFiles, elapsedMs), resume);

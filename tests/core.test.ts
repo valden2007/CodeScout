@@ -3748,10 +3748,16 @@ describe('v1.4b-16 banner priority', () => {
   const stats = { files: 1, seconds: 1, critical: 0, medium: 1, low: 0 };
   const resume = { done: 3, total: 9, model: 'gemini/x', startedAt: 1, findings: 2 };
 
-  it('banner priority: scan > interrupted > stopped > empty; exactly one banner', () => {
+  it('banner priority: scan > interrupted+stopped card > stopped > empty (батч 26: карточка выше баннера)', () => {
     const html = buildReportHtml([], stats, false, false, '⛔ Сканирование остановлено пользователем', 'error', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', resume);
     expect(html).toContain('resumeAudit');
-    expect(html).not.toContain('Сканирование остановлено');
+    // Батч 26: красная карточка остаётся ВЫШЕ resume-баннера, не вместо него
+    expect(html).toContain('Сканирование остановлено');
+    expect(html.indexOf('Сканирование остановлено')).toBeLessThan(html.indexOf('Аудит оборвался'));
+    // не-error статус по-прежнему глушится баннером
+    const retryStatus = buildReportHtml([], stats, false, false, '⏳ Ждём лимит', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', resume);
+    expect(retryStatus).not.toContain('Ждём лимит');
+    expect(retryStatus).toContain('resumeAudit');
     const scanningHtml = buildReportHtml([], stats, true, false, '⏳ Rate limit', 'retry', 'k', true, 'g', 'm', false, 'идёт скан', false, 'new', undefined, '', resume);
     expect(scanningHtml).toContain('data-command="cancelScan"');
     expect(scanningHtml).toContain('Rate limit');
