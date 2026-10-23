@@ -93,7 +93,7 @@ function timeoutSecondsOf(error: unknown, raw: string): number {
 // и длинный мусор в UI не показываем — только generic-текст + raw в details.
 const SECRET_SHAPE = /(?:gsk|sk|AIza|ya29|ghp|gho|glpat)[A-Za-z0-9_\-]{4,}|Bearer\s+\S+|api[_-]?key["'\s=:]+[^\s,"']{6,}/gi;
 
-function scrubSecrets(text: string): string {
+export function scrubErrorSecrets(text: string): string {
   return text.replace(SECRET_SHAPE, '•••');
 }
 
@@ -111,7 +111,7 @@ export function formatError(error: unknown, lang: Lang): FormattedError {
   const rawMessage = messageOf(error);
   const vars: Record<string, string | number> | undefined = category === 'timeout' ? { s: timeoutSecondsOf(error, rawMessage) } : undefined;
   const generic = t(`err.msg.${category}`, lang, vars);
-  const message = category === 'unknown' && isHumanReadableSingleLine(rawMessage) ? scrubSecrets(rawMessage.trim()) : generic;
+  const message = category === 'unknown' && isHumanReadableSingleLine(rawMessage) ? scrubErrorSecrets(rawMessage.trim()) : generic;
   return {
     category,
     title: t(`err.title.${category}`, lang),

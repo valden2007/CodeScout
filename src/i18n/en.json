@@ -36,6 +36,7 @@
   "resume.continueSame": "Continue with current",
   "resume.continueOther": "Continue with other…",
   "resume.scopeChanged": "Scope changed after stop — catch-up would be invalid",
+  "resume.breaker": "Circuit breaker tripped: {n} identical skips in a row",
   "resume.newAudit": "New audit",
   "resume.restart": "Start over",
   "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",

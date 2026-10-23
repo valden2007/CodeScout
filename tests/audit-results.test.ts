@@ -118,8 +118,10 @@ describe('v1.4b-15 персистентные частичные результ�
     expect(readAuditResults(root)!.findings.map((f) => f.description).sort()).toEqual(['ALPHA_DESC', 'BETA_DESC']);
     expect(existsSync(join(root, '.codescout', 'audit-progress.json'))).toBe(true);
 
-    // 4) с подтверждением — прогресс и СТАРЫЕ результаты стёрты; перезапуск
-    // создал свежий пустой чекпоинт/отчёт (0 находок вместо 2)
+    // 4) с подтверждением — прогресс и СТАРЫЕ результаты стёрты (явное
+    // действие пользователя); перезапуск с 0 проверенных файлов НЕ создаёт
+    // пустой отчёт поверх удалённого — last-good пишется только после
+    // первого проверенного файла (батч 26)
     state.warningAnswers.push('Удалить и начать заново');
     globalThis.fetch = (async (url: string, init?: { body?: string }) => {
       if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
@@ -128,13 +130,13 @@ describe('v1.4b-15 персистентные частичные результ�
     await (state.commands.get('codescout.restartAudit') as () => Promise<unknown>)();
     await flush();
     const afterRestart = readAuditResults(root);
-    expect(afterRestart).toBeDefined();
-    expect(afterRestart!.findings).toEqual([]);
-    expect(afterRestart!.checkedFiles).toBe(0);
+    expect(afterRestart).toBeUndefined();
     const after = bootPanel();
     await flush();
     expect(after.html()).not.toContain('ALPHA_DESC');
     expect(after.html()).not.toContain('BETA_DESC');
+    // чекпоинт с 0 проверенными на месте — баннер догона восстановлен при reload
+    expect(after.html()).toContain('Аудит остановлен: проверено 0 из 3 файлов');
   }, 60000);
 
   it('writeAuditResultsFromCheckpoint атомарен: temp+rename, без мусора, перечитывается 1-в-1', () => {

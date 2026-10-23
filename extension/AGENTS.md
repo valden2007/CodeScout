@@ -621,5 +621,28 @@ pre-design now.
      extension/src/auditResume.ts (git/hash/verdict/picker), extension.ts
      только подключает; reviewFiles сигнатура не тронута. e2e:
      tests/audit-resume.test.ts. Tests: 514.
+  30. Аудит-стоп диагностика (батч 26): строка скипа печатает причину —
+     «⚠️ Пропущен файл: X — причина: <категория> (HTTP NNN, хвост 80 символов)»
+     (formatSkipReason/skipReasonLine, чистые, projectAudit; секреты вычищены
+     scrubErrorSecrets); чекпоинт ведёт skippedFiles [{file, category, http?,
+     ts}] (legacy skipped[] мигрирует в category 'unknown'). Circuit breaker:
+     codescout.skipBreakerLimit (0-20, дефолт 4, манифест+nls, 0 = выключен) —
+     N ПОДРЯД скипов одной категории (skipBreakerFeed, вперемешку не
+     суммируются, успешный файл сбрасывает) останавливают аудит без авто-догона
+     с баннером «Сработал предохранитель» + подсказкой err.hint.<category>
+     (401→ключ, 403→права, 404→модель, 429→лимиты, сеть, parse→модель);
+     после reload хвост skippedFiles пересчитывает подсказку (progressView).
+     Last-good: прогон с 0 проверенных файлов НЕ перезаписывает непустые
+     audit-results.json/history/context (persist и финал гейтятся checked>0,
+     старт fresh не чистит результаты); панель и динамика «новых/починено/
+     осталось» считаются против last-good. Немедленный баннер догона: cancel/
+     «Стоп» в паузе авто-догона рисует «Аудит остановлен: X из Y (provider ·
+     model)» + 3 кнопки БЕЗ reload (cancelScan читает живой чекпоинт
+     liveAuditCheckpoint; карточка «Сканирование остановлено пользователем»
+     остаётся ВЫШЕ баннера — resume глушит только не-error статусы); reload
+     восстанавливает баннер даже при 0 проверенных. activationEvents манифеста
+     очищен от onCommand (VS Code генерирует сам; было 15 предупреждений).
+     e2e: tests/cancel-banner.test.ts, tests/audit-stop-diagnostics.test.ts.
+     Tests: 528.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

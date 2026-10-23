@@ -255,7 +255,8 @@ describe('батч 20b: интеграция pipeline (скрытые наход
   it('хост фильтрует перед панелью, signature reviewFiles не раздута, подавление живёт в findingsStore', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('filterSuppressed(result.issues, context.workspaceState)');
-    expect(extension).toContain('filterSuppressed(mergedIssues, context.workspaceState)');
+    // Батч 26: аудит фильтрует carriedIssues (чекпоинт или last-good при 0 проверенных)
+    expect(extension).toContain('filterSuppressed(carriedIssues, context.workspaceState)');
     expect(extension).toContain('filterSuppressed(dedupeIssues(result.issues), context.workspaceState)');
     expect(extension).toContain('filterSuppressed(savedResults.findings, context.workspaceState)');
     expect(extension).toContain('panel.attachWorkspaceState(context.workspaceState)');

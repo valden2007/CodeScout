@@ -7,6 +7,8 @@ import { StringDecoder } from 'node:string_decoder';
 import type { LocalDiffFile } from '../../src/tui/DiffReader';
 import type { ReviewIssue } from '../../src/types';
 import { t, type Lang } from '../../src/i18n';
+import { categorizeError, scrubErrorSecrets } from '../../src/error-classifier';
+import { ProviderHttpError, RateLimitError } from '../../src/llm-client';
 import { mergeFindingsByZone } from './findingsStore';
 
 function controlSafe(value: string): string {
@@ -996,6 +998,8 @@ export interface AuditResumeView {
   provider?: string;
   // Батч 25: guard скоупа — scopeHash не совпал, догон заблокирован.
   scopeMismatch?: boolean;
+  // Батч 26: circuit breaker — N подряд скипов одной категории, подсказка в баннере.
+  breaker?: { category: string; count: number };
 }
 
 // Батч 25 (cross-provider resume): чекпоинт переживает ЛЮБУЮ остановку и
@@ -1020,10 +1024,108 @@ export interface AuditCheckpoint {
   state?: AuditCheckpointState;
   checked: AuditCheckedEntry[];
   remaining: string[];
+  // Legacy (до батча 26): имена скипнутых файлов без причин. Читается для
+  // старых чекпоинтов, новые записи идут в skippedFiles с причиной по файлу.
   skipped?: string[];
+  // Батч 26: пер-файловая причина скипа (категория ошибки, HTTP, метка).
+  skippedFiles?: SkippedFileEntry[];
 }
 
 const CHECKPOINT_STATES = new Set<AuditCheckpointState>(['running', 'cancelled', 'interrupted', 'done']);
+
+// ── Батч 26: причины скипов + circuit breaker ──────────────────────────────
+// Строка скипа в Output и запись в чекпоинт печатают ОДНУ и ту же причину:
+// категория из error-classifier, HTTP-статус (если есть) и хвост сообщения
+// (80 символов, секреты вычищены, control-символы срезаны).
+export interface SkipReason {
+  category: string;
+  http?: number;
+  tail: string;
+}
+
+export interface SkippedFileEntry {
+  file: string;
+  category: string;
+  http?: number;
+  ts: number;
+}
+
+export const SKIP_TAIL_CHARS = 80;
+export const SKIP_BREAKER_DEFAULT_LIMIT = 4;
+export const SKIP_BREAKER_MIN_LIMIT = 0;
+export const SKIP_BREAKER_MAX_LIMIT = 20;
+
+// 0 = выключен (для локальных серверов/экспериментов), N = N подряд идущих
+// скипов одной категории останавливают аудит.
+export function skipBreakerLimitFromSetting(value: unknown): number {
+  if (value === undefined || value === null || value === '') return SKIP_BREAKER_DEFAULT_LIMIT;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0) return SKIP_BREAKER_DEFAULT_LIMIT;
+  return Math.min(SKIP_BREAKER_MAX_LIMIT, Math.max(SKIP_BREAKER_MIN_LIMIT, n));
+}
+
+function skipHttpOf(error: unknown): number | undefined {
+  if (error instanceof ProviderHttpError) return error.status;
+  if (error instanceof RateLimitError) return 429;
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^\s*([1-5]\d{2})(?!\d)/) || raw.match(/\bHTTP\s*([1-5]\d{2})\b/i) || raw.match(/\bstatus[^\d]{0,4}([1-5]\d{2})\b/i);
+  return match ? Number(match[1]) : undefined;
+}
+
+export function formatSkipReason(error: unknown): SkipReason {
+  const category = categorizeError(error);
+  const http = skipHttpOf(error);
+  const raw = scrubErrorSecrets(controlSafe(error instanceof Error ? error.message : String(error))).replace(/\s+/g, ' ').trim();
+  return { category, ...(typeof http === 'number' ? { http } : {}), tail: raw ? raw.slice(-SKIP_TAIL_CHARS) : '—' };
+}
+
+export function skipReasonLine(filename: string, reason: SkipReason): string {
+  return `⚠️ Пропущен файл: ${filename} — причина: ${reason.category} (${reason.http !== undefined ? `HTTP ${reason.http}, ` : ''}${reason.tail})`;
+}
+
+export function upsertSkippedFile(entries: SkippedFileEntry[] | undefined, entry: SkippedFileEntry): SkippedFileEntry[] {
+  return [...(entries ?? []).filter((existing) => existing.file !== entry.file), entry];
+}
+
+export interface SkipBreakerState {
+  category?: string;
+  count: number;
+}
+
+// Подряд идущие скипы одной категории; другая категория обнуляет счётчик
+// (вперемешку — не суммируем). Успешный файл вызывает skipBreakerReset.
+export function skipBreakerFeed(state: SkipBreakerState, category: string, limit: number): boolean {
+  if (limit <= 0) return false;
+  if (state.category === category) state.count += 1;
+  else { state.category = category; state.count = 1; }
+  return state.count >= limit;
+}
+
+export function skipBreakerReset(state: SkipBreakerState): void {
+  state.category = undefined;
+  state.count = 0;
+}
+
+export class AuditCircuitBreakerError extends Error {
+  readonly category: string;
+  readonly skippedCount: number;
+  constructor(category: string, skippedCount: number) {
+    super(`circuit breaker: ${skippedCount} подряд «${category}» — аудит остановлен`);
+    this.name = 'AuditCircuitBreakerError';
+    this.category = category;
+    this.skippedCount = skippedCount;
+  }
+}
+
+// Хвост skippedFiles: сколько последних записей подряд одной категории —
+// для баннера после reload (состояние break'ера в памяти при этом потеряно).
+export function trailingSkippedRun(entries: SkippedFileEntry[] | undefined): { category: string; count: number } | undefined {
+  if (!entries?.length) return undefined;
+  const category = entries[entries.length - 1].category;
+  let count = 0;
+  for (let index = entries.length - 1; index >= 0 && entries[index].category === category; index -= 1) count += 1;
+  return { category, count };
+}
 
 export function writeAuditProgress(workspaceRoot: string, progress: AuditCheckpoint): void {
   const directory = join(workspaceRoot, '.codescout');
@@ -1037,7 +1139,7 @@ export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | unde
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as AuditCheckpoint;
     if (!parsed || typeof parsed.startedAt !== 'number' || typeof parsed.model !== 'string' || !Array.isArray(parsed.checked) || !Array.isArray(parsed.remaining)) return undefined;
-    return {
+    const result: AuditCheckpoint = {
       startedAt: parsed.startedAt,
       model: parsed.model,
       ...(typeof parsed.provider === 'string' && parsed.provider ? { provider: parsed.provider } : {}),
@@ -1053,8 +1155,14 @@ export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | unde
           ...(Number.isFinite(entry.ts) ? { ts: entry.ts as number } : {})
         })),
       remaining: parsed.remaining.filter((file): file is string => typeof file === 'string'),
-      ...(Array.isArray(parsed.skipped) ? { skipped: parsed.skipped.filter((file): file is string => typeof file === 'string') } : {})
+      ...(Array.isArray(parsed.skippedFiles) ? { skippedFiles: parsed.skippedFiles.filter((entry): entry is SkippedFileEntry => Boolean(entry) && typeof entry.file === 'string' && typeof entry.category === 'string').map((entry) => ({ file: entry.file, category: entry.category, ...(Number.isFinite(entry.http) ? { http: entry.http as number } : {}), ts: Number.isFinite(entry.ts) ? entry.ts as number : 0 })) } : {})
     };
+    // Legacy-миграция (батч 26): старый чекпоинт со списком имён превращаем
+    // в записи skippedFiles с категорией 'unknown' — поле skipped больше не пишем.
+    if (!result.skippedFiles && Array.isArray(parsed.skipped) && parsed.skipped.length > 0) {
+      result.skippedFiles = parsed.skipped.filter((file): file is string => typeof file === 'string').map((file) => ({ file, category: 'unknown', ts: 0 }));
+    }
+    return result;
   } catch {
     return undefined;
   }
@@ -1108,19 +1216,21 @@ export function collectCheckpointFindings(progress: AuditCheckpoint): ReviewIssu
   return mergeFindingsByZone([], tagged);
 }
 
-export function progressView(progress: AuditCheckpoint | undefined): AuditResumeView | undefined {
+export function progressView(progress: AuditCheckpoint | undefined, breakerLimit = SKIP_BREAKER_DEFAULT_LIMIT): AuditResumeView | undefined {
   if (!progress) return undefined;
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return undefined;
   const tag = lastCheckpointTag(progress);
+  const run = trailingSkippedRun(progress.skippedFiles);
   return {
     done,
     total,
     model: tag.model ?? progress.model,
     ...(tag.provider ? { provider: tag.provider } : {}),
     startedAt: progress.startedAt,
-    findings: collectCheckpointFindings(progress).length
+    findings: collectCheckpointFindings(progress).length,
+    ...(breakerLimit > 0 && run && run.count >= breakerLimit ? { breaker: run } : {})
   };
 }
 

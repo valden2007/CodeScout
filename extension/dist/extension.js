@@ -647,6 +647,7 @@ var ru_default = {
   "resume.continueSame": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u043C\u0438",
   "resume.continueOther": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u0438\u043C\u0438\u2026",
   "resume.scopeChanged": "\u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D",
+  "resume.breaker": "\u0421\u0440\u0430\u0431\u043E\u0442\u0430\u043B \u043F\u0440\u0435\u0434\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435\u043B\u044C: {n} \u043E\u0434\u0438\u043D\u0430\u043A\u043E\u0432\u044B\u0445 \u0441\u043A\u0438\u043F\u0430 \u043F\u043E\u0434\u0440\u044F\u0434",
   "resume.newAudit": "\u041D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
   "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
   "restart.confirm": "\u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A \u0430\u0443\u0434\u0438\u0442\u0430 \u0443\u0434\u0430\u043B\u0438\u0442 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0438 \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
@@ -1020,6 +1021,7 @@ var en_default = {
   "resume.continueSame": "Continue with current",
   "resume.continueOther": "Continue with other\u2026",
   "resume.scopeChanged": "Scope changed after stop \u2014 catch-up would be invalid",
+  "resume.breaker": "Circuit breaker tripped: {n} identical skips in a row",
   "resume.newAudit": "New audit",
   "resume.restart": "Start over",
   "restart.confirm": "Restarting the audit will delete the progress and the current results. Continue?",
@@ -1424,7 +1426,7 @@ function timeoutSecondsOf(error, raw) {
   return PROBE_TIMEOUT_FALLBACK_SECONDS;
 }
 var SECRET_SHAPE = /(?:gsk|sk|AIza|ya29|ghp|gho|glpat)[A-Za-z0-9_\-]{4,}|Bearer\s+\S+|api[_-]?key["'\s=:]+[^\s,"']{6,}/gi;
-function scrubSecrets(text) {
+function scrubErrorSecrets(text) {
   return text.replace(SECRET_SHAPE, "\u2022\u2022\u2022");
 }
 function isHumanReadableSingleLine(raw) {
@@ -1439,7 +1441,7 @@ function formatError(error, lang) {
   const rawMessage = messageOf(error);
   const vars = category === "timeout" ? { s: timeoutSecondsOf(error, rawMessage) } : void 0;
   const generic = t(`err.msg.${category}`, lang, vars);
-  const message = category === "unknown" && isHumanReadableSingleLine(rawMessage) ? scrubSecrets(rawMessage.trim()) : generic;
+  const message = category === "unknown" && isHumanReadableSingleLine(rawMessage) ? scrubErrorSecrets(rawMessage.trim()) : generic;
   return {
     category,
     title: t(`err.title.${category}`, lang),
@@ -2428,6 +2430,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .custom-actions { margin-top: var(--cs-space-2); }
 .custom-actions button { width: auto; padding: 6px var(--cs-space-3); text-align: center; }
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--cs-warn); border-left: 3px solid var(--cs-warn); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-warn) 10%, transparent); font-size: var(--cs-font-2); }
+.resume-breaker { margin-top: 5px; color: var(--cs-error); font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
@@ -2482,7 +2485,7 @@ ${headHtml(assets, nonce)}
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
-    ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon("zap")} ${T("resume.breaker", { n: resumeView.breaker.count })} \xAB${escapeHtml(resumeView.breaker.category)}\xBB \u2014 ${escapeHtml(T("err.hint." + resumeView.breaker.category))}</div>` : ""}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -4174,6 +4177,65 @@ function buildFindingsDiff(previous, issues, lang = "ru", checkedFiles = /* @__P
   return { summary, newKeys: newOnes.map(findingKey), fixed, notRechecked };
 }
 var CHECKPOINT_STATES = /* @__PURE__ */ new Set(["running", "cancelled", "interrupted", "done"]);
+var SKIP_TAIL_CHARS = 80;
+var SKIP_BREAKER_DEFAULT_LIMIT = 4;
+var SKIP_BREAKER_MIN_LIMIT = 0;
+var SKIP_BREAKER_MAX_LIMIT = 20;
+function skipBreakerLimitFromSetting(value) {
+  if (value === void 0 || value === null || value === "") return SKIP_BREAKER_DEFAULT_LIMIT;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0) return SKIP_BREAKER_DEFAULT_LIMIT;
+  return Math.min(SKIP_BREAKER_MAX_LIMIT, Math.max(SKIP_BREAKER_MIN_LIMIT, n));
+}
+function skipHttpOf(error) {
+  if (error instanceof ProviderHttpError) return error.status;
+  if (error instanceof RateLimitError) return 429;
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^\s*([1-5]\d{2})(?!\d)/) || raw.match(/\bHTTP\s*([1-5]\d{2})\b/i) || raw.match(/\bstatus[^\d]{0,4}([1-5]\d{2})\b/i);
+  return match ? Number(match[1]) : void 0;
+}
+function formatSkipReason(error) {
+  const category = categorizeError(error);
+  const http2 = skipHttpOf(error);
+  const raw = scrubErrorSecrets(controlSafe2(error instanceof Error ? error.message : String(error))).replace(/\s+/g, " ").trim();
+  return { category, ...typeof http2 === "number" ? { http: http2 } : {}, tail: raw ? raw.slice(-SKIP_TAIL_CHARS) : "\u2014" };
+}
+function skipReasonLine(filename, reason) {
+  return `\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename} \u2014 \u043F\u0440\u0438\u0447\u0438\u043D\u0430: ${reason.category} (${reason.http !== void 0 ? `HTTP ${reason.http}, ` : ""}${reason.tail})`;
+}
+function upsertSkippedFile(entries, entry) {
+  return [...(entries ?? []).filter((existing) => existing.file !== entry.file), entry];
+}
+function skipBreakerFeed(state, category, limit) {
+  if (limit <= 0) return false;
+  if (state.category === category) state.count += 1;
+  else {
+    state.category = category;
+    state.count = 1;
+  }
+  return state.count >= limit;
+}
+function skipBreakerReset(state) {
+  state.category = void 0;
+  state.count = 0;
+}
+var AuditCircuitBreakerError = class extends Error {
+  category;
+  skippedCount;
+  constructor(category, skippedCount) {
+    super(`circuit breaker: ${skippedCount} \u043F\u043E\u0434\u0440\u044F\u0434 \xAB${category}\xBB \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D`);
+    this.name = "AuditCircuitBreakerError";
+    this.category = category;
+    this.skippedCount = skippedCount;
+  }
+};
+function trailingSkippedRun(entries) {
+  if (!entries?.length) return void 0;
+  const category = entries[entries.length - 1].category;
+  let count = 0;
+  for (let index = entries.length - 1; index >= 0 && entries[index].category === category; index -= 1) count += 1;
+  return { category, count };
+}
 function writeAuditProgress(workspaceRoot, progress) {
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
   (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
@@ -4186,7 +4248,7 @@ function readAuditProgress(workspaceRoot) {
   try {
     const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
     if (!parsed || typeof parsed.startedAt !== "number" || typeof parsed.model !== "string" || !Array.isArray(parsed.checked) || !Array.isArray(parsed.remaining)) return void 0;
-    return {
+    const result = {
       startedAt: parsed.startedAt,
       model: parsed.model,
       ...typeof parsed.provider === "string" && parsed.provider ? { provider: parsed.provider } : {},
@@ -4200,8 +4262,12 @@ function readAuditProgress(workspaceRoot) {
         ...Number.isFinite(entry.ts) ? { ts: entry.ts } : {}
       })),
       remaining: parsed.remaining.filter((file) => typeof file === "string"),
-      ...Array.isArray(parsed.skipped) ? { skipped: parsed.skipped.filter((file) => typeof file === "string") } : {}
+      ...Array.isArray(parsed.skippedFiles) ? { skippedFiles: parsed.skippedFiles.filter((entry) => Boolean(entry) && typeof entry.file === "string" && typeof entry.category === "string").map((entry) => ({ file: entry.file, category: entry.category, ...Number.isFinite(entry.http) ? { http: entry.http } : {}, ts: Number.isFinite(entry.ts) ? entry.ts : 0 })) } : {}
     };
+    if (!result.skippedFiles && Array.isArray(parsed.skipped) && parsed.skipped.length > 0) {
+      result.skippedFiles = parsed.skipped.filter((file) => typeof file === "string").map((file) => ({ file, category: "unknown", ts: 0 }));
+    }
+    return result;
   } catch {
     return void 0;
   }
@@ -4239,19 +4305,21 @@ function collectCheckpointFindings(progress) {
   }
   return mergeFindingsByZone([], tagged);
 }
-function progressView(progress) {
+function progressView(progress, breakerLimit = SKIP_BREAKER_DEFAULT_LIMIT) {
   if (!progress) return void 0;
   const done = progress.checked.length;
   const total = done + progress.remaining.length;
   if (total === 0) return void 0;
   const tag = lastCheckpointTag(progress);
+  const run = trailingSkippedRun(progress.skippedFiles);
   return {
     done,
     total,
     model: tag.model ?? progress.model,
     ...tag.provider ? { provider: tag.provider } : {},
     startedAt: progress.startedAt,
-    findings: collectCheckpointFindings(progress).length
+    findings: collectCheckpointFindings(progress).length,
+    ...breakerLimit > 0 && run && run.count >= breakerLimit ? { breaker: run } : {}
   };
 }
 var AUDIT_RESULTS_FILE = "audit-results.json";
@@ -5612,6 +5680,8 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
   let progress;
   liveAuditCheckpoint = void 0;
   let planFiles = [];
+  const auditBreakerLimit = skipBreakerLimitFromSetting(vscode3.workspace.getConfiguration("codescout").get("skipBreakerLimit"));
+  const breakerState = { count: 0 };
   try {
     const auditConfig = vscode3.workspace.getConfiguration("codescout");
     const auditMaxFiles = auditConfig.get("maxFiles", 100);
@@ -5669,7 +5739,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         if (verdict === "changed") {
           output.appendLine(`\u26D4 \u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 (${saved.scopeHash} \u2192 ${currentScopeHash}) \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D, \u043D\u0443\u0436\u0435\u043D \u043D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
           panel.setScanning(false);
-          const blocked = progressView(saved);
+          const blocked = progressView(saved, auditBreakerLimit);
           if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
           return { kind: "done" };
         }
@@ -5681,7 +5751,6 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       }
     } else {
       clearAuditProgress(workspaceRoot);
-      clearAuditResults(workspaceRoot);
     }
     progress = initial;
     const state = initial;
@@ -5699,7 +5768,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const persist = () => {
       state.remaining = planFiles.filter((file) => !doneNames.has(file));
       writeAuditProgress(workspaceRoot, state);
-      writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
+      if (state.checked.length > 0) writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
@@ -5709,9 +5778,11 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         fileStartedAt.set(filename, Date.now());
         output.appendLine(`\u{1F50E} \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \u2014 \u0441\u0442\u0430\u0440\u0442\u2026`);
       }
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => {
-      state.skipped = [.../* @__PURE__ */ new Set([...state.skipped ?? [], filename])];
-      output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`);
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename, error) => {
+      const reason = formatSkipReason(error);
+      state.skippedFiles = upsertSkippedFile(state.skippedFiles, { file: filename, category: reason.category, ...reason.http !== void 0 ? { http: reason.http } : {}, ts: Date.now() });
+      output.appendLine(skipReasonLine(filename, reason));
+      if (skipBreakerFeed(breakerState, reason.category, auditBreakerLimit)) throw new AuditCircuitBreakerError(reason.category, breakerState.count);
     }, (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] };
       acc.done += 1;
@@ -5719,6 +5790,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       chunkProgress.set(filename, acc);
       if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
         doneNames.add(filename);
+        skipBreakerReset(breakerState);
         state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() });
         persist();
         const pausedMs = (pauseByFile.get(filename) ?? 0) * 1e3;
@@ -5739,9 +5811,15 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
-    writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
-    writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
-    writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
+    const lastGood = filesAnalyzed === 0 ? readAuditResults(workspaceRoot) : void 0;
+    const carriedIssues = filesAnalyzed === 0 && lastGood && lastGood.findings.length > 0 ? lastGood.findings : mergedIssues;
+    if (filesAnalyzed > 0) {
+      writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
+      writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
+      writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
+    } else if (lastGood && lastGood.findings.length > 0) {
+      output.appendLine(`\u2139\uFE0F \u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E 0 \u0444\u0430\u0439\u043B\u043E\u0432 \u2014 last-good \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B (${lastGood.findings.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A) \u041D\u0415 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B`);
+    }
     if (result.skippedFiles > 0) {
       state.state = "interrupted";
       persist();
@@ -5750,18 +5828,21 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       clearAuditProgress(workspaceRoot);
       liveAuditCheckpoint = void 0;
     }
-    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
-    const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
+    const findingsDiff = buildFindingsDiff(previousHistory, carriedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
+    const visibleIssues = filterSuppressed(carriedIssues, context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
     panel.setFirstAuditDone(true);
-    panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
-    const resumeView = result.skippedFiles > 0 ? progressView(state) : void 0;
+    if (filesAnalyzed > 0) panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
+    const resumeView = result.skippedFiles > 0 ? progressView(state, auditBreakerLimit) : void 0;
+    if (resumeView && filesAnalyzed === 0 && carriedIssues.length > 0) {
+      resumeView.findings = carriedIssues.length;
+    }
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode3.commands.executeCommand("codescout.panel.focus");
-    output.appendLine(`\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)`);
+    output.appendLine(filesAnalyzed > 0 ? `\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)` : "\u2139\uFE0F \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442/\u0438\u0441\u0442\u043E\u0440\u0438\u044F \u043D\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E 0 \u0444\u0430\u0439\u043B\u043E\u0432 (last-good \u0446\u0435\u043B)");
     output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
     output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
-    dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
+    dumpFindings(output, carriedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${carriedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
     return resumeView ? { kind: "interrupted", view: resumeView } : { kind: "done" };
   } catch (error) {
     if (progress && workspaceRoot) {
@@ -5771,11 +5852,18 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       } catch {
       }
     }
-    const resumeView = progressView(progress);
+    const resumeView = progressView(progress, auditBreakerLimit);
     if (isAbortError(error)) {
       if (resumeView) panel.setAuditResume(resumeView);
       panel.setCancelled();
       return { kind: "done" };
+    }
+    if (error instanceof AuditCircuitBreakerError) {
+      autoResumeCancelled = true;
+      output.appendLine(`\u{1F6D1} Circuit breaker: ${error.skippedCount} \u0441\u043A\u0438\u043F\u0430 \u043F\u043E\u0434\u0440\u044F\u0434 \u043E\u0434\u043D\u043E\u0439 \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438 \xAB${error.category}\xBB \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D (\u043F\u043E\u0434\u0441\u043A\u0430\u0437\u043A\u0430 \u0432 \u0431\u0430\u043D\u043D\u0435\u0440\u0435, codescout.skipBreakerLimit)`);
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      return { kind: "interrupted", view: resumeView };
     }
     if (resumeView) panel.setAuditResume(resumeView);
     await reportScanFailure(context, output, panel, error);
@@ -5845,7 +5933,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.custom", lang), elapsedMs);
       output.appendLine(`\u{1F3AF} \u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename}`), void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => {
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))), void 0, (filename) => importsContextLine(workspaceRoot, filename), 1, void 0, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => {
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
@@ -5909,7 +5997,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.check", currentReportLanguage()), elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), (filename, error) => output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B: ${filename} \xB7 ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
     if (result.skippedFiles > 0) {
       output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.skippedFiles} (\u043E\u0448\u0438\u0431\u043A\u0438 \u0438\u043B\u0438 rate-limit) \u2014 \u0441\u043C. \u0441\u0442\u0440\u043E\u043A\u0438 \xAB\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B\xBB \u0432\u044B\u0448\u0435.`);
     }
@@ -6480,7 +6568,7 @@ function activate(context) {
       panel.setCancelled();
       output.appendLine("Scan cancelled by user");
       if (auditRunActive && liveAuditCheckpoint) {
-        const view = progressView(liveAuditCheckpoint);
+        const view = progressView(liveAuditCheckpoint, skipBreakerLimitFromSetting(vscode3.workspace.getConfiguration("codescout").get("skipBreakerLimit")));
         if (view) panel.setAuditResume(view);
       }
     }),
@@ -6620,7 +6708,8 @@ function activate(context) {
     const choiceStored = await context.secrets.get(SECRET_FULL_AUDIT_WELCOME) === "true";
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
     const savedCheckpoint = readAuditProgress(workspaceRoot);
-    const savedProgress = progressView(savedCheckpoint);
+    const savedBreakerLimit = skipBreakerLimitFromSetting(vscode3.workspace.getConfiguration("codescout").get("skipBreakerLimit"));
+    const savedProgress = progressView(savedCheckpoint, savedBreakerLimit);
     const savedResults = readAuditResults(workspaceRoot);
     if (savedResults) {
       const complete = savedResults.checkedFiles >= savedResults.total;

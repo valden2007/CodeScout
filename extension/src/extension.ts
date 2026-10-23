@@ -15,7 +15,7 @@ import { CodeScoutPanel } from './panel';
 import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, splitAuditChunk, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget } from './auditResume';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
@@ -662,6 +662,10 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
   let progress: AuditCheckpoint | undefined;
   liveAuditCheckpoint = undefined;
   let planFiles: string[] = [];
+  // Батч 26: circuit breaker — N подряд скипов одной категории останавливают
+  // аудит; 0 = выключен (codescout.skipBreakerLimit, дефолт 4).
+  const auditBreakerLimit = skipBreakerLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('skipBreakerLimit'));
+  const breakerState: SkipBreakerState = { count: 0 };
   try {
     const auditConfig = vscode.workspace.getConfiguration('codescout');
     const auditMaxFiles = auditConfig.get<number>('maxFiles', 100);
@@ -725,7 +729,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         if (verdict === 'changed') {
           output.appendLine(`⛔ Скоуп изменился после остановки (${saved.scopeHash} → ${currentScopeHash}) — догон некорректен, нужен новый аудит`);
           panel.setScanning(false);
-          const blocked = progressView(saved);
+          const blocked = progressView(saved, auditBreakerLimit);
           if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
           return { kind: 'done' };
         }
@@ -737,7 +741,9 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       }
     } else {
       clearAuditProgress(workspaceRoot);
-      clearAuditResults(workspaceRoot);
+      // Батч 26 last-good: audit-results.json на старте НЕ трогаем — пустой
+      // или сорванный прогон не должен затирать находки предыдущего_good_
+      // аудита. «Начать заново» (restartAudit) чистит их явно, с модалкой.
     }
     progress = initial;
     const state = initial;
@@ -758,16 +764,19 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       // Персистентный частичный отчёт после КАЖДОГО завершённого файла:
       // атомарно (temp+rename), переживёт reload/выключение; панель на
       // старте рисует именно эти findings (единый источник).
-      writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
+      // Батч 26 last-good: при 0 проверенных НЕ пишем — пустой прогон
+      // обязан сохранить непустой audit-results.json предыдущего аудита.
+      if (state.checked.length > 0) writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
-    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename) => { state.skipped = [...new Set([...(state.skipped ?? []), filename])]; output.appendLine(`⚠️ Пропущен файл: ${filename}`); }, (filename, fileIssues) => {
+    const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename, error) => { const reason = formatSkipReason(error); state.skippedFiles = upsertSkippedFile(state.skippedFiles, { file: filename, category: reason.category, ...(reason.http !== undefined ? { http: reason.http } : {}), ts: Date.now() }); output.appendLine(skipReasonLine(filename, reason)); if (skipBreakerFeed(breakerState, reason.category, auditBreakerLimit)) throw new AuditCircuitBreakerError(reason.category, breakerState.count); }, (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
       acc.issues.push(...fileIssues);
       chunkProgress.set(filename, acc);
       if (acc.done >= (chunkTotals.get(filename) ?? 1)) {
         doneNames.add(filename);
+        skipBreakerReset(breakerState);
         state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() });
         persist();
         // В медиану ETA попадает ЧИСТАЯ длительность файла: время пауз
@@ -784,10 +793,20 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
-    writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
-    writeFindingsHistory(workspaceRoot, mergedIssues, 'full-audit', auditMeta);
-    // Финальный отчёт = единый источник для панели (task 5).
-    writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
+    // Батч 26 last-good: прогон с 0 проверенных файлов НЕ перезаписывает
+    // непустые audit-results.json / history / context. Панель и динамика
+    // «новых/починено/осталось» считаются против last-good: старые находки
+    // показываем как текущие, «починено» при 0 проверенных — всегда 0.
+    const lastGood = filesAnalyzed === 0 ? readAuditResults(workspaceRoot) : undefined;
+    const carriedIssues = filesAnalyzed === 0 && lastGood && lastGood.findings.length > 0 ? lastGood.findings : mergedIssues;
+    if (filesAnalyzed > 0) {
+      writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
+      writeFindingsHistory(workspaceRoot, mergedIssues, 'full-audit', auditMeta);
+      // Финальный отчёт = единый источник для панели (task 5).
+      writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
+    } else if (lastGood && lastGood.findings.length > 0) {
+      output.appendLine(`ℹ️ Проверено 0 файлов — last-good результаты (${lastGood.findings.length} находок) НЕ перезаписаны`);
+    }
     if (result.skippedFiles > 0) {
       // Батч 25: остановка rate-limit — чекпоинт остаётся с состоянием
       // 'interrupted'; догон возможен любым провайдером (см. resume-ветку).
@@ -798,20 +817,25 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       clearAuditProgress(workspaceRoot);
       liveAuditCheckpoint = undefined;
     }
-    const findingsDiff = buildFindingsDiff(previousHistory, mergedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
+    const findingsDiff = buildFindingsDiff(previousHistory, carriedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
     // Батч 14: панель получает только непдавленные находки; диск (context/
     // history/results) остаётся полным единым источником правды.
-    const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
+    const visibleIssues = filterSuppressed(carriedIssues, context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, filesAnalyzed, result.durationMs), false, '', false, findingsDiff);
     panel.setFirstAuditDone(true);
-    panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
-    const resumeView = result.skippedFiles > 0 ? progressView(state) : undefined;
+    if (filesAnalyzed > 0) panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
+    const resumeView = result.skippedFiles > 0 ? progressView(state, auditBreakerLimit) : undefined;
+    // Батч 26 last-good: при 0 проверенных в чекпоинте находок нет — в
+    // баннере показываем счётчик last-good, чтобы он не противоречил отчёту.
+    if (resumeView && filesAnalyzed === 0 && carriedIssues.length > 0) {
+      resumeView.findings = carriedIssues.length;
+    }
     if (resumeView) panel.setAuditResume(resumeView);
     await vscode.commands.executeCommand('codescout.panel.focus');
-    output.appendLine(`Контекст проекта сохранён: .codescout/context.json (${mergedIssues.length} findings)`);
+    output.appendLine(filesAnalyzed > 0 ? `Контекст проекта сохранён: .codescout/context.json (${mergedIssues.length} findings)` : 'ℹ️ Контекст/история не обновлены: проверено 0 файлов (last-good цел)');
     output.appendLine(findingsDiff ? `Динамика относительно прошлого аудита: ${findingsDiff.summary}` : 'ℹ️ Первый аудит — сравнение недоступно, история заведена');
     output.appendLine(`Аудит завершён: проверено ${filesAnalyzed}, пропущено ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
-    dumpFindings(output, mergedIssues, `Итог аудита: ${mergedIssues.length} находок, проверено файлов: ${filesAnalyzed}`);
+    dumpFindings(output, carriedIssues, `Итог аудита: ${carriedIssues.length} находок, проверено файлов: ${filesAnalyzed}`);
     return resumeView ? { kind: 'interrupted', view: resumeView } : { kind: 'done' };
   } catch (error) {
     // Батч 25: ЛЮБАЯ остановка (cancel пользователя, crash) оставляет
@@ -826,13 +850,23 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         // диск мог отвалиться — в памяти состояние уже проставлено
       }
     }
-    const resumeView = progressView(progress);
+    const resumeView = progressView(progress, auditBreakerLimit);
     if (isAbortError(error)) {
       // Батч 26: cancel — баннер догона обязателен даже при 0 проверенных;
       // setCancelled рисует красную карточку, она остаётся ВЫШЕ баннера.
       if (resumeView) panel.setAuditResume(resumeView);
       panel.setCancelled();
       return { kind: 'done' };
+    }
+    // Батч 26: circuit breaker — стоп аудита с баннером и подсказкой по
+    // категории; НЕ показываем модалку ошибки (причина уже в баннере),
+    // авто-догон не запускаем (провайдер сломан — нужен человек).
+    if (error instanceof AuditCircuitBreakerError) {
+      autoResumeCancelled = true;
+      output.appendLine(`🛑 Circuit breaker: ${error.skippedCount} скипа подряд одной категории «${error.category}» — аудит остановлен (подсказка в баннере, codescout.skipBreakerLimit)`);
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      return { kind: 'interrupted', view: resumeView };
     }
     if (resumeView) panel.setAuditResume(resumeView);
     await reportScanFailure(context, output, panel, error);
@@ -902,7 +936,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     if (collection.skippedLimit > 0) output.appendLine(`⚠️ Пропущено ${collection.skippedLimit} файлов по лимиту (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
-    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename) => output.appendLine(`⚠️ Пропущен файл: ${filename}`), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
+    const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
     // Батч 14: скрытые находки не попадают в панель (пост-обработка).
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
@@ -962,7 +996,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), (filename, error) => output.appendLine(`⚠️ Пропущен файл: ${filename} · ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
     if (result.skippedFiles > 0) {
       output.appendLine(`⚠️ Пропущено файлов: ${result.skippedFiles} (ошибки или rate-limit) — см. строки «Пропущен файл» выше.`);
     }
@@ -1605,7 +1639,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // авто-догона. Рисуем из живого чекпоинта сразу, не дожидаясь, пока
       // abort дойдёт до catch; catch потом обновит его финальным состоянием.
       if (auditRunActive && liveAuditCheckpoint) {
-        const view = progressView(liveAuditCheckpoint);
+        const view = progressView(liveAuditCheckpoint, skipBreakerLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('skipBreakerLimit')));
         if (view) panel.setAuditResume(view);
       }
     }),
@@ -1743,7 +1777,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const choiceStored = (await context.secrets.get(SECRET_FULL_AUDIT_WELCOME)) === 'true';
     const stale = Boolean(projectContext?.auditMeta && (projectContext.auditMeta.provider !== selection.provider || projectContext.auditMeta.model !== selection.model));
     const savedCheckpoint = readAuditProgress(workspaceRoot);
-    const savedProgress = progressView(savedCheckpoint);
+    // Батч 26: breaker-подсказку в баннере пересчитываем по хвосту skippedFiles
+    // — после reload она не теряется (порог = codescout.skipBreakerLimit).
+    const savedBreakerLimit = skipBreakerLimitFromSetting(vscode.workspace.getConfiguration('codescout').get<number>('skipBreakerLimit'));
+    const savedProgress = progressView(savedCheckpoint, savedBreakerLimit);
     const savedResults = readAuditResults(workspaceRoot);
     if (savedResults) {
       const complete = savedResults.checkedFiles >= savedResults.total;

@@ -278,7 +278,9 @@ describe('Батч 25 cross-provider resume', () => {
     expect(readAuditProgress(root)!.checked).toHaveLength(1);
     expect(readAuditResults(root)!.findings.map((f) => f.description)).toEqual(['ALPHA_DESC']);
 
-    // подтверждение — прогресс и результаты стёрты, свежий запуск пуст
+    // подтверждение — прогресс и результаты стёрты (явное действие); свежий
+    // запуск с 0 проверенных НЕ пересоздаёт отчёт — last-good пишется только
+    // после первого проверенного файла (батч 26)
     state.warningAnswers.push('Удалить и начать заново');
     const live = bootPanel();
     await flush();
@@ -287,7 +289,7 @@ describe('Батч 25 cross-provider resume', () => {
     const fresh = readAuditProgress(root);
     expect(fresh!.checked).toHaveLength(0);
     expect(fresh!.scopeHash).toBe(hash);
-    expect(readAuditResults(root)!.findings).toEqual([]);
+    expect(readAuditResults(root)).toBeUndefined();
     expect(live.html()).not.toContain('ALPHA_DESC');
   }, 60000);
 
@@ -405,7 +407,9 @@ describe('Батч 25 unit: scopeHash, verdict, zone-merge', () => {
       expect(back.scopeHash).toBe('deadbeefdeadbeef');
       expect(back.state).toBe('cancelled');
       expect(back.checked[0]).toEqual({ file: 'a.ts', issues: [], provider: 'groq', model: 'm2', ts: 7 });
-      expect(back.skipped).toEqual(['x.ts']);
+      // Батч 26: legacy skipped[] мигрирует в skippedFiles[] с категорией unknown
+      expect(back.skipped).toBeUndefined();
+      expect(back.skippedFiles).toEqual([{ file: 'x.ts', category: 'unknown', ts: 0 }]);
       expect(progressView(back)).toEqual({ done: 1, total: 1, model: 'm2', provider: 'groq', startedAt: 2, findings: 0 });
     } finally {
       rmSync(root, { recursive: true, force: true });
