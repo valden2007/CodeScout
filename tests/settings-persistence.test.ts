@@ -32,6 +32,12 @@ async function openCenter(): Promise<{ html: () => string; send: (message: unkno
   };
 }
 
+// Батч 27: несекретный список профилей из stub-конфига.
+function keychainProfiles(): Array<{ id: string; label: string; provider: string; model?: string }> {
+  const value = state.config.get('codescout.keychain')?.globalValue;
+  return Array.isArray(value) ? value as Array<{ id: string; label: string; provider: string; model?: string }> : [];
+}
+
 describe('hotfix: сохранение API-ключа в центре настроек', () => {
   const realFetch = globalThis.fetch;
   beforeEach(() => {
@@ -191,15 +197,19 @@ describe('батч 18.9: авто-выбор модели при смене пр
     if (realEnv.go !== undefined) process.env.OPENCODE_GO_API_KEY = realEnv.go;
   });
 
-  it('gemini → groq: после saveAll сам открывается quickPick модели и выбор пишется', async () => {
+  it('gemini → groq: после saveAll сам открывается quickPick модели и выбор пишется (батч 27: стек живёт в профиле keychain)', async () => {
     state.secrets.set('codescout.apiKey', 'AIzaOldKeyForTest');
     state.secrets.set('codescout.provider', 'gemini');
     state.secrets.set('codescout.model', 'gemini-1.5-flash');
     state.quickPickAnswers.push('llama-3.3-70b-versatile');
     const center = await openCenter();
+    // Батч 27: activate смигрировал одиночный ключ в профиль «default».
+    // Ждём завершения миграции — иначе saveAll гонок с promise-цепочкой.
+    await waitFor(() => keychainProfiles().length > 0);
     center.send({ command: 'saveAll', ...full, apiKey: 'gsk_TESTKEY123', providerKey: 'groq' });
-    await waitFor(() => state.secrets.get('codescout.provider') === 'groq');
-    await waitFor(() => state.secrets.get('codescout.model') === 'llama-3.3-70b-versatile' && state.secrets.get('codescout.model.userChosen') === 'true');
+    // Провайдер и модель пишутся В АКТИВНЫЙ ПРОФИЛЬ (не в legacy-секреты).
+    await waitFor(() => keychainProfiles()[0]?.provider === 'groq');
+    await waitFor(() => keychainProfiles()[0]?.model === 'llama-3.3-70b-versatile');
     // quickPick был востребован именно авто-вызовом: очередь пуста
     expect(state.quickPickAnswers).toHaveLength(0);
     expect(state.errorMessages).toHaveLength(0);
@@ -221,7 +231,8 @@ describe('батч 18.9: авто-выбор модели при смене пр
   it('контракт исходников: saveKeyProvider считает providerChanged по SecretStorage и ждёт codescout.chooseModel', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain('providerChanged');
-    expect(extension).toContain("const oldProvider = oldProviderSecret?.trim() || selection.provider;");
+    // Батч 27: при активном профиле keychain oldProvider берётся из профиля.
+    expect(extension).toContain('const oldProvider = profileId ? selection.provider : (oldProviderSecret?.trim() || selection.provider);');
     expect(extension).toContain('const providerChanged = provider !== oldProvider;');
     expect(extension).toContain("await vscode.commands.executeCommand('codescout.chooseModel')");
     expect(extension).toContain('await autoSelectModelAfterProviderChange(context, providerChanged);');

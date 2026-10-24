@@ -124,6 +124,14 @@
       {
         "command": "codescout.openSettingsPage",
         "title": "CodeScout: ключ и модель"
+      },
+      {
+        "command": "codescout.switchKeyProfile",
+        "title": "CodeScout: переключить профиль ключа"
+      },
+      {
+        "command": "codescout.failoverWaitResume",
+        "title": "CodeScout: подождать пробуждения профилей и продолжить"
       }
     ],
     "menus": {
@@ -176,6 +184,33 @@
           "type": "string",
           "default": "",
           "description": "%baseUrl.description%"
+        },
+        "codescout.keychain": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "default": [],
+          "description": "%keychain.description%",
+          "scope": "window"
+        },
+        "codescout.keychain.active": {
+          "type": "string",
+          "default": "",
+          "description": "%keychainActive.description%",
+          "scope": "window"
+        },
+        "codescout.failover.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%failoverEnabled.description%"
+        },
+        "codescout.failover.maxCycles": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "%failoverMaxCycles.description%"
         },
         "codescout.maxFiles": {
           "type": "number",

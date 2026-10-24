@@ -95,7 +95,7 @@ function confidenceBadge(issue: ReviewIssue, lang: Lang, showConfidence: boolean
 // пуст, но метка есть — блок всё равно открывается («Found by: …»).
 function proofBlock(issue: ReviewIssue, lang: Lang): string {
   const proof = typeof issue.proof === 'string' ? issue.proof.trim() : '';
-  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` · ${issue.foundBy.model}` : ''}` : '';
+  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` · ${issue.foundBy.model}` : ''}${issue.foundBy.profile ? ` · ${issue.foundBy.profile}` : ''}` : '';
   if (!proof && !source) return '';
   const summaryLabel = proof ? escapeHtml(t('issue.showProof', lang)) : `${escapeHtml(t('issue.foundBy', lang))} ${escapeHtml(source)}`;
   const proofText = proof ? `<p class="proof-text">${escapeHtml(proof)}</p>` : '';
@@ -316,7 +316,14 @@ export interface ScanErrorInfo {
   hint?: string;
 }
 
-export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = '', errorInfo?: ScanErrorInfo, suppressed?: SuppressedEntry[]): string {
+// Батч 27: баннер «все профили спят» (failover при выключенном автономном
+// режиме или потолке циклов) — две кнопки: «Подождать и продолжить» / «Стоп».
+export interface FailoverSleepView {
+  wakeSeconds: number;
+  wakeLabel: string;
+}
+
+export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isScanning = false, emptyState = false, statusMessage = '', statusKind: 'retry' | 'error' | 'test' | 'success' = 'retry', keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', testMode = false, progressMessage = '', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', findingsDiff?: FindingsDiffView, customFocus = '', auditResume?: AuditResumeView, autoResume?: AutoResumeIndicator, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, diagnosticDetails = '', errorInfo?: ScanErrorInfo, suppressed?: SuppressedEntry[], failoverSleep?: FailoverSleepView): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -383,6 +390,7 @@ ${headHtml(assets, nonce)}
       ? `<div class="audit-resume scope"><strong>${icon('warning')} ${T('resume.scopeChanged')}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon('telescope')}<span>${T('resume.newAudit')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`
       : `<div class="audit-resume"><strong>${icon('debug-alt')} ${resumeView.provider ? T('resume.stopped', { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T('resume.title', { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== undefined ? ` ${T('resume.findings', { n: resumeView.findings })}` : ''}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon('zap')} ${T('resume.breaker', { n: resumeView.breaker.count })} «${escapeHtml(resumeView.breaker.category)}» — ${escapeHtml(T('err.hint.' + resumeView.breaker.category))}</div>` : ''}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continueSame')}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon('rocket')}<span>${T('resume.continueOther')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`)
       : ''}
+    ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon('clock')} ${T('keychain.bannerAllSleep', { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon('play')}<span>${T('keychain.bannerWaitBtn')}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon('debug-stop')}<span>${T('keychain.bannerStopBtn')}</span></button></div></div>` : ''}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('diff')}<span>${T('actions.scanUncommitted')}</span></button>
@@ -650,6 +658,6 @@ ${headHtml(assets, nonce)}
 </html>`;
 }
 
-export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, suppressed?: SuppressedEntry[]): string {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, '', undefined, suppressed);
+export function buildEmptyReportHtml(keyMask = '', keyConfigured = false, provider = 'gemini', model = 'gemini-1.5-flash', welcomeBanner = false, welcomeReason: 'new' | 'stale' = 'new', auditResume?: AuditResumeView, autoResumeEnabled = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets?: WebviewAssets, nonce = '', prefs?: UiPrefsInput, lang: Lang = 'ru', ux: PanelUx = {}, suppressed?: SuppressedEntry[], failoverSleep?: FailoverSleepView): string {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, '', 'retry', keyMask, keyConfigured, provider, model, false, '', welcomeBanner, welcomeReason, undefined, '', auditResume, undefined, autoResumeEnabled, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, '', undefined, suppressed, failoverSleep);
 }

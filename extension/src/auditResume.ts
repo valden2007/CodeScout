@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { defaultModel, fetchLiveModelsCached, isLocalBaseUrl, MODELS_FETCH_TIMEOUT_MS, PROVIDER_ORDER, resolveBaseUrl, sanitizeApiKey, type ProviderName } from '../../src/providers';
 import { t, type Lang } from '../../src/i18n';
 import type { AuditCheckpoint } from './projectAudit';
+import type { KeychainProfile } from './keychain';
 
 // Git опрашивается максимум N мс — зависший репозиторий не блокирует аудит.
 export const GIT_HEAD_PROBE_TIMEOUT_MS = 5000;
@@ -101,4 +102,56 @@ export async function pickResumeTarget(deps: ResumePickerDeps): Promise<{ provid
   }
   await deps.persistSelection(provider, model);
   return { provider, model };
+}
+
+// ── Батч 27: догон ПРОФИЛЕМ (keychain) ─────────────────────────────────────
+
+export interface ResumeProfilePickerDeps {
+  lang: Lang;
+  profiles: KeychainProfile[];
+  // Ключ профиля из SecretStorage (keychain.<id>) + env-фоллбэк провайдера.
+  resolveKeyForProfile(profile: KeychainProfile): Promise<string | undefined>;
+  // Base URL с учетом P0 Astra-1 (workspace-URL требует подтверждения).
+  resolveBaseUrlFor(provider: ProviderName): Promise<string>;
+  log(message: string): void;
+}
+
+export interface ResumeProfileTarget {
+  profile: KeychainProfile;
+  label: string;
+  provider: ProviderName;
+  model: string;
+  baseUrl: string;
+  key?: string;
+}
+
+// «Продолжить другими…» со списка ПРОФИЛЕЙ (provider · label · model), а не
+// цепочки провайдер→модель. НИЧЕГО не персистим: догон — разовый маршрут,
+// активный профиль настроек остаётся прежним (оверрайд живёт в extension.ts).
+export async function pickResumeProfile(deps: ResumeProfilePickerDeps): Promise<ResumeProfileTarget | undefined> {
+  const items = deps.profiles.map((profile) => ({
+    label: `${profile.provider} · ${profile.label}`,
+    description: profile.model?.trim() || defaultModel(profile.provider),
+    profileId: profile.id
+  }));
+  const picked = await vscode.window.showQuickPick(items, { placeHolder: t('keychain.resumePick', deps.lang), ignoreFocusOut: true });
+  if (!picked) return undefined;
+  const profile = deps.profiles.find((candidate) => candidate.id === picked.profileId);
+  if (!profile) return undefined;
+  let baseUrl = '';
+  try {
+    baseUrl = await deps.resolveBaseUrlFor(profile.provider);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`CodeScout: ${message}`);
+    return undefined;
+  }
+  const key = await deps.resolveKeyForProfile(profile);
+  if (!key && !isLocalBaseUrl(baseUrl)) {
+    void vscode.window.showErrorMessage(t('keychain.noKeyForResume', deps.lang, { label: profile.label }));
+    return undefined;
+  }
+  const model = profile.model?.trim() || defaultModel(profile.provider);
+  deps.log(`🔑 догон профилем ${profile.label}: ${profile.provider} · ${model}`);
+  return { profile, label: profile.label, provider: profile.provider, model, baseUrl, key };
 }

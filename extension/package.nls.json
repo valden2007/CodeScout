@@ -31,5 +31,9 @@
   "uiFontSize.description": "Font scale (--cs-font-*).",
   "showConfidence.description": "Show the model confidence percentage on findings.",
   "findingsSort.description": "Order of findings and sections in the report.",
-  "reportTheme.description": "Theme of the exported HTML report (also applied to the preview)."
+  "reportTheme.description": "Theme of the exported HTML report (also applied to the preview).",
+  "keychain.description": "Keychain: non-secret list of key profiles {id, label, provider, model?}. Keys themselves live in SecretStorage as keychain.<id>. Managed in Settings > Key & model.",
+  "keychainActive.description": "Id of the active key profile (codescout.switchKeyProfile or the Settings center).",
+  "failoverEnabled.description": "Auto-switch to the next awake key profile on rate limits (429 only). Cyclic rotation; OFF by default — manual switching always available.",
+  "failoverMaxCycles.description": "Cap of rotation cycles when all profiles sleep (0 = unlimited in autonomous mode)."
 }

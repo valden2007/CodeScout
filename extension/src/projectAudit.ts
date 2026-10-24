@@ -1014,6 +1014,8 @@ export interface AuditCheckedEntry {
   provider?: string;
   model?: string;
   ts?: number;
+  // Батч 27: метка профиля ключа, которым проверен файл (keychain).
+  profile?: string;
 }
 
 export interface AuditCheckpoint {
@@ -1152,6 +1154,7 @@ export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | unde
           issues: entry.issues,
           ...(typeof entry.provider === 'string' && entry.provider ? { provider: entry.provider } : {}),
           ...(typeof entry.model === 'string' && entry.model ? { model: entry.model } : {}),
+          ...(typeof entry.profile === 'string' && entry.profile ? { profile: entry.profile } : {}),
           ...(Number.isFinite(entry.ts) ? { ts: entry.ts as number } : {})
         })),
       remaining: parsed.remaining.filter((file): file is string => typeof file === 'string'),
@@ -1210,7 +1213,9 @@ export function collectCheckpointFindings(progress: AuditCheckpoint): ReviewIssu
     const provider = entry.provider ?? progress.provider;
     const model = entry.model ?? progress.model;
     for (const issue of entry.issues) {
-      tagged.push(provider ? { ...issue, foundBy: { provider, ...(model ? { model } : {}) } } : issue);
+      // Батч 27: к метке нахождателя добавляется label профиля ключа, если он
+      // задан (keychain) — в proof-блоке видно, каким профилем нашли файл.
+      tagged.push(provider ? { ...issue, foundBy: { provider, ...(model ? { model } : {}), ...(entry.profile ? { profile: entry.profile } : {}) } } : issue);
     }
   }
   return mergeFindingsByZone([], tagged);

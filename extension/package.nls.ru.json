@@ -31,5 +31,9 @@
   "uiFontSize.description": "Масштаб шрифтов (--cs-font-*).",
   "showConfidence.description": "Показывать процент уверенности модели у находок.",
   "findingsSort.description": "Порядок находок и секций в отчёте.",
-  "reportTheme.description": "Тема экспортируемого HTML-отчёта (применяется и к превью)."
+  "reportTheme.description": "Тема экспортируемого HTML-отчёта (применяется и к превью).",
+  "keychain.description": "Keychain: несекретный список профилей ключей {id, label, provider, model?}. Сами ключи лежат в SecretStorage записями keychain.<id>. Управляётся в настройках, раздел «Ключ и модель».",
+  "keychainActive.description": "Id активного профиля ключа (команда codescout.switchKeyProfile или центр настроек).",
+  "failoverEnabled.description": "Автопереключение на следующий неспящий профиль ключа при лимитах (только 429). Циклическая ротация; по умолчанию ВЫКЛ — ручное переключение доступно всегда.",
+  "failoverMaxCycles.description": "Потолок циклов ротации, когда все профили спят (0 = без лимита в автономном режиме)."
 }

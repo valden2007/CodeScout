@@ -85994,6 +85994,20 @@ class RateLimitError extends Error {
         this.details = details;
     }
 }
+// Батч 27: цепочка профилей исчерпана (все спят, автономный режим выключен
+// или достигнут потолок циклов) — failover-решатель в keychain говорит
+// «стоп», клиент бросает этот маркер вместо бесконечной ротации. Scan-level
+// код превращает его в баннер «Подождать и продолжить / Стоп».
+class AllProfilesAsleepError extends Error {
+    waitMs;
+    wakeLabel;
+    constructor(message, waitMs = 0, wakeLabel = '') {
+        super(message);
+        this.name = 'AllProfilesAsleepError';
+        this.waitMs = waitMs;
+        this.wakeLabel = wakeLabel;
+    }
+}
 function abortError() {
     const error = new Error('The operation was aborted');
     error.name = 'AbortError';
@@ -86031,9 +86045,15 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 // успевали исчерпать бакет между попытками, и чанк улетал в скип; лестница
 // медленнее, но гарантированно доедает проект за ночь без пропуска файлов.
 const RETRY_DELAYS_SECONDS = [30, 60, 120];
+// Батч 27: помимо retry-after парсим заголовки сброса квоты, которые отдают
+// OpenAI-совместимые агрегаторы: x-ratelimit-reset(-requests/-tokens) —
+// секунды (часто дробные) до сброса окна. Первый найденный валидный — в дело.
+const QUOTA_RESET_HEADERS = ['retry-after', 'x-ratelimit-reset', 'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens'];
 function parseRetryAfterSeconds(response, message) {
-    const header = response.headers.get('retry-after');
-    if (header) {
+    for (const name of QUOTA_RESET_HEADERS) {
+        const header = response.headers.get(name);
+        if (!header)
+            continue;
         const seconds = Number.parseFloat(header);
         if (Number.isFinite(seconds) && seconds >= 0)
             return Math.ceil(seconds);
@@ -86138,12 +86158,16 @@ class OpenAICompatibleProvider {
     onRetry;
     signal;
     requestTimeoutMs;
+    failover;
     lastRequestAt = 0;
     endpoint;
     // Батч 17.5: UUID живёт всю жизнь клиента — все запросы одного аудита
     // идут с одним x-opencode-session (скоррелированные логи на стороне шлюза).
     sessionId = (0,external_node_crypto_namespaceObject.randomUUID)();
-    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal, requestTimeoutMs) {
+    constructor(apiKey, model, fetcher = fetch, sleeper = sleep, onRetry, baseUrl = 'https://api.groq.com/openai/v1', signal, requestTimeoutMs, 
+    // Батч 27: failover-хуки keychain (429 → switch/wait/stop, 401/403 →
+    // broken). undefined = поведение не меняется вообще (legacy-контракт).
+    failover) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetcher = fetcher;
@@ -86151,6 +86175,7 @@ class OpenAICompatibleProvider {
         this.onRetry = onRetry;
         this.signal = signal;
         this.requestTimeoutMs = requestTimeoutMs;
+        this.failover = failover;
         // Батч 22, п.2: ключ санитизируется в ОДНОЙ точке (providers.sanitizeApiKey)
         // и здесь, и в /models — review-запросы и список моделей ведут себя одинаково.
         this.apiKey = sanitizeApiKey(apiKey);
@@ -86244,8 +86269,39 @@ class OpenAICompatibleProvider {
                 else if (isRetryableError(error)) {
                     retryableError = error instanceof Error ? error : new Error(String(error));
                 }
-                if (!retryableError)
+                if (!retryableError) {
+                    // Батч 27: 401/403 — помечаем профиль broken (автопереход запрещён,
+                    // ошибка летит наверх как раньше).
+                    if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
+                        await this.failover.onAuthError(error.status);
+                    }
                     throw error;
+                }
+                // Батч 27: ТОЛЬКО rate_limit/quota (429 → RateLimitError) спрашивает
+                // keychain до локальной лестницы: switch — пересобираем креды и
+                // пробуем тем же запросом; wait — спим до ближайшего пробуждения;
+                // stop — AllProfilesAsleepError (баннер рисует scan-level);
+                // undefined — прежнее поведение (failover выключен).
+                if (this.failover && retryableError instanceof RateLimitError) {
+                    const decision = await this.failover.onRateLimit(retryableError.waitSeconds ?? undefined);
+                    if (decision) {
+                        if (decision.action === 'switch') {
+                            this.apiKey = sanitizeApiKey(decision.apiKey);
+                            this.endpoint = completionUrl(decision.baseUrl);
+                            this.model = decision.model;
+                            retryCount = 0;
+                            lastRetryableError = undefined;
+                            continue;
+                        }
+                        if (decision.action === 'wait') {
+                            await this.sleeper(decision.waitMs, this.signal);
+                            continue;
+                        }
+                        if (decision.action === 'stop') {
+                            throw new AllProfilesAsleepError('All key profiles are asleep (rate limit)', decision.waitMs, decision.wakeLabel);
+                        }
+                    }
+                }
                 // Ретраим: RateLimitError, RequestTimeoutError, ProviderHttpError 502/503/504, сетевые ошибки
                 const waitSeconds = retryableError instanceof RateLimitError ? retryableError.waitSeconds : undefined;
                 const details = retryableError instanceof RateLimitError ? retryableError.details
@@ -86274,10 +86330,10 @@ class OpenAICompatibleProvider {
     }
 }
 
-function createProvider(provider, apiKey, model, onRetry, baseUrl, signal) {
+function createProvider(provider, apiKey, model, onRetry, baseUrl, signal, failover) {
     const normalized = normalizeProvider(provider);
     const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
-    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal);
+    return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal, undefined, failover);
 }
 
 ;// CONCATENATED MODULE: ./src/response-parser.ts

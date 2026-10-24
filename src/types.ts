@@ -23,9 +23,12 @@ export interface DiffFile {
 
 // Батч 25: метка нахождателя — провайдер/модель, чей ответ породил находку.
 // Нужна для cross-provider resume: в смешанном отчёте видно, кто что нашёл.
+// Батч 27: profile — метка профиля ключа (label), чьим ключом нашли; видна
+// в proof-блоке рядом с provider · model.
 export interface FindingSource {
   provider: string;
   model?: string;
+  profile?: string;
 }
 
 export interface ReviewIssue {

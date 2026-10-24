@@ -2,6 +2,7 @@ import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type Cus
 import { t, type Lang } from '../../src/i18n';
 import { CODESCOUT_REPO_URL as REPO_URL } from './reportIssue';
 import { PROVIDER_ORDER } from '../../src/providers';
+import type { KeychainProfile } from './keychain';
 
 export interface SettingsState {
   keyMask: string;
@@ -32,6 +33,12 @@ export interface SettingsState {
   findingsSort: 'severity' | 'file' | 'line';
   reportTheme: 'auto' | 'dark' | 'light';
   customColors: string;
+  // Батч 27: keychain — профили ключей + failover. Опциональны: старые
+  // вызовы (тесты) рендерят блок в пустом виде.
+  keychainProfiles?: KeychainProfile[];
+  keychainActiveId?: string;
+  failoverEnabled?: boolean;
+  failoverMaxCycles?: number;
 }
 
 export interface SettingsAssets {
@@ -108,6 +115,40 @@ function currentKeyLine(T: (key: string, vars?: Record<string, string | number>)
   const local = localServiceName(state.baseUrl);
   if (state.provider === 'custom' && local) return escapeHtml(T('center.nowLocal', { s: local }));
   return escapeHtml(T('center.nowNone'));
+}
+
+// Батч 27: блок «Профили ключей» в секции «Ключ и модель»: список
+// provider · label · model с меткой активного + кнопки добавить /
+// переименовать / удалить / сделать активным. Кнопки шлют хосту команды
+// keychainAdd/keychainRename/keychainDelete/keychainSetActive (native
+// InputBox/QuickPick/модалки — вся тяжёлая логика в extension/keychain.ts).
+function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
+  const profiles = state.keychainProfiles ?? [];
+  const activeId = state.keychainActiveId ?? '';
+  const rows = profiles.map((profile) => {
+    const isActive = profile.id === activeId;
+    const model = escapeHtml(profile.model?.trim() || '');
+    return `<div class="kc-row${isActive ? ' kc-active-row' : ''}">
+      <span class="kc-line">${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
+      <span class="kc-actions">
+        <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${escapeHtml(profile.id)}">${icon('target')}<span>${T('keychain.makeActive')}</span></button>
+        <button type="button" class="secondary" data-kc="keychainRename" data-id="${escapeHtml(profile.id)}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
+        <button type="button" class="secondary" data-kc="keychainDelete" data-id="${escapeHtml(profile.id)}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
+      </span>
+    </div>`;
+  }).join('');
+  const failoverOn = state.failoverEnabled === true;
+  return `<div class="kc-block">
+  <h3>${icon('clippy')} ${T('keychain.title')}</h3>
+  ${profiles.length === 0 ? `<p class="hint">${T('keychain.empty')}</p>` : `<div class="kc-list">${rows}</div>`}
+  <div class="row">
+    <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
+  </div>
+  <label class="checkbox"><input id="failoverEnabled" type="checkbox"${failoverOn ? ' checked' : ''}> <span>${T('keychain.failoverEnabled')}</span></label>
+  <label for="failoverMaxCycles">${T('keychain.failoverMaxCycles')}</label>
+  <input id="failoverMaxCycles" type="number" min="0" max="100" step="1" value="${state.failoverMaxCycles ?? 0}">
+  <p class="hint">${T('keychain.failoverHint')}</p>
+</div>`;
 }
 
 export function mergeScopeGlobs(existing: string, added: string[]): string {
@@ -217,6 +258,15 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .key-secure { display: flex; align-items: center; gap: var(--cs-space-1); margin-top: 4px; color: var(--cs-pass); font-size: var(--cs-font-1); }
 .dev-link { color: var(--cs-accent); text-decoration: underline; cursor: pointer; overflow-wrap: anywhere; }
 .key-secure .codicon { color: var(--cs-pass); }
+.kc-block { margin-top: var(--cs-space-3); padding-top: var(--cs-space-2); border-top: 1px solid var(--cs-card-border); }
+.kc-block h3 { margin: 0 0 var(--cs-space-2); font-size: var(--cs-font-2); text-transform: none; color: var(--cs-fg); display: flex; align-items: center; gap: var(--cs-space-2); }
+.kc-list { display: flex; flex-direction: column; gap: 4px; }
+.kc-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--cs-space-2); padding: 4px var(--cs-space-2); border: 1px solid var(--cs-card-border); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 4%, transparent); }
+.kc-active-row { border-color: var(--cs-accent); }
+.kc-line { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cs-font-2); font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+.kc-active-badge { color: var(--cs-pass); font-family: var(--vscode-font-family); font-size: var(--cs-font-1); display: inline-flex; align-items: center; gap: 3px; }
+.kc-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.kc-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -254,6 +304,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
+  ${keychainBlockHtml(T, state)}
 </section>${languageSection}
 <section id="sec-audit">
   <h2>${icon('sync')} ${T('sec.audit')}</h2>
@@ -430,6 +481,8 @@ const autoResumeMaxAttemptsInput = document.getElementById('autoResumeMaxAttempt
 const autoResumeMaxMinutesInput = document.getElementById('autoResumeMaxMinutes');
 const rateLimitPausesInput = document.getElementById('rateLimitPauses');
 const requestTimeoutInput = document.getElementById('requestTimeoutSeconds');
+const failoverEnabledBox = document.getElementById('failoverEnabled');
+const failoverMaxCyclesInput = document.getElementById('failoverMaxCycles');
 const saveAllBtn = document.getElementById('saveAll');
 const dirtyHint = document.getElementById('dirtyHint');
 const themeEditor = document.getElementById('themeEditor');
@@ -534,7 +587,9 @@ function snapshot() {
     maxLines: maxLinesInput.value, maxFiles: maxFilesInput.value, auditScope: auditScopeInput.value,
     auditPasses: auditPassesInput.value, autoResume: autoResumeBox.checked,
     autoResumeMaxAttempts: autoResumeMaxAttemptsInput.value, autoResumeMaxMinutes: autoResumeMaxMinutesInput.value, rateLimitPauses: rateLimitPausesInput.value,
-    requestTimeoutSeconds: requestTimeoutInput.value
+    requestTimeoutSeconds: requestTimeoutInput.value,
+    failoverEnabled: failoverEnabledBox ? failoverEnabledBox.checked : false,
+    failoverMaxCycles: failoverMaxCyclesInput ? failoverMaxCyclesInput.value : '0'
   });
 }
 let initial = snapshot();
@@ -602,10 +657,23 @@ saveAllBtn.addEventListener('click', () => {
     autoResumeMaxAttempts: Number(clampInt(autoResumeMaxAttemptsInput.value, 0, 1000, '0')),
     autoResumeMaxMinutes: Number(clampInt(autoResumeMaxMinutesInput.value, 0, 10000, '0')),
     rateLimitPauses: Number(clampInt(rateLimitPausesInput.value, 0, 5, '3')),
-    requestTimeoutSeconds: Number(clampInt(requestTimeoutInput.value, 10, 600, '60'))
+    requestTimeoutSeconds: Number(clampInt(requestTimeoutInput.value, 10, 600, '60')),
+    failoverEnabled: failoverEnabledBox ? failoverEnabledBox.checked : false,
+    failoverMaxCycles: Number(clampInt(failoverMaxCyclesInput ? failoverMaxCyclesInput.value : '0', 0, 100, '0'))
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+const keychainAddBtn = document.getElementById('keychainAdd');
+if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
+// Batch 27: keychain row buttons are delegated — each posts its command + profile id.
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const btn = target ? target.closest('[data-kc]') : null;
+  if (!btn) return;
+  const command = btn.getAttribute('data-kc');
+  const id = btn.getAttribute('data-id');
+  if (command && id) vscode.postMessage({ command, id });
+});
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {
   testConnBtn.disabled = true;

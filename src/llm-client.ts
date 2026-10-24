@@ -34,6 +34,55 @@ export class RateLimitError extends Error {
   }
 }
 
+// Батч 27: цепочка профилей исчерпана (все спят, автономный режим выключен
+// или достигнут потолок циклов) — failover-решатель в keychain говорит
+// «стоп», клиент бросает этот маркер вместо бесконечной ротации. Scan-level
+// код превращает его в баннер «Подождать и продолжить / Стоп».
+export class AllProfilesAsleepError extends Error {
+  readonly waitMs: number;
+  readonly wakeLabel: string;
+
+  constructor(message: string, waitMs = 0, wakeLabel = '') {
+    super(message);
+    this.name = 'AllProfilesAsleepError';
+    this.waitMs = waitMs;
+    this.wakeLabel = wakeLabel;
+  }
+}
+
+// Failover-хуки (батч 27): retry-слой спрашивает keychain при 429 и
+// 401/403. Реализацию даёт расширение (extension/src/keychain.ts);
+// llm-client не знает ни про профили, ни про SecretStorage — только
+// переключает креды по решению хука.
+export interface FailoverSwitchResult {
+  action: 'switch';
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+export interface FailoverWaitResult {
+  action: 'wait';
+  waitMs: number;
+}
+
+export interface FailoverStopResult {
+  action: 'stop';
+  waitMs: number;
+  wakeLabel: string;
+}
+
+export type FailoverSwitchDecision = FailoverSwitchResult | FailoverWaitResult | FailoverStopResult;
+
+export interface FailoverHooks {
+  // Вызывается при каждом 429 (RateLimitError) ДО локальной лестницы ретраев.
+  // waitSeconds — retry-after из ответа (если парсится).
+  onRateLimit(waitSeconds: number | undefined): Promise<FailoverSwitchDecision | undefined>;
+  // 401/403: пометить профиль broken. Возврат не используется — переключение
+  // по auth-ошибке запрещено контрактом.
+  onAuthError(status: number): Promise<void>;
+}
+
 export function abortError(): Error {
   const error = new Error('The operation was aborted');
   error.name = 'AbortError';
@@ -69,9 +118,15 @@ export { sleep };
 // медленнее, но гарантированно доедает проект за ночь без пропуска файлов.
 export const RETRY_DELAYS_SECONDS = [30, 60, 120];
 
+// Батч 27: помимо retry-after парсим заголовки сброса квоты, которые отдают
+// OpenAI-совместимые агрегаторы: x-ratelimit-reset(-requests/-tokens) —
+// секунды (часто дробные) до сброса окна. Первый найденный валидный — в дело.
+const QUOTA_RESET_HEADERS = ['retry-after', 'x-ratelimit-reset', 'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens'];
+
 function parseRetryAfterSeconds(response: Response, message: string): number | undefined {
-  const header = response.headers.get('retry-after');
-  if (header) {
+  for (const name of QUOTA_RESET_HEADERS) {
+    const header = response.headers.get(name);
+    if (!header) continue;
     const seconds = Number.parseFloat(header);
     if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
     const date = new Date(header);
@@ -187,20 +242,23 @@ export function classifyError(error: unknown): FriendlyError {
 
 export class OpenAICompatibleProvider implements LLMProvider {
   private lastRequestAt = 0;
-  private readonly endpoint: string;
+  private endpoint: string;
   // Батч 17.5: UUID живёт всю жизнь клиента — все запросы одного аудита
   // идут с одним x-opencode-session (скоррелированные логи на стороне шлюза).
   readonly sessionId: string = randomUUID();
 
   constructor(
-    private readonly apiKey: string,
-    private readonly model: string,
+    private apiKey: string,
+    private model: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep,
     private readonly onRetry?: (event: RetryEvent) => void,
     baseUrl = 'https://api.groq.com/openai/v1',
     private readonly signal?: AbortSignal,
-    private readonly requestTimeoutMs?: number
+    private readonly requestTimeoutMs?: number,
+    // Батч 27: failover-хуки keychain (429 → switch/wait/stop, 401/403 →
+    // broken). undefined = поведение не меняется вообще (legacy-контракт).
+    private readonly failover?: FailoverHooks
   ) {
     // Батч 22, п.2: ключ санитизируется в ОДНОЙ точке (providers.sanitizeApiKey)
     // и здесь, и в /models — review-запросы и список моделей ведут себя одинаково.
@@ -285,7 +343,39 @@ export class OpenAICompatibleProvider implements LLMProvider {
         } else if (isRetryableError(error)) {
           retryableError = error instanceof Error ? error : new Error(String(error));
         }
-        if (!retryableError) throw error;
+        if (!retryableError) {
+          // Батч 27: 401/403 — помечаем профиль broken (автопереход запрещён,
+          // ошибка летит наверх как раньше).
+          if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
+            await this.failover.onAuthError(error.status);
+          }
+          throw error;
+        }
+        // Батч 27: ТОЛЬКО rate_limit/quota (429 → RateLimitError) спрашивает
+        // keychain до локальной лестницы: switch — пересобираем креды и
+        // пробуем тем же запросом; wait — спим до ближайшего пробуждения;
+        // stop — AllProfilesAsleepError (баннер рисует scan-level);
+        // undefined — прежнее поведение (failover выключен).
+        if (this.failover && retryableError instanceof RateLimitError) {
+          const decision = await this.failover.onRateLimit(retryableError.waitSeconds ?? undefined);
+          if (decision) {
+            if (decision.action === 'switch') {
+              this.apiKey = sanitizeApiKey(decision.apiKey);
+              this.endpoint = completionUrl(decision.baseUrl);
+              this.model = decision.model;
+              retryCount = 0;
+              lastRetryableError = undefined;
+              continue;
+            }
+            if (decision.action === 'wait') {
+              await this.sleeper(decision.waitMs, this.signal);
+              continue;
+            }
+            if (decision.action === 'stop') {
+              throw new AllProfilesAsleepError('All key profiles are asleep (rate limit)', decision.waitMs, decision.wakeLabel);
+            }
+          }
+        }
         // Ретраим: RateLimitError, RequestTimeoutError, ProviderHttpError 502/503/504, сетевые ошибки
         const waitSeconds = retryableError instanceof RateLimitError ? retryableError.waitSeconds : undefined;
         const details = retryableError instanceof RateLimitError ? retryableError.details
@@ -315,8 +405,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
 export { OpenAICompatibleProvider as GroqProvider };
 
-export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void, baseUrl?: string, signal?: AbortSignal): LLMProvider {
+export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void, baseUrl?: string, signal?: AbortSignal, failover?: FailoverHooks): LLMProvider {
   const normalized = normalizeProvider(provider);
   const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
-  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal);
+  return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal, undefined, failover);
 }

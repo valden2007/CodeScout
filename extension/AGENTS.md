@@ -642,7 +642,44 @@ pre-design now.
      остаётся ВЫШЕ баннера — resume глушит только не-error статусы); reload
      восстанавливает баннер даже при 0 проверенных. activationEvents манифеста
      очищен от onCommand (VS Code генерирует сам; было 15 предупреждений).
-     e2e: tests/cancel-banner.test.ts, tests/audit-stop-diagnostics.test.ts.
-     Tests: 528.
+      e2e: tests/cancel-banner.test.ts, tests/audit-stop-diagnostics.test.ts.
+      Tests: 528.
+ 31. Keychain (батч 27): профили ключей + циклический failover.
+      Несекретное в settings: codescout.keychain = [{id,label,provider,
+      model?}], codescout.keychain.active = id; секретное — отдельная запись
+      keychain.<id> в SecretStorage; миграция одиночного ключа в профиль
+      «default» без потери (старый ключ после обновления работает; флаг
+      codescout.keychainMigrated, повторный activate — no-op). Центр «Ключ и
+      модель»: список профилей (provider · label · model, метка активного) +
+      кнопки добавить/переименовать/удалить/сделать активным (нативные
+      InputBox/QuickPick/модалки хоста); codescout.switchKeyProfile =
+      QuickPick → модалка подтверждения → persist активного + clearModelsCache
+      (кэш моделей изолирован); удаление активного — только с явным выбором
+      нового (removeProfile refused без newActive, фолбэка нет; последний
+      профиль — через модалку, актив сбрасывается в ''). model/profile
+      активного профиля живут в списке (persistModelSelection), legacy-секреты
+      SECRET_MODEL/CHOSEN — только для безпрофильного пути. Failover (по
+      умолчанию ВЫКЛ): codescout.failover.enabled=false,
+      codescout.failover.maxCycles (0=без лимита в автономном); триггер
+      ТОЛЬКО 429 (RateLimitError) в retry-слое llm-client (FailoverHooks:
+      onRateLimit/onAuthError — расширение спрашивает keychain и пересобирает
+      креды клиента; signature reviewFiles НЕ менялась); retry-after или
+      x-ratelimit-reset* → sleepUntil, без заголовков — лестница 120/300/600
+      НА ПРОФИЛЬ; 401/403 → broken (НЕ asleep), выводится из цепочки,
+      баннер-подсказка, автопереход запрещён; следующий = первый awake
+      ЦИКЛИЧЕСКИ после текущего; все спят → пауза min(sleepUntil)−now + Output
+      «⏳ все профили спят…», автономный выкл → один круг → баннер «Все
+      профили спят» + «Подождать и продолжить»/«Стоп» (grantWaitOnce —
+      ровно одна пауза; stop → AllProfilesAsleepError → без красной модалки,
+      чекпоинт цел, авто-догон не стартует); maxCycles → стоп после N-го
+      круга. Прозрачность: Output «🔑 failover: A → B (429; A спит 300с),
+      цикл N»; метка профиля в чекпоинте (только при >1 профиле — одиночный
+      «default» не шумит) и в foundBy/profile proof-блока. Догон (батч 25):
+      «Продолжить другими…» показывает СПИСОК ПРОФИЛЕЙ, выбор — разовый
+      маршрут через oneShotSelectionOverride (активный профиль НЕ меняется);
+      без профилей — старый пикер провайдер→модель. Логика — extension/
+      src/keychain.ts (чистый решатель decideFailover + runFailover-состояние
+      скана), hook — src/llm-client, extension.ts только подключает. e2e:
+      tests/keychain.test.ts (fake timers для цикла 2). Tests: 555.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

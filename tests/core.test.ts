@@ -249,8 +249,11 @@ describe('E5.9 combined UX fixes', () => {
 
   it('persists corrected models and uses a fresh provider during each scan', () => {
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
-    expect(extension).toContain("await context.secrets.store(SECRET_MODEL, corrected)");
-    expect(extension).toContain("await context.secrets.store(SECRET_MODEL_CHOSEN, 'false')");
+    // Батч 27: сохранение модели идёт через persistModelSelection (профиль keychain
+    // или legacy-секреты) — контракт перенесён на обёртку + её тело.
+    expect(extension).toContain("await persistModelSelection(context, selection, corrected, false)");
+    expect(extension).toContain("await context.secrets.store(SECRET_MODEL, model)");
+    expect(extension).toContain("await context.secrets.store(SECRET_MODEL_CHOSEN, userChosen ? 'true' : 'false')");
     expect(extension).toContain("createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model");
     expect(extension).toContain('await resolveExtensionSelection(context)');
   });
@@ -327,7 +330,9 @@ describe('E5 onboarding and secure keys', () => {
     expect(extension).not.toContain("get<string>('apiKey')");
     expect(extension).toContain('resolveApiKeyPriority(secretKey, provider)');
     expect(extension).toContain('async function migrateApiKeyFromSettings(context: vscode.ExtensionContext)');
-    expect(extension).toContain('void migrateApiKeyFromSettings(context).catch(() => {}).then(() => syncKeyStatus());');
+    // Батч 27: после plaintext-миграции идёт keychain-миграция (одиночный ключ →
+    // профиль «default»), и только потом syncKeyStatus.
+    expect(extension).toContain('void migrateApiKeyFromSettings(context).catch(() => {}).then(() => migrateLegacyKeyToDefault(context)).catch(() => {}).then(() => syncKeyStatus());');
     expect(extension).not.toContain('configKey');
   });
 
@@ -1325,8 +1330,10 @@ describe('E1.3a audit checkpoints', () => {
     expect(extension).toContain("registerCommand('codescout.restartAudit'");
     expect(extension).toContain('panel.setAuditResume(savedProgress)');
     expect(extension).toContain('onFileChecked?.(file.filename, deduped)');
-    // Батч 25: каждый проверенный файл чекпоинта помечен {provider, model, ts}
-    expect(extension).toContain("state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: auditSelection.provider, model: auditSelection.model, ts: Date.now() })");
+    // Батч 25: каждый проверенный файл чекпоинта помечен {provider, model, ts}.
+    // Батч 27: добавлена метка профиля (profile) — после failover-switch это
+    // уже провайдер/модель нового профиля, поэтому tagProvider/tagModel.
+    expect(extension).toContain('state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...(profileTag ? { profile: profileTag } : {}), ts: Date.now() })');
     // Батч 25: мердж с метками нахождателей и zone-мерджем (±3)
     expect(extension).toContain('const mergedIssues = collectCheckpointFindings(state)');
     // Батч 25: guard скоупа — scopeHash пересчитывается при догоне
@@ -1579,7 +1586,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes'");
     expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
-    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -3417,7 +3424,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("const language = message.reportLanguage === 'en' ? 'en' : 'ru'");
     expect(extension).toContain("await config.update('language', language, vscode.ConfigurationTarget.Global)");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries)');
+    expect(panel).toContain('this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep)');
   });
 
   it('manifest nls: every %token% resolves, default file is English, ru file is Russian', () => {
