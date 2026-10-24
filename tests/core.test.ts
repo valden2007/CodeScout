@@ -331,8 +331,9 @@ describe('E5 onboarding and secure keys', () => {
     expect(extension).toContain('resolveApiKeyPriority(secretKey, provider)');
     expect(extension).toContain('async function migrateApiKeyFromSettings(context: vscode.ExtensionContext)');
     // Батч 27: после plaintext-миграции идёт keychain-миграция (одиночный ключ →
-    // профиль «default»), и только потом syncKeyStatus.
-    expect(extension).toContain('void migrateApiKeyFromSettings(context).catch(() => {}).then(() => migrateLegacyKeyToDefault(context)).catch(() => {}).then(() => syncKeyStatus());');
+    // профиль «default»), батч 28: миграция профилей в модель с keys[], и только
+    // потом syncKeyStatus.
+    expect(extension).toContain('void migrateApiKeyFromSettings(context).catch(() => {}).then(() => migrateLegacyKeyToDefault(context)).catch(() => {}).then(() => migrateProfilesToMultiKey(context)).catch(() => {}).then(() => syncKeyStatus());');
     expect(extension).not.toContain('configKey');
   });
 
@@ -1333,7 +1334,8 @@ describe('E1.3a audit checkpoints', () => {
     // Батч 25: каждый проверенный файл чекпоинта помечен {provider, model, ts}.
     // Батч 27: добавлена метка профиля (profile) — после failover-switch это
     // уже провайдер/модель нового профиля, поэтому tagProvider/tagModel.
-    expect(extension).toContain('state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...(profileTag ? { profile: profileTag } : {}), ts: Date.now() })');
+    // Батч 28: += метка ключа (key) и SHA-256 содержимого файла (hash).
+    expect(extension).toContain('state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...(profileTag ? { profile: profileTag } : {}), ...(keyTag ? { key: keyTag } : {}), ts: Date.now(), hash: hashAuditFile(workspaceRoot, filename) })');
     // Батч 25: мердж с метками нахождателей и zone-мерджем (±3)
     expect(extension).toContain('const mergedIssues = collectCheckpointFindings(state)');
     // Батч 25: guard скоупа — scopeHash пересчитывается при догоне

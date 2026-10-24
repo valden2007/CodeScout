@@ -679,7 +679,43 @@ pre-design now.
       маршрут через oneShotSelectionOverride (активный профиль НЕ меняется);
       без профилей — старый пикер провайдер→модель. Логика — extension/
       src/keychain.ts (чистый решатель decideFailover + runFailover-состояние
-      скана), hook — src/llm-client, extension.ts только подключает. e2e:
-      tests/keychain.test.ts (fake timers для цикла 2). Tests: 555.
+       скана), hook — src/llm-client, extension.ts только подключает. e2e:
+       tests/keychain.test.ts (fake timers для цикла 2). Tests: 555.
+  32. Умный догон + multi-key профили (батч 28):
+     a) Пер-файловые SHA-256 хэши в чекпоинте: AuditCheckedEntry += {hash,
+     key}; hashAuditFile/fileContentHash пишут хэш содержимого на момент
+     проверки. Догон при scopeHash-несовпадении: checkpointHasFileHashes →
+     reconcileCheckedHashes (hash совпал → находки сохранены и файл НЕ
+     перепроверяется; hash разнился → в очередь, старые findings уходят из
+     результатов; новый файл → в очередь; файл вне скоупа → findings
+     удаляются). ЖЁЛТЫЙ баннер scopeUpdate «Скоуп изменился: N файлов
+     обновлены — догон перепроверит их, M результатов сохранено» виден и
+     во время скана; КРАСНЫЙ (scopeMismatch) остался ТОЛЬКО для legacy
+     чекпоинтов без хэшей. «Начать заново» чистит checkedFiles целиком.
+     b) Профиль = провайдер + НЕСКОЛЬКО ключей: KeychainProfile.keys =
+     KeychainKey[] {id,label,secretId=keychain.<pid>.<kid>,enabled};
+     normalizeProfiles синтезирует default-ключ legacy-профилям, secretId
+     всегда пересчитан (settings не может указать чужой секрет);
+     migrateProfilesToMultiKey переносит keychain.<id> → keys[0] (флаг
+     keychainKeysMigrated, повтор no-op, readKeySecret имеет legacy-
+     fallback до миграции — профили 27 работают без действий). Runtime
+     метки на уровень КЛЮЧА (sleepUntil/ladder/broken, id «pid/kid»):
+     429 → ротация enabled-ключей профиля циклически (cycle не растёт);
+     все ключи профиля спят → следующий профиль по порядку стрелок,
+     cycle++; все везде → пауза min(sleepUntil), Output «⏳ все ключи
+     спят…», автономный выкл → один круг → баннер «Все ключи спят» +
+     grantWaitOnce; 401/403 → broken на ключе, вне ротации, подсказка
+     «проверь ключ X профиля Y», автопереход запрещён; maxCycles гейтит
+     и wait, и profile-switch. Прозрачность: Output «🔑 failover:
+     A/k1 → A/k2 (429; …), цикл N»; метки profile+key у файла чекпоинта
+     (+foundBy.key в proof-блоке). UI центра: стрелки вверх/вниз порядков
+     профилей (keychainMove), список ключей с enabled-индикатором и
+     бейджами broken/asleep (keychainRuntime-снимок хоста), добавить
+     ключ вставкой/переименовать/удалить/вкл-выкл; последний ключ профиля
+     не удаляется. pickResumeProfile возвращает рабочий enabled-ключ
+     (profileId+keyId в oneShot-оверрайде → метки при разовом догоне).
+     failover.enabled=false → прежнее поведение без изменений. e2e:
+     tests/batch28-catchup.test.ts + обновлённый tests/keychain.test.ts.
+     Tests: 589.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

@@ -25,10 +25,12 @@ export interface DiffFile {
 // Нужна для cross-provider resume: в смешанном отчёте видно, кто что нашёл.
 // Батч 27: profile — метка профиля ключа (label), чьим ключом нашли; видна
 // в proof-блоке рядом с provider · model.
+// Батч 28: key — метка конкретного ключа внутри профиля (когда ключей >1).
 export interface FindingSource {
   provider: string;
   model?: string;
   profile?: string;
+  key?: string;
 }
 
 export interface ReviewIssue {

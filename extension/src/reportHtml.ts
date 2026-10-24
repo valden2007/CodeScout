@@ -95,7 +95,7 @@ function confidenceBadge(issue: ReviewIssue, lang: Lang, showConfidence: boolean
 // пуст, но метка есть — блок всё равно открывается («Found by: …»).
 function proofBlock(issue: ReviewIssue, lang: Lang): string {
   const proof = typeof issue.proof === 'string' ? issue.proof.trim() : '';
-  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` · ${issue.foundBy.model}` : ''}${issue.foundBy.profile ? ` · ${issue.foundBy.profile}` : ''}` : '';
+  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` · ${issue.foundBy.model}` : ''}${issue.foundBy.profile ? ` · ${issue.foundBy.profile}` : ''}${issue.foundBy.key ? ` · ${issue.foundBy.key}` : ''}` : '';
   if (!proof && !source) return '';
   const summaryLabel = proof ? escapeHtml(t('issue.showProof', lang)) : `${escapeHtml(t('issue.foundBy', lang))} ${escapeHtml(source)}`;
   const proofText = proof ? `<p class="proof-text">${escapeHtml(proof)}</p>` : '';
@@ -300,6 +300,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--cs-warn); border-left: 3px solid var(--cs-warn); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-warn) 10%, transparent); font-size: var(--cs-font-2); }
 .resume-breaker { margin-top: 5px; color: var(--cs-error); font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
+.audit-resume.scope-update { border-color: var(--cs-warn); border-left-color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); color: var(--cs-warn); }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
 .search-line { margin-top: 10px; }
@@ -390,6 +391,7 @@ ${headHtml(assets, nonce)}
       ? `<div class="audit-resume scope"><strong>${icon('warning')} ${T('resume.scopeChanged')}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon('telescope')}<span>${T('resume.newAudit')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`
       : `<div class="audit-resume"><strong>${icon('debug-alt')} ${resumeView.provider ? T('resume.stopped', { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T('resume.title', { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== undefined ? ` ${T('resume.findings', { n: resumeView.findings })}` : ''}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon('zap')} ${T('resume.breaker', { n: resumeView.breaker.count })} «${escapeHtml(resumeView.breaker.category)}» — ${escapeHtml(T('err.hint.' + resumeView.breaker.category))}</div>` : ''}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon('play')}<span>${T('resume.continueSame')}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon('rocket')}<span>${T('resume.continueOther')}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon('refresh')}<span>${T('resume.restart')}</span></button></div></div>`)
       : ''}
+    ${auditResume?.scopeUpdate ? `<div class="audit-resume scope-update"><strong>${icon('warning')} ${T('resume.scopeUpdate', { n: auditResume.scopeUpdate.files, m: auditResume.scopeUpdate.findings })}</strong></div>` : ''}
     ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon('clock')} ${T('keychain.bannerAllSleep', { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon('play')}<span>${T('keychain.bannerWaitBtn')}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon('debug-stop')}<span>${T('keychain.bannerStopBtn')}</span></button></div></div>` : ''}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? 'disabled' : ''}>${isScanning ? `<span class="spinner">${icon('loading')}</span>` : icon('git-commit')}<span>${T('actions.scanLastCommit')}</span></button>

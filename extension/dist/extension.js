@@ -47,7 +47,7 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode4 = __toESM(require("vscode"));
 var import_node_fs5 = require("node:fs");
-var import_node_crypto6 = require("node:crypto");
+var import_node_crypto7 = require("node:crypto");
 var import_node_path4 = require("node:path");
 
 // ../src/llm-client.ts
@@ -694,6 +694,7 @@ var ru_default = {
   "resume.continueSame": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u043C\u0438",
   "resume.continueOther": "\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u0438\u043C\u0438\u2026",
   "resume.scopeChanged": "\u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D",
+  "resume.scopeUpdate": "\u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F: {n} \u0444\u0430\u0439\u043B\u043E\u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B \u2014 \u0434\u043E\u0433\u043E\u043D \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442 \u0438\u0445, {m} \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u043E\u0432 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E",
   "resume.breaker": "\u0421\u0440\u0430\u0431\u043E\u0442\u0430\u043B \u043F\u0440\u0435\u0434\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435\u043B\u044C: {n} \u043E\u0434\u0438\u043D\u0430\u043A\u043E\u0432\u044B\u0445 \u0441\u043A\u0438\u043F\u0430 \u043F\u043E\u0434\u0440\u044F\u0434",
   "resume.newAudit": "\u041D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442",
   "resume.restart": "\u041D\u0430\u0447\u0430\u0442\u044C \u0437\u0430\u043D\u043E\u0432\u043E",
@@ -1034,9 +1035,9 @@ var ru_default = {
   "keychain.makeActive": "\u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u043C",
   "keychain.activeTag": "\u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439",
   "keychain.empty": "\u041F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u043D\u0435\u0442 \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u043E\u0434\u0438\u043D\u043E\u0447\u043D\u044B\u0439 \u043A\u043B\u044E\u0447. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043F\u0435\u0440\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C, \u0447\u0442\u043E\u0431\u044B \u0434\u0435\u0440\u0436\u0430\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0430 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.",
-  "keychain.failoverEnabled": "Failover: \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u0442\u044C \u043D\u0430 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u0440\u0438 \u043B\u0438\u043C\u0438\u0442\u0430\u0445 (\u0442\u043E\u043B\u044C\u043A\u043E 429)",
+  "keychain.failoverEnabled": "Failover: \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u0442\u044C \u043D\u0430 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 awake-\u043A\u043B\u044E\u0447 (\u0442\u043E\u043B\u044C\u043A\u043E 429)",
   "keychain.failoverMaxCycles": "\u041F\u043E\u0442\u043E\u043B\u043E\u043A \u0446\u0438\u043A\u043B\u043E\u0432 \u0440\u043E\u0442\u0430\u0446\u0438\u0438 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 \u0432 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u043E\u043C \u0440\u0435\u0436\u0438\u043C\u0435)",
-  "keychain.failoverHint": "\u0421\u043F\u044F\u0449\u0438\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E\u043B\u0443\u0447\u0430\u0435\u0442 \u043F\u0430\u0443\u0437\u0443 \u0438\u0437 retry-after \u0438\u043B\u0438 \u043F\u043E \u043B\u0435\u0441\u0442\u043D\u0438\u0446\u0435 120/300/600\u0441; \u043F\u043E\u0441\u043B\u0435 \u043A\u043E\u043D\u0446\u0430 \u0446\u0435\u043F\u043E\u0447\u043A\u0438 \u0432\u043E\u0437\u0432\u0440\u0430\u0442 \u043A \u043F\u0440\u043E\u0444\u0438\u043B\u044F\u043C, \u0447\u044C\u044F \u043A\u0432\u043E\u0442\u0430 \u043E\u0441\u0432\u0435\u0436\u0438\u043B\u0430\u0441\u044C. 401/403 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E\u043C\u0435\u0447\u0430\u0435\u0442 \xAB\u0441\u043B\u043E\u043C\u0430\u043D\u043D\u044B\u043C\xBB, \u0430\u0432\u0442\u043E\u043F\u0435\u0440\u0435\u0445\u043E\u0434 \u043F\u043E \u043D\u0438\u043C \u0437\u0430\u043F\u0440\u0435\u0449\u0451\u043D.",
+  "keychain.failoverHint": "429 \u0443\u0441\u044B\u043F\u043B\u044F\u0435\u0442 \u043A\u043B\u044E\u0447 (retry-after \u0438\u043B\u0438 \u043B\u0435\u0441\u0442\u043D\u0438\u0446\u0430 120/300/600\u0441); \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043A\u043B\u044E\u0447\u0435\u0439 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F, \u043A\u043E\u0433\u0434\u0430 \u0432\u0441\u0435 \u0441\u043F\u044F\u0442 \u2014 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E \u0441\u0442\u0440\u0435\u043B\u043A\u0430\u043C (\u0446\u0438\u043A\u043B+1). 401/403 \u043F\u043E\u043C\u0435\u0447\u0430\u0435\u0442 \u043A\u043B\u044E\u0447 \xAB\u0441\u043B\u043E\u043C\u0430\u043D\u043D\u044B\u043C\xBB, \u0430\u0432\u0442\u043E\u043F\u0435\u0440\u0435\u0445\u043E\u0434 \u043F\u043E auth \u0437\u0430\u043F\u0440\u0435\u0449\u0451\u043D.",
   "keychain.switchPick": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043A\u043B\u044E\u0447\u0430",
   "keychain.switchConfirm": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043D\u0430 \xAB{label}\xBB ({p} \xB7 {m})?",
   "keychain.switchConfirmBtn": "\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u044C",
@@ -1058,11 +1059,34 @@ var ru_default = {
   "keychain.deleteNeedActive": "\u041D\u0435\u043B\u044C\u0437\u044F \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u0431\u0435\u0437 \u0432\u044B\u0431\u043E\u0440\u0430 \u043D\u043E\u0432\u043E\u0433\u043E \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E",
   "keychain.actionCancelled": "\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E",
   "keychain.brokenNotify": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{label}\xBB: \u043A\u043B\u044E\u0447 \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D (401/403) \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0444\u0438\u043B\u044F, \u043E\u043D \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0446\u0435\u043F\u043E\u0447\u043A\u0438",
-  "keychain.bannerAllSleep": "\u0412\u0441\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u0438 \u043A\u043B\u044E\u0447\u0435\u0439 \u0441\u043F\u044F\u0442 (rate-limit). \u041F\u0440\u043E\u0431\u0443\u0436\u0434\u0435\u043D\u0438\u0435: {label} \u0447\u0435\u0440\u0435\u0437 {s}\u0441",
+  "keychain.bannerAllSleep": "\u0412\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u0441\u043F\u044F\u0442 (rate-limit). \u041F\u0440\u043E\u0431\u0443\u0436\u0434\u0435\u043D\u0438\u0435: {label} \u0447\u0435\u0440\u0435\u0437 {s}\u0441",
   "keychain.bannerWaitBtn": "\u041F\u043E\u0434\u043E\u0436\u0434\u0430\u0442\u044C \u0438 \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C",
   "keychain.bannerStopBtn": "\u0421\u0442\u043E\u043F",
   "keychain.resumePick": "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u0434\u043B\u044F \u0434\u043E\u0433\u043E\u043D\u0430 \u0430\u0443\u0434\u0438\u0442\u0430",
-  "keychain.noKeyForResume": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{label}\xBB: \u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u2014 \u0434\u043E\u0433\u043E\u043D \u044D\u0442\u0438\u043C \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u043C \u043D\u0435\u0432\u043E\u0437\u043C\u043E\u0436\u0435\u043D"
+  "keychain.noKeyForResume": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{label}\xBB: \u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u2014 \u0434\u043E\u0433\u043E\u043D \u044D\u0442\u0438\u043C \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u043C \u043D\u0435\u0432\u043E\u0437\u043C\u043E\u0436\u0435\u043D",
+  "keychain.keysTitle": "\u041A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F",
+  "keychain.keysHint": "\u0420\u043E\u0442\u0430\u0446\u0438\u044F \u0431\u0435\u0440\u0451\u0442 \u0432\u043A\u043B\u044E\u0447\u0451\u043D\u043D\u044B\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u043E \u043F\u043E\u0440\u044F\u0434\u043A\u0443; \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043D\u044B\u0435 \u043D\u0435 \u0434\u0451\u0440\u0433\u0430\u044E\u0442\u0441\u044F.",
+  "keychain.addKey": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447",
+  "keychain.keyOn": "\u0432\u043A\u043B\u044E\u0447\u0451\u043D",
+  "keychain.keyOff": "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D",
+  "keychain.keyEnable": "\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C",
+  "keychain.keyDisable": "\u0412\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C",
+  "keychain.badgeBroken": "\u0441\u043B\u043E\u043C\u0430\u043D (401/403)",
+  "keychain.badgeAsleep": "\u0441\u043F\u0438\u0442 {s}\u0441",
+  "keychain.moveUp": "\u0412\u044B\u0448\u0435 (\u043F\u043E\u0440\u044F\u0434\u043E\u043A \u0446\u0438\u043A\u043B\u0430)",
+  "keychain.moveDown": "\u041D\u0438\u0436\u0435 (\u043F\u043E\u0440\u044F\u0434\u043E\u043A \u0446\u0438\u043A\u043B\u0430)",
+  "keychain.movedNotify": "\u041F\u043E\u0440\u044F\u0434\u043E\u043A \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB{label}\xBB \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D",
+  "keychain.keyLabelPrompt": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043D\u043E\u0432\u043E\u0433\u043E \u043A\u043B\u044E\u0447\u0430 (\u043F\u0443\u0441\u0442\u043E = \xAB\u043A\u043B\u044E\u0447-{n}\xBB)",
+  "keychain.keyPastePrompt": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB{label}\xBB",
+  "keychain.keyAddedNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{profile}\xBB",
+  "keychain.keyRenamePrompt": "\u041D\u043E\u0432\u043E\u0435 \u0438\u043C\u044F \u043A\u043B\u044E\u0447\u0430 \xAB{label}\xBB",
+  "keychain.keyRenamedNotify": "\u041A\u043B\u044E\u0447 \u043F\u0435\u0440\u0435\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D \u0432 \xAB{label}\xBB",
+  "keychain.keyDeletedNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0443\u0434\u0430\u043B\u0451\u043D",
+  "keychain.keyLastDelete": "\u041D\u0435\u043B\u044C\u0437\u044F \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0439 \u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u2014 \u0443\u0434\u0430\u043B\u0438\u0442\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u0446\u0435\u043B\u0438\u043A\u043E\u043C",
+  "keychain.keyLimit": "\u0421\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u043A\u043B\u044E\u0447\u0435\u0439 \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u0435",
+  "keychain.keyEnabledNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0432\u043A\u043B\u044E\u0447\u0451\u043D \u0432 \u0440\u043E\u0442\u0430\u0446\u0438\u044E",
+  "keychain.keyDisabledNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438",
+  "keychain.brokenKeyNotify": "\u041A\u043B\u044E\u0447 \xAB{key}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB{profile}\xBB \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D (401/403) \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447, \u043E\u043D \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438"
 };
 
 // ../src/i18n/en.json
@@ -1104,6 +1128,7 @@ var en_default = {
   "resume.continueSame": "Continue with current",
   "resume.continueOther": "Continue with other\u2026",
   "resume.scopeChanged": "Scope changed after stop \u2014 catch-up would be invalid",
+  "resume.scopeUpdate": "Scope changed: {n} files updated \u2014 catch-up will recheck them, {m} results kept",
   "resume.breaker": "Circuit breaker tripped: {n} identical skips in a row",
   "resume.newAudit": "New audit",
   "resume.restart": "Start over",
@@ -1444,9 +1469,9 @@ var en_default = {
   "keychain.makeActive": "Make active",
   "keychain.activeTag": "active",
   "keychain.empty": "No profiles yet \u2014 a single key is in use. Add the first profile to keep several keys per provider.",
-  "keychain.failoverEnabled": "Failover: automatically switch to the next awake profile on rate limits (429 only)",
+  "keychain.failoverEnabled": "Failover: automatically switch to the next awake key on rate limits (429 only)",
   "keychain.failoverMaxCycles": "Rotation cycle cap (0 = unlimited in autonomous mode)",
-  "keychain.failoverHint": "A sleeping profile gets its pause from retry-after or the 120/300/600s ladder; after the chain end it returns to profiles whose quota refreshed. 401/403 marks a profile broken; auto-switching on auth errors is forbidden.",
+  "keychain.failoverHint": "A 429 puts the key to sleep (retry-after or the 120/300/600s ladder); rotation goes through keys inside a profile first, and when all of them sleep \u2014 to the next profile in arrow order (cycle+1). 401/403 marks a key broken; auto-switching on auth errors is forbidden.",
   "keychain.switchPick": "Pick a key profile",
   "keychain.switchConfirm": 'Switch the active profile to "{label}" ({p} \xB7 {m})?',
   "keychain.switchConfirmBtn": "Switch",
@@ -1468,11 +1493,34 @@ var en_default = {
   "keychain.deleteNeedActive": "Cannot delete the active profile without picking a new active one",
   "keychain.actionCancelled": "Action cancelled",
   "keychain.brokenNotify": 'Profile "{label}": key rejected (401/403) \u2014 check the key, the profile is removed from the chain',
-  "keychain.bannerAllSleep": "All key profiles are asleep (rate limit). Wake-up: {label} in {s}s",
+  "keychain.bannerAllSleep": "All keys are asleep (rate limit). Wake-up: {label} in {s}s",
   "keychain.bannerWaitBtn": "Wait and continue",
   "keychain.bannerStopBtn": "Stop",
   "keychain.resumePick": "Pick a profile to resume the audit",
-  "keychain.noKeyForResume": 'Profile "{label}": key not found \u2014 resuming with it is not possible'
+  "keychain.noKeyForResume": 'Profile "{label}": key not found \u2014 resuming with it is not possible',
+  "keychain.keysTitle": "Profile keys",
+  "keychain.keysHint": "Rotation uses enabled keys in order; disabled keys are never touched.",
+  "keychain.addKey": "Add key",
+  "keychain.keyOn": "enabled",
+  "keychain.keyOff": "disabled",
+  "keychain.keyEnable": "Enable",
+  "keychain.keyDisable": "Disable",
+  "keychain.badgeBroken": "broken (401/403)",
+  "keychain.badgeAsleep": "asleep {s}s",
+  "keychain.moveUp": "Up (cycle order)",
+  "keychain.moveDown": "Down (cycle order)",
+  "keychain.movedNotify": 'Order of profile "{label}" updated',
+  "keychain.keyLabelPrompt": 'Name of the new key (empty = "key-{n}")',
+  "keychain.keyPastePrompt": 'Paste the API key for profile "{label}"',
+  "keychain.keyAddedNotify": 'Key "{label}" added to profile "{profile}"',
+  "keychain.keyRenamePrompt": 'New name for key "{label}"',
+  "keychain.keyRenamedNotify": 'Key renamed to "{label}"',
+  "keychain.keyDeletedNotify": 'Key "{label}" deleted',
+  "keychain.keyLastDelete": "Cannot delete the last key of a profile \u2014 remove the profile instead",
+  "keychain.keyLimit": "Too many keys in this profile",
+  "keychain.keyEnabledNotify": 'Key "{label}" is back in rotation',
+  "keychain.keyDisabledNotify": 'Key "{label}" removed from rotation',
+  "keychain.brokenKeyNotify": 'Key "{key}" of profile "{profile}" rejected (401/403) \u2014 check the key, it is out of rotation'
 };
 
 // ../src/i18n/index.ts
@@ -2358,7 +2406,7 @@ function confidenceBadge(issue, lang, showConfidence) {
 }
 function proofBlock(issue, lang) {
   const proof = typeof issue.proof === "string" ? issue.proof.trim() : "";
-  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` \xB7 ${issue.foundBy.model}` : ""}${issue.foundBy.profile ? ` \xB7 ${issue.foundBy.profile}` : ""}` : "";
+  const source = issue.foundBy?.provider ? `${issue.foundBy.provider}${issue.foundBy.model ? ` \xB7 ${issue.foundBy.model}` : ""}${issue.foundBy.profile ? ` \xB7 ${issue.foundBy.profile}` : ""}${issue.foundBy.key ? ` \xB7 ${issue.foundBy.key}` : ""}` : "";
   if (!proof && !source) return "";
   const summaryLabel = proof ? escapeHtml(t("issue.showProof", lang)) : `${escapeHtml(t("issue.foundBy", lang))} ${escapeHtml(source)}`;
   const proofText = proof ? `<p class="proof-text">${escapeHtml(proof)}</p>` : "";
@@ -2551,6 +2599,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .audit-resume { margin-top: 10px; padding: 9px; border: 1px solid var(--cs-warn); border-left: 3px solid var(--cs-warn); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-warn) 10%, transparent); font-size: var(--cs-font-2); }
 .resume-breaker { margin-top: 5px; color: var(--cs-error); font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
+.audit-resume.scope-update { border-color: var(--cs-warn); border-left-color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); color: var(--cs-warn); }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
 .search-line { margin-top: 10px; }
@@ -2605,6 +2654,7 @@ ${headHtml(assets, nonce)}
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
     ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon("zap")} ${T("resume.breaker", { n: resumeView.breaker.count })} \xAB${escapeHtml(resumeView.breaker.category)}\xBB \u2014 ${escapeHtml(T("err.hint." + resumeView.breaker.category))}</div>` : ""}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    ${auditResume?.scopeUpdate ? `<div class="audit-resume scope-update"><strong>${icon("warning")} ${T("resume.scopeUpdate", { n: auditResume.scopeUpdate.files, m: auditResume.scopeUpdate.findings })}</strong></div>` : ""}
     ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon("clock")} ${T("keychain.bannerAllSleep", { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon("play")}<span>${T("keychain.bannerWaitBtn")}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon("debug-stop")}<span>${T("keychain.bannerStopBtn")}</span></button></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
@@ -3480,6 +3530,7 @@ function sampleTestSummary(found, lang = "ru") {
 // src/projectAudit.ts
 var import_node_fs4 = require("node:fs");
 var import_node_path3 = require("node:path");
+var import_node_crypto4 = require("node:crypto");
 var https = __toESM(require("node:https"));
 var http = __toESM(require("node:http"));
 var import_node_net = require("node:net");
@@ -4396,6 +4447,8 @@ function readAuditProgress(workspaceRoot) {
         ...typeof entry.provider === "string" && entry.provider ? { provider: entry.provider } : {},
         ...typeof entry.model === "string" && entry.model ? { model: entry.model } : {},
         ...typeof entry.profile === "string" && entry.profile ? { profile: entry.profile } : {},
+        ...typeof entry.key === "string" && entry.key ? { key: entry.key } : {},
+        ...typeof entry.hash === "string" && entry.hash ? { hash: entry.hash } : {},
         ...Number.isFinite(entry.ts) ? { ts: entry.ts } : {}
       })),
       remaining: parsed.remaining.filter((file) => typeof file === "string"),
@@ -4424,6 +4477,36 @@ function pruneAuditCheckpoint(progress, validFiles) {
   const done = new Set(checked.map((entry) => entry.file));
   return { ...progress, checked, remaining: progress.remaining.filter((file) => !done.has(file)) };
 }
+var FILE_HASH_HEX_LENGTH = 64;
+function fileContentHash(content) {
+  return (0, import_node_crypto4.createHash)("sha256").update(content, "utf8").digest("hex");
+}
+function hashAuditFile(workspaceRoot, filename) {
+  try {
+    return fileContentHash((0, import_node_fs4.readFileSync)((0, import_node_path3.join)(workspaceRoot, filename), "utf8"));
+  } catch {
+    return "";
+  }
+}
+function checkpointHasFileHashes(progress) {
+  return progress.checked.every((entry) => typeof entry.hash === "string" && entry.hash.length === FILE_HASH_HEX_LENGTH);
+}
+function reconcileCheckedHashes(progress, planFiles, currentHashOf) {
+  const plan = new Set(planFiles);
+  const byFile = /* @__PURE__ */ new Map();
+  for (const entry of progress.checked) if (!byFile.has(entry.file)) byFile.set(entry.file, entry);
+  const kept = [];
+  const requeued = [];
+  for (const file of planFiles) {
+    const entry = byFile.get(file);
+    const stored = entry && typeof entry.hash === "string" ? entry.hash : "";
+    if (entry && stored.length === FILE_HASH_HEX_LENGTH && stored === currentHashOf(file)) kept.push(entry);
+    else requeued.push(file);
+  }
+  const dropped = progress.checked.filter((entry) => !plan.has(entry.file)).map((entry) => entry.file);
+  const keptFindings = kept.reduce((sum, entry) => sum + entry.issues.length, 0);
+  return { kept, keptFindings, requeued, dropped };
+}
 function lastCheckpointTag(progress) {
   for (let index = progress.checked.length - 1; index >= 0; index -= 1) {
     const entry = progress.checked[index];
@@ -4437,7 +4520,7 @@ function collectCheckpointFindings(progress) {
     const provider = entry.provider ?? progress.provider;
     const model = entry.model ?? progress.model;
     for (const issue of entry.issues) {
-      tagged.push(provider ? { ...issue, foundBy: { provider, ...model ? { model } : {}, ...entry.profile ? { profile: entry.profile } : {} } } : issue);
+      tagged.push(provider ? { ...issue, foundBy: { provider, ...model ? { model } : {}, ...entry.profile ? { profile: entry.profile } : {}, ...entry.key ? { key: entry.key } : {} } } : issue);
     }
   }
   return mergeFindingsByZone([], tagged);
@@ -4555,7 +4638,7 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
 
 // src/auditResume.ts
 var import_node_child_process2 = require("node:child_process");
-var import_node_crypto4 = require("node:crypto");
+var import_node_crypto5 = require("node:crypto");
 var vscode2 = __toESM(require("vscode"));
 var GIT_HEAD_PROBE_TIMEOUT_MS = 5e3;
 function pathKey(value) {
@@ -4577,7 +4660,7 @@ function getGitHead(workspaceRoot) {
 }
 function computeScopeHash(head, files) {
   const list = [...new Set(files.map((file) => file.replace(/\\/g, "/")))].sort();
-  return (0, import_node_crypto4.createHash)("sha256").update(`head:${head}
+  return (0, import_node_crypto5.createHash)("sha256").update(`head:${head}
 files:
 ${list.join("\n")}
 `, "utf8").digest("hex").slice(0, 16);
@@ -4641,27 +4724,30 @@ async function pickResumeProfile(deps) {
     void vscode2.window.showErrorMessage(`CodeScout: ${message}`);
     return void 0;
   }
-  const key = await deps.resolveKeyForProfile(profile);
-  if (!key && !isLocalBaseUrl(baseUrl)) {
+  const keyRef = await deps.resolveKeyForProfile(profile);
+  if (!keyRef?.key && !isLocalBaseUrl(baseUrl)) {
     void vscode2.window.showErrorMessage(t("keychain.noKeyForResume", deps.lang, { label: profile.label }));
     return void 0;
   }
   const model = profile.model?.trim() || defaultModel(profile.provider);
-  deps.log(`\u{1F511} \u0434\u043E\u0433\u043E\u043D \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u043C ${profile.label}: ${profile.provider} \xB7 ${model}`);
-  return { profile, label: profile.label, provider: profile.provider, model, baseUrl, key };
+  deps.log(`\u{1F511} \u0434\u043E\u0433\u043E\u043D \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u043C ${profile.label}/${keyRef?.keyLabel ?? "\u2014"}: ${profile.provider} \xB7 ${model}`);
+  return { profile, label: profile.label, provider: profile.provider, model, baseUrl, key: keyRef?.key, keyId: keyRef?.keyId, keyLabel: keyRef?.keyLabel };
 }
 
 // src/keychain.ts
 var vscode3 = __toESM(require("vscode"));
-var import_node_crypto5 = require("node:crypto");
+var import_node_crypto6 = require("node:crypto");
 var KEYCHAIN_SETTING = "keychain";
 var KEYCHAIN_ACTIVE_SETTING = "keychain.active";
 var KEYCHAIN_SECRET_PREFIX = "keychain.";
 var KEYCHAIN_MIGRATED_FLAG = "codescout.keychainMigrated";
+var KEYCHAIN_KEYS_MIGRATED_FLAG = "codescout.keychainKeysMigrated";
 var DEFAULT_PROFILE_ID = "default";
 var ONBOARDED_PROFILE_ID = "onboarded";
+var DEFAULT_KEY_ID = "default";
 var FAILOVER_SLEEP_LADDER_SECONDS = [120, 300, 600];
 var MAX_PROFILES = 20;
+var MAX_KEYS_PER_PROFILE = 10;
 function validProvider(value) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return void 0;
@@ -4670,6 +4756,31 @@ function validProvider(value) {
   } catch {
     return void 0;
   }
+}
+function keySecretId(profileId, keyId) {
+  return `${KEYCHAIN_SECRET_PREFIX}${profileId}.${keyId}`;
+}
+function secretKeyForProfile(id) {
+  return `${KEYCHAIN_SECRET_PREFIX}${id}`;
+}
+function defaultKeyFor(profileId) {
+  return { id: DEFAULT_KEY_ID, label: "default", secretId: keySecretId(profileId, DEFAULT_KEY_ID), enabled: true };
+}
+function normalizeKeys(profileId, raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item;
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const label = typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : `\u043A\u043B\u044E\u0447-${out.length + 1}`;
+    out.push({ id, label, secretId: keySecretId(profileId, id), enabled: entry.enabled !== false });
+    if (out.length >= MAX_KEYS_PER_PROFILE) break;
+  }
+  return out;
 }
 function normalizeProfiles(raw) {
   if (!Array.isArray(raw)) return [];
@@ -4685,7 +4796,8 @@ function normalizeProfiles(raw) {
     const label = typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : id;
     const model = typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : void 0;
     const base = profileBaseUrl(entry.baseUrl);
-    out.push({ id, label, provider, ...model ? { model } : {}, ...base ? { baseUrl: base } : {} });
+    const keys = normalizeKeys(id, entry.keys);
+    out.push({ id, label, provider, ...model ? { model } : {}, ...base ? { baseUrl: base } : {}, keys: keys.length ? keys : [defaultKeyFor(id)] });
     if (out.length >= MAX_PROFILES) break;
   }
   return out;
@@ -4715,21 +4827,41 @@ async function writeActiveId(id) {
   const config = vscode3.workspace.getConfiguration("codescout");
   await config.update(KEYCHAIN_ACTIVE_SETTING, id, vscode3.ConfigurationTarget.Global);
 }
-function secretKeyForProfile(id) {
-  return `${KEYCHAIN_SECRET_PREFIX}${id}`;
+async function readKeySecret(secrets, profile, key) {
+  const value = await secrets.get(key.secretId);
+  if (value?.trim()) return value;
+  if (key.id === DEFAULT_KEY_ID && profile.keys[0]?.id === DEFAULT_KEY_ID) return await secrets.get(secretKeyForProfile(profile.id));
+  return void 0;
 }
-async function readProfileSecret(secrets, id) {
-  return await secrets.get(secretKeyForProfile(id));
+async function storeKeySecret(secrets, key, value) {
+  await secrets.store(key.secretId, value);
 }
-async function storeProfileSecret(secrets, id, key) {
-  await secrets.store(secretKeyForProfile(id), key);
+async function readProfileSecret(secrets, profileId) {
+  const profile = readProfiles().find((candidate) => candidate.id === profileId);
+  if (!profile) return await secrets.get(secretKeyForProfile(profileId));
+  const key = pickActiveKey(profile) ?? profile.keys[0];
+  return key ? await readKeySecret(secrets, profile, key) : void 0;
 }
-async function deleteProfileSecret(secrets, id) {
-  await secrets.delete(secretKeyForProfile(id));
+async function storeProfileSecret(secrets, profileId, value) {
+  const profiles = readProfiles();
+  const profile = profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    await storeKeySecret(secrets, defaultKeyFor(profileId), value);
+    return;
+  }
+  const key = pickActiveKey(profile) ?? profile.keys[0];
+  await storeKeySecret(secrets, key, value.trim());
+}
+async function deleteProfileSecret(secrets, profileId) {
+  const profiles = readProfiles();
+  const profile = profiles.find((candidate) => candidate.id === profileId);
+  const ids = /* @__PURE__ */ new Set([secretKeyForProfile(profileId), defaultKeyFor(profileId).secretId]);
+  for (const key of profile?.keys ?? []) ids.add(key.secretId);
+  for (const id of ids) await secrets.delete(id);
 }
 function slugify(label) {
   const base = label.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  return base || `profile-${(0, import_node_crypto5.randomBytes)(3).toString("hex")}`;
+  return base || `profile-${(0, import_node_crypto6.randomBytes)(3).toString("hex")}`;
 }
 function makeProfileId(label, existing) {
   const taken = new Set(existing.map((profile) => profile.id));
@@ -4739,18 +4871,94 @@ function makeProfileId(label, existing) {
     const candidate = `${base}-${suffix}`;
     if (!taken.has(candidate)) return candidate;
   }
-  return `${base}-${(0, import_node_crypto5.randomBytes)(4).toString("hex")}`;
+  return `${base}-${(0, import_node_crypto6.randomBytes)(4).toString("hex")}`;
+}
+function slugKey(label) {
+  const base = label.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return base || `key-${(0, import_node_crypto6.randomBytes)(3).toString("hex")}`;
+}
+function makeKeyId(label, existing) {
+  const taken = new Set(existing.map((key) => key.id));
+  const base = slugKey(label);
+  if (!taken.has(base)) return base;
+  for (let suffix = 2; suffix < 100; suffix += 1) {
+    const candidate = `${base}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${(0, import_node_crypto6.randomBytes)(4).toString("hex")}`;
 }
 async function addProfile(secrets, input) {
   const profiles = readProfiles();
   const label = input.label.trim() || input.provider;
   const id = makeProfileId(label, profiles);
   const base = profileBaseUrl(input.baseUrl);
-  const profile = { id, label, provider: input.provider, ...input.model?.trim() ? { model: input.model.trim() } : {}, ...base ? { baseUrl: base } : {} };
-  await storeProfileSecret(secrets, id, input.key.trim());
+  const key = { id: DEFAULT_KEY_ID, label: "default", secretId: keySecretId(id, DEFAULT_KEY_ID), enabled: true };
+  const profile = { id, label, provider: input.provider, ...input.model?.trim() ? { model: input.model.trim() } : {}, ...base ? { baseUrl: base } : {}, keys: [key] };
+  await storeKeySecret(secrets, key, input.key.trim());
   await writeProfiles([...profiles, profile]);
   if (!readActiveId() || !profiles.some((p) => p.id === readActiveId())) await writeActiveId(id);
   return profile;
+}
+async function addKey(secrets, profileId, input) {
+  const profiles = readProfiles();
+  const target = profiles.find((profile) => profile.id === profileId);
+  if (!target || target.keys.length >= MAX_KEYS_PER_PROFILE) return void 0;
+  const label = input.label?.trim() || `\u043A\u043B\u044E\u0447-${target.keys.length + 1}`;
+  const keyId = makeKeyId(label, target.keys);
+  const key = { id: keyId, label, secretId: keySecretId(profileId, keyId), enabled: true };
+  await storeKeySecret(secrets, key, input.key.trim());
+  const next = profiles.map((profile) => profile.id === profileId ? { ...profile, keys: [...profile.keys, key] } : profile);
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === profileId);
+}
+async function renameKey(profileId, keyId, label) {
+  const profiles = readProfiles();
+  const next = profiles.map((profile) => profile.id !== profileId ? profile : {
+    ...profile,
+    keys: profile.keys.map((key) => key.id === keyId ? { ...key, label: label.trim() || key.label } : key)
+  });
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === profileId);
+}
+async function removeKey(secrets, profileId, keyId) {
+  const profiles = readProfiles();
+  const target = profiles.find((profile) => profile.id === profileId);
+  if (!target) return { ok: false, reason: "unknown" };
+  const key = target.keys.find((candidate) => candidate.id === keyId);
+  if (!key) return { ok: false, reason: "unknown" };
+  if (target.keys.length <= 1) return { ok: false, reason: "lastKey" };
+  const next = profiles.map((profile) => profile.id !== profileId ? profile : { ...profile, keys: profile.keys.filter((candidate) => candidate.id !== keyId) });
+  await secrets.delete(key.secretId);
+  await writeProfiles(next);
+  deleteRuntimeForKey(profileId, keyId);
+  return { ok: true, profile: next.find((profile) => profile.id === profileId) };
+}
+async function setKeyEnabled(profileId, keyId, enabled) {
+  const profiles = readProfiles();
+  const next = profiles.map((profile) => profile.id !== profileId ? profile : {
+    ...profile,
+    keys: profile.keys.map((key) => key.id === keyId ? { ...key, enabled } : key)
+  });
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === profileId);
+}
+async function moveProfile(profileId, direction) {
+  const profiles = readProfiles();
+  const index = profiles.findIndex((profile) => profile.id === profileId);
+  if (index < 0) return void 0;
+  const target = index + direction;
+  if (target < 0 || target >= profiles.length) return profiles;
+  const next = [...profiles];
+  const moved = next.splice(index, 1)[0];
+  next.splice(target, 0, moved);
+  await writeProfiles(next);
+  return next;
+}
+function pickActiveKey(profile) {
+  if (!profile) return void 0;
+  const enabled = profile.keys.filter((key) => key.enabled);
+  if (!enabled.length) return void 0;
+  return enabled.find((key) => !isKeyBroken(profile.id, key.id)) ?? enabled[0];
 }
 async function setProfileBaseUrl(id, baseUrl) {
   const profiles = readProfiles();
@@ -4761,7 +4969,7 @@ async function setProfileBaseUrl(id, baseUrl) {
   if (trimmed && !base) return void 0;
   const next = profiles.map((profile) => {
     if (profile.id !== id) return profile;
-    return { id: profile.id, label: profile.label, provider: profile.provider, ...profile.model?.trim() ? { model: profile.model.trim() } : {}, ...base ? { baseUrl: base } : {} };
+    return { id: profile.id, label: profile.label, provider: profile.provider, ...profile.model?.trim() ? { model: profile.model.trim() } : {}, ...base ? { baseUrl: base } : {}, keys: profile.keys };
   });
   await writeProfiles(next);
   return next.find((profile) => profile.id === id);
@@ -4791,21 +4999,30 @@ async function removeProfile(secrets, id, newActiveId) {
   await deleteProfileSecret(secrets, id);
   await writeProfiles(rest);
   runtime.delete(id);
+  for (const key of target.keys) runtime.delete(keyRuntimeId(id, key.id));
   if (rest.length === 0) await writeActiveId("");
   return { ok: true, profiles: rest, activeId: rest.length ? readActiveId() : "" };
 }
 async function upsertOnboardedProfile(secrets, input) {
   const profiles = readProfiles();
   const base = profileBaseUrl(input.baseUrl);
-  const profile = { id: ONBOARDED_PROFILE_ID, label: ONBOARDED_PROFILE_ID, provider: input.provider, ...input.model?.trim() ? { model: input.model.trim() } : {}, ...base ? { baseUrl: base } : {} };
-  await storeProfileSecret(secrets, ONBOARDED_PROFILE_ID, input.key.trim());
-  const exists = profiles.some((candidate) => candidate.id === ONBOARDED_PROFILE_ID);
-  await writeProfiles(exists ? profiles.map((candidate) => candidate.id === ONBOARDED_PROFILE_ID ? profile : candidate) : [...profiles, profile]);
+  const existing = profiles.find((profile2) => profile2.id === ONBOARDED_PROFILE_ID);
+  const key = existing ? pickActiveKey(existing) ?? existing.keys[0] : defaultKeyFor(ONBOARDED_PROFILE_ID);
+  const profile = {
+    id: ONBOARDED_PROFILE_ID,
+    label: ONBOARDED_PROFILE_ID,
+    provider: input.provider,
+    ...input.model?.trim() ? { model: input.model.trim() } : {},
+    ...base ? { baseUrl: base } : {},
+    keys: existing ? existing.keys.some((candidate) => candidate.id === key.id) ? existing.keys : [key] : [key]
+  };
+  await storeKeySecret(secrets, key, input.key.trim());
+  await writeProfiles(existing ? profiles.map((candidate) => candidate.id === ONBOARDED_PROFILE_ID ? profile : candidate) : [...profiles, profile]);
   await writeActiveId(ONBOARDED_PROFILE_ID);
   return profile;
 }
 async function migrateLegacyKeyToDefault(context) {
-  const legacyKey = (await context.secrets.get("codescout.apiKey"))?.trim();
+  const legacyKey = (await context.secrets.get(SECRET_KEY_OF_LEGACY))?.trim();
   if (!legacyKey) return false;
   if (await context.secrets.get(KEYCHAIN_MIGRATED_FLAG) === "true") return false;
   if (readProfiles().length > 0) {
@@ -4814,107 +5031,209 @@ async function migrateLegacyKeyToDefault(context) {
   }
   const provider = validProvider((await context.secrets.get("codescout.provider"))?.trim()) ?? validProvider(vscode3.workspace.getConfiguration("codescout").get("provider")) ?? "gemini";
   const model = (await context.secrets.get("codescout.model"))?.trim() || void 0;
-  const profile = { id: DEFAULT_PROFILE_ID, label: DEFAULT_PROFILE_ID, provider, ...model ? { model } : {} };
-  await storeProfileSecret(context.secrets, DEFAULT_PROFILE_ID, legacyKey);
+  const key = defaultKeyFor(DEFAULT_PROFILE_ID);
+  const profile = { id: DEFAULT_PROFILE_ID, label: DEFAULT_PROFILE_ID, provider, ...model ? { model } : {}, keys: [key] };
+  await storeKeySecret(context.secrets, key, legacyKey);
   await writeProfiles([profile]);
   await writeActiveId(DEFAULT_PROFILE_ID);
   await context.secrets.store(KEYCHAIN_MIGRATED_FLAG, "true");
   return true;
 }
+var SECRET_KEY_OF_LEGACY = "codescout.apiKey";
+async function migrateProfilesToMultiKey(context) {
+  if (await context.secrets.get(KEYCHAIN_KEYS_MIGRATED_FLAG) === "true") return false;
+  const config = vscode3.workspace.getConfiguration("codescout");
+  const raw = config.get(KEYCHAIN_SETTING);
+  if (!Array.isArray(raw) || raw.length === 0) {
+    await context.secrets.store(KEYCHAIN_KEYS_MIGRATED_FLAG, "true");
+    return false;
+  }
+  let changed = false;
+  const next = [];
+  for (const item of normalizeProfiles(raw)) {
+    const rawEntry = raw.find((candidate) => candidate && typeof candidate === "object" && candidate.id === item.id);
+    const hadKeys = Array.isArray(rawEntry?.keys) && (rawEntry?.keys).length > 0;
+    if (hadKeys) {
+      next.push(item);
+      continue;
+    }
+    const key = defaultKeyFor(item.id);
+    const oldSecret = (await context.secrets.get(secretKeyForProfile(item.id)))?.trim();
+    if (oldSecret) {
+      await storeKeySecret(context.secrets, key, oldSecret);
+      await context.secrets.delete(secretKeyForProfile(item.id));
+    }
+    next.push({ ...item, keys: [key] });
+    changed = true;
+  }
+  await writeProfiles(next);
+  await context.secrets.store(KEYCHAIN_KEYS_MIGRATED_FLAG, "true");
+  return changed;
+}
+function keyRuntimeId(profileId, keyId) {
+  return `${profileId}/${keyId}`;
+}
 var runtime = /* @__PURE__ */ new Map();
 function resetRuntime() {
   runtime.clear();
-  scanRuntime = { cycle: 0, allowWaitOnce: false, currentId: "" };
+  scanRuntime = { cycle: 0, allowWaitOnce: false, currentId: "", currentKeyId: "" };
 }
-var scanRuntime = { cycle: 0, allowWaitOnce: false, currentId: "" };
-function beginScan(currentId) {
-  scanRuntime = { cycle: 0, allowWaitOnce: scanRuntime.allowWaitOnce, currentId };
+var scanRuntime = { cycle: 0, allowWaitOnce: false, currentId: "", currentKeyId: "" };
+function beginScan(profileId, keyId = DEFAULT_KEY_ID) {
+  scanRuntime = { cycle: 0, allowWaitOnce: scanRuntime.allowWaitOnce, currentId: profileId, currentKeyId: keyId };
 }
-function scanCurrentId() {
-  return scanRuntime.currentId;
+function scanCurrent() {
+  return { profileId: scanRuntime.currentId, keyId: scanRuntime.currentKeyId };
 }
 function grantWaitOnce() {
   scanRuntime.allowWaitOnce = true;
 }
-function stateOf(id) {
-  let state = runtime.get(id);
+function stateOf(runtimeId) {
+  let state = runtime.get(runtimeId);
   if (!state) {
     state = { sleepUntil: 0, ladderStep: 0, broken: false };
-    runtime.set(id, state);
+    runtime.set(runtimeId, state);
   }
   return state;
 }
-function isAsleep(id, now) {
-  return (runtime.get(id)?.sleepUntil ?? 0) > now;
+function isKeyAsleep(profileId, keyId, now) {
+  return (runtime.get(keyRuntimeId(profileId, keyId))?.sleepUntil ?? 0) > now;
 }
-function isBroken(id) {
-  return runtime.get(id)?.broken === true;
+function isKeyBroken(profileId, keyId) {
+  return runtime.get(keyRuntimeId(profileId, keyId))?.broken === true;
 }
-function markRateLimited(id, now, waitSeconds) {
-  const state = stateOf(id);
+function markKeyRateLimited(profileId, keyId, now, waitSeconds) {
+  const state = stateOf(keyRuntimeId(profileId, keyId));
   const seconds = waitSeconds !== void 0 && waitSeconds > 0 ? Math.ceil(waitSeconds) : FAILOVER_SLEEP_LADDER_SECONDS[Math.min(state.ladderStep, FAILOVER_SLEEP_LADDER_SECONDS.length - 1)];
   if (waitSeconds === void 0 || waitSeconds <= 0) state.ladderStep += 1;
   state.sleepUntil = now + seconds * 1e3;
   return seconds;
 }
-function markBroken(id) {
-  stateOf(id).broken = true;
+function markKeyBroken(profileId, keyId) {
+  stateOf(keyRuntimeId(profileId, keyId)).broken = true;
 }
-function clearBroken(id) {
-  const state = runtime.get(id);
+function clearKeyBroken(profileId, keyId) {
+  const state = runtime.get(keyRuntimeId(profileId, keyId));
   if (state) state.broken = false;
 }
-function markHealthy(id) {
-  const state = runtime.get(id);
+function markKeyHealthy(profileId, keyId) {
+  const state = runtime.get(keyRuntimeId(profileId, keyId));
   if (state) state.ladderStep = 0;
 }
+function deleteRuntimeForKey(profileId, keyId) {
+  runtime.delete(keyRuntimeId(profileId, keyId));
+}
+function runtimeSnapshot(profiles = readProfiles(), now = Date.now()) {
+  const snapshot = {};
+  for (const profile of profiles) {
+    for (const key of profile.keys) {
+      const state = runtime.get(keyRuntimeId(profile.id, key.id));
+      if (!state) continue;
+      const sleepSeconds = Math.max(0, Math.ceil((state.sleepUntil - now) / 1e3));
+      if (state.broken || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds };
+    }
+  }
+  return snapshot;
+}
+function keyFullName(profile, key) {
+  return `${profile.label}/${key.label}`;
+}
+function awakeKeys(profile, currentKeyId, now) {
+  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
+}
 function decideFailover(ctx, options, waitSeconds, now) {
-  const sleepSeconds = ctx.currentId ? markRateLimited(ctx.currentId, now, waitSeconds) : 0;
+  const sleepSeconds = ctx.current.profileId ? markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
   const chain = ctx.profiles;
-  const currentIndex = chain.findIndex((profile) => profile.id === ctx.currentId);
+  const currentIndex = chain.findIndex((profile) => profile.id === ctx.current.profileId);
+  const currentProfile = currentIndex >= 0 ? chain[currentIndex] : void 0;
+  const currentKey = currentProfile?.keys.find((key) => key.id === ctx.current.keyId);
+  const fromLabel = currentProfile ? keyFullName(currentProfile, currentKey ?? { id: ctx.current.keyId, label: ctx.current.keyId, secretId: "", enabled: true }) : ctx.current.profileId || "";
   let cycle = ctx.cycle;
+  if (currentProfile) {
+    const enabled = currentProfile.keys.filter((key) => key.enabled);
+    const keyIndex = enabled.findIndex((key) => key.id === ctx.current.keyId);
+    for (let step = 1; step < enabled.length; step += 1) {
+      const candidate = enabled[((keyIndex >= 0 ? keyIndex : 0) + step + enabled.length) % enabled.length];
+      if (!candidate || candidate.id === ctx.current.keyId) continue;
+      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
+      return {
+        decision: { kind: "switch", profile: currentProfile, key: candidate, fromLabel, sleepSeconds, cycle, profileChanged: false },
+        cycle,
+        allowWaitOnce: ctx.allowWaitOnce
+      };
+    }
+  }
   for (let step = 1; step <= chain.length; step += 1) {
-    const candidate = chain[(currentIndex + step + chain.length) % chain.length];
-    if (!candidate || candidate.id === ctx.currentId) continue;
-    if (isBroken(candidate.id)) continue;
-    if (isAsleep(candidate.id, now)) continue;
+    const candidate = chain[((currentIndex >= 0 ? currentIndex : 0) + step + chain.length) % chain.length];
+    if (!candidate || candidate.id === ctx.current.profileId) continue;
+    const key = awakeKeys(candidate, void 0, now)[0];
+    if (!key) continue;
+    if (options.maxCycles > 0 && cycle + 1 > options.maxCycles) {
+      return { decision: { kind: "stop", reason: "maxCycles", waitMs: sleepWaitMs(chain, now), wakeLabel: wakeLabelFor(chain, now) }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+    }
+    cycle += 1;
     return {
-      decision: { kind: "switch", profile: candidate, fromLabel: chain[currentIndex]?.label ?? ctx.currentId, sleepSeconds, cycle: cycle + 1 },
+      decision: { kind: "switch", profile: candidate, key, fromLabel, sleepSeconds, cycle, profileChanged: true },
       cycle,
       allowWaitOnce: ctx.allowWaitOnce
     };
   }
-  const sleepers = chain.filter((profile) => !isBroken(profile.id) && isAsleep(profile.id, now));
+  const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
   if (sleepers.length === 0) {
     return { decision: { kind: "stop", reason: "noneLeft", waitMs: 0, wakeLabel: "" }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
-  const wake = sleepers.reduce((earliest, profile) => Math.min(earliest, runtime.get(profile.id).sleepUntil), Number.POSITIVE_INFINITY);
+  const wake = sleepers.reduce((earliest2, entry) => Math.min(earliest2, runtime.get(keyRuntimeId(entry.profile.id, entry.key.id)).sleepUntil), Number.POSITIVE_INFINITY);
   const waitMs = Math.max(0, wake - now);
-  const wakeLabel = sleepers.sort((a, b) => runtime.get(a.id).sleepUntil - runtime.get(b.id).sleepUntil)[0].label;
+  const earliest = sleepers.sort((a, b) => runtime.get(keyRuntimeId(a.profile.id, a.key.id)).sleepUntil - runtime.get(keyRuntimeId(b.profile.id, b.key.id)).sleepUntil)[0];
+  const wakeName = keyFullName(earliest.profile, earliest.key);
   if (options.autonomous) {
     if (options.maxCycles > 0 && cycle + 1 > options.maxCycles) {
-      return { decision: { kind: "stop", reason: "maxCycles", waitMs, wakeLabel }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+      return { decision: { kind: "stop", reason: "maxCycles", waitMs, wakeLabel: wakeName }, cycle, allowWaitOnce: ctx.allowWaitOnce };
     }
     cycle += 1;
-    return { decision: { kind: "wait", waitMs, wakeLabel, cycle }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+    return { decision: { kind: "wait", waitMs, wakeLabel: wakeName, cycle }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
   if (ctx.allowWaitOnce) {
     cycle += 1;
-    return { decision: { kind: "wait", waitMs, wakeLabel, cycle }, cycle, allowWaitOnce: false };
+    return { decision: { kind: "wait", waitMs, wakeLabel: wakeName, cycle }, cycle, allowWaitOnce: false };
   }
-  return { decision: { kind: "stop", reason: "allSleep", waitMs, wakeLabel }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+  return { decision: { kind: "stop", reason: "allSleep", waitMs, wakeLabel: wakeName }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+}
+function sleepWaitMs(chain, now) {
+  let wake = Number.POSITIVE_INFINITY;
+  for (const profile of chain) {
+    for (const key of profile.keys) {
+      if (!key.enabled || isKeyBroken(profile.id, key.id) || !isKeyAsleep(profile.id, key.id, now)) continue;
+      wake = Math.min(wake, runtime.get(keyRuntimeId(profile.id, key.id)).sleepUntil);
+    }
+  }
+  return Number.isFinite(wake) ? Math.max(0, wake - now) : 0;
+}
+function wakeLabelFor(chain, now) {
+  let best;
+  for (const profile of chain) {
+    for (const key of profile.keys) {
+      if (!key.enabled || isKeyBroken(profile.id, key.id) || !isKeyAsleep(profile.id, key.id, now)) continue;
+      const until = runtime.get(keyRuntimeId(profile.id, key.id)).sleepUntil;
+      if (!best || until < best.until) best = { name: keyFullName(profile, key), until };
+    }
+  }
+  return best?.name ?? "";
 }
 function runFailover(waitSeconds, options, now = Date.now()) {
   const profiles = readProfiles();
   const result = decideFailover(
-    { profiles, currentId: scanRuntime.currentId, allowWaitOnce: scanRuntime.allowWaitOnce, cycle: scanRuntime.cycle },
+    { profiles, current: { profileId: scanRuntime.currentId, keyId: scanRuntime.currentKeyId }, allowWaitOnce: scanRuntime.allowWaitOnce, cycle: scanRuntime.cycle },
     options,
     waitSeconds,
     now
   );
   scanRuntime.cycle = result.cycle;
   scanRuntime.allowWaitOnce = result.allowWaitOnce;
-  if (result.decision.kind === "switch") scanRuntime.currentId = result.decision.profile.id;
+  if (result.decision.kind === "switch") {
+    scanRuntime.currentId = result.decision.profile.id;
+    scanRuntime.currentKeyId = result.decision.key.id;
+  }
   return result.decision;
 }
 function activeProfile(profiles = readProfiles(), activeId = readActiveId()) {
@@ -4924,6 +5243,10 @@ function activeProfile(profiles = readProfiles(), activeId = readActiveId()) {
 function profileLabel(id, profiles = readProfiles()) {
   if (!id) return "";
   return profiles.find((profile) => profile.id === id)?.label ?? id;
+}
+function keyLabelFor(profileId, keyId, profiles = readProfiles()) {
+  if (!profileId || !keyId) return "";
+  return profiles.find((profile) => profile.id === profileId)?.keys.find((key) => key.id === keyId)?.label ?? keyId;
 }
 function failoverEnabled() {
   const config = vscode3.workspace.getConfiguration("codescout");
@@ -4987,17 +5310,44 @@ function currentKeyLine(T, state) {
 function keychainBlockHtml(T, state) {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? "";
-  const rows = profiles.map((profile) => {
+  const runtimeInfo = state.keychainRuntime ?? {};
+  const rows = profiles.map((profile, index) => {
     const isActive = profile.id === activeId;
     const model = escapeHtml2(profile.model?.trim() || "");
     const rowBaseUrl = escapeHtml2(profile.baseUrl?.trim() || "");
+    const keys = profile.keys ?? [];
+    const pid = escapeHtml2(profile.id);
+    const keyRows = keys.map((key) => {
+      const kid = escapeHtml2(key.id);
+      const rt = runtimeInfo[`${profile.id}/${key.id}`];
+      const badges = [
+        key.enabled ? `<span class="kc-key-on">${icon2("pass")} ${T("keychain.keyOn")}</span>` : `<span class="kc-key-off">${icon2("circle-slash")} ${T("keychain.keyOff")}</span>`,
+        ...rt?.broken ? [`<span class="kc-key-broken">${icon2("error")} ${T("keychain.badgeBroken")}</span>`] : [],
+        ...rt && rt.sleepSeconds > 0 ? [`<span class="kc-key-asleep">${icon2("clock")} ${T("keychain.badgeAsleep", { s: rt.sleepSeconds })}</span>`] : []
+      ].join(" ");
+      return `<div class="kc-key-row${key.enabled ? "" : " kc-key-disabled"}">
+        <span class="kc-key-line">${icon2("key")} <strong>${escapeHtml2(key.label)}</strong> ${badges}</span>
+        <span class="kc-key-actions">
+          <button type="button" class="secondary" data-kc="keychainToggleKey" data-id="${pid}" data-keyid="${kid}">${icon2(key.enabled ? "circle-slash" : "pass")}<span>${T(key.enabled ? "keychain.keyDisable" : "keychain.keyEnable")}</span></button>
+          <button type="button" class="secondary" data-kc="keychainRenameKey" data-id="${pid}" data-keyid="${kid}">${icon2("edit")}<span>${T("keychain.rename")}</span></button>
+          <button type="button" class="secondary" data-kc="keychainDeleteKey" data-id="${pid}" data-keyid="${kid}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
+        </span>
+      </div>`;
+    }).join("");
+    const moveUp = index > 0 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveUp")}" data-kc="keychainMove" data-id="${pid}" data-dir="-1">${icon2("arrow-up")}</button>` : "";
+    const moveDown = index < profiles.length - 1 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveDown")}" data-kc="keychainMove" data-id="${pid}" data-dir="1">${icon2("arrow-down")}</button>` : "";
     return `<div class="kc-row${isActive ? " kc-active-row" : ""}">
-      <span class="kc-line">${icon2("key")} <strong>${escapeHtml2(profile.provider)}</strong> \xB7 ${escapeHtml2(profile.label)}${model ? ` \xB7 ${model}` : ""}${isActive ? ` <span class="kc-active-badge">${icon2("pass")} ${T("keychain.activeTag")}</span>` : ""}</span>
-      <span class="kc-baseurl-row"><label>${T("keychain.baseUrlField")}</label><input class="kc-baseurl" data-id="${escapeHtml2(profile.id)}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${escapeHtml2(profile.id)}">${icon2("save")}<span>${T("keychain.baseUrlSave")}</span></button></span>
+      <span class="kc-line">${moveUp}${moveDown} ${icon2("key")} <strong>${escapeHtml2(profile.provider)}</strong> \xB7 ${escapeHtml2(profile.label)}${model ? ` \xB7 ${model}` : ""}${isActive ? ` <span class="kc-active-badge">${icon2("pass")} ${T("keychain.activeTag")}</span>` : ""}</span>
+      <span class="kc-baseurl-row"><label>${T("keychain.baseUrlField")}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon2("save")}<span>${T("keychain.baseUrlSave")}</span></button></span>
+      <div class="kc-keys">
+        <div class="kc-keys-head">${icon2("list-unordered")} <span>${T("keychain.keysTitle")}</span><button type="button" class="secondary" data-kc="keychainAddKey" data-id="${pid}">${icon2("plus")}<span>${T("keychain.addKey")}</span></button></div>
+        ${keyRows}
+        <p class="hint">${T("keychain.keysHint")}</p>
+      </div>
       <span class="kc-actions">
-        <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${escapeHtml2(profile.id)}">${icon2("target")}<span>${T("keychain.makeActive")}</span></button>
-        <button type="button" class="secondary" data-kc="keychainRename" data-id="${escapeHtml2(profile.id)}">${icon2("edit")}<span>${T("keychain.rename")}</span></button>
-        <button type="button" class="secondary" data-kc="keychainDelete" data-id="${escapeHtml2(profile.id)}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
+        <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${pid}">${icon2("target")}<span>${T("keychain.makeActive")}</span></button>
+        <button type="button" class="secondary" data-kc="keychainRename" data-id="${pid}">${icon2("edit")}<span>${T("keychain.rename")}</span></button>
+        <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
       </span>
     </div>`;
   }).join("");
@@ -5120,6 +5470,20 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-baseurl-row label { font-size: var(--cs-font-1); color: var(--cs-desc); }
 .kc-baseurl-row input { flex: 1 1 180px; min-width: 0; font-family: var(--vscode-editor-font-family); }
 .kc-baseurl-row button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-keys { flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; margin: 4px 0; padding-left: var(--cs-space-2); border-left: 2px solid var(--cs-card-border); }
+.kc-keys-head { display: flex; align-items: center; gap: 5px; font-size: var(--cs-font-1); color: var(--cs-desc); margin-bottom: 2px; }
+.kc-keys-head button { width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-key-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--cs-space-2); padding: 2px var(--cs-space-2); border-radius: var(--cs-radius-1); }
+.kc-key-disabled { opacity: 0.6; }
+.kc-key-line { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cs-font-2); font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+.kc-key-on, .kc-key-off, .kc-key-broken, .kc-key-asleep { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cs-font-1); font-family: var(--vscode-font-family); }
+.kc-key-on { color: var(--cs-pass); }
+.kc-key-off { color: var(--cs-desc); }
+.kc-key-broken { color: var(--cs-error); }
+.kc-key-asleep { color: var(--cs-warn); }
+.kc-key-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-move { width: auto; padding: 2px 6px; min-height: auto; }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -5523,6 +5887,7 @@ const keychainAddBtn = document.getElementById('keychainAdd');
 if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
 // Batch 27: keychain row buttons are delegated \u2014 each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
+// Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const btn = target ? target.closest('[data-kc]') : null;
@@ -5536,7 +5901,12 @@ document.addEventListener('click', (event) => {
     vscode.postMessage({ command, id, baseUrl: input ? String(input.value) : '' });
     return;
   }
-  vscode.postMessage({ command, id });
+  const keyId = btn.getAttribute('data-keyid');
+  const dir = btn.getAttribute('data-dir');
+  const payload: Record<string, unknown> = { command, id };
+  if (keyId) payload.keyId = keyId;
+  if (dir) payload.dir = Number(dir);
+  vscode.postMessage(payload);
 });
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {
@@ -5713,7 +6083,7 @@ var WIZARD_PROVIDER_LABELS = {
   "Hyperbolic": "hyperbolic",
   "Cerebras": "cerebras"
 };
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl", "keychainMove", "keychainAddKey", "keychainRenameKey", "keychainDeleteKey", "keychainToggleKey"]);
 var hostOutput;
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
@@ -5879,7 +6249,8 @@ async function resolveExtensionSelection(context) {
   const profiles = readProfiles();
   const active = activeProfile(profiles);
   if (active) {
-    const profileKey = await readProfileSecret(context.secrets, active.id);
+    const keyRef = pickActiveKey(active);
+    const profileKey = keyRef ? await readKeySecret(context.secrets, active, keyRef) : void 0;
     const profileModel = active.model?.trim() || settingsModel || defaultModel(active.provider);
     return {
       provider: active.provider,
@@ -5888,6 +6259,8 @@ async function resolveExtensionSelection(context) {
       baseUrl,
       userChosenModel: Boolean(active.model?.trim()),
       profileId: active.id,
+      keyId: keyRef?.id,
+      keyLabel: keyRef?.label,
       profileBaseUrl: active.baseUrl
     };
   }
@@ -5911,50 +6284,51 @@ async function buildFailoverHooks(context, selection) {
   if (!failoverEnabled()) return void 0;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
-  const switchTo = async (profile) => {
-    const key = await readProfileSecret(context.secrets, profile.id);
-    if (!key) return void 0;
-    return { action: "switch", apiKey: key, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
+  const switchTo = async (profile, key) => {
+    const keySecret = await readKeySecret(context.secrets, profile, key);
+    if (!keySecret) return void 0;
+    return { action: "switch", apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
     async onRateLimit(waitSeconds) {
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === "switch") {
-        if (!await readProfileSecret(context.secrets, decision.profile.id)) {
-          markBroken(decision.profile.id);
-          keychainLog(`\u{1F511} failover: \u043F\u0440\u043E\u0444\u0438\u043B\u044C \xAB${decision.profile.label}\xBB \u0431\u0435\u0437 \u043A\u043B\u044E\u0447\u0430 \u2014 \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken`);
+        if (!await readKeySecret(context.secrets, decision.profile, decision.key)) {
+          markKeyBroken(decision.profile.id, decision.key.id);
+          keychainLog(`\u{1F511} failover: \u043A\u043B\u044E\u0447 \xAB${decision.key.label}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB${decision.profile.label}\xBB \u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430 \u2014 \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken`);
           decision = runFailover(void 0, options());
         }
         if (decision.kind === "switch") {
-          const low = await switchTo(decision.profile);
+          const low = await switchTo(decision.profile, decision.key);
           if (!low) return void 0;
-          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label} (429; ${decision.fromLabel} \u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441), \u0446\u0438\u043A\u043B ${decision.cycle + 1}`);
+          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (429; ${decision.fromLabel} \u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
           return low;
         }
       }
       if (decision.kind === "wait") {
-        keychainLog(`\u23F3 \u0432\u0441\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u0438 \u0441\u043F\u044F\u0442, \u043F\u0440\u043E\u0431\u0443\u0436\u0434\u0435\u043D\u0438\u0435: ${decision.wakeLabel} \u0447\u0435\u0440\u0435\u0437 ${Math.ceil(decision.waitMs / 1e3)}\u0441, \u0446\u0438\u043A\u043B ${decision.cycle}`);
+        keychainLog(`\u23F3 \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u0441\u043F\u044F\u0442, \u043F\u0440\u043E\u0431\u0443\u0436\u0434\u0435\u043D\u0438\u0435: ${decision.wakeLabel} \u0447\u0435\u0440\u0435\u0437 ${Math.ceil(decision.waitMs / 1e3)}\u0441, \u0446\u0438\u043A\u043B ${decision.cycle}`);
         return { action: "wait", waitMs: decision.waitMs };
       }
       if (decision.kind === "stop") {
         if (decision.reason === "noneLeft") {
-          keychainLog("\u{1F511} failover: \u0436\u0438\u0432\u044B\u0445 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u043D\u0435\u0442 (\u0432\u0441\u0435 broken/\u0431\u0435\u0437 \u043A\u043B\u044E\u0447\u0430) \u2014 \u0441\u0442\u043E\u043F");
+          keychainLog("\u{1F511} failover: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0432\u0441\u0435 broken/\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B/\u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430) \u2014 \u0441\u0442\u043E\u043F");
         } else if (decision.reason === "maxCycles") {
           keychainLog(`\u{1F511} failover: \u043F\u043E\u0442\u043E\u043B\u043E\u043A \u0446\u0438\u043A\u043B\u043E\u0432 ${failoverMaxCycles()} \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D \u2014 \u0441\u0442\u043E\u043F, \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A`);
         } else {
-          keychainLog("\u23F3 \u0432\u0441\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u0438 \u0441\u043F\u044F\u0442, \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u2014 \u0441\u0442\u043E\u043F, \u0436\u0434\u0451\u043C \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430");
+          keychainLog("\u23F3 \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u0441\u043F\u044F\u0442, \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u2014 \u0441\u0442\u043E\u043F, \u0436\u0434\u0451\u043C \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430");
         }
         return { action: "stop", waitMs: decision.waitMs, wakeLabel: decision.wakeLabel };
       }
       return void 0;
     },
     async onAuthError() {
-      const id = scanCurrentId();
-      if (!id) return;
-      markBroken(id);
-      const label = profileLabel(id, profiles);
-      keychainLog(`\u{1F511} \u043F\u0440\u043E\u0444\u0438\u043B\u044C \xAB${label}\xBB \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken (401/403) \u2014 \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0446\u0435\u043F\u043E\u0447\u043A\u0438; \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0444\u0438\u043B\u044F`);
-      void vscode4.window.showWarningMessage(t("keychain.brokenNotify", lang, { label }));
+      const current = scanCurrent();
+      if (!current.profileId) return;
+      markKeyBroken(current.profileId, current.keyId);
+      const label = profileLabel(current.profileId, profiles);
+      const keyName = keyLabelFor(current.profileId, current.keyId, profiles);
+      keychainLog(`\u{1F511} \u043A\u043B\u044E\u0447 \xAB${keyName}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB${label}\xBB \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken (401/403) \u2014 \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438; \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 ${keyName} \u043F\u0440\u043E\u0444\u0438\u043B\u044F ${label}`);
+      void vscode4.window.showWarningMessage(t("keychain.brokenKeyNotify", lang, { key: keyName, profile: label }));
     }
   };
 }
@@ -6020,8 +6394,12 @@ async function secretKeyValues(context) {
   const secretKey = await context.secrets.get(SECRET_KEY) ?? "";
   const values = [secretKey, ...migratedLegacyApiKeys];
   for (const profile of readProfiles()) {
-    const profileKey = await readProfileSecret(context.secrets, profile.id);
-    if (profileKey?.trim()) values.push(profileKey.trim());
+    for (const key of profile.keys) {
+      const keyValue = await readKeySecret(context.secrets, profile, key);
+      if (keyValue?.trim()) values.push(keyValue.trim());
+    }
+    const legacyValue = await context.secrets.get(secretKeyForProfile(profile.id));
+    if (legacyValue?.trim()) values.push(legacyValue.trim());
   }
   return values.filter((key) => key.trim().length > 0);
 }
@@ -6052,7 +6430,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
     throw new Error(`${t("panel.errNoKey", promptLang, { p: selection.provider })}${t("panel.keyGet", promptLang, { x: keyUrl(selection.provider) ?? t("panel.keyGetAlt", promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
-  beginScan(selection.profileId ?? "");
+  beginScan(selection.profileId ?? "", selection.keyId ?? DEFAULT_KEY_ID);
   const failover = await buildFailoverHooks(context, selection);
   const provider = createProvider(selection.provider, selection.key ?? "local-no-key", selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover, selection.profileBaseUrl);
   const issues = [];
@@ -6122,7 +6500,8 @@ ${docPick.section}` : systemPrompt;
         }
         const deduped = dedupeIssues(fileIssues);
         issues.push(...deduped);
-        markHealthy(scanCurrentId());
+        const healthy = scanCurrent();
+        if (healthy.profileId) markKeyHealthy(healthy.profileId, healthy.keyId);
         onFileChecked?.(file.filename, deduped);
         completed = true;
         break;
@@ -6353,14 +6732,30 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       if (!saved) output.appendLine("\u2139\uFE0F \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u2014 \u0437\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441 \u043D\u0443\u043B\u044F");
       else {
         const verdict = checkpointScopeVerdict(saved, currentScopeHash);
-        if (verdict === "changed") {
+        if (verdict === "changed" && !checkpointHasFileHashes(saved)) {
           output.appendLine(`\u26D4 \u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F \u043F\u043E\u0441\u043B\u0435 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 (${saved.scopeHash} \u2192 ${currentScopeHash}) \u2014 \u0434\u043E\u0433\u043E\u043D \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u0435\u043D, \u043D\u0443\u0436\u0435\u043D \u043D\u043E\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442`);
           panel.setScanning(false);
           const blocked = progressView(saved, auditBreakerLimit);
           if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
           return { kind: "done" };
         }
-        initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: "running" };
+        if (verdict === "changed") {
+          const rec = reconcileCheckedHashes(saved, planFiles, (file) => hashAuditFile(workspaceRoot, file));
+          initial = { ...saved, checked: rec.kept, remaining: planFiles.filter((file) => !rec.kept.some((entry) => entry.file === file)), provider: saved.provider ?? auditSelection.provider, scopeHash: currentScopeHash, state: "running" };
+          output.appendLine(`\u{1F7E1} \u0421\u043A\u043E\u0443\u043F \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F: ${rec.requeued.length} \u0444\u0430\u0439\u043B\u043E\u0432 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u2014 \u0434\u043E\u0433\u043E\u043D \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442 \u0438\u0445, ${rec.keptFindings} \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u043E\u0432 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E${rec.dropped.length ? ` (\u0432\u044B\u043F\u0430\u043B\u043E \u0438\u0437 \u0441\u043A\u043E\u0443\u043F\u0430: ${rec.dropped.length})` : ""}`);
+          if (saved.checked.length > 0) {
+            panel.setAuditResume({
+              done: rec.kept.length,
+              total: planFiles.length,
+              model: initial.model,
+              startedAt: saved.startedAt,
+              ...initial.provider ? { provider: initial.provider } : {},
+              scopeUpdate: { files: rec.requeued.length, findings: rec.keptFindings }
+            });
+          }
+        } else {
+          initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: "running" };
+        }
         const tag = lastCheckpointTag(saved);
         if (tag.provider && tag.provider !== auditSelection.provider) output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u0434\u0440\u0443\u0433\u0438\u043C \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u043E\u043C: \u0431\u044B\u043B\u043E ${tag.provider} \xB7 ${tag.model ?? "?"}, \u0441\u0442\u0430\u043B\u043E ${auditSelection.provider} \xB7 ${auditSelection.model} \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B \u041D\u0415 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E\u0442\u0441\u044F`);
         else if (tag.model && tag.model !== auditSelection.model) output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u0434\u0440\u0443\u0433\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u044C\u044E: ${tag.model} \u2192 ${auditSelection.model} \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B \u041D\u0415 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u044E\u0442\u0441\u044F`);
@@ -6409,11 +6804,14 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
         doneNames.add(filename);
         skipBreakerReset(breakerState);
         const allProfiles = readProfiles();
-        const currentProfile = allProfiles.length > 1 ? allProfiles.find((profile) => profile.id === scanCurrentId()) : void 0;
-        const profileTag = allProfiles.length > 1 ? profileLabel(scanCurrentId()) : "";
+        const currentRef = scanCurrent();
+        const currentProfile = allProfiles.length > 1 ? allProfiles.find((profile) => profile.id === currentRef.profileId) : void 0;
+        const profileTag = allProfiles.length > 1 ? profileLabel(currentRef.profileId) : "";
+        const enabledKeyCount = allProfiles.find((profile) => profile.id === currentRef.profileId)?.keys.filter((k) => k.enabled).length ?? 0;
+        const keyTag = enabledKeyCount > 1 ? keyLabelFor(currentRef.profileId, currentRef.keyId) : "";
         const tagProvider = currentProfile?.provider ?? auditSelection.provider;
         const tagModel = currentProfile?.model?.trim() || auditSelection.model;
-        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...profileTag ? { profile: profileTag } : {}, ts: Date.now() });
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...profileTag ? { profile: profileTag } : {}, ...keyTag ? { key: keyTag } : {}, ts: Date.now(), hash: hashAuditFile(workspaceRoot, filename) });
         persist();
         const pausedMs = (pauseByFile.get(filename) ?? 0) * 1e3;
         pauseByFile.delete(filename);
@@ -6768,6 +7166,8 @@ async function readSettingsState(context) {
     customColors: JSON.stringify(readUiPrefs().customColors),
     keychainProfiles: readProfiles(),
     keychainActiveId: readActiveId(),
+    // Батч 28: состояние ключей (asleep/broken) для бейджей в центре.
+    keychainRuntime: runtimeSnapshot(),
     failoverEnabled: failoverEnabled(),
     failoverMaxCycles: failoverMaxCycles()
   };
@@ -6845,7 +7245,7 @@ async function confirmAndActivateProfile(profileId) {
   if (answer !== t("keychain.switchConfirmBtn", lang)) return void 0;
   await writeActiveId(target.id);
   clearModelsCache();
-  clearBroken(target.id);
+  for (const key of target.keys) clearKeyBroken(target.id, key.id);
   return target;
 }
 function activate(context) {
@@ -6898,6 +7298,7 @@ function activate(context) {
   };
   void migrateApiKeyFromSettings(context).catch(() => {
   }).then(() => migrateLegacyKeyToDefault(context)).catch(() => {
+  }).then(() => migrateProfilesToMultiKey(context)).catch(() => {
   }).then(() => syncKeyStatus());
   void migrateLanguageSetting(context).catch(() => {
   });
@@ -6952,7 +7353,7 @@ function activate(context) {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode4.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto6.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto7.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
         }
       };
       rerenderSettings = () => {
@@ -7068,6 +7469,95 @@ function activate(context) {
               clearModelsCache();
               await syncKeyStatus();
               await render(t("keychain.baseUrlSavedNotify", lang, { label: updated.label }));
+              return;
+            }
+            if (message.command === "keychainMove") {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? "");
+              const dir = message.dir === 1 ? 1 : message.dir === -1 ? -1 : 0;
+              if (!dir) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const next = await moveProfile(id, dir);
+              if (!next) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              await render(t("keychain.movedNotify", lang, { label: next.find((profile) => profile.id === id)?.label ?? id }));
+              return;
+            }
+            if (message.command === "keychainAddKey") {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? "");
+              const target = readProfiles().find((profile) => profile.id === id);
+              if (!target) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const label = (await vscode4.window.showInputBox({ prompt: t("keychain.keyLabelPrompt", lang, { n: target.keys.length + 1 }), ignoreFocusOut: true }))?.trim() ?? "";
+              const keyInput = await vscode4.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t("keychain.keyPastePrompt", lang, { label: target.label }) });
+              if (!keyInput?.trim()) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const updated = await addKey(context.secrets, id, { label, key: keyInput.trim() });
+              if (!updated) {
+                await render(t("keychain.keyLimit", lang), "error");
+                return;
+              }
+              await syncKeyStatus();
+              await render(t("keychain.keyAddedNotify", lang, { label: updated.keys[updated.keys.length - 1]?.label ?? label, profile: target.label }));
+              return;
+            }
+            if (message.command === "keychainRenameKey") {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? "");
+              const keyId = String(message.keyId ?? "");
+              const profile = readProfiles().find((candidate) => candidate.id === id);
+              const key = profile?.keys.find((candidate) => candidate.id === keyId);
+              if (!profile || !key) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const label = await vscode4.window.showInputBox({ prompt: t("keychain.keyRenamePrompt", lang, { label: key.label }), value: key.label, ignoreFocusOut: true });
+              if (label === void 0 || !label.trim()) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const updated = await renameKey(id, keyId, label);
+              const saved = updated?.keys.find((candidate) => candidate.id === keyId);
+              await render(t("keychain.keyRenamedNotify", lang, { label: saved?.label ?? label.trim() }));
+              return;
+            }
+            if (message.command === "keychainDeleteKey") {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? "");
+              const keyId = String(message.keyId ?? "");
+              const label = readProfiles().find((profile) => profile.id === id)?.keys.find((candidate) => candidate.id === keyId)?.label ?? keyId;
+              const result = await removeKey(context.secrets, id, keyId);
+              if (!result.ok) {
+                await render(result.reason === "lastKey" ? t("keychain.keyLastDelete", lang) : t("keychain.actionCancelled", lang), "error");
+                return;
+              }
+              await syncKeyStatus();
+              await render(t("keychain.keyDeletedNotify", lang, { label }));
+              return;
+            }
+            if (message.command === "keychainToggleKey") {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? "");
+              const keyId = String(message.keyId ?? "");
+              const profile = readProfiles().find((candidate) => candidate.id === id);
+              const key = profile?.keys.find((candidate) => candidate.id === keyId);
+              if (!profile || !key) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              const updated = await setKeyEnabled(id, keyId, !key.enabled);
+              const saved = updated?.keys.find((candidate) => candidate.id === keyId);
+              await syncKeyStatus();
+              await render(t(saved?.enabled ? "keychain.keyEnabledNotify" : "keychain.keyDisabledNotify", lang, { label: saved?.label ?? keyId }));
               return;
             }
             if (message.command === "keychainRename") {
@@ -7298,13 +7788,21 @@ function activate(context) {
         const target2 = await pickResumeProfile({
           lang,
           profiles,
-          resolveKeyForProfile: async (profile) => resolveApiKeyPriority(await readProfileSecret(context.secrets, profile.id), profile.provider),
+          // Батч 28: резолвим РаБОЧИЙ enabled-ключ профиля (первый не broken);
+          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback).
+          resolveKeyForProfile: async (profile) => {
+            const key = pickActiveKey(profile);
+            if (!key) return void 0;
+            const secret = await readKeySecret(context.secrets, profile, key);
+            const resolved = resolveApiKeyPriority(secret, profile.provider);
+            return resolved ? { key: resolved, keyId: key.id, keyLabel: key.label } : void 0;
+          },
           resolveBaseUrlFor: async (provider, profileBaseUrl2) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config), profileBaseUrl2),
           log: (message) => output.appendLine(message)
         });
         if (!target2) return void 0;
-        oneShotSelectionOverride = { provider: target2.provider, model: target2.model, key: target2.key, baseUrl: target2.baseUrl, profileBaseUrl: target2.baseUrl, userChosenModel: true };
-        output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u043F\u0440\u043E\u0444\u0438\u043B\u044F: ${target2.label} (${target2.provider} \xB7 ${target2.model}) \u2014 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u043D\u0435 \u0438\u0437\u043C\u0435\u043D\u0451\u043D`);
+        oneShotSelectionOverride = { provider: target2.provider, model: target2.model, key: target2.key, baseUrl: target2.baseUrl, profileBaseUrl: target2.baseUrl, userChosenModel: true, profileId: target2.profile.id, keyId: target2.keyId, keyLabel: target2.keyLabel };
+        output.appendLine(`\u{1F500} \u0414\u043E\u0433\u043E\u043D \u043F\u0440\u043E\u0444\u0438\u043B\u044F: ${target2.label}${target2.keyLabel ? `/${target2.keyLabel}` : ""} (${target2.provider} \xB7 ${target2.model}) \u2014 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u043D\u0435 \u0438\u0437\u043C\u0435\u043D\u0451\u043D`);
         lastScanKind = "audit";
         try {
           return await runScan(() => runFullAudit(context, output, panel, true));

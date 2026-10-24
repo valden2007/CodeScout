@@ -109,8 +109,9 @@ export async function pickResumeTarget(deps: ResumePickerDeps): Promise<{ provid
 export interface ResumeProfilePickerDeps {
   lang: Lang;
   profiles: KeychainProfile[];
-  // Ключ профиля из SecretStorage (keychain.<id>) + env-фоллбэк провайдера.
-  resolveKeyForProfile(profile: KeychainProfile): Promise<string | undefined>;
+  // Батч 28: рабочий enabled-ключ профиля + его секрет из SecretStorage
+  // (keychain.<profileId>.<keyId>). undefined = ни одногоключевого секрета нет.
+  resolveKeyForProfile(profile: KeychainProfile): Promise<{ key: string; keyId: string; keyLabel: string } | undefined>;
   // Base URL с учетом P0 Astra-1 (workspace-URL требует подтверждения).
   // Батч 27.1: вторым аргументом — profile.baseUrl (приоритет над глобальным).
   resolveBaseUrlFor(provider: ProviderName, profileBaseUrl?: string): Promise<string>;
@@ -124,6 +125,9 @@ export interface ResumeProfileTarget {
   model: string;
   baseUrl: string;
   key?: string;
+  // Батч 28: конкретный ключ, которым пойдёт догон (для метки чекпоинта).
+  keyId?: string;
+  keyLabel?: string;
 }
 
 // «Продолжить другими…» со списка ПРОФИЛЕЙ (provider · label · model), а не
@@ -147,12 +151,12 @@ export async function pickResumeProfile(deps: ResumeProfilePickerDeps): Promise<
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);
     return undefined;
   }
-  const key = await deps.resolveKeyForProfile(profile);
-  if (!key && !isLocalBaseUrl(baseUrl)) {
+  const keyRef = await deps.resolveKeyForProfile(profile);
+  if (!keyRef?.key && !isLocalBaseUrl(baseUrl)) {
     void vscode.window.showErrorMessage(t('keychain.noKeyForResume', deps.lang, { label: profile.label }));
     return undefined;
   }
   const model = profile.model?.trim() || defaultModel(profile.provider);
-  deps.log(`🔑 догон профилем ${profile.label}: ${profile.provider} · ${model}`);
-  return { profile, label: profile.label, provider: profile.provider, model, baseUrl, key };
+  deps.log(`🔑 догон профилем ${profile.label}/${keyRef?.keyLabel ?? '—'}: ${profile.provider} · ${model}`);
+  return { profile, label: profile.label, provider: profile.provider, model, baseUrl, key: keyRef?.key, keyId: keyRef?.keyId, keyLabel: keyRef?.keyLabel };
 }

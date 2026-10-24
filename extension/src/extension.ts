@@ -15,9 +15,9 @@ import { CodeScoutPanel } from './panel';
 import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
-import { activeProfile, addProfile, beginScan, clearBroken, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, markBroken, markHealthy, migrateLegacyKeyToDefault, readActiveId, readProfileSecret, readProfiles, removeProfile, renameProfile, resetRuntime, runFailover, scanCurrentId, secretKeyForProfile, setProfileBaseUrl, storeProfileSecret, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
+import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, keyLabelFor, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -49,7 +49,7 @@ const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
   'Hyperbolic': 'hyperbolic',
   'Cerebras': 'cerebras'
 };
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
 // про vscode не знает, расширение подставляет свой Output-канал (заполняется
@@ -71,6 +71,9 @@ interface ProviderSelection {
   userChosenModel?: boolean;
   // Батч 27: id активного профиля keychain (undefined = legacy-одиночный ключ).
   profileId?: string;
+  // Батч 28: рабочий ключ активного профиля (id + label для меток чекпоинта).
+  keyId?: string;
+  keyLabel?: string;
   // Батч 27.1, п.1: override эндпоинта активного профиля (priority в
   // providers.resolveBaseUrl: profile.baseUrl → baseUrl → PROVIDERS).
   profileBaseUrl?: string;
@@ -292,7 +295,11 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   const profiles = readProfiles();
   const active = activeProfile(profiles);
   if (active) {
-    const profileKey = await readProfileSecret(context.secrets, active.id);
+    // Батч 28: профиль даёт ПЕРВЫЙ enabled-ключ (предпочтительно не broken);
+    // секрет — keychain.<profileId>.<keyId>. Молчаливого фолбэка на чужой
+    // ключ нет: ключа у рабочего ключа нет → undefined (401-путь честный).
+    const keyRef = pickActiveKey(active);
+    const profileKey = keyRef ? await readKeySecret(context.secrets, active, keyRef) : undefined;
     const profileModel = active.model?.trim() || settingsModel || defaultModel(active.provider);
     return {
       provider: active.provider,
@@ -301,6 +308,8 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
       baseUrl,
       userChosenModel: Boolean(active.model?.trim()),
       profileId: active.id,
+      keyId: keyRef?.id,
+      keyLabel: keyRef?.label,
       profileBaseUrl: active.baseUrl
     };
   }
@@ -325,8 +334,9 @@ function keychainLog(message: string): void {
 
 // Батч 27: тонкий адаптер keychain → llm-client. Возвращает undefined, если
 // failover неактуален: нет профилей, failover.enabled=false (then поведение
-// НЕ меняется вообще). Хук вызывает retry-слой на 429; на 401/403 профиль
+// НЕ меняется вообще). Хук вызывает retry-слой на 429; на 401/403 КЛЮЧ
 // помечается broken с подсказкой — автопереход по auth запрещён.
+// Батч 28: единица ротации — ключ (профиль+ключ), циклы считают по профилям.
 async function buildFailoverHooks(context: vscode.ExtensionContext, selection: ProviderSelection): Promise<FailoverHooks | undefined> {
   if (oneShotSelectionOverride) return undefined;
   const profiles = readProfiles();
@@ -334,51 +344,52 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
   if (!failoverEnabled()) return undefined;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
-  const switchTo = async (profile: KeychainProfile): Promise<FailoverSwitchDecision | undefined> => {
-    const key = await readProfileSecret(context.secrets, profile.id);
-    if (!key) return undefined;
-    return { action: 'switch', apiKey: key, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
+  const switchTo = async (profile: KeychainProfile, key: { id: string; label: string; secretId: string; enabled: boolean }): Promise<FailoverSwitchDecision | undefined> => {
+    const keySecret = await readKeySecret(context.secrets, profile, key);
+    if (!keySecret) return undefined;
+    return { action: 'switch', apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
     async onRateLimit(waitSeconds: number | undefined): Promise<FailoverSwitchDecision | undefined> {
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === 'switch') {
-        // профиль без секрета не годится: broken и шаг дальше по цепочке
-        if (!(await readProfileSecret(context.secrets, decision.profile.id))) {
-          markBroken(decision.profile.id);
-          keychainLog(`🔑 failover: профиль «${decision.profile.label}» без ключа — помечен broken`);
+        // ключ без секрета не годится: broken и шаг дальше по цепочке
+        if (!(await readKeySecret(context.secrets, decision.profile, decision.key))) {
+          markKeyBroken(decision.profile.id, decision.key.id);
+          keychainLog(`🔑 failover: ключ «${decision.key.label}» профиля «${decision.profile.label}» без секрета — помечен broken`);
           decision = runFailover(undefined, options());
         }
         if (decision.kind === 'switch') {
-          const low = await switchTo(decision.profile);
+          const low = await switchTo(decision.profile, decision.key);
           if (!low) return undefined;
-          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label} (429; ${decision.fromLabel} спит ${decision.sleepSeconds}с), цикл ${decision.cycle + 1}`);
+          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (429; ${decision.fromLabel} спит ${decision.sleepSeconds}с), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
           return low;
         }
       }
       if (decision.kind === 'wait') {
-        keychainLog(`⏳ все профили спят, пробуждение: ${decision.wakeLabel} через ${Math.ceil(decision.waitMs / 1000)}с, цикл ${decision.cycle}`);
+        keychainLog(`⏳ все ключи спят, пробуждение: ${decision.wakeLabel} через ${Math.ceil(decision.waitMs / 1000)}с, цикл ${decision.cycle}`);
         return { action: 'wait', waitMs: decision.waitMs };
       }
       if (decision.kind === 'stop') {
         if (decision.reason === 'noneLeft') {
-          keychainLog('🔑 failover: живых профилей нет (все broken/без ключа) — стоп');
+          keychainLog('🔑 failover: живых ключей нет (все broken/выключены/без секрета) — стоп');
         } else if (decision.reason === 'maxCycles') {
           keychainLog(`🔑 failover: потолок циклов ${failoverMaxCycles()} исчерпан — стоп, нужен человек`);
         } else {
-          keychainLog('⏳ все профили спят, автономный режим выключен — стоп, ждём человека');
+          keychainLog('⏳ все ключи спят, автономный режим выключен — стоп, ждём человека');
         }
         return { action: 'stop', waitMs: decision.waitMs, wakeLabel: decision.wakeLabel };
       }
       return undefined;
     },
     async onAuthError(): Promise<void> {
-      const id = scanCurrentId();
-      if (!id) return;
-      markBroken(id);
-      const label = profileLabel(id, profiles);
-      keychainLog(`🔑 профиль «${label}» помечен broken (401/403) — выведен из цепочки; проверь ключ профиля`);
-      void vscode.window.showWarningMessage(t('keychain.brokenNotify', lang, { label }));
+      const current = scanCurrent();
+      if (!current.profileId) return;
+      markKeyBroken(current.profileId, current.keyId);
+      const label = profileLabel(current.profileId, profiles);
+      const keyName = keyLabelFor(current.profileId, current.keyId, profiles);
+      keychainLog(`🔑 ключ «${keyName}» профиля «${label}» помечен broken (401/403) — выведен из ротации; проверь ключ ${keyName} профиля ${label}`);
+      void vscode.window.showWarningMessage(t('keychain.brokenKeyNotify', lang, { key: keyName, profile: label }));
     }
   };
 }
@@ -489,9 +500,15 @@ async function secretKeyValues(context: vscode.ExtensionContext): Promise<string
   // вычищать ИХ из Output-хвоста и тела Issue, иначе профильный ключ утечёт
   // в публичный GitHub.
   const values = [secretKey, ...migratedLegacyApiKeys];
+  // Батч 27/28: ключи ВСЕХ профилей и ВСЕХ их ключей — тоже секреты:
+  // redactSecrets обязан вычищать их из Output-хвоста и тела Issue.
   for (const profile of readProfiles()) {
-    const profileKey = await readProfileSecret(context.secrets, profile.id);
-    if (profileKey?.trim()) values.push(profileKey.trim());
+    for (const key of profile.keys) {
+      const keyValue = await readKeySecret(context.secrets, profile, key);
+      if (keyValue?.trim()) values.push(keyValue.trim());
+    }
+    const legacyValue = await context.secrets.get(secretKeyForProfile(profile.id));
+    if (legacyValue?.trim()) values.push(legacyValue.trim());
   }
   return values.filter((key) => key.trim().length > 0);
 }
@@ -537,7 +554,8 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   // Батч 27: beginScan фиксирует профиль, которым стартует скан (метки в
   // чекпоинте), и сбрасывает циклы ротации. failover-хук — undefined при
   // выключенном failover.enabled: поведение retry-слоя не меняется вообще.
-  beginScan(selection.profileId ?? '');
+  // Батч 28: += рабочий ключ профиля — единица ротации теперь ключ.
+  beginScan(selection.profileId ?? '', selection.keyId ?? DEFAULT_KEY_ID);
   const failover = await buildFailoverHooks(context, selection);
   const provider = createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover, selection.profileBaseUrl);
   const issues: ReviewIssue[] = [];
@@ -612,9 +630,10 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         }
         const deduped = dedupeIssues(fileIssues);
         issues.push(...deduped);
-        // Батч 27: успешный файл — лестница сна текущего профиля сбрасывается
-        // (квота живая), следующая 429 на этом профиле снова начнёт с 120с.
-        markHealthy(scanCurrentId());
+        // Батч 27: успешный файл — лестница сна текущего ключа сбрасывается
+        // (квота живая), следующая 429 на этом ключе снова начнёт с 120с.
+        const healthy = scanCurrent();
+        if (healthy.profileId) markKeyHealthy(healthy.profileId, healthy.keyId);
         onFileChecked?.(file.filename, deduped);
         completed = true;
         break;
@@ -862,14 +881,35 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       if (!saved) output.appendLine('ℹ️ Прогресса не найдено — запускаю с нуля');
       else {
         const verdict = checkpointScopeVerdict(saved, currentScopeHash);
-        if (verdict === 'changed') {
+        if (verdict === 'changed' && !checkpointHasFileHashes(saved)) {
+          // Батч 28: КРАСНЫЙ баннер остаётся ТОЛЬКО за legacy-чекпоинтами без
+          // пер-файловых хэшей — там нечем отличить изменённый файл от целого.
           output.appendLine(`⛔ Скоуп изменился после остановки (${saved.scopeHash} → ${currentScopeHash}) — догон некорректен, нужен новый аудит`);
           panel.setScanning(false);
           const blocked = progressView(saved, auditBreakerLimit);
           if (blocked) panel.setAuditResume({ ...blocked, scopeMismatch: true });
           return { kind: 'done' };
         }
-        initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: 'running' };
+        if (verdict === 'changed') {
+          // Батч 28: умный догон. Перепроверяются ТОЛЬКО файлы, чей хэш не
+          // совпал (изменённые/новые); совпавшие находки сохраняются; файлы,
+          // выпавшие из скоупа, уносят свои findings из результатов.
+          const rec = reconcileCheckedHashes(saved, planFiles, (file) => hashAuditFile(workspaceRoot, file));
+          initial = { ...saved, checked: rec.kept, remaining: planFiles.filter((file) => !rec.kept.some((entry) => entry.file === file)), provider: saved.provider ?? auditSelection.provider, scopeHash: currentScopeHash, state: 'running' };
+          output.appendLine(`🟡 Скоуп изменился: ${rec.requeued.length} файлов обновлено — догон перепроверит их, ${rec.keptFindings} результатов сохранено${rec.dropped.length ? ` (выпало из скоупа: ${rec.dropped.length})` : ''}`);
+          if (saved.checked.length > 0) {
+            panel.setAuditResume({
+              done: rec.kept.length,
+              total: planFiles.length,
+              model: initial.model,
+              startedAt: saved.startedAt,
+              ...(initial.provider ? { provider: initial.provider } : {}),
+              scopeUpdate: { files: rec.requeued.length, findings: rec.keptFindings }
+            });
+          }
+        } else {
+          initial = { ...pruneAuditCheckpoint(saved, planFiles), provider: saved.provider ?? auditSelection.provider, scopeHash: saved.scopeHash ?? currentScopeHash, state: 'running' };
+        }
         const tag = lastCheckpointTag(saved);
         if (tag.provider && tag.provider !== auditSelection.provider) output.appendLine(`🔀 Догон другим провайдером: было ${tag.provider} · ${tag.model ?? '?'}, стало ${auditSelection.provider} · ${auditSelection.model} — проверенные файлы НЕ перепроверяются`);
         else if (tag.model && tag.model !== auditSelection.model) output.appendLine(`🔀 Догон другой моделью: ${tag.model} → ${auditSelection.model} — проверенные файлы НЕ перепроверяются`);
@@ -918,12 +958,17 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         // Метку профиля ставим ТОЛЬКО когда профилей реально >1: единственный
         // «default» от миграции — не различим с legacy-одиночным ключом, и
         // вешать «· default» на каждую находку было бы шумом (контракт 25).
+        // Батч 28: += метка КЛЮЧА (когда в профиле >1 enabled-ключа) и
+        // SHA-256 содержимого файла на момент проверки — основа умного догона.
         const allProfiles = readProfiles();
-        const currentProfile = allProfiles.length > 1 ? allProfiles.find((profile) => profile.id === scanCurrentId()) : undefined;
-        const profileTag = allProfiles.length > 1 ? profileLabel(scanCurrentId()) : '';
+        const currentRef = scanCurrent();
+        const currentProfile = allProfiles.length > 1 ? allProfiles.find((profile) => profile.id === currentRef.profileId) : undefined;
+        const profileTag = allProfiles.length > 1 ? profileLabel(currentRef.profileId) : '';
+        const enabledKeyCount = allProfiles.find((profile) => profile.id === currentRef.profileId)?.keys.filter((k) => k.enabled).length ?? 0;
+        const keyTag = enabledKeyCount > 1 ? keyLabelFor(currentRef.profileId, currentRef.keyId) : '';
         const tagProvider = currentProfile?.provider ?? auditSelection.provider;
         const tagModel = currentProfile?.model?.trim() || auditSelection.model;
-        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...(profileTag ? { profile: profileTag } : {}), ts: Date.now() });
+        state.checked.push({ file: filename, issues: dedupeIssues(acc.issues), provider: tagProvider, model: tagModel, ...(profileTag ? { profile: profileTag } : {}), ...(keyTag ? { key: keyTag } : {}), ts: Date.now(), hash: hashAuditFile(workspaceRoot, filename) });
         persist();
         // В медиану ETA попадает ЧИСТАЯ длительность файла: время пауз
         // rate-limit вычитается и учитывается отдельно (лестница в ETA).
@@ -1215,6 +1260,9 @@ interface SettingsMessage {
   failoverEnabled?: boolean;
   failoverMaxCycles?: number;
   id?: string;
+  // Батч 28: id ключа внутри профиля (кнопки ключей) и направление стрелки.
+  keyId?: string;
+  dir?: number;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -1351,6 +1399,8 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     customColors: JSON.stringify(readUiPrefs().customColors),
     keychainProfiles: readProfiles(),
     keychainActiveId: readActiveId(),
+    // Батч 28: состояние ключей (asleep/broken) для бейджей в центре.
+    keychainRuntime: runtimeSnapshot(),
     failoverEnabled: failoverEnabled(),
     failoverMaxCycles: failoverMaxCycles()
   };
@@ -1451,7 +1501,8 @@ async function confirmAndActivateProfile(profileId: string): Promise<KeychainPro
   await writeActiveId(target.id);
   clearModelsCache();
   // Явный выбор профиля сбрасывает флаг broken: пользователь мог обновить ключ.
-  clearBroken(target.id);
+  // Батч 28: чистим по всем ключам профиля.
+  for (const key of target.keys) clearKeyBroken(target.id, key.id);
   return target;
 }
 
@@ -1517,7 +1568,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // после переноса/очистки.
   // Батч 27: затем keychain-миграция — одиночный ключ превращается в профиль
   // «default» без потери: после обновления старый ключ продолжает работать.
-  void migrateApiKeyFromSettings(context).catch(() => {}).then(() => migrateLegacyKeyToDefault(context)).catch(() => {}).then(() => syncKeyStatus());
+  // Батч 28: затем миграция «профиль с одним секретом» → «профиль с keys[0]»
+  // (keychain.<id> → keychain.<id>.default); профили батча 27 работают без
+  // действий пользователя.
+  void migrateApiKeyFromSettings(context).catch(() => {}).then(() => migrateLegacyKeyToDefault(context)).catch(() => {}).then(() => migrateProfilesToMultiKey(context)).catch(() => {}).then(() => syncKeyStatus());
   void migrateLanguageSetting(context).catch(() => {});
   panel.setOnboardingHidden(context.globalState.get<boolean>('codescout.onboardingDismissed') === true);
   const activateRoot = getWorkspaceRoot();
@@ -1674,6 +1728,72 @@ export function activate(context: vscode.ExtensionContext): void {
               clearModelsCache();
               await syncKeyStatus();
               await render(t('keychain.baseUrlSavedNotify', lang, { label: updated.label }));
+              return;
+            }
+            // ── Батч 28: стрелки порядка профилей + CRUD ключей внутри ──────
+            if (message.command === 'keychainMove') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const dir = message.dir === 1 ? 1 : message.dir === -1 ? -1 : 0;
+              if (!dir) { await render(t('keychain.actionCancelled', lang)); return; }
+              const next = await moveProfile(id, dir as -1 | 1);
+              if (!next) { await render(t('keychain.actionCancelled', lang)); return; }
+              await render(t('keychain.movedNotify', lang, { label: next.find((profile) => profile.id === id)?.label ?? id }));
+              return;
+            }
+            if (message.command === 'keychainAddKey') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const target = readProfiles().find((profile) => profile.id === id);
+              if (!target) { await render(t('keychain.actionCancelled', lang)); return; }
+              const label = (await vscode.window.showInputBox({ prompt: t('keychain.keyLabelPrompt', lang, { n: target.keys.length + 1 }), ignoreFocusOut: true }))?.trim() ?? '';
+              const keyInput = await vscode.window.showInputBox({ password: true, ignoreFocusOut: true, prompt: t('keychain.keyPastePrompt', lang, { label: target.label }) });
+              if (!keyInput?.trim()) { await render(t('keychain.actionCancelled', lang)); return; }
+              const updated = await addKey(context.secrets, id, { label, key: keyInput.trim() });
+              if (!updated) { await render(t('keychain.keyLimit', lang), 'error'); return; }
+              await syncKeyStatus();
+              await render(t('keychain.keyAddedNotify', lang, { label: updated.keys[updated.keys.length - 1]?.label ?? label, profile: target.label }));
+              return;
+            }
+            if (message.command === 'keychainRenameKey') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const keyId = String(message.keyId ?? '');
+              const profile = readProfiles().find((candidate) => candidate.id === id);
+              const key = profile?.keys.find((candidate) => candidate.id === keyId);
+              if (!profile || !key) { await render(t('keychain.actionCancelled', lang)); return; }
+              const label = await vscode.window.showInputBox({ prompt: t('keychain.keyRenamePrompt', lang, { label: key.label }), value: key.label, ignoreFocusOut: true });
+              if (label === undefined || !label.trim()) { await render(t('keychain.actionCancelled', lang)); return; }
+              const updated = await renameKey(id, keyId, label);
+              const saved = updated?.keys.find((candidate) => candidate.id === keyId);
+              await render(t('keychain.keyRenamedNotify', lang, { label: saved?.label ?? label.trim() }));
+              return;
+            }
+            if (message.command === 'keychainDeleteKey') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const keyId = String(message.keyId ?? '');
+              const label = readProfiles().find((profile) => profile.id === id)?.keys.find((candidate) => candidate.id === keyId)?.label ?? keyId;
+              const result = await removeKey(context.secrets, id, keyId);
+              if (!result.ok) {
+                await render(result.reason === 'lastKey' ? t('keychain.keyLastDelete', lang) : t('keychain.actionCancelled', lang), 'error');
+                return;
+              }
+              await syncKeyStatus();
+              await render(t('keychain.keyDeletedNotify', lang, { label }));
+              return;
+            }
+            if (message.command === 'keychainToggleKey') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const keyId = String(message.keyId ?? '');
+              const profile = readProfiles().find((candidate) => candidate.id === id);
+              const key = profile?.keys.find((candidate) => candidate.id === keyId);
+              if (!profile || !key) { await render(t('keychain.actionCancelled', lang)); return; }
+              const updated = await setKeyEnabled(id, keyId, !key.enabled);
+              const saved = updated?.keys.find((candidate) => candidate.id === keyId);
+              await syncKeyStatus();
+              await render(t(saved?.enabled ? 'keychain.keyEnabledNotify' : 'keychain.keyDisabledNotify', lang, { label: saved?.label ?? keyId }));
               return;
             }
             if (message.command === 'keychainRename') {
@@ -1874,7 +1994,15 @@ export function activate(context: vscode.ExtensionContext): void {
         const target = await pickResumeProfile({
           lang,
           profiles,
-          resolveKeyForProfile: async (profile) => resolveApiKeyPriority(await readProfileSecret(context.secrets, profile.id), profile.provider),
+          // Батч 28: резолвим РаБОЧИЙ enabled-ключ профиля (первый не broken);
+          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback).
+          resolveKeyForProfile: async (profile) => {
+            const key = pickActiveKey(profile);
+            if (!key) return undefined;
+            const secret = await readKeySecret(context.secrets, profile, key);
+            const resolved = resolveApiKeyPriority(secret, profile.provider);
+            return resolved ? { key: resolved, keyId: key.id, keyLabel: key.label } : undefined;
+          },
           resolveBaseUrlFor: async (provider, profileBaseUrl) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config), profileBaseUrl),
           log: (message) => output.appendLine(message)
         });
@@ -1882,8 +2010,9 @@ export function activate(context: vscode.ExtensionContext): void {
         // target.baseUrl уже полностью разрешён (profile.baseUrl → глобальный →
         // PROVIDERS) — кладём его в profileBaseUrl, чтобы createProvider/fetchModels
         // не пересчитывали приоритет и не потеряли override профиля.
-        oneShotSelectionOverride = { provider: target.provider, model: target.model, key: target.key, baseUrl: target.baseUrl, profileBaseUrl: target.baseUrl, userChosenModel: true };
-        output.appendLine(`🔀 Догон профиля: ${target.label} (${target.provider} · ${target.model}) — активный профиль настроек не изменён`);
+        // Батч 28: += profileId/keyId/keyLabel — метки чекпоинта при разовом догоне.
+        oneShotSelectionOverride = { provider: target.provider, model: target.model, key: target.key, baseUrl: target.baseUrl, profileBaseUrl: target.baseUrl, userChosenModel: true, profileId: target.profile.id, keyId: target.keyId, keyLabel: target.keyLabel };
+        output.appendLine(`🔀 Догон профиля: ${target.label}${target.keyLabel ? `/${target.keyLabel}` : ''} (${target.provider} · ${target.model}) — активный профиль настроек не изменён`);
         lastScanKind = 'audit';
         try {
           return await runScan(() => runFullAudit(context, output, panel, true));

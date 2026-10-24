@@ -2,7 +2,7 @@ import { uiBodyAttrs, uiTokensCss, normalizeCustomColors, type UiPrefs, type Cus
 import { t, type Lang } from '../../src/i18n';
 import { CODESCOUT_REPO_URL as REPO_URL } from './reportIssue';
 import { PROVIDER_ORDER } from '../../src/providers';
-import type { KeychainProfile } from './keychain';
+import type { KeychainProfile, KeyRuntimeView } from './keychain';
 
 export interface SettingsState {
   keyMask: string;
@@ -37,6 +37,8 @@ export interface SettingsState {
   // вызовы (тесты) рендерят блок в пустом виде.
   keychainProfiles?: KeychainProfile[];
   keychainActiveId?: string;
+  // Батч 28: состояние ключей («profileId/keyId» → asleep/broken) — бейджи.
+  keychainRuntime?: Record<string, KeyRuntimeView>;
   failoverEnabled?: boolean;
   failoverMaxCycles?: number;
 }
@@ -117,25 +119,54 @@ function currentKeyLine(T: (key: string, vars?: Record<string, string | number>)
   return escapeHtml(T('center.nowNone'));
 }
 
-// Батч 27: блок «Профили ключей» в секции «Ключ и модель»: список
-// provider · label · model с меткой активного + кнопки добавить /
-// переименовать / удалить / сделать активным. Кнопки шлют хосту команды
-// keychainAdd/keychainRename/keychainDelete/keychainSetActive (native
-// InputBox/QuickPick/модалки — вся тяжёлая логика в extension/keychain.ts).
+// Батч 27: блок «Профили ключей» в секции «Ключ и модель».
+// Батч 28: профиль = провайдер + список КЛЮЧЕЙ (label, enabled-индикатор,
+// бейджи broken/asleep из runtime-снимка хоста) + стрелки вверх/вниз —
+// порядок списка = порядок цикла failover. Кнопки шлют хосту команды
+// keychainAdd/keychainRename/keychainDelete/keychainSetActive/keychainMove/
+// keychainAddKey/keychainRenameKey/keychainDeleteKey/keychainToggleKey
+// (нативные InputBox/QuickPick/модалки — логика в extension/keychain.ts).
 function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? '';
-  const rows = profiles.map((profile) => {
+  const runtimeInfo = state.keychainRuntime ?? {};
+  const rows = profiles.map((profile, index) => {
     const isActive = profile.id === activeId;
     const model = escapeHtml(profile.model?.trim() || '');
     const rowBaseUrl = escapeHtml(profile.baseUrl?.trim() || '');
+    const keys = profile.keys ?? [];
+    const pid = escapeHtml(profile.id);
+    const keyRows = keys.map((key) => {
+      const kid = escapeHtml(key.id);
+      const rt = runtimeInfo[`${profile.id}/${key.id}`];
+      const badges = [
+        key.enabled ? `<span class="kc-key-on">${icon('pass')} ${T('keychain.keyOn')}</span>` : `<span class="kc-key-off">${icon('circle-slash')} ${T('keychain.keyOff')}</span>`,
+        ...(rt?.broken ? [`<span class="kc-key-broken">${icon('error')} ${T('keychain.badgeBroken')}</span>`] : []),
+        ...(rt && rt.sleepSeconds > 0 ? [`<span class="kc-key-asleep">${icon('clock')} ${T('keychain.badgeAsleep', { s: rt.sleepSeconds })}</span>`] : [])
+      ].join(' ');
+      return `<div class="kc-key-row${key.enabled ? '' : ' kc-key-disabled'}">
+        <span class="kc-key-line">${icon('key')} <strong>${escapeHtml(key.label)}</strong> ${badges}</span>
+        <span class="kc-key-actions">
+          <button type="button" class="secondary" data-kc="keychainToggleKey" data-id="${pid}" data-keyid="${kid}">${icon(key.enabled ? 'circle-slash' : 'pass')}<span>${T(key.enabled ? 'keychain.keyDisable' : 'keychain.keyEnable')}</span></button>
+          <button type="button" class="secondary" data-kc="keychainRenameKey" data-id="${pid}" data-keyid="${kid}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
+          <button type="button" class="secondary" data-kc="keychainDeleteKey" data-id="${pid}" data-keyid="${kid}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
+        </span>
+      </div>`;
+    }).join('');
+    const moveUp = index > 0 ? `<button type="button" class="secondary kc-move" title="${T('keychain.moveUp')}" data-kc="keychainMove" data-id="${pid}" data-dir="-1">${icon('arrow-up')}</button>` : '';
+    const moveDown = index < profiles.length - 1 ? `<button type="button" class="secondary kc-move" title="${T('keychain.moveDown')}" data-kc="keychainMove" data-id="${pid}" data-dir="1">${icon('arrow-down')}</button>` : '';
     return `<div class="kc-row${isActive ? ' kc-active-row' : ''}">
-      <span class="kc-line">${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
-      <span class="kc-baseurl-row"><label>${T('keychain.baseUrlField')}</label><input class="kc-baseurl" data-id="${escapeHtml(profile.id)}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${escapeHtml(profile.id)}">${icon('save')}<span>${T('keychain.baseUrlSave')}</span></button></span>
+      <span class="kc-line">${moveUp}${moveDown} ${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
+      <span class="kc-baseurl-row"><label>${T('keychain.baseUrlField')}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon('save')}<span>${T('keychain.baseUrlSave')}</span></button></span>
+      <div class="kc-keys">
+        <div class="kc-keys-head">${icon('list-unordered')} <span>${T('keychain.keysTitle')}</span><button type="button" class="secondary" data-kc="keychainAddKey" data-id="${pid}">${icon('plus')}<span>${T('keychain.addKey')}</span></button></div>
+        ${keyRows}
+        <p class="hint">${T('keychain.keysHint')}</p>
+      </div>
       <span class="kc-actions">
-        <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${escapeHtml(profile.id)}">${icon('target')}<span>${T('keychain.makeActive')}</span></button>
-        <button type="button" class="secondary" data-kc="keychainRename" data-id="${escapeHtml(profile.id)}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
-        <button type="button" class="secondary" data-kc="keychainDelete" data-id="${escapeHtml(profile.id)}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
+        <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${pid}">${icon('target')}<span>${T('keychain.makeActive')}</span></button>
+        <button type="button" class="secondary" data-kc="keychainRename" data-id="${pid}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
+        <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
       </span>
     </div>`;
   }).join('');
@@ -273,6 +304,20 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-baseurl-row label { font-size: var(--cs-font-1); color: var(--cs-desc); }
 .kc-baseurl-row input { flex: 1 1 180px; min-width: 0; font-family: var(--vscode-editor-font-family); }
 .kc-baseurl-row button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-keys { flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; margin: 4px 0; padding-left: var(--cs-space-2); border-left: 2px solid var(--cs-card-border); }
+.kc-keys-head { display: flex; align-items: center; gap: 5px; font-size: var(--cs-font-1); color: var(--cs-desc); margin-bottom: 2px; }
+.kc-keys-head button { width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-key-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--cs-space-2); padding: 2px var(--cs-space-2); border-radius: var(--cs-radius-1); }
+.kc-key-disabled { opacity: 0.6; }
+.kc-key-line { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cs-font-2); font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+.kc-key-on, .kc-key-off, .kc-key-broken, .kc-key-asleep { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cs-font-1); font-family: var(--vscode-font-family); }
+.kc-key-on { color: var(--cs-pass); }
+.kc-key-off { color: var(--cs-desc); }
+.kc-key-broken { color: var(--cs-error); }
+.kc-key-asleep { color: var(--cs-warn); }
+.kc-key-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-move { width: auto; padding: 2px 6px; min-height: auto; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -673,6 +718,7 @@ const keychainAddBtn = document.getElementById('keychainAdd');
 if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
 // Batch 27: keychain row buttons are delegated — each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
+// Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const btn = target ? target.closest('[data-kc]') : null;
@@ -686,7 +732,12 @@ document.addEventListener('click', (event) => {
     vscode.postMessage({ command, id, baseUrl: input ? String(input.value) : '' });
     return;
   }
-  vscode.postMessage({ command, id });
+  const keyId = btn.getAttribute('data-keyid');
+  const dir = btn.getAttribute('data-dir');
+  const payload: Record<string, unknown> = { command, id };
+  if (keyId) payload.keyId = keyId;
+  if (dir) payload.dir = Number(dir);
+  vscode.postMessage(payload);
 });
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {

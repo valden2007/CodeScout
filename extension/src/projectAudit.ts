@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
+import { createHash } from 'node:crypto';
 import * as https from 'node:https';
 import * as http from 'node:http';
 import { isIP, type LookupFunction } from 'node:net';
@@ -1000,6 +1001,9 @@ export interface AuditResumeView {
   scopeMismatch?: boolean;
   // Батч 26: circuit breaker — N подряд скипов одной категории, подсказка в баннере.
   breaker?: { category: string; count: number };
+  // Батч 28: умный догон — скоуп изменился, но пер-файловые хэши есть:
+  // догон идёт, files файлов ушли на перепроверку, findings сохранено.
+  scopeUpdate?: { files: number; findings: number };
 }
 
 // Батч 25 (cross-provider resume): чекпоинт переживает ЛЮБУЮ остановку и
@@ -1016,6 +1020,11 @@ export interface AuditCheckedEntry {
   ts?: number;
   // Батч 27: метка профиля ключа, которым проверен файл (keychain).
   profile?: string;
+  // Батч 28: метка ключа внутри профиля (когда ключей в профиле >1).
+  key?: string;
+  // Батч 28: SHA-256 содержимого файла на момент проверки — основа умного
+  // догона: хэш совпал → находки сохраняются, не совпал → файл в очередь.
+  hash?: string;
 }
 
 export interface AuditCheckpoint {
@@ -1155,6 +1164,8 @@ export function readAuditProgress(workspaceRoot: string): AuditCheckpoint | unde
           ...(typeof entry.provider === 'string' && entry.provider ? { provider: entry.provider } : {}),
           ...(typeof entry.model === 'string' && entry.model ? { model: entry.model } : {}),
           ...(typeof entry.profile === 'string' && entry.profile ? { profile: entry.profile } : {}),
+          ...(typeof entry.key === 'string' && entry.key ? { key: entry.key } : {}),
+          ...(typeof entry.hash === 'string' && entry.hash ? { hash: entry.hash } : {}),
           ...(Number.isFinite(entry.ts) ? { ts: entry.ts as number } : {})
         })),
       remaining: parsed.remaining.filter((file): file is string => typeof file === 'string'),
@@ -1193,6 +1204,61 @@ export function mergeCheckpointIssues(progress: AuditCheckpoint): ReviewIssue[] 
   return progress.checked.flatMap((entry) => entry.issues);
 }
 
+// ── Батч 28: умный догон — пер-файловые хэши в чекпоинте ───────────────────
+// hash = SHA-256 (hex) содержимого файла на момент проверки. При догоне
+// перепроверяются ТОЛЬКО файлы, чей хэш не совпал (или которых не было).
+
+export const FILE_HASH_HEX_LENGTH = 64;
+
+export function fileContentHash(content: string): string {
+  return createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
+// Читаем файл с диска; нечитаемый/удалённый → '' (пустой хэш никогда не
+// совпадает с сохранённым 64-символьным → файл уйдёт в очередь догона).
+export function hashAuditFile(workspaceRoot: string, filename: string): string {
+  try {
+    return fileContentHash(readFileSync(join(workspaceRoot, filename), 'utf8'));
+  } catch {
+    return '';
+  }
+}
+
+// True = чекпоинт записан батчем 28 (у КАЖДОГО проверенного файла есть
+// полноценный хэш). False = legacy без хэшей → при смене скоупа догон
+// по-прежнему блокируется (красный баннер). Пустой checked — тривиально
+// «отслеживаемый»: нечего сохранять, блокировать нечего.
+export function checkpointHasFileHashes(progress: Pick<AuditCheckpoint, 'checked'>): boolean {
+  return progress.checked.every((entry) => typeof entry.hash === 'string' && entry.hash.length === FILE_HASH_HEX_LENGTH);
+}
+
+export interface ScopeReconcileResult {
+  // записи, чей хэш совпал: остаются в чекпоинте, НЕ перепроверяются.
+  kept: AuditCheckedEntry[];
+  keptFindings: number;
+  // файлы скоупа на перепроверку: хэш не совпал/не отслеживался/новый файл.
+  requeued: string[];
+  // файлы из checked, которых больше нет в скоупе: их findings выпадают.
+  dropped: string[];
+}
+
+export function reconcileCheckedHashes(progress: Pick<AuditCheckpoint, 'checked'>, planFiles: readonly string[], currentHashOf: (file: string) => string): ScopeReconcileResult {
+  const plan = new Set(planFiles);
+  const byFile = new Map<string, AuditCheckedEntry>();
+  for (const entry of progress.checked) if (!byFile.has(entry.file)) byFile.set(entry.file, entry);
+  const kept: AuditCheckedEntry[] = [];
+  const requeued: string[] = [];
+  for (const file of planFiles) {
+    const entry = byFile.get(file);
+    const stored = entry && typeof entry.hash === 'string' ? entry.hash : '';
+    if (entry && stored.length === FILE_HASH_HEX_LENGTH && stored === currentHashOf(file)) kept.push(entry);
+    else requeued.push(file);
+  }
+  const dropped = progress.checked.filter((entry) => !plan.has(entry.file)).map((entry) => entry.file);
+  const keptFindings = kept.reduce((sum, entry) => sum + entry.issues.length, 0);
+  return { kept, keptFindings, requeued, dropped };
+}
+
 // Батч 25: кто проверял последние файлы — метка для баннера (provider · model).
 // Берём ТЕГ последнего проверенного файла; если тегов нет (либер legacy-чекпоинт),
 // падаем на provider/model самого чекпоинта.
@@ -1215,7 +1281,10 @@ export function collectCheckpointFindings(progress: AuditCheckpoint): ReviewIssu
     for (const issue of entry.issues) {
       // Батч 27: к метке нахождателя добавляется label профиля ключа, если он
       // задан (keychain) — в proof-блоке видно, каким профилем нашли файл.
-      tagged.push(provider ? { ...issue, foundBy: { provider, ...(model ? { model } : {}), ...(entry.profile ? { profile: entry.profile } : {}) } } : issue);
+      // Батч 28: += метка ключа внутри профиля (когда ключей >1).
+      tagged.push(provider
+        ? { ...issue, foundBy: { provider, ...(model ? { model } : {}), ...(entry.profile ? { profile: entry.profile } : {}), ...(entry.key ? { key: entry.key } : {}) } }
+        : issue);
     }
   }
   return mergeFindingsByZone([], tagged);
