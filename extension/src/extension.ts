@@ -17,7 +17,7 @@ import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
-import { activeProfile, addProfile, beginScan, clearBroken, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, markBroken, markHealthy, migrateLegacyKeyToDefault, readActiveId, readProfileSecret, readProfiles, removeProfile, renameProfile, resetRuntime, runFailover, scanCurrentId, secretKeyForProfile, storeProfileSecret, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
+import { activeProfile, addProfile, beginScan, clearBroken, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, markBroken, markHealthy, migrateLegacyKeyToDefault, readActiveId, readProfileSecret, readProfiles, removeProfile, renameProfile, resetRuntime, runFailover, scanCurrentId, secretKeyForProfile, setProfileBaseUrl, storeProfileSecret, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -49,7 +49,7 @@ const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
   'Hyperbolic': 'hyperbolic',
   'Cerebras': 'cerebras'
 };
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive']);
+const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
 // про vscode не знает, расширение подставляет свой Output-канал (заполняется
@@ -71,6 +71,9 @@ interface ProviderSelection {
   userChosenModel?: boolean;
   // Батч 27: id активного профиля keychain (undefined = legacy-одиночный ключ).
   profileId?: string;
+  // Батч 27.1, п.1: override эндпоинта активного профиля (priority в
+  // providers.resolveBaseUrl: profile.baseUrl → baseUrl → PROVIDERS).
+  profileBaseUrl?: string;
 }
 
 function formatIssue(issue: ReviewIssue): string {
@@ -130,7 +133,7 @@ function notifyModelsBusy(busy: boolean): void {
 }
 
 async function fetchModels(selection: ProviderSelection, tolerateErrors = true): Promise<string[]> {
-  const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl);
+  const baseUrl = resolveBaseUrl(selection.provider, selection.baseUrl, selection.profileBaseUrl);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost работают без ключа.
   if (!selection.key && !isLocalBaseUrl(baseUrl)) return [];
   // Батч 20a, п.2: provider передаётся явно — внутри fetchLiveModels для
@@ -297,7 +300,8 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
       key: resolveApiKeyPriority(profileKey, active.provider),
       baseUrl,
       userChosenModel: Boolean(active.model?.trim()),
-      profileId: active.id
+      profileId: active.id,
+      profileBaseUrl: active.baseUrl
     };
   }
   return legacy;
@@ -333,7 +337,7 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
   const switchTo = async (profile: KeychainProfile): Promise<FailoverSwitchDecision | undefined> => {
     const key = await readProfileSecret(context.secrets, profile.id);
     if (!key) return undefined;
-    return { action: 'switch', apiKey: key, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
+    return { action: 'switch', apiKey: key, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
     async onRateLimit(waitSeconds: number | undefined): Promise<FailoverSwitchDecision | undefined> {
@@ -525,7 +529,8 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost не требуют ключ.
-  if (!selection.key && !isLocalBaseUrl(selection.baseUrl)) {
+  // Батч 27.1: локальный эндпоинт может жить в профиле (profile.baseUrl).
+  if (!selection.key && !isLocalBaseUrl(selection.profileBaseUrl || selection.baseUrl)) {
     throw new Error(`${t('panel.errNoKey', promptLang, { p: selection.provider })}${t('panel.keyGet', promptLang, { x: keyUrl(selection.provider) ?? t('panel.keyGetAlt', promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
@@ -534,7 +539,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   // выключенном failover.enabled: поведение retry-слоя не меняется вообще.
   beginScan(selection.profileId ?? '');
   const failover = await buildFailoverHooks(context, selection);
-  const provider = createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover);
+  const provider = createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover, selection.profileBaseUrl);
   const issues: ReviewIssue[] = [];
   // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
   let skippedFiles = 0;
@@ -1658,6 +1663,19 @@ export function activate(context: vscode.ExtensionContext): void {
               await render(t('keychain.switchedNotify', lang, { p: switched.provider, m: switched.model?.trim() || defaultModel(switched.provider) }));
               return;
             }
+            // Батч 27.1, п.1: «Override Base URL» профиля. Пустое значение =
+            // сброс (базовый URL провайдера); битый URL — отказ без записи.
+            if (message.command === 'keychainBaseUrl') {
+              const lang = currentReportLanguage();
+              const id = String(message.id ?? '');
+              const value = typeof message.baseUrl === 'string' ? message.baseUrl.trim() : '';
+              const updated = await setProfileBaseUrl(id, value);
+              if (!updated) { await render(t('keychain.baseUrlInvalid', lang), 'error'); return; }
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t('keychain.baseUrlSavedNotify', lang, { label: updated.label }));
+              return;
+            }
             if (message.command === 'keychainRename') {
               const lang = currentReportLanguage();
               const id = String(message.id ?? '');
@@ -1857,11 +1875,14 @@ export function activate(context: vscode.ExtensionContext): void {
           lang,
           profiles,
           resolveKeyForProfile: async (profile) => resolveApiKeyPriority(await readProfileSecret(context.secrets, profile.id), profile.provider),
-          resolveBaseUrlFor: async (provider) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config)),
+          resolveBaseUrlFor: async (provider, profileBaseUrl) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config), profileBaseUrl),
           log: (message) => output.appendLine(message)
         });
         if (!target) return undefined;
-        oneShotSelectionOverride = { provider: target.provider, model: target.model, key: target.key, baseUrl: target.baseUrl, userChosenModel: true };
+        // target.baseUrl уже полностью разрешён (profile.baseUrl → глобальный →
+        // PROVIDERS) — кладём его в profileBaseUrl, чтобы createProvider/fetchModels
+        // не пересчитывали приоритет и не потеряли override профиля.
+        oneShotSelectionOverride = { provider: target.provider, model: target.model, key: target.key, baseUrl: target.baseUrl, profileBaseUrl: target.baseUrl, userChosenModel: true };
         output.appendLine(`🔀 Догон профиля: ${target.label} (${target.provider} · ${target.model}) — активный профиль настроек не изменён`);
         lastScanKind = 'audit';
         try {
@@ -2070,13 +2091,23 @@ export function activate(context: vscode.ExtensionContext): void {
       const testSelection = { provider: det.provider, model: det.model, key: trimmed, baseUrl, userChosenModel: false };
       try {
         const models = await fetchModels(testSelection, false);
-        await context.secrets.store(SECRET_KEY, trimmed);
-        await context.secrets.store(SECRET_PROVIDER, det.provider);
-        await context.secrets.store(SECRET_MODEL, preferredLiveModel(models, det.model));
-        await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+        const chosenModel = preferredLiveModel(models, det.model);
+        // Батч 27.1, п.2: онбординг пишет в keychain — профиль «onboarded».
+        // При непустом keychain legacy-слот НЕ трогается вообще; при пустом
+        // legacy-слот заполняется как раньше (откат/совместимость) и тут же
+        // создаётся профиль — миграция legacy→default остаётся одноразовой.
+        const keychainWasEmpty = readProfiles().length === 0;
+        await upsertOnboardedProfile(context.secrets, { provider: det.provider, model: chosenModel, key: trimmed, ...(baseUrl ? { baseUrl } : {}) });
+        if (keychainWasEmpty) {
+          await context.secrets.store(SECRET_KEY, trimmed);
+          await context.secrets.store(SECRET_PROVIDER, det.provider);
+          await context.secrets.store(SECRET_MODEL, chosenModel);
+          await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+        }
+        clearModelsCache();
         await context.globalState.update('codescout.onboardingDismissed', true);
         panel.setOnboardingHidden(true);
-        panel.setKey(maskApiKey(trimmed), det.provider, preferredLiveModel(models, det.model));
+        panel.setKey(maskApiKey(trimmed), det.provider, chosenModel);
         void vscode.window.showInformationMessage(`${t('center.connected', lang, { n: models.length })}`);
       } catch (error) {
         const formatted = formatError(error, lang);
@@ -2096,13 +2127,22 @@ export function activate(context: vscode.ExtensionContext): void {
         if (retry === t('wizard.retry', lang)) { vscode.commands.executeCommand('codescout.onboardLocal'); }
         return;
       }
-      await vscode.workspace.getConfiguration('codescout').update('provider', 'custom', vscode.ConfigurationTarget.Global);
-      await vscode.workspace.getConfiguration('codescout').update('baseUrl', probe.baseUrl, vscode.ConfigurationTarget.Global);
-      await context.secrets.store(SECRET_MODEL, probe.models[0] || defaultModel('custom'));
-      await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+      const localModel = probe.models[0] || defaultModel('custom');
+      // Батч 27.1, п.2: локальный мастер тоже пишет в keychain — профиль
+      // «onboarded» (custom + baseUrl пробы). Legacy-настройки и legacy-секрет
+      // модели обновляются только при пустом keychain.
+      const keychainWasEmpty = readProfiles().length === 0;
+      await upsertOnboardedProfile(context.secrets, { provider: 'custom', model: localModel, key: '', baseUrl: probe.baseUrl });
+      if (keychainWasEmpty) {
+        await vscode.workspace.getConfiguration('codescout').update('provider', 'custom', vscode.ConfigurationTarget.Global);
+        await vscode.workspace.getConfiguration('codescout').update('baseUrl', probe.baseUrl, vscode.ConfigurationTarget.Global);
+        await context.secrets.store(SECRET_MODEL, localModel);
+        await context.secrets.store(SECRET_MODEL_CHOSEN, 'true');
+      }
+      clearModelsCache();
       await context.globalState.update('codescout.onboardingDismissed', true);
       panel.setOnboardingHidden(true);
-      panel.setKey(true, 'custom', probe.models[0] || defaultModel('custom'));
+      panel.setKey(true, 'custom', localModel);
       void vscode.window.showInformationMessage(t('wizard.localSuccess', lang, { n: probe.models.length }));
     }),
     vscode.commands.registerCommand('codescout.onboardSkip', async () => {

@@ -432,8 +432,17 @@ export function resolveApiKeyPriority(secretKey: string | undefined, provider: s
 // остальных витринных провайдеров эндпоинт берётся СТРОГО из
 // PROVIDERS[provider].baseUrl: оверрайд игнорируется и даже не читается
 // (опечатка в глобальном поле не должна уводить groq-ключ на чужой хост).
-export function resolveBaseUrl(provider: string, customBaseUrl?: string): string {
+// Батч 27.1, п.1: приоритет резолва эндпоинта — profile.baseUrl (явная
+// per-profile галка, валидируется строго) → codescout.baseUrl (только
+// custom/local) → PROVIDERS[provider].baseUrl.
+export function resolveBaseUrl(provider: string, customBaseUrl?: string, profileBaseUrl?: string): string {
   const normalized = normalizeProvider(provider);
+  const profileOverride = profileBaseUrl?.trim();
+  if (profileOverride) {
+    const url = profileOverride.replace(/\/+$/, '');
+    assertHttpBaseUrl(url);
+    return url;
+  }
   const override = customBaseUrl?.trim();
   if (override && (normalized === 'custom' || isLocalBaseUrl(override))) {
     const url = override.replace(/\/+$/, '');

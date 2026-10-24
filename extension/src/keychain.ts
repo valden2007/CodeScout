@@ -8,13 +8,17 @@
 // таймеров и без сети; мутация runtime — в методах KeychainRuntime.
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
-import { normalizeProvider, type ProviderName } from '../../src/providers';
+import { assertHttpBaseUrl, normalizeProvider, type ProviderName } from '../../src/providers';
 
 export interface KeychainProfile {
   id: string;
   label: string;
   provider: ProviderName;
   model?: string;
+  // Батч 27.1, п.1: per-profile override эндпоинта. Приоритет резолва в
+  // providers.resolveBaseUrl: profile.baseUrl → codescout.baseUrl (только
+  // custom/local) → PROVIDERS[provider].baseUrl. Пустое = «как у провайдера».
+  baseUrl?: string;
 }
 
 // vscode.SecretStorage отдаёт Thenable (не Promise) — берём PromiseLike,
@@ -31,6 +35,9 @@ export const KEYCHAIN_SECRET_PREFIX = 'keychain.';
 export const KEYCHAIN_MIGRATED_FLAG = 'codescout.keychainMigrated';
 // Профиль «default» — обязательный id для миграции старого одиночного ключа.
 export const DEFAULT_PROFILE_ID = 'default';
+// Батч 27.1, п.2: профиль онбординга — мастер пишет сюда, а не в legacy-слот
+// (legacy трогается только при пустом keychain, см. onboard* в extension.ts).
+export const ONBOARDED_PROFILE_ID = 'onboarded';
 // Профиль без retry-after засыпает по этой лестнице (секунды), шаг
 // растёт с каждым новым 429 на этом профиле (как RATE_LIMIT_PAUSE_LADDER
 // в батче 22, но на профиль, а не на файл).
@@ -62,10 +69,24 @@ export function normalizeProfiles(raw: unknown): KeychainProfile[] {
     seen.add(id);
     const label = typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : id;
     const model = typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined;
-    out.push({ id, label, provider, ...(model ? { model } : {}) });
+    const base = profileBaseUrl(entry.baseUrl);
+    out.push({ id, label, provider, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) });
     if (out.length >= MAX_PROFILES) break;
   }
   return out;
+}
+
+// Батч 27.1, п.1: baseUrl профиля валидируем строго (http(s), http только
+// localhost). Битый URL ронять профиль не должен — просто игнорируем поле,
+// резолв упадёт на PROVIDERS[provider].baseUrl.
+export function profileBaseUrl(raw: unknown): string | undefined {
+  const value = typeof raw === 'string' ? raw.trim().replace(/\/+$/, '') : '';
+  if (!value) return undefined;
+  try {
+    return assertHttpBaseUrl(value);
+  } catch {
+    return undefined;
+  }
 }
 
 export function readProfiles(): KeychainProfile[] {
@@ -122,15 +143,34 @@ export function makeProfileId(label: string, existing: readonly KeychainProfile[
 
 // Добавить профиль: секрет кладём ОТДЕЛЬНОЙ записью keychain.<id>;
 // первый добавленный профиль становится активным, если активного нет.
-export async function addProfile(secrets: SecretsLike, input: { label: string; provider: ProviderName; model?: string; key: string }): Promise<KeychainProfile> {
+export async function addProfile(secrets: SecretsLike, input: { label: string; provider: ProviderName; model?: string; key: string; baseUrl?: string }): Promise<KeychainProfile> {
   const profiles = readProfiles();
   const label = input.label.trim() || input.provider;
   const id = makeProfileId(label, profiles);
-  const profile: KeychainProfile = { id, label, provider: input.provider, ...(input.model?.trim() ? { model: input.model.trim() } : {}) };
+  const base = profileBaseUrl(input.baseUrl);
+  const profile: KeychainProfile = { id, label, provider: input.provider, ...(input.model?.trim() ? { model: input.model.trim() } : {}), ...(base ? { baseUrl: base } : {}) };
   await storeProfileSecret(secrets, id, input.key.trim());
   await writeProfiles([...profiles, profile]);
   if (!readActiveId() || !profiles.some((p) => p.id === readActiveId())) await writeActiveId(id);
   return profile;
+}
+
+// Батч 27.1, п.1: «Override Base URL» профиля. Пустая строка = сброс
+// (используем базовый URL провайдера); битый URL — undefined → вызывающий
+// показывает ошибку и ничего не пишет.
+export async function setProfileBaseUrl(id: string, baseUrl: string | undefined): Promise<KeychainProfile | undefined> {
+  const profiles = readProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return undefined;
+  const trimmed = baseUrl?.trim() ?? '';
+  const base = trimmed ? profileBaseUrl(trimmed) : '';
+  if (trimmed && !base) return undefined;
+  const next = profiles.map((profile) => {
+    if (profile.id !== id) return profile;
+    return { id: profile.id, label: profile.label, provider: profile.provider, ...(profile.model?.trim() ? { model: profile.model.trim() } : {}), ...(base ? { baseUrl: base } : {}) } satisfies KeychainProfile;
+  });
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === id);
 }
 
 export async function renameProfile(id: string, label: string): Promise<KeychainProfile[]> {
@@ -165,6 +205,20 @@ export async function removeProfile(secrets: SecretsLike, id: string, newActiveI
   runtime.delete(id);
   if (rest.length === 0) await writeActiveId('');
   return { ok: true, profiles: rest, activeId: rest.length ? readActiveId() : '' };
+}
+
+// Батч 27.1, п.2: онбординг пишет в keychain — создаёт/обновляет профиль
+// «onboarded» (секрет keychain.onboarded) и делает его активным. Повторный
+// онбординг обновляет ТОТ ЖЕ профиль, дублей не плодит.
+export async function upsertOnboardedProfile(secrets: SecretsLike, input: { provider: ProviderName; model?: string; key: string; baseUrl?: string }): Promise<KeychainProfile> {
+  const profiles = readProfiles();
+  const base = profileBaseUrl(input.baseUrl);
+  const profile: KeychainProfile = { id: ONBOARDED_PROFILE_ID, label: ONBOARDED_PROFILE_ID, provider: input.provider, ...(input.model?.trim() ? { model: input.model.trim() } : {}), ...(base ? { baseUrl: base } : {}) };
+  await storeProfileSecret(secrets, ONBOARDED_PROFILE_ID, input.key.trim());
+  const exists = profiles.some((candidate) => candidate.id === ONBOARDED_PROFILE_ID);
+  await writeProfiles(exists ? profiles.map((candidate) => (candidate.id === ONBOARDED_PROFILE_ID ? profile : candidate)) : [...profiles, profile]);
+  await writeActiveId(ONBOARDED_PROFILE_ID);
+  return profile;
 }
 
 // Миграция текущего одиночного ключа → профиль «default» БЕЗ потери:

@@ -128,8 +128,10 @@ function keychainBlockHtml(T: (key: string, vars?: Record<string, string | numbe
   const rows = profiles.map((profile) => {
     const isActive = profile.id === activeId;
     const model = escapeHtml(profile.model?.trim() || '');
+    const rowBaseUrl = escapeHtml(profile.baseUrl?.trim() || '');
     return `<div class="kc-row${isActive ? ' kc-active-row' : ''}">
       <span class="kc-line">${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
+      <span class="kc-baseurl-row"><label>${T('keychain.baseUrlField')}</label><input class="kc-baseurl" data-id="${escapeHtml(profile.id)}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${escapeHtml(profile.id)}">${icon('save')}<span>${T('keychain.baseUrlSave')}</span></button></span>
       <span class="kc-actions">
         <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${escapeHtml(profile.id)}">${icon('target')}<span>${T('keychain.makeActive')}</span></button>
         <button type="button" class="secondary" data-kc="keychainRename" data-id="${escapeHtml(profile.id)}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
@@ -140,7 +142,7 @@ function keychainBlockHtml(T: (key: string, vars?: Record<string, string | numbe
   const failoverOn = state.failoverEnabled === true;
   return `<div class="kc-block">
   <h3>${icon('clippy')} ${T('keychain.title')}</h3>
-  ${profiles.length === 0 ? `<p class="hint">${T('keychain.empty')}</p>` : `<div class="kc-list">${rows}</div>`}
+  ${profiles.length === 0 ? `<p class="hint">${T('keychain.empty')}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p>`}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
   </div>
@@ -267,6 +269,10 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-active-badge { color: var(--cs-pass); font-family: var(--vscode-font-family); font-size: var(--cs-font-1); display: inline-flex; align-items: center; gap: 3px; }
 .kc-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .kc-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
+.kc-baseurl-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1 1 100%; }
+.kc-baseurl-row label { font-size: var(--cs-font-1); color: var(--cs-desc); }
+.kc-baseurl-row input { flex: 1 1 180px; min-width: 0; font-family: var(--vscode-editor-font-family); }
+.kc-baseurl-row button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -666,13 +672,21 @@ document.getElementById('chooseModel').addEventListener('click', () => vscode.po
 const keychainAddBtn = document.getElementById('keychainAdd');
 if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
 // Batch 27: keychain row buttons are delegated — each posts its command + profile id.
+// Batch 27.1: keychainBaseUrl additionally carries the row's input value.
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const btn = target ? target.closest('[data-kc]') : null;
   if (!btn) return;
   const command = btn.getAttribute('data-kc');
   const id = btn.getAttribute('data-id');
-  if (command && id) vscode.postMessage({ command, id });
+  if (!command || !id) return;
+  if (command === 'keychainBaseUrl') {
+    const row = btn.closest('.kc-row');
+    const input = row ? row.querySelector('.kc-baseurl') : null;
+    vscode.postMessage({ command, id, baseUrl: input ? String(input.value) : '' });
+    return;
+  }
+  vscode.postMessage({ command, id });
 });
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {

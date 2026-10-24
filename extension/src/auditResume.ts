@@ -112,7 +112,8 @@ export interface ResumeProfilePickerDeps {
   // Ключ профиля из SecretStorage (keychain.<id>) + env-фоллбэк провайдера.
   resolveKeyForProfile(profile: KeychainProfile): Promise<string | undefined>;
   // Base URL с учетом P0 Astra-1 (workspace-URL требует подтверждения).
-  resolveBaseUrlFor(provider: ProviderName): Promise<string>;
+  // Батч 27.1: вторым аргументом — profile.baseUrl (приоритет над глобальным).
+  resolveBaseUrlFor(provider: ProviderName, profileBaseUrl?: string): Promise<string>;
   log(message: string): void;
 }
 
@@ -140,7 +141,7 @@ export async function pickResumeProfile(deps: ResumeProfilePickerDeps): Promise<
   if (!profile) return undefined;
   let baseUrl = '';
   try {
-    baseUrl = await deps.resolveBaseUrlFor(profile.provider);
+    baseUrl = await deps.resolveBaseUrlFor(profile.provider, profile.baseUrl);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     void vscode.window.showErrorMessage(`CodeScout: ${message}`);

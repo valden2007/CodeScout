@@ -21,7 +21,9 @@ import {
   markRateLimited,
   migrateLegacyKeyToDefault,
   normalizeProfiles,
+  ONBOARDED_PROFILE_ID,
   readActiveId,
+  readProfileSecret,
   readProfiles,
   removeProfile,
   renameProfile,
@@ -30,6 +32,7 @@ import {
   runtime,
   scanCurrentId,
   scanCycle,
+  setProfileBaseUrl,
   writeActiveId,
   writeProfiles,
   type KeychainProfile
@@ -38,6 +41,7 @@ import { pickResumeProfile } from '../extension/src/auditResume';
 import { OpenAICompatibleProvider, AllProfilesAsleepError, type FailoverHooks } from '../src/llm-client';
 import { clearModelsCache, fetchLiveModelsCached, resolveBaseUrl } from '../src/providers';
 import { buildReportHtml } from '../extension/src/reportHtml';
+import { buildSettingsHtml, type SettingsState } from '../extension/src/settingsHtml';
 import { t } from '../src/i18n';
 
 const REAL_FETCH = globalThis.fetch;
@@ -552,6 +556,25 @@ describe('батч 27 e2e: пикер догона показывает проф
     expect(target).toBeUndefined();
     expect(readActiveId()).toBe('a');
   });
+
+  it('pickResumeProfile: baseUrl профиля уходит вторым аргументом в resolveBaseUrlFor (батч 27.1)', async () => {
+    await writeProfiles([
+      { id: 'a', label: 'Alpha', provider: 'groq' },
+      { id: 'b', label: 'Beta', provider: 'groq', baseUrl: 'https://relay.example/v1' }
+    ]);
+    await writeActiveId('a');
+    state.quickPickAnswers.push({ profileId: 'b', label: 'groq · Beta', description: '' });
+    const seen: Array<[string, string | undefined]> = [];
+    const target = await pickResumeProfile({
+      lang: 'ru',
+      profiles: readProfiles(),
+      resolveKeyForProfile: async () => KEY_B,
+      resolveBaseUrlFor: async (provider, profileBaseUrl) => { seen.push([provider, profileBaseUrl]); return resolveBaseUrl(provider, '', profileBaseUrl); },
+      log: () => {}
+    });
+    expect(target?.baseUrl).toBe('https://relay.example/v1');
+    expect(seen).toEqual([['groq', 'https://relay.example/v1']]);
+  });
 });
 
 describe('батч 27 i18n-контракт', () => {
@@ -586,4 +609,168 @@ describe('батч 27 i18n-контракт', () => {
     }
     expect(manifest).toContain('codescout.switchKeyProfile');
   });
+});
+
+// ── Батч 27.1 ────────────────────────────────────────────────────────────────
+
+describe('батч 27.1 unit: per-profile baseUrl', () => {
+  beforeEach(() => { state.reset(); resetRuntime(); });
+
+  it('normalizeProfiles: хвостовой / срезается; битый/пустой baseUrl — поле теряется, профиль цел', () => {
+    const clean = normalizeProfiles([
+      { id: 'a', provider: 'groq', baseUrl: 'https://relay.example/v1/' },
+      { id: 'b', provider: 'groq', baseUrl: 'http://evil.example/v1' },
+      { id: 'c', provider: 'groq', baseUrl: '   ' },
+      { id: 'd', provider: 'groq', baseUrl: 42 }
+    ]);
+    expect(clean).toHaveLength(4);
+    expect(clean[0].baseUrl).toBe('https://relay.example/v1');
+    expect(clean[1].baseUrl).toBeUndefined(); // http вне localhost запрещён
+    expect(clean[2].baseUrl).toBeUndefined();
+    expect(clean[3].baseUrl).toBeUndefined();
+  });
+
+  it('setProfileBaseUrl: запись → сброс; битый URL и чужой id — отказ без изменения списка', async () => {
+    await writeProfiles([{ id: 'a', label: 'A', provider: 'groq' }]);
+    const set = await setProfileBaseUrl('a', 'https://relay.example/v1');
+    expect(set?.baseUrl).toBe('https://relay.example/v1');
+    expect(readProfiles()[0].baseUrl).toBe('https://relay.example/v1');
+    expect(await setProfileBaseUrl('a', 'ftp://nope')).toBeUndefined();
+    expect(readProfiles()[0].baseUrl).toBe('https://relay.example/v1');
+    expect(await setProfileBaseUrl('ghost', 'https://x.test')).toBeUndefined();
+    const cleared = await setProfileBaseUrl('a', '   ');
+    expect(cleared?.baseUrl).toBeUndefined();
+    expect('baseUrl' in readProfiles()[0]).toBe(false);
+  });
+
+  it('resolveBaseUrl приоритет: profile.baseUrl > codescout.baseUrl (только custom/local) > PROVIDERS', () => {
+    // профиль побеждает и глобальный оверрайд, и витрину провайдера
+    expect(resolveBaseUrl('groq', 'https://wrong.test', 'https://relay.example/v1')).toBe('https://relay.example/v1');
+    expect(resolveBaseUrl('groq', 'http://localhost:11434/v1', 'https://relay.example/v1')).toBe('https://relay.example/v1');
+    // без профиля — прежнему контрактам (22.2): глобальный неверный уводит только custom
+    expect(resolveBaseUrl('groq', 'https://wrong.test')).toBe('https://api.groq.com/openai/v1');
+    expect(resolveBaseUrl('groq', 'http://localhost:11434/v1')).toBe('http://localhost:11434/v1');
+    expect(resolveBaseUrl('custom', 'http://localhost:11434/v1')).toBe('http://localhost:11434/v1');
+    // битый профильный URL падает строго (не уходит молча на чужой хост)
+    expect(() => resolveBaseUrl('groq', undefined, 'ftp://bad')).toThrow();
+  });
+
+  it('центр настроек: у каждого профиля есть поле Override Base URL + подсказка; EN без кириллицы', () => {
+    const profiles: KeychainProfile[] = [
+      { id: 'a', label: 'Alpha', provider: 'groq', baseUrl: 'https://relay.example/v1' },
+      { id: 'b', label: 'Beta', provider: 'openai' }
+    ];
+    const base: SettingsState = {
+      keyMask: '', keyConfigured: false, provider: 'gemini', model: '', baseUrl: '',
+      reportLanguage: 'ru', showAuditBanner: true, docLinks: [], docMaxKb: 50, docMaxLinks: 5,
+      maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0,
+      auditScope: '', auditPasses: 1, version: 'test', uiTheme: 'auto', accentColor: 'auto',
+      uiDensity: 'standard', uiFontSize: 'm', showConfidence: true, findingsSort: 'severity',
+      reportTheme: 'auto', customColors: '{}', keychainProfiles: profiles, keychainActiveId: 'a'
+    };
+    const ru = buildSettingsHtml(base, '', 'ok', 'nonce', '', undefined, 'ru');
+    expect(ru).toContain('data-kc="keychainBaseUrl"');
+    expect(ru).toContain('class="kc-baseurl"');
+    expect(ru).toContain('value="https://relay.example/v1"');
+    expect(ru).toContain('Override Base URL');
+    expect(ru).toContain('Оставьте пустым, чтобы использовать базовый URL провайдера');
+    const en = buildSettingsHtml(base, '', 'ok', 'nonce', '', undefined, 'en');
+    expect(en).toContain("Leave empty to use the provider's base URL");
+    expect(en).not.toMatch(/[\u0400-\u04FF]/);
+  });
+});
+
+describe('батч 27.1 e2e: failover с baseUrl-приоритетом', () => {
+  beforeEach(() => { state.reset(); resetRuntime(); clearModelsCache(); });
+  afterEach(() => { globalThis.fetch = REAL_FETCH; });
+
+  it('глобальный codescout.baseUrl=wrong.test: A→B уходит на СВОЙ PROVIDERS.baseUrl B, wrong.test не трогает', async () => {
+    seedTwoProfiles();
+    state.set('codescout.failover.enabled', true);
+    state.set('codescout.baseUrl', 'https://wrong.test');
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: unknown, init?: { headers?: Record<string, string> }) => {
+      const auth = String(init?.headers?.Authorization ?? '');
+      urls.push(String(url));
+      if (auth.includes(KEY_A)) return rateLimited('1');
+      return okContent();
+    }) as unknown as typeof fetch;
+    const result = await reviewFiles(makeFakeContext() as never, fileSet(1), undefined, () => {});
+    expect(result.filesAnalyzed).toBe(1);
+    expect(urls.some((u) => u.startsWith('https://api.groq.com/'))).toBe(true);
+    expect(urls.some((u) => u.startsWith('https://api.openai.com/'))).toBe(true);
+    expect(urls.every((u) => !u.includes('wrong.test'))).toBe(true);
+  }, 60000);
+
+  it('профиль B со своим baseUrl: switch на relay профиля — глобальный оверрайд не побеждает', async () => {
+    state.set('codescout.keychain', [
+      { id: 'a', label: 'Alpha', provider: 'groq' },
+      { id: 'b', label: 'Beta', provider: 'openai', baseUrl: 'https://relay.example/v1' }
+    ] satisfies KeychainProfile[]);
+    state.set('codescout.keychain.active', 'a');
+    state.secrets.set('keychain.a', KEY_A);
+    state.secrets.set('keychain.b', KEY_B);
+    state.set('codescout.failover.enabled', true);
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: unknown, init?: { headers?: Record<string, string> }) => {
+      const auth = String(init?.headers?.Authorization ?? '');
+      urls.push(String(url));
+      if (auth.includes(KEY_A)) return rateLimited('1');
+      return okContent();
+    }) as unknown as typeof fetch;
+    const result = await reviewFiles(makeFakeContext() as never, fileSet(1), undefined, () => {});
+    expect(result.filesAnalyzed).toBe(1);
+    expect(urls.some((u) => u === 'https://relay.example/v1/chat/completions')).toBe(true);
+    expect(urls.every((u) => !u.includes('api.openai.com'))).toBe(true);
+  }, 60000);
+});
+
+describe('батч 27.1 e2e: онбординг пишет в keychain-профиль «onboarded»', () => {
+  beforeEach(() => { state.reset(); resetRuntime(); clearModelsCache(); });
+  afterEach(() => { globalThis.fetch = REAL_FETCH; });
+
+  it('пустой keychain: onboardCloud создаёт профиль + legacy заполняется; повторный онбординг legacy НЕ трогает', async () => {
+    activate(makeFakeContext() as never);
+    await flush();
+    globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ id: 'm-live' }] }), { status: 200 })) as typeof fetch;
+    state.quickPickAnswers.push('Groq');
+    state.inputBoxAnswers.push('ZZTESTKEY_1234567890');
+    await (state.commands.get('codescout.onboardCloud') as () => Promise<unknown>)();
+    await waitFor(() => readActiveId() === ONBOARDED_PROFILE_ID);
+    expect(readProfiles().map((p) => p.id)).toEqual([ONBOARDED_PROFILE_ID]);
+    expect(state.secrets.get('keychain.onboarded')).toBe('ZZTESTKEY_1234567890');
+    expect(state.secrets.get('codescout.apiKey')).toBe('ZZTESTKEY_1234567890'); // пустой keychain → legacy тоже пишется
+    // повторный онбординг: legacy-слот заморожен, профиль обновлён на месте
+    state.secrets.set('codescout.apiKey', 'LEGACY_LOCKED');
+    state.quickPickAnswers.push('OpenAI');
+    state.inputBoxAnswers.push('ZZSECONDKEY_0987654321');
+    await (state.commands.get('codescout.onboardCloud') as () => Promise<unknown>)();
+    await waitFor(() => state.secrets.get('keychain.onboarded') === 'ZZSECONDKEY_0987654321');
+    expect(state.secrets.get('codescout.apiKey')).toBe('LEGACY_LOCKED');
+    expect(readProfiles()).toHaveLength(1);
+    expect(readProfiles()[0].provider).toBe('openai');
+  }, 30000);
+
+  it('onboardLocal при непустом keychain: профиль onboarded(custom + baseUrl пробы), settings/legacy не тронуты', async () => {
+    state.set('codescout.keychain', [{ id: 'only', label: 'Only', provider: 'groq' }]);
+    state.set('codescout.keychain.active', 'only');
+    activate(makeFakeContext() as never);
+    await flush();
+    globalThis.fetch = (async (url: unknown) => {
+      if (String(url).endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: 'local-m' }] }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+    state.quickPickAnswers.push('Ollama');
+    state.inputBoxAnswers.push('http://localhost:11434');
+    await (state.commands.get('codescout.onboardLocal') as () => Promise<unknown>)();
+    await waitFor(() => readActiveId() === ONBOARDED_PROFILE_ID);
+    const onboarded = readProfiles().find((p) => p.id === ONBOARDED_PROFILE_ID);
+    expect(onboarded?.provider).toBe('custom');
+    expect(onboarded?.baseUrl).toBe('http://localhost:11434/v1');
+    expect(onboarded?.model).toBe('local-m');
+    expect(state.config.get('codescout.provider')).toBeUndefined();
+    expect(state.config.get('codescout.baseUrl')).toBeUndefined();
+    expect(state.secrets.get('codescout.model')).toBeUndefined();
+    expect(await readProfileSecret(fakeSecrets(), ONBOARDED_PROFILE_ID)).toBe('');
+  }, 30000);
 });

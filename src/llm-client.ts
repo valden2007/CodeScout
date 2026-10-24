@@ -405,8 +405,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
 export { OpenAICompatibleProvider as GroqProvider };
 
-export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void, baseUrl?: string, signal?: AbortSignal, failover?: FailoverHooks): LLMProvider {
+// Батч 27.1, п.1: profileBaseUrl — overrides профиля keychain; приоритет
+// резолва: profileBaseUrl → baseUrl (codescout.baseUrl, только custom/local)
+// → PROVIDERS[provider].baseUrl (реализация — providers.resolveBaseUrl).
+export function createProvider(provider: string, apiKey: string, model: string, onRetry?: (event: RetryEvent) => void, baseUrl?: string, signal?: AbortSignal, failover?: FailoverHooks, profileBaseUrl?: string): LLMProvider {
   const normalized = normalizeProvider(provider);
-  const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+  const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl, profileBaseUrl);
   return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal, undefined, failover);
 }

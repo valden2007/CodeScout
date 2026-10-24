@@ -34743,8 +34743,17 @@ function resolveApiKeyPriority(secretKey, provider, env = process.env) {
 // остальных витринных провайдеров эндпоинт берётся СТРОГО из
 // PROVIDERS[provider].baseUrl: оверрайд игнорируется и даже не читается
 // (опечатка в глобальном поле не должна уводить groq-ключ на чужой хост).
-function resolveBaseUrl(provider, customBaseUrl) {
+// Батч 27.1, п.1: приоритет резолва эндпоинта — profile.baseUrl (явная
+// per-profile галка, валидируется строго) → codescout.baseUrl (только
+// custom/local) → PROVIDERS[provider].baseUrl.
+function resolveBaseUrl(provider, customBaseUrl, profileBaseUrl) {
     const normalized = normalizeProvider(provider);
+    const profileOverride = profileBaseUrl?.trim();
+    if (profileOverride) {
+        const url = profileOverride.replace(/\/+$/, '');
+        assertHttpBaseUrl(url);
+        return url;
+    }
     const override = customBaseUrl?.trim();
     if (override && (normalized === 'custom' || isLocalBaseUrl(override))) {
         const url = override.replace(/\/+$/, '');
@@ -35135,9 +35144,12 @@ class OpenAICompatibleProvider {
     }
 }
 
-function createProvider(provider, apiKey, model, onRetry, baseUrl, signal, failover) {
+// Батч 27.1, п.1: profileBaseUrl — overrides профиля keychain; приоритет
+// резолва: profileBaseUrl → baseUrl (codescout.baseUrl, только custom/local)
+// → PROVIDERS[provider].baseUrl (реализация — providers.resolveBaseUrl).
+function createProvider(provider, apiKey, model, onRetry, baseUrl, signal, failover, profileBaseUrl) {
     const normalized = normalizeProvider(provider);
-    const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl);
+    const resolvedBaseUrl = resolveBaseUrl(normalized, baseUrl, profileBaseUrl);
     return new OpenAICompatibleProvider(apiKey, model, fetch, sleep, onRetry, resolvedBaseUrl, signal, undefined, failover);
 }
 
