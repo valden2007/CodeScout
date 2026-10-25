@@ -126,7 +126,10 @@ function currentKeyLine(T: (key: string, vars?: Record<string, string | number>)
 // keychainAdd/keychainRename/keychainDelete/keychainSetActive/keychainMove/
 // keychainAddKey/keychainRenameKey/keychainDeleteKey/keychainToggleKey
 // (нативные InputBox/QuickPick/модалки — логика в extension/keychain.ts).
-function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
+// МИКРО-БАТЧ 28.1: тело блока (строки профилей/ключей) рендерится в try/catch:
+// исключение НЕ обрывает остальной HTML и <script> — деградация до пустого
+// списка + строка в Output хоста через onRenderIssue.
+function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? '';
   const runtimeInfo = state.keychainRuntime ?? {};
@@ -170,10 +173,25 @@ function keychainBlockHtml(T: (key: string, vars?: Record<string, string | numbe
       </span>
     </div>`;
   }).join('');
+  return profiles.length === 0
+    ? `<p class="hint">${T('keychain.empty')}</p>`
+    : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p>`;
+}
+
+function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState, onRenderIssue?: (message: string) => void): string {
   const failoverOn = state.failoverEnabled === true;
-  return `<div class="kc-block">
+  let listHtml = '';
+  try {
+    listHtml = keychainRowsHtml(T, state);
+  } catch (error) {
+    // Деградация: пустой список вместо оборванного HTML; причину — в Output хоста.
+    const detail = error instanceof Error ? error.message : String(error);
+    onRenderIssue?.(`блок профилей keychain деградировал до пустого списка: ${detail}`);
+    listHtml = `<p class="hint">${escapeHtml(T('keychain.renderDegraded'))}</p>`;
+  }
+  return `<div id="kcBlock" class="kc-block">
   <h3>${icon('clippy')} ${T('keychain.title')}</h3>
-  ${profiles.length === 0 ? `<p class="hint">${T('keychain.empty')}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p>`}
+  ${listHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
   </div>
@@ -188,7 +206,7 @@ export function mergeScopeGlobs(existing: string, added: string[]): string {
   return [...new Set([...splitScopeGlobs(existing), ...added.map((glob) => glob.trim()).filter(Boolean)])].join(', ');
 }
 
-export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' | 'retry' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets, lang: Lang = 'ru'): string {
+export function buildSettingsHtml(state: SettingsState, statusMessage = '', statusKind: 'ok' | 'error' | 'retry' = 'ok', nonce = '', anchor = '', assets?: SettingsAssets, lang: Lang = 'ru', onRenderIssue?: (message: string) => void): string {
   const T = (key: string, vars?: Record<string, string | number>) => t(key, lang, vars);
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
@@ -355,7 +373,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="testConnection" type="button" class="secondary">${icon('sync')}<span>${T('center.retry')}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon('trash')}<span>${T('center.forgetKey')}</span></button>
   </div>
-  ${keychainBlockHtml(T, state)}
+  ${keychainBlockHtml(T, state, onRenderIssue)}
 </section>${languageSection}
 <section id="sec-audit">
   <h2>${icon('sync')} ${T('sec.audit')}</h2>
@@ -503,6 +521,10 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <span class="dirty" id="dirtyHint">${T('save.clean')}</span>
 </div>
 <script${nonceAttr}>
+// Batch 28.1: the WHOLE init is wrapped in try/catch — a throw anywhere must
+// not silently kill every other listener. Failures go to the webview console
+// (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
+try {
 const vscode = acquireVsCodeApi();
 const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
@@ -734,7 +756,10 @@ document.addEventListener('click', (event) => {
   }
   const keyId = btn.getAttribute('data-keyid');
   const dir = btn.getAttribute('data-dir');
-  const payload: Record<string, unknown> = { command, id };
+  // Batch 28.1 REGRESSION FIX: no TypeScript annotations inside this string —
+  // the webview parses raw JS, and a type annotation threw SyntaxError that
+  // killed EVERY listener (all settings buttons dead). Keep plain JS only.
+  const payload = { command: command, id: id };
   if (keyId) payload.keyId = keyId;
   if (dir) payload.dir = Number(dir);
   vscode.postMessage(payload);
@@ -885,6 +910,11 @@ applyPreview();
 onScroll();
 const anchor = document.body.getAttribute('data-anchor');
 if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollIntoView(); setActive(anchor); } }
+document.body.setAttribute('data-cs-ready', '1');
+} catch (initError) {
+  console.error('CodeScout settings: script init failed', initError);
+  document.body.setAttribute('data-cs-ready', 'error: ' + (initError && initError.message || String(initError)));
+}
 </script>
 </body>
 </html>`;

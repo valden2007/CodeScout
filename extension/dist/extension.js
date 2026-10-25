@@ -33,6 +33,7 @@ __export(extension_exports, {
   FILE_COOLDOWN_DEFAULT_SECONDS: () => FILE_COOLDOWN_DEFAULT_SECONDS,
   FILE_COOLDOWN_MAX_SECONDS: () => FILE_COOLDOWN_MAX_SECONDS,
   FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS: () => FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS,
+  KNOWN_SETTINGS_COMMANDS: () => KNOWN_SETTINGS_COMMANDS,
   PASS_BETWEEN_SECONDS: () => PASS_BETWEEN_SECONDS,
   RATE_LIMIT_PAUSE_LADDER: () => RATE_LIMIT_PAUSE_LADDER,
   activate: () => activate,
@@ -783,6 +784,7 @@ var ru_default = {
   "center.apiKeyLabel": "API-\u043A\u043B\u044E\u0447 ( SecretStorage )",
   "center.keyKeep": "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
   "center.keyPaste": "\u0432\u0441\u0442\u0430\u0432\u044C \u043A\u043B\u044E\u0447 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u043F\u0440\u0435\u0434\u0435\u043B\u0438\u0442\u0441\u044F \u0441\u0430\u043C",
+  "center.keyLocalHint": "\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0435\u0440 \u2014 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u0435\u043D",
   "center.reveal": "\u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0432\u0435\u0434\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447",
   "center.baseUrl": "Base URL (OpenAI-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442)",
   "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
@@ -1035,6 +1037,7 @@ var ru_default = {
   "keychain.makeActive": "\u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u043C",
   "keychain.activeTag": "\u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439",
   "keychain.empty": "\u041F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u043D\u0435\u0442 \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u043E\u0434\u0438\u043D\u043E\u0447\u043D\u044B\u0439 \u043A\u043B\u044E\u0447. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043F\u0435\u0440\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C, \u0447\u0442\u043E\u0431\u044B \u0434\u0435\u0440\u0436\u0430\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0430 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.",
+  "keychain.renderDegraded": "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u0441\u043A\u0440\u044B\u0442 (\u043E\u0448\u0438\u0431\u043A\u0430 \u0440\u0435\u043D\u0434\u0435\u0440\u0430) \u2014 \u0434\u0435\u0442\u0430\u043B\u0438 \u0432 Output. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.",
   "keychain.failoverEnabled": "Failover: \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u0442\u044C \u043D\u0430 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 awake-\u043A\u043B\u044E\u0447 (\u0442\u043E\u043B\u044C\u043A\u043E 429)",
   "keychain.failoverMaxCycles": "\u041F\u043E\u0442\u043E\u043B\u043E\u043A \u0446\u0438\u043A\u043B\u043E\u0432 \u0440\u043E\u0442\u0430\u0446\u0438\u0438 (0 = \u0431\u0435\u0437 \u043B\u0438\u043C\u0438\u0442\u0430 \u0432 \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u043E\u043C \u0440\u0435\u0436\u0438\u043C\u0435)",
   "keychain.failoverHint": "429 \u0443\u0441\u044B\u043F\u043B\u044F\u0435\u0442 \u043A\u043B\u044E\u0447 (retry-after \u0438\u043B\u0438 \u043B\u0435\u0441\u0442\u043D\u0438\u0446\u0430 120/300/600\u0441); \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043A\u043B\u044E\u0447\u0435\u0439 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F, \u043A\u043E\u0433\u0434\u0430 \u0432\u0441\u0435 \u0441\u043F\u044F\u0442 \u2014 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E \u0441\u0442\u0440\u0435\u043B\u043A\u0430\u043C (\u0446\u0438\u043A\u043B+1). 401/403 \u043F\u043E\u043C\u0435\u0447\u0430\u0435\u0442 \u043A\u043B\u044E\u0447 \xAB\u0441\u043B\u043E\u043C\u0430\u043D\u043D\u044B\u043C\xBB, \u0430\u0432\u0442\u043E\u043F\u0435\u0440\u0435\u0445\u043E\u0434 \u043F\u043E auth \u0437\u0430\u043F\u0440\u0435\u0449\u0451\u043D.",
@@ -1217,6 +1220,7 @@ var en_default = {
   "center.apiKeyLabel": "API key ( SecretStorage )",
   "center.keyKeep": "empty field = keep the current key",
   "center.keyPaste": "paste a key \u2014 the provider is detected",
+  "center.keyLocalHint": "local server \u2014 key is optional",
   "center.reveal": "show the typed key",
   "center.baseUrl": "Base URL (OpenAI-compatible endpoint)",
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
@@ -1469,6 +1473,7 @@ var en_default = {
   "keychain.makeActive": "Make active",
   "keychain.activeTag": "active",
   "keychain.empty": "No profiles yet \u2014 a single key is in use. Add the first profile to keep several keys per provider.",
+  "keychain.renderDegraded": "Profile list is temporarily hidden (render error) \u2014 see Output. Other settings still work.",
   "keychain.failoverEnabled": "Failover: automatically switch to the next awake key on rate limits (429 only)",
   "keychain.failoverMaxCycles": "Rotation cycle cap (0 = unlimited in autonomous mode)",
   "keychain.failoverHint": "A 429 puts the key to sleep (retry-after or the 120/300/600s ladder); rotation goes through keys inside a profile first, and when all of them sleep \u2014 to the next profile in arrow order (cycle+1). 401/403 marks a key broken; auto-switching on auth errors is forbidden.",
@@ -5307,7 +5312,7 @@ function currentKeyLine(T, state) {
   if (state.provider === "custom" && local) return escapeHtml2(T("center.nowLocal", { s: local }));
   return escapeHtml2(T("center.nowNone"));
 }
-function keychainBlockHtml(T, state) {
+function keychainRowsHtml(T, state) {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? "";
   const runtimeInfo = state.keychainRuntime ?? {};
@@ -5351,10 +5356,21 @@ function keychainBlockHtml(T, state) {
       </span>
     </div>`;
   }).join("");
+  return profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T("keychain.baseUrlHint")}</p>`;
+}
+function keychainBlockHtml(T, state, onRenderIssue) {
   const failoverOn = state.failoverEnabled === true;
-  return `<div class="kc-block">
+  let listHtml = "";
+  try {
+    listHtml = keychainRowsHtml(T, state);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    onRenderIssue?.(`\u0431\u043B\u043E\u043A \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 keychain \u0434\u0435\u0433\u0440\u0430\u0434\u0438\u0440\u043E\u0432\u0430\u043B \u0434\u043E \u043F\u0443\u0441\u0442\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430: ${detail}`);
+    listHtml = `<p class="hint">${escapeHtml2(T("keychain.renderDegraded"))}</p>`;
+  }
+  return `<div id="kcBlock" class="kc-block">
   <h3>${icon2("clippy")} ${T("keychain.title")}</h3>
-  ${profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T("keychain.baseUrlHint")}</p>`}
+  ${listHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon2("plus")}<span>${T("keychain.add")}</span></button>
   </div>
@@ -5364,7 +5380,7 @@ function keychainBlockHtml(T, state) {
   <p class="hint">${T("keychain.failoverHint")}</p>
 </div>`;
 }
-function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "", anchor = "", assets, lang = "ru") {
+function buildSettingsHtml(state, statusMessage = "", statusKind = "ok", nonce = "", anchor = "", assets, lang = "ru", onRenderIssue) {
   const T = (key, vars) => t(key, lang, vars);
   const scriptSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
   const styleSrc = nonce ? `'nonce-${nonce}'` : "'unsafe-inline'";
@@ -5521,7 +5537,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
     <button id="testConnection" type="button" class="secondary">${icon2("sync")}<span>${T("center.retry")}</span></button>
     <button id="clearKey" type="button" class="secondary">${icon2("trash")}<span>${T("center.forgetKey")}</span></button>
   </div>
-  ${keychainBlockHtml(T, state)}
+  ${keychainBlockHtml(T, state, onRenderIssue)}
 </section>${languageSection}
 <section id="sec-audit">
   <h2>${icon2("sync")} ${T("sec.audit")}</h2>
@@ -5669,6 +5685,10 @@ button.is-dirty .dirty-dot { display: inline-block; }
   <span class="dirty" id="dirtyHint">${T("save.clean")}</span>
 </div>
 <script${nonceAttr}>
+// Batch 28.1: the WHOLE init is wrapped in try/catch \u2014 a throw anywhere must
+// not silently kill every other listener. Failures go to the webview console
+// (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
+try {
 const vscode = acquireVsCodeApi();
 const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading"].reduce((acc, k) => {
     acc[k] = T(k);
@@ -5903,7 +5923,10 @@ document.addEventListener('click', (event) => {
   }
   const keyId = btn.getAttribute('data-keyid');
   const dir = btn.getAttribute('data-dir');
-  const payload: Record<string, unknown> = { command, id };
+  // Batch 28.1 REGRESSION FIX: no TypeScript annotations inside this string \u2014
+  // the webview parses raw JS, and a type annotation threw SyntaxError that
+  // killed EVERY listener (all settings buttons dead). Keep plain JS only.
+  const payload = { command: command, id: id };
   if (keyId) payload.keyId = keyId;
   if (dir) payload.dir = Number(dir);
   vscode.postMessage(payload);
@@ -6054,6 +6077,11 @@ applyPreview();
 onScroll();
 const anchor = document.body.getAttribute('data-anchor');
 if (anchor) { const el = document.getElementById(anchor); if (el) { el.scrollIntoView(); setActive(anchor); } }
+document.body.setAttribute('data-cs-ready', '1');
+} catch (initError) {
+  console.error('CodeScout settings: script init failed', initError);
+  document.body.setAttribute('data-cs-ready', 'error: ' + (initError && initError.message || String(initError)));
+}
 </script>
 </body>
 </html>`;
@@ -7353,7 +7381,7 @@ function activate(context) {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode4.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto7.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage());
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto7.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage(), (issue) => output.appendLine(`\u26A0\uFE0F \u0426\u0435\u043D\u0442\u0440 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A: ${issue}`));
         }
       };
       rerenderSettings = () => {
@@ -8100,6 +8128,7 @@ function deactivate() {
   FILE_COOLDOWN_DEFAULT_SECONDS,
   FILE_COOLDOWN_MAX_SECONDS,
   FILE_COOLDOWN_MULTIPASS_DEFAULT_SECONDS,
+  KNOWN_SETTINGS_COMMANDS,
   PASS_BETWEEN_SECONDS,
   RATE_LIMIT_PAUSE_LADDER,
   activate,

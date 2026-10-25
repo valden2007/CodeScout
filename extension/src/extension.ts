@@ -49,7 +49,7 @@ const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
   'Hyperbolic': 'hyperbolic',
   'Cerebras': 'cerebras'
 };
-const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey']);
+export const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
 // про vscode не знает, расширение подставляет свой Output-канал (заполняется
@@ -1631,7 +1631,9 @@ export function activate(context: vscode.ExtensionContext): void {
         if (settingsPanel) {
           settingsPanel.title = t('title.center', currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'codicon.css')).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets, currentReportLanguage());
+          // Батч 28.1: рендер центра не должен ронять webview целиком; деградации
+          // блоков (try/catch в settingsHtml) печатаются в Output хоста.
+          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets, currentReportLanguage(), (issue) => output.appendLine(`⚠️ Центр настроек: ${issue}`));
         }
       };
       rerenderSettings = () => { void render(); };
