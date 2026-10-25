@@ -8,7 +8,7 @@ import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../s
 import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
 import { splitPatch } from '../../src/diff-parser';
-import { clearModelsCache, defaultModel, detectProvider, fetchLiveModelsCached, isLocalBaseUrl, keyUrl, maskApiKey, MODELS_FETCH_TIMEOUT_MS, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl, sanitizeApiKey, SK_AMBIGUOUS_OPTIONS } from '../../src/providers';
+import { clearModelsCache, defaultModel, detectProvider, fetchLiveModelsCached, isLocalBaseUrl, keyUrl, maskApiKey, MODELS_FETCH_TIMEOUT_MS, normalizeProvider, probeLocalServer, PROVIDER_ORDER, ProviderName, resolveApiKeyPriority, resolveBaseUrl, sanitizeApiKey, SK_AMBIGUOUS_OPTIONS } from '../../src/providers';
 import { readGitDiff } from '../../src/tui/DiffReader';
 import { ReviewIssue } from '../../src/types';
 import { CodeScoutPanel } from './panel';
@@ -17,7 +17,7 @@ import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
-import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, keyLabelFor, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
+import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, keyLabelFor, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -49,7 +49,7 @@ const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
   'Hyperbolic': 'hyperbolic',
   'Cerebras': 'cerebras'
 };
-export const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey']);
+export const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey', 'keychainFormSave', 'keychainFormModels']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
 // про vscode не знает, расширение подставляет свой Output-канал (заполняется
@@ -1263,6 +1263,11 @@ interface SettingsMessage {
   // Батч 28: id ключа внутри профиля (кнопки ключей) и направление стрелки.
   keyId?: string;
   dir?: number;
+  // МИКРО-БАТЧ 28.2: поля инлайн-формы профиля (keychainFormSave/Models).
+  provider?: string;
+  profileId?: string;
+  label?: string;
+  model?: string;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -1627,13 +1632,16 @@ export function activate(context: vscode.ExtensionContext): void {
       rerenderSettings();
     }),
     vscode.commands.registerCommand('codescout.openSettingsPage', async (anchor?: string) => {
-      const render = async (status = '', statusKind: 'ok' | 'error' | 'retry' = 'ok'): Promise<void> => {
+      const render = async (status = '', statusKind: 'ok' | 'error' | 'retry' = 'ok', formPatch?: Partial<SettingsState>): Promise<void> => {
         if (settingsPanel) {
           settingsPanel.title = t('title.center', currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'codicon.css')).toString(), cspSource: settingsPanel.webview.cspSource };
           // Батч 28.1: рендер центра не должен ронять webview целиком; деградации
           // блоков (try/catch в settingsHtml) печатаются в Output хоста.
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets, currentReportLanguage(), (issue) => output.appendLine(`⚠️ Центр настроек: ${issue}`));
+          // Батч 28.2: formPatch — перерисовка с ОТКРЫТОЙ формой (ошибка
+          // валидации внутри карточки + введённые значения остаются в полях).
+          const snapshot = await readSettingsState(context);
+          settingsPanel.webview.html = buildSettingsHtml(formPatch ? { ...snapshot, ...formPatch } : snapshot, status, statusKind, randomBytes(16).toString('hex'), anchor ?? '', assets, currentReportLanguage(), (issue) => output.appendLine(`⚠️ Центр настроек: ${issue}`));
         }
       };
       rerenderSettings = () => { void render(); };
@@ -1709,6 +1717,78 @@ export function activate(context: vscode.ExtensionContext): void {
               clearModelsCache();
               await syncKeyStatus();
               await render(t('keychain.addedNotify', lang, { label: added.label }));
+              return;
+            }
+            // ── МИКРО-БАТЧ 28.2: инлайн-форма профиля (карточка в вебвью) ────
+            if (message.command === 'keychainFormSave') {
+              const lang = currentReportLanguage();
+              const profileId = (message.profileId ?? '').trim();
+              const providerRaw = (message.provider ?? '').trim();
+              const keyInput = (message.apiKey ?? '').trim();
+              const labelInput = (message.label ?? '').trim();
+              const modelInput = (message.model ?? '').trim();
+              const baseUrlInput = (message.baseUrl ?? '').trim();
+              const draft: NonNullable<SettingsState['keychainFormDraft']> = { provider: providerRaw, label: labelInput, model: modelInput, baseUrl: baseUrlInput, ...(profileId ? { profileId } : {}) };
+              // Ошибки валидации живут ВНУТРИ формы: черновик+текст возвращаем
+              // в перерисовку карточки; профиль/секрет не трогаем.
+              const failForm = async (error: string): Promise<void> => {
+                await render(t('keychain.actionCancelled', lang), 'error', { keychainFormDraft: draft, keychainFormError: error });
+              };
+              let provider: ProviderName;
+              try {
+                provider = normalizeProvider(providerRaw);
+              } catch {
+                await failForm(t('keychain.formErrProvider', lang));
+                return;
+              }
+              if (!profileId && !keyInput) { await failForm(t('keychain.formErrKey', lang)); return; }
+              if (baseUrlInput && !profileBaseUrl(baseUrlInput)) { await failForm(t('keychain.formErrBaseUrl', lang)); return; }
+              if (profileId) {
+                const updated = await updateProfileFromForm(context.secrets, profileId, { label: labelInput, provider, model: modelInput, key: keyInput, baseUrl: baseUrlInput });
+                if (!updated) { await failForm(t('keychain.formUnknownProfile', lang)); return; }
+                clearModelsCache();
+                await syncKeyStatus();
+                await render(t('keychain.formSavedNotify', lang, { label: updated.label }));
+                return;
+              }
+              const label = labelInput || t('keychain.formAutoLabel', lang, { p: provider, n: readProfiles().length + 1 });
+              const added = await addProfile(context.secrets, { label, provider, ...(modelInput ? { model: modelInput } : {}), key: keyInput, ...(baseUrlInput ? { baseUrl: baseUrlInput } : {}) });
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t('keychain.formSavedNotify', lang, { label: added.label }));
+              return;
+            }
+            if (message.command === 'keychainFormModels') {
+              const lang = currentReportLanguage();
+              const postModels = (payload: Record<string, unknown>): void => {
+                void settingsPanel?.webview.postMessage({ type: 'formModels', ...payload });
+              };
+              // Ключ берём ИЗ ПОЛЯ ФОРМЫ (до сохранения) или из SecretStorage
+              // редактируемого профиля; НИКАКОЙ записи в settings/секреты здесь.
+              let provider: ProviderName;
+              try {
+                provider = normalizeProvider((message.provider ?? '').trim());
+              } catch {
+                postModels({ ok: false, message: t('keychain.formErrProvider', lang) });
+                return;
+              }
+              const profileId = (message.profileId ?? '').trim();
+              const draftKey = (message.apiKey ?? '').trim();
+              const baseRaw = (message.baseUrl ?? '').trim();
+              if (baseRaw && !profileBaseUrl(baseRaw)) { postModels({ ok: false, message: t('keychain.formErrBaseUrl', lang) }); return; }
+              const profile = profileId ? readProfiles().find((candidate) => candidate.id === profileId) : undefined;
+              const storedKey = profileId ? await readProfileSecret(context.secrets, profileId) : undefined;
+              const key = draftKey || storedKey || '';
+              const overrideBase = profileBaseUrl(baseRaw) ?? profile?.baseUrl;
+              // localhost-режим (Ollama/LM Studio) работает без ключа — как в fetchModels.
+              if (!key && !isLocalBaseUrl(resolveBaseUrl(provider, undefined, overrideBase))) { postModels({ ok: false, message: t('keychain.formErrKey', lang) }); return; }
+              try {
+                const models = await fetchModels({ provider, model: defaultModel(provider), key, baseUrl: '', profileBaseUrl: overrideBase, userChosenModel: false });
+                if (models.length === 0) { postModels({ ok: false, message: t('keychain.formModelsEmpty', lang) }); return; }
+                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)) });
+              } catch {
+                postModels({ ok: false, message: t('keychain.formModelsErr', lang) });
+              }
               return;
             }
             if (message.command === 'keychainSetActive') {

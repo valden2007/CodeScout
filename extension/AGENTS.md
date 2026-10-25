@@ -714,8 +714,31 @@ pre-design now.
      ключ вставкой/переименовать/удалить/вкл-выкл; последний ключ профиля
      не удаляется. pickResumeProfile возвращает рабочий enabled-ключ
      (profileId+keyId в oneShot-оверрайде → метки при разовом догоне).
-     failover.enabled=false → прежнее поведение без изменений. e2e:
-     tests/batch28-catchup.test.ts + обновлённый tests/keychain.test.ts.
-     Tests: 589.
+      failover.enabled=false → прежнее поведение без изменений. e2e:
+      tests/batch28-catchup.test.ts + обновлённый tests/keychain.test.ts.
+      Tests: 589.
+  33. Форма профиля + видимый цикл (микро-батч 28.2): создание/правка
+      профиля — инлайн-карточкой в блоке «Профили ключей», а не цепочкой
+      инпутов: «+ Добавить профиль» и «Редактировать» у строки открывают
+      форму на КЛИЕНТЕ (data-kcf, без хоста; vscode.getState переживает
+      перерисовки, ключ в state НЕ кладётся). Поля: провайдер (select из
+      PROVIDER_ORDER), API-ключ (password; подсказка про SecretStorage;
+      при правке пусто = оставить прежний), модель (input+datalist +
+      «Подтянуть модели» — keychainFormModels берёт ключ ИЗ ПОЛЯ формы до
+      сохранения, из SecretStorage после; ничего не пишет), название
+      (пусто → авто-метка «<provider>·профиль-N»), Override Base URL.
+      «Сохранить профиль» = keychainFormSave: валидация (провайдер; ключ
+      непустой при создании; baseUrl) — ошибки показываются ВНУТРИ формы
+      (хост перерисовывает карточку открытой с draft+keychainFormError,
+      render принимает formPatch), секрет → keychain.<pid>.<kid>, профиль →
+      codescout.keychain; cancel/Escape закрывают без записи. Список:
+      номер-бейдж 1..N = порядок цикла failover (стрелки keychainMove
+      меняют массив и бейджи), подпись «Цикл failover идёт по профилям в
+      порядке списка; ключи внутри профиля — в своём порядке». Рендер
+      формы — внутри try/catch деградации 28.1. Ключевые команды вебвью в
+      KNOWN_SETTINGS_COMMANDS; все строки через t() в ru+en. Тесты: рендер
+      матрица форма открыта/закрыта + parse-контракт скрипта + e2e
+      save/validate/edit/cancel/авто-метка/подтяжка/стрелки —
+      tests/batch28-2-profile-form.test.ts. Tests: 619.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

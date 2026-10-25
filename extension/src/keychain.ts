@@ -13,7 +13,7 @@
 // таймеров и без сети; мутация runtime — в функциях mark*/is*.
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
-import { assertHttpBaseUrl, normalizeProvider, type ProviderName } from '../../src/providers';
+import { assertHttpBaseUrl, defaultModel, normalizeProvider, type ProviderName } from '../../src/providers';
 
 // Батч 28: один ключ профиля. secretId — адрес секрета в SecretStorage
 // (несекретный указатель), сам ключ там и лежит.
@@ -353,6 +353,40 @@ export async function setProfileBaseUrl(id: string, baseUrl: string | undefined)
     if (profile.id !== id) return profile;
     return { id: profile.id, label: profile.label, provider: profile.provider, ...(profile.model?.trim() ? { model: profile.model.trim() } : {}), ...(base ? { baseUrl: base } : {}), keys: profile.keys } satisfies KeychainProfile;
   });
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === id);
+}
+
+// МИКРО-БАТЧ 28.2: сохранение инлайн-формы профиля (режим редактирования).
+// keys и id не трогаем; непустой key пишем в рабочий enabled-ключ. Пустое
+// название = старое метка (авто-метку считает вызывающий при создании).
+// Смена провайдера без явной модели в форме → дефолт нового провайдера.
+// Битый baseUrl или неизвестный id → undefined, ничего не пишем.
+export async function updateProfileFromForm(secrets: SecretsLike, id: string, input: { label?: string; provider?: string; model?: string; key?: string; baseUrl?: string }): Promise<KeychainProfile | undefined> {
+  const profiles = readProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return undefined;
+  const provider = validProvider(input.provider) ?? target.provider;
+  const providerChanged = provider !== target.provider;
+  const trimmedBaseUrl = input.baseUrl?.trim() ?? '';
+  const base = trimmedBaseUrl ? profileBaseUrl(trimmedBaseUrl) : '';
+  if (trimmedBaseUrl && !base) return undefined;
+  const label = input.label?.trim() || target.label;
+  const model = input.model?.trim() || (providerChanged ? defaultModel(provider) : target.model ?? '');
+  const next = profiles.map((profile) => profile.id !== id ? profile : {
+    id: profile.id,
+    label,
+    provider,
+    ...(model ? { model } : {}),
+    ...(base ? { baseUrl: base } : {}),
+    keys: profile.keys
+  });
+  const trimmedKey = input.key?.trim();
+  if (trimmedKey) {
+    const updated = next.find((profile) => profile.id === id);
+    const key = updated ? pickActiveKey(updated) ?? updated.keys[0] : undefined;
+    if (key) await storeKeySecret(secrets, key, trimmedKey);
+  }
   await writeProfiles(next);
   return next.find((profile) => profile.id === id);
 }

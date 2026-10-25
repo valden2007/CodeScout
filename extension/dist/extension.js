@@ -1089,7 +1089,31 @@ var ru_default = {
   "keychain.keyLimit": "\u0421\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u043A\u043B\u044E\u0447\u0435\u0439 \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u0435",
   "keychain.keyEnabledNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0432\u043A\u043B\u044E\u0447\u0451\u043D \u0432 \u0440\u043E\u0442\u0430\u0446\u0438\u044E",
   "keychain.keyDisabledNotify": "\u041A\u043B\u044E\u0447 \xAB{label}\xBB \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438",
-  "keychain.brokenKeyNotify": "\u041A\u043B\u044E\u0447 \xAB{key}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB{profile}\xBB \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D (401/403) \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447, \u043E\u043D \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438"
+  "keychain.brokenKeyNotify": "\u041A\u043B\u044E\u0447 \xAB{key}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB{profile}\xBB \u043E\u0442\u043A\u043B\u043E\u043D\u0451\u043D (401/403) \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447, \u043E\u043D \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438",
+  "keychain.edit": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C",
+  "keychain.cycleHint": "\u0426\u0438\u043A\u043B failover \u0438\u0434\u0451\u0442 \u043F\u043E \u043F\u0440\u043E\u0444\u0438\u043B\u044F\u043C \u0432 \u043F\u043E\u0440\u044F\u0434\u043A\u0435 \u0441\u043F\u0438\u0441\u043A\u0430; \u043A\u043B\u044E\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u2014 \u0432 \u0441\u0432\u043E\u0451\u043C \u043F\u043E\u0440\u044F\u0434\u043A\u0435.",
+  "keychain.formTitleAdd": "\u041D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C",
+  "keychain.formTitleEdit": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F",
+  "keychain.formProvider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
+  "keychain.formKey": "API-\u043A\u043B\u044E\u0447",
+  "keychain.formKeyHint": "\u041A\u043B\u044E\u0447 \u0443\u0439\u0434\u0451\u0442 \u0432 SecretStorage \u041E\u0421, \u0432 \u043B\u043E\u0433\u0438 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0430\u0435\u0442.",
+  "keychain.formKeyKeep": "\u041A\u043B\u044E\u0447 \u0443\u0436\u0435 \u0432 SecretStorage \u2014 \u043F\u0443\u0441\u0442\u043E = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043F\u0440\u0435\u0436\u043D\u0438\u0439.",
+  "keychain.formModel": "\u041C\u043E\u0434\u0435\u043B\u044C",
+  "keychain.formModelHint": "\u041C\u043E\u0436\u0435\u0442 \u043E\u0441\u0442\u0430\u0442\u044C\u0441\u044F \u043F\u0443\u0441\u0442\u044B\u043C: \u043C\u043E\u0434\u0435\u043B\u044C \u043C\u043E\u0436\u043D\u043E \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0437\u0436\u0435.",
+  "keychain.formPullModels": "\u041F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438",
+  "keychain.formLabel": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
+  "keychain.formLabelHint": "\u041D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E; \u043F\u0443\u0441\u0442\u043E = \xAB<\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440>\xB7\u043F\u0440\u043E\u0444\u0438\u043B\u044C-N\xBB.",
+  "keychain.formBaseUrl": "Override Base URL",
+  "keychain.formSave": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C",
+  "keychain.formCancel": "\u041E\u0442\u043C\u0435\u043D\u0430",
+  "keychain.formErrProvider": "\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.",
+  "keychain.formErrKey": "\u0412\u0441\u0442\u0430\u0432\u044C API-\u043A\u043B\u044E\u0447 \u2014 \u0431\u0435\u0437 \u043A\u043B\u044E\u0447\u0430 \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043D\u0435 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442.",
+  "keychain.formErrBaseUrl": "\u0411\u0438\u0442\u044B\u0439 Base URL: \u043D\u0443\u0436\u0435\u043D https://\u2026 (http:// \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F localhost).",
+  "keychain.formAutoLabel": "{p}\xB7\u043F\u0440\u043E\u0444\u0438\u043B\u044C-{n}",
+  "keychain.formSavedNotify": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C <{label}> \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D",
+  "keychain.formUnknownProfile": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0443\u0436\u0435 \u0443\u0434\u0430\u043B\u0451\u043D \u2014 \u043D\u0435\u0447\u0435\u0433\u043E \u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C",
+  "keychain.formModelsErr": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438 \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 \u0438 Base URL.",
+  "keychain.formModelsEmpty": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u043D\u0438 \u043E\u0434\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438."
 };
 
 // ../src/i18n/en.json
@@ -1525,7 +1549,31 @@ var en_default = {
   "keychain.keyLimit": "Too many keys in this profile",
   "keychain.keyEnabledNotify": 'Key "{label}" is back in rotation',
   "keychain.keyDisabledNotify": 'Key "{label}" removed from rotation',
-  "keychain.brokenKeyNotify": 'Key "{key}" of profile "{profile}" rejected (401/403) \u2014 check the key, it is out of rotation'
+  "keychain.brokenKeyNotify": 'Key "{key}" of profile "{profile}" rejected (401/403) \u2014 check the key, it is out of rotation',
+  "keychain.edit": "Edit",
+  "keychain.cycleHint": "The failover cycle follows profiles in list order; keys inside a profile rotate in their own order.",
+  "keychain.formTitleAdd": "New profile",
+  "keychain.formTitleEdit": "Edit profile",
+  "keychain.formProvider": "Provider",
+  "keychain.formKey": "API key",
+  "keychain.formKeyHint": "The key goes to your OS SecretStorage and never lands in logs.",
+  "keychain.formKeyKeep": "Key already in SecretStorage \u2014 leave empty to keep it.",
+  "keychain.formModel": "Model",
+  "keychain.formModelHint": "May stay empty: you can pick the model later.",
+  "keychain.formPullModels": "Pull models",
+  "keychain.formLabel": "Name",
+  "keychain.formLabelHint": 'Optional; empty becomes "<provider>\xB7profile-N".',
+  "keychain.formBaseUrl": "Override Base URL",
+  "keychain.formSave": "Save profile",
+  "keychain.formCancel": "Cancel",
+  "keychain.formErrProvider": "Provider is not selected.",
+  "keychain.formErrKey": "Paste an API key \u2014 a profile without a key cannot work.",
+  "keychain.formErrBaseUrl": "Bad base URL: needs https://\u2026 (http:// only for localhost).",
+  "keychain.formAutoLabel": "{p}\xB7profile-{n}",
+  "keychain.formSavedNotify": 'Profile "{label}" saved',
+  "keychain.formUnknownProfile": "Profile was already removed \u2014 nothing to edit",
+  "keychain.formModelsErr": "Could not fetch models \u2014 check the key and the base URL.",
+  "keychain.formModelsEmpty": "The provider returned no models."
 };
 
 // ../src/i18n/index.ts
@@ -4979,6 +5027,34 @@ async function setProfileBaseUrl(id, baseUrl) {
   await writeProfiles(next);
   return next.find((profile) => profile.id === id);
 }
+async function updateProfileFromForm(secrets, id, input) {
+  const profiles = readProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return void 0;
+  const provider = validProvider(input.provider) ?? target.provider;
+  const providerChanged = provider !== target.provider;
+  const trimmedBaseUrl = input.baseUrl?.trim() ?? "";
+  const base = trimmedBaseUrl ? profileBaseUrl(trimmedBaseUrl) : "";
+  if (trimmedBaseUrl && !base) return void 0;
+  const label = input.label?.trim() || target.label;
+  const model = input.model?.trim() || (providerChanged ? defaultModel(provider) : target.model ?? "");
+  const next = profiles.map((profile) => profile.id !== id ? profile : {
+    id: profile.id,
+    label,
+    provider,
+    ...model ? { model } : {},
+    ...base ? { baseUrl: base } : {},
+    keys: profile.keys
+  });
+  const trimmedKey = input.key?.trim();
+  if (trimmedKey) {
+    const updated = next.find((profile) => profile.id === id);
+    const key = updated ? pickActiveKey(updated) ?? updated.keys[0] : void 0;
+    if (key) await storeKeySecret(secrets, key, trimmedKey);
+  }
+  await writeProfiles(next);
+  return next.find((profile) => profile.id === id);
+}
 async function renameProfile(id, label) {
   const profiles = readProfiles();
   const next = profiles.map((profile) => profile.id === id ? { ...profile, label: label.trim() || profile.label } : profile);
@@ -5341,8 +5417,9 @@ function keychainRowsHtml(T, state) {
     }).join("");
     const moveUp = index > 0 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveUp")}" data-kc="keychainMove" data-id="${pid}" data-dir="-1">${icon2("arrow-up")}</button>` : "";
     const moveDown = index < profiles.length - 1 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveDown")}" data-kc="keychainMove" data-id="${pid}" data-dir="1">${icon2("arrow-down")}</button>` : "";
-    return `<div class="kc-row${isActive ? " kc-active-row" : ""}">
-      <span class="kc-line">${moveUp}${moveDown} ${icon2("key")} <strong>${escapeHtml2(profile.provider)}</strong> \xB7 ${escapeHtml2(profile.label)}${model ? ` \xB7 ${model}` : ""}${isActive ? ` <span class="kc-active-badge">${icon2("pass")} ${T("keychain.activeTag")}</span>` : ""}</span>
+    const orderBadge = `<span class="kc-order-badge" title="${T("keychain.cycleHint")}">${index + 1}</span>`;
+    return `<div class="kc-row${isActive ? " kc-active-row" : ""}" data-profile-id="${pid}" data-provider="${escapeHtml2(profile.provider)}" data-label="${escapeHtml2(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
+      <span class="kc-line">${orderBadge}${moveUp}${moveDown} ${icon2("key")} <strong>${escapeHtml2(profile.provider)}</strong> \xB7 ${escapeHtml2(profile.label)}${model ? ` \xB7 ${model}` : ""}${isActive ? ` <span class="kc-active-badge">${icon2("pass")} ${T("keychain.activeTag")}</span>` : ""}</span>
       <span class="kc-baseurl-row"><label>${T("keychain.baseUrlField")}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon2("save")}<span>${T("keychain.baseUrlSave")}</span></button></span>
       <div class="kc-keys">
         <div class="kc-keys-head">${icon2("list-unordered")} <span>${T("keychain.keysTitle")}</span><button type="button" class="secondary" data-kc="keychainAddKey" data-id="${pid}">${icon2("plus")}<span>${T("keychain.addKey")}</span></button></div>
@@ -5351,18 +5428,52 @@ function keychainRowsHtml(T, state) {
       </div>
       <span class="kc-actions">
         <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${pid}">${icon2("target")}<span>${T("keychain.makeActive")}</span></button>
-        <button type="button" class="secondary" data-kc="keychainRename" data-id="${pid}">${icon2("edit")}<span>${T("keychain.rename")}</span></button>
+        <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon2("edit")}<span>${T("keychain.edit")}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
       </span>
     </div>`;
   }).join("");
-  return profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T("keychain.baseUrlHint")}</p>`;
+  return profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T("keychain.baseUrlHint")}</p><p class="hint kc-cycle-hint">${T("keychain.cycleHint")}</p>`;
+}
+function keychainFormHtml(T, state) {
+  const draft = state.keychainFormDraft;
+  const open = draft !== void 0;
+  const editingId = (draft?.profileId ?? "").trim();
+  const err = (state.keychainFormError ?? "").trim();
+  const providerSelectOptions = `<option value="">${T("center.provider")}</option>` + providerValues.map((value) => `<option value="${value}"${value === draft?.provider ? " selected" : ""}>${value}</option>`).join("");
+  const modelOption = (draft?.model ?? "").trim() ? `<option value="${escapeHtml2((draft?.model ?? "").trim())}"></option>` : "";
+  return `<div id="kcForm" class="kc-form${open ? "" : " hidden"}" data-editing="${escapeHtml2(editingId)}">
+  <h4>${icon2(editingId ? "edit" : "plus")} ${T(editingId ? "keychain.formTitleEdit" : "keychain.formTitleAdd")}</h4>
+  <label for="kcFormProvider">${T("keychain.formProvider")}</label>
+  <select id="kcFormProvider">${providerSelectOptions}</select>
+  <label for="kcFormKey">${T("keychain.formKey")}</label>
+  <input id="kcFormKey" type="password" autocomplete="off" placeholder="${escapeHtml2(editingId ? T("keychain.formKeyKeep") : T("center.keyPaste"))}">
+  <p class="hint">${T("keychain.formKeyHint")}</p>
+  <label for="kcFormModel">${T("keychain.formModel")}</label>
+  <div class="kc-form-pull">
+    <input id="kcFormModel" type="text" list="kcFormModelList" autocomplete="off" spellcheck="false" placeholder="${T("center.nowModelMissing")}" value="${escapeHtml2((draft?.model ?? "").trim())}">
+    <datalist id="kcFormModelList">${modelOption}</datalist>
+    <button id="kcFormPullModels" type="button" class="secondary">${icon2("cloud-download")}<span>${T("keychain.formPullModels")}</span></button>
+  </div>
+  <p class="hint">${T("keychain.formModelHint")}</p>
+  <label for="kcFormLabel">${T("keychain.formLabel")}</label>
+  <input id="kcFormLabel" type="text" autocomplete="off" placeholder="${escapeHtml2(T("keychain.formLabelHint"))}" value="${escapeHtml2((draft?.label ?? "").trim())}">
+  <label for="kcFormBaseUrl">${T("keychain.formBaseUrl")}</label>
+  <input id="kcFormBaseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" value="${escapeHtml2((draft?.baseUrl ?? "").trim())}">
+  <p class="kc-form-error${err ? "" : " hidden"}" id="kcFormError">${escapeHtml2(err)}</p>
+  <div class="row">
+    <button id="kcFormSave" type="button">${icon2("save")}<span>${T("keychain.formSave")}</span></button>
+    <button id="kcFormCancel" type="button" class="secondary" data-kcf="cancel">${icon2("close")}<span>${T("keychain.formCancel")}</span></button>
+  </div>
+</div>`;
 }
 function keychainBlockHtml(T, state, onRenderIssue) {
   const failoverOn = state.failoverEnabled === true;
   let listHtml = "";
+  let formHtml = "";
   try {
     listHtml = keychainRowsHtml(T, state);
+    formHtml = keychainFormHtml(T, state);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     onRenderIssue?.(`\u0431\u043B\u043E\u043A \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 keychain \u0434\u0435\u0433\u0440\u0430\u0434\u0438\u0440\u043E\u0432\u0430\u043B \u0434\u043E \u043F\u0443\u0441\u0442\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430: ${detail}`);
@@ -5371,6 +5482,7 @@ function keychainBlockHtml(T, state, onRenderIssue) {
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon2("clippy")} ${T("keychain.title")}</h3>
   ${listHtml}
+  ${formHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon2("plus")}<span>${T("keychain.add")}</span></button>
   </div>
@@ -5500,6 +5612,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-key-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 .kc-move { width: auto; padding: 2px 6px; min-height: auto; }
+.kc-order-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cs-accent); color: var(--cs-editor-bg); font-size: var(--cs-font-1); font-weight: 700; flex: 0 0 auto; }
+.kc-form { margin-top: var(--cs-space-2); padding: var(--cs-space-3); border: 1px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 6%, transparent); }
+.kc-form h4 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-accent); }
+.kc-form label { margin: 10px 0 var(--cs-space-1); }
+.kc-form-pull { display: flex; align-items: center; gap: var(--cs-space-2); }
+.kc-form-pull input { flex: 1 1 auto; min-width: 0; }
+.kc-form-pull button { width: auto; flex: 0 0 auto; }
+.kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -5690,7 +5810,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 // (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
 try {
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -5860,6 +5980,9 @@ function refreshDirty() {
   dirtyHint.textContent = dirty ? L('save.dirty') : L('save.clean');
 }
 document.querySelectorAll('input, select, textarea').forEach((el) => {
+  // Batch 28.2: the profile card has its own Save button \u2014 its fields must
+  // not drive the global settings save bar.
+  if (el.closest('#kcForm')) return;
   el.addEventListener('input', refreshDirty);
   el.addEventListener('change', refreshDirty);
 });
@@ -5903,8 +6026,11 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+// Batch 28.2: the add button opens the inline card on the CLIENT (no host
+// roundtrip) \u2014 the old native-InputBox chain (command keychainAdd) stays on
+// the host for compatibility but the webview no longer posts it.
 const keychainAddBtn = document.getElementById('keychainAdd');
-if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
+if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}));
 // Batch 27: keychain row buttons are delegated \u2014 each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
 // Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
@@ -5931,6 +6057,128 @@ document.addEventListener('click', (event) => {
   if (dir) payload.dir = Number(dir);
   vscode.postMessage(payload);
 });
+// \u2500\u2500 Batch 28.2: inline profile form (card) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Plain JS only inside the template literal (TS annotations kill the script).
+// Open/close/prefill/Escape are CLIENT-side; only Save (keychainFormSave) and
+// Pull models (keychainFormModels) reach the host. The API key value lives in
+// the DOM field and the posted message only \u2014 NEVER in vscode.getState(), so a
+// re-render clears it. Host re-renders the form open ONLY to show a validation
+// error inside the card with the draft values back in the fields.
+const kcForm = document.getElementById('kcForm');
+const kcFormError = document.getElementById('kcFormError');
+const kcFormProvider = document.getElementById('kcFormProvider');
+const kcFormKeyInput = document.getElementById('kcFormKey');
+const kcFormModelInput = document.getElementById('kcFormModel');
+const kcFormModelList = document.getElementById('kcFormModelList');
+const kcFormPullBtn = document.getElementById('kcFormPullModels');
+const kcFormLabelInput = document.getElementById('kcFormLabel');
+const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
+const kcFormSaveBtn = document.getElementById('kcFormSave');
+let formEditing = '';
+function readFormState() { try { const s = vscode.getState(); return (s && s.csProfileForm) || null; } catch (e) { return null; } }
+function writeFormState(value) { try { const s = vscode.getState() || {}; s.csProfileForm = value; vscode.setState(s); } catch (e) { /* state unsupported */ } }
+function formVisible() { return Boolean(kcForm) && !kcForm.classList.contains('hidden'); }
+function setFormError(msg) { if (!kcFormError) return; kcFormError.textContent = msg || ''; kcFormError.classList.toggle('hidden', !msg); }
+function setFormPullBusy(busy) { if (!kcFormPullBtn) return; kcFormPullBtn.disabled = busy; const label = kcFormPullBtn.querySelector('span:last-child'); if (label) label.textContent = busy ? L('models.loading') : L('keychain.formPullModels'); }
+function persistForm() {
+  if (!kcForm || !formVisible()) return;
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value });
+}
+function showForm(values) {
+  if (!kcForm) return;
+  const d = values || {};
+  formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
+  kcForm.setAttribute('data-editing', formEditing);
+  kcForm.classList.remove('hidden');
+  if (kcFormProvider) kcFormProvider.value = d.provider || '';
+  if (kcFormModelInput) kcFormModelInput.value = d.model || '';
+  if (kcFormLabelInput) kcFormLabelInput.value = d.label || '';
+  if (kcFormBaseUrlInput) kcFormBaseUrlInput.value = d.baseUrl || '';
+  if (kcFormKeyInput) { kcFormKeyInput.value = ''; kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste'); }
+  if (kcFormSaveBtn) { kcFormSaveBtn.disabled = false; const span = kcFormSaveBtn.querySelector('span:last-child'); if (span) span.textContent = L('keychain.formSave'); }
+  setFormPullBusy(false);
+  setFormError('');
+  persistForm();
+}
+function hideForm() {
+  if (!kcForm) return;
+  kcForm.classList.add('hidden');
+  kcForm.setAttribute('data-editing', '');
+  formEditing = '';
+  writeFormState(null);
+}
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const el = target ? target.closest('[data-kcf]') : null;
+  if (!el) return;
+  event.preventDefault();
+  if (el.getAttribute('data-kcf') === 'edit') {
+    const row = el.closest('.kc-row');
+    showForm(row ? {
+      id: row.getAttribute('data-profile-id') || el.getAttribute('data-id') || '',
+      provider: row.getAttribute('data-provider') || '',
+      label: row.getAttribute('data-label') || '',
+      model: row.getAttribute('data-model') || '',
+      baseUrl: row.getAttribute('data-baseurl') || ''
+    } : { id: el.getAttribute('data-id') || '' });
+  } else if (el.getAttribute('data-kcf') === 'cancel') {
+    hideForm();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && formVisible()) hideForm();
+});
+[kcFormProvider, kcFormKeyInput, kcFormModelInput, kcFormLabelInput, kcFormBaseUrlInput].forEach((el) => {
+  if (!el) return;
+  el.addEventListener('input', persistForm);
+  el.addEventListener('change', persistForm);
+});
+if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', () => {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  setFormPullBusy(true);
+  vscode.postMessage({
+    command: 'keychainFormModels',
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    profileId: formEditing || undefined,
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+});
+if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  // Client-side gate first: provider picked; a NEW profile needs a key.
+  if (!kcFormProvider.value) { setFormError(L('keychain.formErrProvider')); return; }
+  if (!formEditing && !kcFormKeyInput.value.trim()) { setFormError(L('keychain.formErrKey')); return; }
+  kcFormSaveBtn.disabled = true;
+  const span = kcFormSaveBtn.querySelector('span:last-child');
+  if (span) span.textContent = L('save.saving');
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput ? kcFormModelInput.value : '', label: kcFormLabelInput ? kcFormLabelInput.value : '', baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value : '', submitted: true });
+  vscode.postMessage({
+    command: 'keychainFormSave',
+    profileId: formEditing || undefined,
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    model: kcFormModelInput ? kcFormModelInput.value.trim() : '',
+    label: kcFormLabelInput ? kcFormLabelInput.value.trim() : '',
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+});
+// Form init after each host render: an OPEN card (validation redraft) keeps
+// its server-rendered values; otherwise restore the client draft unless the
+// previous one was already submitted (success re-render must close the card).
+(function initForm() {
+  if (!kcForm) return;
+  if (formVisible()) {
+    formEditing = kcForm.getAttribute('data-editing') || '';
+    if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    persistForm();
+    return;
+  }
+  const st = readFormState();
+  if (!st) return;
+  if (st.submitted) { writeFormState(null); return; }
+  showForm(st);
+})();
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {
   testConnBtn.disabled = true;
@@ -5974,6 +6222,22 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  // Batch 28.2: models pulled inside the profile card \u2014 fills the datalist;
+  // the card input keeps a user-typed model (only an empty field is preset).
+  if (data.type === 'formModels') {
+    setFormPullBusy(false);
+    if (data.ok) {
+      if (kcFormModelList) {
+        kcFormModelList.textContent = '';
+        for (const m of (data.models || [])) { const opt = document.createElement('option'); opt.value = String(m); kcFormModelList.appendChild(opt); }
+      }
+      if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
+      persistForm();
+    } else if (data.message) {
+      setFormError(String(data.message));
+    }
+    return;
+  }
   // Batch 22 p.1: live GET /models can take up to 10s \u2014 during the fetch the
   // provider select, baseUrl and the live-models button are disabled and the
   // button shows the loading label (already translated, sent by the host).
@@ -6111,7 +6375,7 @@ var WIZARD_PROVIDER_LABELS = {
   "Hyperbolic": "hyperbolic",
   "Cerebras": "cerebras"
 };
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl", "keychainMove", "keychainAddKey", "keychainRenameKey", "keychainDeleteKey", "keychainToggleKey"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl", "keychainMove", "keychainAddKey", "keychainRenameKey", "keychainDeleteKey", "keychainToggleKey", "keychainFormSave", "keychainFormModels"]);
 var hostOutput;
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
@@ -7377,11 +7641,12 @@ function activate(context) {
       rerenderSettings();
     }),
     vscode4.commands.registerCommand("codescout.openSettingsPage", async (anchor) => {
-      const render = async (status = "", statusKind = "ok") => {
+      const render = async (status = "", statusKind = "ok", formPatch) => {
         if (settingsPanel) {
           settingsPanel.title = t("title.center", currentReportLanguage());
           const assets = { codiconCss: settingsPanel.webview.asWebviewUri(vscode4.Uri.joinPath(context.extensionUri, "media", "codicon.css")).toString(), cspSource: settingsPanel.webview.cspSource };
-          settingsPanel.webview.html = buildSettingsHtml(await readSettingsState(context), status, statusKind, (0, import_node_crypto7.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage(), (issue) => output.appendLine(`\u26A0\uFE0F \u0426\u0435\u043D\u0442\u0440 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A: ${issue}`));
+          const snapshot = await readSettingsState(context);
+          settingsPanel.webview.html = buildSettingsHtml(formPatch ? { ...snapshot, ...formPatch } : snapshot, status, statusKind, (0, import_node_crypto7.randomBytes)(16).toString("hex"), anchor ?? "", assets, currentReportLanguage(), (issue) => output.appendLine(`\u26A0\uFE0F \u0426\u0435\u043D\u0442\u0440 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A: ${issue}`));
         }
       };
       rerenderSettings = () => {
@@ -7472,6 +7737,90 @@ function activate(context) {
               clearModelsCache();
               await syncKeyStatus();
               await render(t("keychain.addedNotify", lang, { label: added.label }));
+              return;
+            }
+            if (message.command === "keychainFormSave") {
+              const lang = currentReportLanguage();
+              const profileId = (message.profileId ?? "").trim();
+              const providerRaw = (message.provider ?? "").trim();
+              const keyInput = (message.apiKey ?? "").trim();
+              const labelInput = (message.label ?? "").trim();
+              const modelInput = (message.model ?? "").trim();
+              const baseUrlInput = (message.baseUrl ?? "").trim();
+              const draft = { provider: providerRaw, label: labelInput, model: modelInput, baseUrl: baseUrlInput, ...profileId ? { profileId } : {} };
+              const failForm = async (error) => {
+                await render(t("keychain.actionCancelled", lang), "error", { keychainFormDraft: draft, keychainFormError: error });
+              };
+              let provider;
+              try {
+                provider = normalizeProvider(providerRaw);
+              } catch {
+                await failForm(t("keychain.formErrProvider", lang));
+                return;
+              }
+              if (!profileId && !keyInput) {
+                await failForm(t("keychain.formErrKey", lang));
+                return;
+              }
+              if (baseUrlInput && !profileBaseUrl(baseUrlInput)) {
+                await failForm(t("keychain.formErrBaseUrl", lang));
+                return;
+              }
+              if (profileId) {
+                const updated = await updateProfileFromForm(context.secrets, profileId, { label: labelInput, provider, model: modelInput, key: keyInput, baseUrl: baseUrlInput });
+                if (!updated) {
+                  await failForm(t("keychain.formUnknownProfile", lang));
+                  return;
+                }
+                clearModelsCache();
+                await syncKeyStatus();
+                await render(t("keychain.formSavedNotify", lang, { label: updated.label }));
+                return;
+              }
+              const label = labelInput || t("keychain.formAutoLabel", lang, { p: provider, n: readProfiles().length + 1 });
+              const added = await addProfile(context.secrets, { label, provider, ...modelInput ? { model: modelInput } : {}, key: keyInput, ...baseUrlInput ? { baseUrl: baseUrlInput } : {} });
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t("keychain.formSavedNotify", lang, { label: added.label }));
+              return;
+            }
+            if (message.command === "keychainFormModels") {
+              const lang = currentReportLanguage();
+              const postModels = (payload) => {
+                void settingsPanel?.webview.postMessage({ type: "formModels", ...payload });
+              };
+              let provider;
+              try {
+                provider = normalizeProvider((message.provider ?? "").trim());
+              } catch {
+                postModels({ ok: false, message: t("keychain.formErrProvider", lang) });
+                return;
+              }
+              const profileId = (message.profileId ?? "").trim();
+              const draftKey = (message.apiKey ?? "").trim();
+              const baseRaw = (message.baseUrl ?? "").trim();
+              if (baseRaw && !profileBaseUrl(baseRaw)) {
+                postModels({ ok: false, message: t("keychain.formErrBaseUrl", lang) });
+                return;
+              }
+              const profile = profileId ? readProfiles().find((candidate) => candidate.id === profileId) : void 0;
+              const storedKey = profileId ? await readProfileSecret(context.secrets, profileId) : void 0;
+              const key = draftKey || storedKey || "";
+              const overrideBase = profileBaseUrl(baseRaw) ?? profile?.baseUrl;
+              if (!key && !isLocalBaseUrl(resolveBaseUrl(provider, void 0, overrideBase))) {
+                postModels({ ok: false, message: t("keychain.formErrKey", lang) });
+                return;
+              }
+              try {
+                const models = await fetchModels({ provider, model: defaultModel(provider), key, baseUrl: "", profileBaseUrl: overrideBase, userChosenModel: false });
+                if (models.length === 0) {
+                  postModels({ ok: false, message: t("keychain.formModelsEmpty", lang) });
+                  return;
+                }
+                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)) });
+              } catch {
+                postModels({ ok: false, message: t("keychain.formModelsErr", lang) });
+              }
               return;
             }
             if (message.command === "keychainSetActive") {

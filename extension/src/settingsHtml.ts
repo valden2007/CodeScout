@@ -41,6 +41,11 @@ export interface SettingsState {
   keychainRuntime?: Record<string, KeyRuntimeView>;
   failoverEnabled?: boolean;
   failoverMaxCycles?: number;
+  // МИКРО-БАТЧ 28.2: инлайн-форма профиля. draft != undefined = форма
+  // открыта хостом (перерисовка после ошибки валидации) с этими значениями;
+  // error — текст валидации ВНУТРИ карточки (не в глобальном статусе).
+  keychainFormDraft?: { profileId?: string; provider?: string; label?: string; model?: string; baseUrl?: string };
+  keychainFormError?: string;
 }
 
 export interface SettingsAssets {
@@ -158,8 +163,12 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
     }).join('');
     const moveUp = index > 0 ? `<button type="button" class="secondary kc-move" title="${T('keychain.moveUp')}" data-kc="keychainMove" data-id="${pid}" data-dir="-1">${icon('arrow-up')}</button>` : '';
     const moveDown = index < profiles.length - 1 ? `<button type="button" class="secondary kc-move" title="${T('keychain.moveDown')}" data-kc="keychainMove" data-id="${pid}" data-dir="1">${icon('arrow-down')}</button>` : '';
-    return `<div class="kc-row${isActive ? ' kc-active-row' : ''}">
-      <span class="kc-line">${moveUp}${moveDown} ${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
+    // МИКРО-БАТЧ 28.2: номер-бейдж = позиция в цикле failover (1 сверху);
+    // data-* атрибуты строки питают предзаполнение инлайн-формы (клик
+    // «Редактировать» — клиентский, без хоста).
+    const orderBadge = `<span class="kc-order-badge" title="${T('keychain.cycleHint')}">${index + 1}</span>`;
+    return `<div class="kc-row${isActive ? ' kc-active-row' : ''}" data-profile-id="${pid}" data-provider="${escapeHtml(profile.provider)}" data-label="${escapeHtml(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
+      <span class="kc-line">${orderBadge}${moveUp}${moveDown} ${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
       <span class="kc-baseurl-row"><label>${T('keychain.baseUrlField')}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon('save')}<span>${T('keychain.baseUrlSave')}</span></button></span>
       <div class="kc-keys">
         <div class="kc-keys-head">${icon('list-unordered')} <span>${T('keychain.keysTitle')}</span><button type="button" class="secondary" data-kc="keychainAddKey" data-id="${pid}">${icon('plus')}<span>${T('keychain.addKey')}</span></button></div>
@@ -168,21 +177,65 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
       </div>
       <span class="kc-actions">
         <button type="button" class="secondary" data-kc="keychainSetActive" data-id="${pid}">${icon('target')}<span>${T('keychain.makeActive')}</span></button>
-        <button type="button" class="secondary" data-kc="keychainRename" data-id="${pid}">${icon('edit')}<span>${T('keychain.rename')}</span></button>
+        <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon('edit')}<span>${T('keychain.edit')}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
       </span>
     </div>`;
   }).join('');
   return profiles.length === 0
     ? `<p class="hint">${T('keychain.empty')}</p>`
-    : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p>`;
+    : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p><p class="hint kc-cycle-hint">${T('keychain.cycleHint')}</p>`;
+}
+
+// МИКРО-БАТЧ 28.2: инлайн-форма (карточка) профиля. Закрыта по умолчанию
+// (hidden); «+ Добавить профиль» и «Редактировать» открывают её на клиенте,
+// хост открывает с draft только при перерисовке после ошибки валидации.
+// Сохранение — кнопка «Сохранить профиль» (command keychainFormSave),
+// отмена/Escape закрывают без postMessage. «Подтянуть модели» шлёт
+// keychainFormModels с ключом ИЗ ПОЛЯ формы — секрет до «Сохранить» нигде
+// не появляется.
+function keychainFormHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
+  const draft = state.keychainFormDraft;
+  const open = draft !== undefined;
+  const editingId = (draft?.profileId ?? '').trim();
+  const err = (state.keychainFormError ?? '').trim();
+  const providerSelectOptions = `<option value="">${T('center.provider')}</option>` + providerValues
+    .map((value) => `<option value="${value}"${value === draft?.provider ? ' selected' : ''}>${value}</option>`)
+    .join('');
+  const modelOption = (draft?.model ?? '').trim() ? `<option value="${escapeHtml((draft?.model ?? '').trim())}"></option>` : '';
+  return `<div id="kcForm" class="kc-form${open ? '' : ' hidden'}" data-editing="${escapeHtml(editingId)}">
+  <h4>${icon(editingId ? 'edit' : 'plus')} ${T(editingId ? 'keychain.formTitleEdit' : 'keychain.formTitleAdd')}</h4>
+  <label for="kcFormProvider">${T('keychain.formProvider')}</label>
+  <select id="kcFormProvider">${providerSelectOptions}</select>
+  <label for="kcFormKey">${T('keychain.formKey')}</label>
+  <input id="kcFormKey" type="password" autocomplete="off" placeholder="${escapeHtml(editingId ? T('keychain.formKeyKeep') : T('center.keyPaste'))}">
+  <p class="hint">${T('keychain.formKeyHint')}</p>
+  <label for="kcFormModel">${T('keychain.formModel')}</label>
+  <div class="kc-form-pull">
+    <input id="kcFormModel" type="text" list="kcFormModelList" autocomplete="off" spellcheck="false" placeholder="${T('center.nowModelMissing')}" value="${escapeHtml((draft?.model ?? '').trim())}">
+    <datalist id="kcFormModelList">${modelOption}</datalist>
+    <button id="kcFormPullModels" type="button" class="secondary">${icon('cloud-download')}<span>${T('keychain.formPullModels')}</span></button>
+  </div>
+  <p class="hint">${T('keychain.formModelHint')}</p>
+  <label for="kcFormLabel">${T('keychain.formLabel')}</label>
+  <input id="kcFormLabel" type="text" autocomplete="off" placeholder="${escapeHtml(T('keychain.formLabelHint'))}" value="${escapeHtml((draft?.label ?? '').trim())}">
+  <label for="kcFormBaseUrl">${T('keychain.formBaseUrl')}</label>
+  <input id="kcFormBaseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" value="${escapeHtml((draft?.baseUrl ?? '').trim())}">
+  <p class="kc-form-error${err ? '' : ' hidden'}" id="kcFormError">${escapeHtml(err)}</p>
+  <div class="row">
+    <button id="kcFormSave" type="button">${icon('save')}<span>${T('keychain.formSave')}</span></button>
+    <button id="kcFormCancel" type="button" class="secondary" data-kcf="cancel">${icon('close')}<span>${T('keychain.formCancel')}</span></button>
+  </div>
+</div>`;
 }
 
 function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState, onRenderIssue?: (message: string) => void): string {
   const failoverOn = state.failoverEnabled === true;
   let listHtml = '';
+  let formHtml = '';
   try {
     listHtml = keychainRowsHtml(T, state);
+    formHtml = keychainFormHtml(T, state);
   } catch (error) {
     // Деградация: пустой список вместо оборванного HTML; причину — в Output хоста.
     const detail = error instanceof Error ? error.message : String(error);
@@ -192,6 +245,7 @@ function keychainBlockHtml(T: (key: string, vars?: Record<string, string | numbe
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon('clippy')} ${T('keychain.title')}</h3>
   ${listHtml}
+  ${formHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
   </div>
@@ -336,6 +390,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-key-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 .kc-move { width: auto; padding: 2px 6px; min-height: auto; }
+.kc-order-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cs-accent); color: var(--cs-editor-bg); font-size: var(--cs-font-1); font-weight: 700; flex: 0 0 auto; }
+.kc-form { margin-top: var(--cs-space-2); padding: var(--cs-space-3); border: 1px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 6%, transparent); }
+.kc-form h4 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-accent); }
+.kc-form label { margin: 10px 0 var(--cs-space-1); }
+.kc-form-pull { display: flex; align-items: center; gap: var(--cs-space-2); }
+.kc-form-pull input { flex: 1 1 auto; min-width: 0; }
+.kc-form-pull button { width: auto; flex: 0 0 auto; }
+.kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -526,7 +588,7 @@ button.is-dirty .dirty-dot { display: inline-block; }
 // (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
 try {
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -693,6 +755,9 @@ function refreshDirty() {
   dirtyHint.textContent = dirty ? L('save.dirty') : L('save.clean');
 }
 document.querySelectorAll('input, select, textarea').forEach((el) => {
+  // Batch 28.2: the profile card has its own Save button — its fields must
+  // not drive the global settings save bar.
+  if (el.closest('#kcForm')) return;
   el.addEventListener('input', refreshDirty);
   el.addEventListener('change', refreshDirty);
 });
@@ -736,8 +801,11 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
+// Batch 28.2: the add button opens the inline card on the CLIENT (no host
+// roundtrip) — the old native-InputBox chain (command keychainAdd) stays on
+// the host for compatibility but the webview no longer posts it.
 const keychainAddBtn = document.getElementById('keychainAdd');
-if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => vscode.postMessage({ command: 'keychainAdd' }));
+if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}));
 // Batch 27: keychain row buttons are delegated — each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
 // Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
@@ -764,6 +832,128 @@ document.addEventListener('click', (event) => {
   if (dir) payload.dir = Number(dir);
   vscode.postMessage(payload);
 });
+// ── Batch 28.2: inline profile form (card) ──────────────────────────────────
+// Plain JS only inside the template literal (TS annotations kill the script).
+// Open/close/prefill/Escape are CLIENT-side; only Save (keychainFormSave) and
+// Pull models (keychainFormModels) reach the host. The API key value lives in
+// the DOM field and the posted message only — NEVER in vscode.getState(), so a
+// re-render clears it. Host re-renders the form open ONLY to show a validation
+// error inside the card with the draft values back in the fields.
+const kcForm = document.getElementById('kcForm');
+const kcFormError = document.getElementById('kcFormError');
+const kcFormProvider = document.getElementById('kcFormProvider');
+const kcFormKeyInput = document.getElementById('kcFormKey');
+const kcFormModelInput = document.getElementById('kcFormModel');
+const kcFormModelList = document.getElementById('kcFormModelList');
+const kcFormPullBtn = document.getElementById('kcFormPullModels');
+const kcFormLabelInput = document.getElementById('kcFormLabel');
+const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
+const kcFormSaveBtn = document.getElementById('kcFormSave');
+let formEditing = '';
+function readFormState() { try { const s = vscode.getState(); return (s && s.csProfileForm) || null; } catch (e) { return null; } }
+function writeFormState(value) { try { const s = vscode.getState() || {}; s.csProfileForm = value; vscode.setState(s); } catch (e) { /* state unsupported */ } }
+function formVisible() { return Boolean(kcForm) && !kcForm.classList.contains('hidden'); }
+function setFormError(msg) { if (!kcFormError) return; kcFormError.textContent = msg || ''; kcFormError.classList.toggle('hidden', !msg); }
+function setFormPullBusy(busy) { if (!kcFormPullBtn) return; kcFormPullBtn.disabled = busy; const label = kcFormPullBtn.querySelector('span:last-child'); if (label) label.textContent = busy ? L('models.loading') : L('keychain.formPullModels'); }
+function persistForm() {
+  if (!kcForm || !formVisible()) return;
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value });
+}
+function showForm(values) {
+  if (!kcForm) return;
+  const d = values || {};
+  formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
+  kcForm.setAttribute('data-editing', formEditing);
+  kcForm.classList.remove('hidden');
+  if (kcFormProvider) kcFormProvider.value = d.provider || '';
+  if (kcFormModelInput) kcFormModelInput.value = d.model || '';
+  if (kcFormLabelInput) kcFormLabelInput.value = d.label || '';
+  if (kcFormBaseUrlInput) kcFormBaseUrlInput.value = d.baseUrl || '';
+  if (kcFormKeyInput) { kcFormKeyInput.value = ''; kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste'); }
+  if (kcFormSaveBtn) { kcFormSaveBtn.disabled = false; const span = kcFormSaveBtn.querySelector('span:last-child'); if (span) span.textContent = L('keychain.formSave'); }
+  setFormPullBusy(false);
+  setFormError('');
+  persistForm();
+}
+function hideForm() {
+  if (!kcForm) return;
+  kcForm.classList.add('hidden');
+  kcForm.setAttribute('data-editing', '');
+  formEditing = '';
+  writeFormState(null);
+}
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const el = target ? target.closest('[data-kcf]') : null;
+  if (!el) return;
+  event.preventDefault();
+  if (el.getAttribute('data-kcf') === 'edit') {
+    const row = el.closest('.kc-row');
+    showForm(row ? {
+      id: row.getAttribute('data-profile-id') || el.getAttribute('data-id') || '',
+      provider: row.getAttribute('data-provider') || '',
+      label: row.getAttribute('data-label') || '',
+      model: row.getAttribute('data-model') || '',
+      baseUrl: row.getAttribute('data-baseurl') || ''
+    } : { id: el.getAttribute('data-id') || '' });
+  } else if (el.getAttribute('data-kcf') === 'cancel') {
+    hideForm();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && formVisible()) hideForm();
+});
+[kcFormProvider, kcFormKeyInput, kcFormModelInput, kcFormLabelInput, kcFormBaseUrlInput].forEach((el) => {
+  if (!el) return;
+  el.addEventListener('input', persistForm);
+  el.addEventListener('change', persistForm);
+});
+if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', () => {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  setFormPullBusy(true);
+  vscode.postMessage({
+    command: 'keychainFormModels',
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    profileId: formEditing || undefined,
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+});
+if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  // Client-side gate first: provider picked; a NEW profile needs a key.
+  if (!kcFormProvider.value) { setFormError(L('keychain.formErrProvider')); return; }
+  if (!formEditing && !kcFormKeyInput.value.trim()) { setFormError(L('keychain.formErrKey')); return; }
+  kcFormSaveBtn.disabled = true;
+  const span = kcFormSaveBtn.querySelector('span:last-child');
+  if (span) span.textContent = L('save.saving');
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput ? kcFormModelInput.value : '', label: kcFormLabelInput ? kcFormLabelInput.value : '', baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value : '', submitted: true });
+  vscode.postMessage({
+    command: 'keychainFormSave',
+    profileId: formEditing || undefined,
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    model: kcFormModelInput ? kcFormModelInput.value.trim() : '',
+    label: kcFormLabelInput ? kcFormLabelInput.value.trim() : '',
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+});
+// Form init after each host render: an OPEN card (validation redraft) keeps
+// its server-rendered values; otherwise restore the client draft unless the
+// previous one was already submitted (success re-render must close the card).
+(function initForm() {
+  if (!kcForm) return;
+  if (formVisible()) {
+    formEditing = kcForm.getAttribute('data-editing') || '';
+    if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    persistForm();
+    return;
+  }
+  const st = readFormState();
+  if (!st) return;
+  if (st.submitted) { writeFormState(null); return; }
+  showForm(st);
+})();
 const testConnBtn = document.getElementById('testConnection');
 testConnBtn.addEventListener('click', () => {
   testConnBtn.disabled = true;
@@ -807,6 +997,22 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
+  // Batch 28.2: models pulled inside the profile card — fills the datalist;
+  // the card input keeps a user-typed model (only an empty field is preset).
+  if (data.type === 'formModels') {
+    setFormPullBusy(false);
+    if (data.ok) {
+      if (kcFormModelList) {
+        kcFormModelList.textContent = '';
+        for (const m of (data.models || [])) { const opt = document.createElement('option'); opt.value = String(m); kcFormModelList.appendChild(opt); }
+      }
+      if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
+      persistForm();
+    } else if (data.message) {
+      setFormError(String(data.message));
+    }
+    return;
+  }
   // Batch 22 p.1: live GET /models can take up to 10s — during the fetch the
   // provider select, baseUrl and the live-models button are disabled and the
   // button shows the loading label (already translated, sent by the host).
