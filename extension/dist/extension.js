@@ -1020,7 +1020,7 @@ var ru_default = {
   "err.hint.rate_limit_exceeded": "\u041F\u043E\u0434\u043E\u0436\u0434\u0438\u0442\u0435 \u043F\u0430\u0440\u0443 \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u0435\u0441\u044C \u043D\u0430 \u0437\u0430\u043F\u0430\u0441\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C; \u043F\u0430\u0443\u0437\u044B \u0440\u0435\u0442\u0440\u0430\u044F \u2014 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0430\u0443\u0434\u0438\u0442\u0430.",
   "err.title.quota": "\u041F\u043B\u0430\u0442\u0451\u0436\u043D\u0430\u044F \u043A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430 (402)",
   "err.msg.quota": "\u0423 \u043A\u043B\u044E\u0447\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0431\u0438\u043B\u043B\u0438\u043D\u0433/\u0441\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0430\u0440\u0438\u0444.",
-  "err.hint.quota": "\u041F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430; \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover \u2014 \u043E\u043D \u0443\u0441\u044B\u043F\u0438\u0442 \u044D\u0442\u043E\u0442 \u043A\u043B\u044E\u0447 \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u044E \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435.",
+  "err.hint.quota": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430; \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover \u2014 \u043E\u043D \u0443\u0441\u044B\u043F\u0438\u0442 \u044D\u0442\u043E\u0442 \u043A\u043B\u044E\u0447 \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435.",
   "err.title.model_not_found": "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 (404)",
   "err.msg.model_not_found": "\u0418\u043C\u044F \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435\u0432\u0435\u0440\u043D\u043E \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u044D\u0442\u043E\u043C\u0443 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.",
   "err.hint.model_not_found": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C\xBB \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439 \u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0439.",
@@ -1125,7 +1125,7 @@ var ru_default = {
   "keychain.edit": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C",
   "keychain.cycleHint": "\u0426\u0438\u043A\u043B failover \u0438\u0434\u0451\u0442 \u043F\u043E \u043F\u0440\u043E\u0444\u0438\u043B\u044F\u043C \u0432 \u043F\u043E\u0440\u044F\u0434\u043A\u0435 \u0441\u043F\u0438\u0441\u043A\u0430; \u043A\u043B\u044E\u0447\u0438 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u2014 \u0432 \u0441\u0432\u043E\u0451\u043C \u043F\u043E\u0440\u044F\u0434\u043A\u0435.",
   "keychain.formTitleAdd": "\u041D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C",
-  "keychain.formTitleEdit": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F",
+  "keychain.formTitleEdit": "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435: {label}",
   "keychain.formProvider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
   "keychain.formKey": "API-\u043A\u043B\u044E\u0447",
   "keychain.formKeyHint": "\u041A\u043B\u044E\u0447 \u0443\u0439\u0434\u0451\u0442 \u0432 SecretStorage \u041E\u0421, \u0432 \u043B\u043E\u0433\u0438 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0430\u0435\u0442.",
@@ -1488,7 +1488,7 @@ var en_default = {
   "err.hint.rate_limit_exceeded": "Wait a couple of minutes or switch to a fallback model; retry pauses live in audit settings.",
   "err.title.quota": "Payment quota exhausted (402)",
   "err.msg.quota": "The key ran out of credits or hit a paid-plan limit \u2014 the provider wants a billing top-up or a new tier.",
-  "err.hint.quota": "Top up the balance or change the plan in the provider console; enable failover \u2014 it sleeps this key and rotates the chain.",
+  "err.hint.quota": "Quota exhausted: top up the balance or change the plan in the provider console; enable failover \u2014 it sleeps this key and rotates the chain.",
   "err.title.model_not_found": "Model not found (404)",
   "err.msg.model_not_found": "The model name is wrong or the model is unavailable for this provider.",
   "err.hint.model_not_found": 'Open "Choose model" \u2014 the list is live and validated.',
@@ -1593,7 +1593,7 @@ var en_default = {
   "keychain.edit": "Edit",
   "keychain.cycleHint": "The failover cycle follows profiles in list order; keys inside a profile rotate in their own order.",
   "keychain.formTitleAdd": "New profile",
-  "keychain.formTitleEdit": "Edit profile",
+  "keychain.formTitleEdit": "Editing: {label}",
   "keychain.formProvider": "Provider",
   "keychain.formKey": "API key",
   "keychain.formKeyHint": "The key goes to your OS SecretStorage and never lands in logs.",
@@ -1783,7 +1783,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 \u2014 how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. HTML ENTITY GUARD (mandatory): code is transmitted AS IS; it is FORBIDDEN to report HTML entities (&lt; &gt; &amp; =&gt; and the like) as code defects \u2014 if you see them, that is a transport artifact, not a bug of the file. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 \u2014 how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\uFEFF]/g, "");
 }
@@ -1798,7 +1798,7 @@ function withReportLanguage(prompt, language) {
 
 Write the human-readable fields (description, suggestion, summary) in English. Do not translate code.` : `${prompt}
 
-\u041F\u0438\u0448\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0435 \u043F\u043E\u043B\u044F (description, suggestion, summary) \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438. \u041A\u043E\u0434 \u043D\u0435 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438.`;
+\u041F\u0438\u0448\u0438 \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u043E\u0447\u0438\u0442\u0430\u0435\u043C\u044B\u0435 \u043F\u043E\u043B\u044F (description, suggestion, summary) \u043F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438. \u041A\u043E\u0434 \u043D\u0435 \u043F\u0435\u0440\u0435\u0432\u043E\u0434\u0438. \u041A\u043E\u0434 \u043F\u0435\u0440\u0435\u0434\u0430\u0451\u0442\u0441\u044F \u041A\u0410\u041A \u0415\u0421\u0422\u042C. \u0417\u0430\u043F\u0440\u0435\u0449\u0435\u043D\u043E \u0441\u043E\u043E\u0431\u0449\u0430\u0442\u044C \u043E HTML-entities (&lt; &gt; &amp; =&gt; \u0438 \u0442.\u043F.) \u043A\u0430\u043A \u043E \u0434\u0435\u0444\u0435\u043A\u0442\u0430\u0445 \u043A\u043E\u0434\u0430: \u0435\u0441\u043B\u0438 \u0442\u044B \u0438\u0445 \u0432\u0438\u0434\u0438\u0448\u044C, \u044D\u0442\u043E \u0430\u0440\u0442\u0435\u0444\u0430\u043A\u0442 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438, \u0430 \u043D\u0435 \u0431\u0430\u0433 \u0444\u0430\u0439\u043B\u0430.`;
 }
 function withFocusInstructions(prompt, focus) {
   const clean = controlSafe(focus).replace(/\r/g, "").slice(0, 2e3).trim();
@@ -1869,6 +1869,17 @@ function confidencePercent(value, fallback = CONFIDENCE_DEFAULT) {
 function parseProof(raw) {
   if (typeof raw !== "string") return "";
   return raw.trim().slice(0, PROOF_MAX);
+}
+var ENTITY_TOKEN_RE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d{1,8});/g;
+var ENTITY_COMPLAIN_RE = /html[\s-]?entit|сущност|encod|decod|escap|экранир|замен|replace|convert|артефакт|\bentities?\b/i;
+function isEntityArtifactComplaint(description, proof = "") {
+  const text = `${description}
+${proof}`;
+  const tokens = text.match(ENTITY_TOKEN_RE);
+  if (!tokens || tokens.length === 0) return false;
+  if (!ENTITY_COMPLAIN_RE.test(text)) return false;
+  const words = text.replace(ENTITY_TOKEN_RE, " ").match(/[\p{L}\p{N}][\p{L}\p{N}_\-]{2,}/gu);
+  return (words ? words.length : 0) <= tokens.length * 3 + 2;
 }
 function findBalancedJson(text) {
   const start = text.search(/[[{]/);
@@ -1951,6 +1962,7 @@ function parseReviewResponse(raw, filename) {
   if (typeof parsed !== "object") throw new Error(`\u041E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F ${filename} \u2014 \u043D\u0435 JSON-\u043E\u0431\u044A\u0435\u043A\u0442 (\u043F\u043E\u043B\u0443\u0447\u0435\u043D ${typeof parsed})`);
   const object = parsed;
   const rawIssues = Array.isArray(object.issues) ? object.issues : [];
+  let droppedEntityArtifacts = 0;
   const issues = rawIssues.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const value = item;
@@ -1964,9 +1976,13 @@ function parseReviewResponse(raw, filename) {
     const suggestion = typeof value.suggestion === "string" ? value.suggestion.trim() : void 0;
     const severity = rawSeverity === "critical" && confidence < CONFIDENCE_CRITICAL_MIN ? "medium" : rawSeverity;
     const proof = parseProof(value.proof);
+    if (isEntityArtifactComplaint(description, proof)) {
+      droppedEntityArtifacts += 1;
+      return [];
+    }
     return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
-  return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1 };
+  return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1, droppedEntityArtifacts };
 }
 
 // ../src/line-correction.ts
@@ -4497,7 +4513,6 @@ function upsertSkippedFile(entries, entry) {
 }
 function skipBreakerFeed(state, category, limit) {
   if (limit <= 0) return false;
-  if (category === "quota") return false;
   if (state.category === category) state.count += 1;
   else {
     state.category = category;
@@ -5494,9 +5509,10 @@ function keychainFormHtml(T, state) {
   const open = draft !== void 0;
   const editingId = (draft?.profileId ?? "").trim();
   const err = (state.keychainFormError ?? "").trim();
+  const editingLabel = editingId ? (draft?.label ?? "").trim() || (state.keychainProfiles ?? []).find((profile) => profile.id === editingId)?.label || editingId : "";
   const providerSelectOptions = `<option value="">${T("center.provider")}</option>` + providerValues.map((value) => `<option value="${value}"${value === draft?.provider ? " selected" : ""}>${value}</option>`).join("");
   return `<div id="kcForm" class="kc-form${open ? "" : " hidden"}" data-editing="${escapeHtml2(editingId)}">
-  <h4>${icon2(editingId ? "edit" : "plus")} ${T(editingId ? "keychain.formTitleEdit" : "keychain.formTitleAdd")}</h4>
+  <h4><i id="kcFormTitleIcon" class="codicon codicon-${editingId ? "edit" : "plus"}" aria-hidden="true"></i> <span id="kcFormTitle">${escapeHtml2(T(editingId ? "keychain.formTitleEdit" : "keychain.formTitleAdd", editingId ? { label: editingLabel } : void 0))}</span></h4>
   <label for="kcFormProvider">${T("keychain.formProvider")}</label>
   <select id="kcFormProvider">${providerSelectOptions}</select>
   <label for="kcFormKey">${T("keychain.formKey")}</label>
@@ -5893,7 +5909,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime \u2014 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('\u2026') call sites against this whitelist.
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading", "keychain.formModelsCount", "keychain.comboEmptyHint", "keychain.comboNoMatches"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading", "keychain.formModelsCount", "keychain.comboEmptyHint", "keychain.comboNoMatches", "keychain.formTitleEdit", "keychain.formTitleAdd"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -6301,6 +6317,17 @@ function pickComboOption(model) {
   closeCombo();
   persistForm();
 }
+// Batch 28.5: the SAME #kcForm node serves create AND edit, so the header
+// must follow the mode on the client: \xABEditing: <label>\xBB with the edit icon
+// in edit mode, \xABNew profile\xBB with the plus icon in create mode.
+function setFormTitle(editing, label) {
+  const title = document.getElementById('kcFormTitle');
+  const ic = document.getElementById('kcFormTitleIcon');
+  if (ic) ic.className = 'codicon codicon-' + (editing ? 'edit' : 'plus');
+  if (!title) return;
+  if (editing) title.textContent = L('keychain.formTitleEdit').replace('{label}', String(label || editing));
+  else title.textContent = L('keychain.formTitleAdd');
+}
 // Batch 28.4 accordion: mount the single #kcForm node into the target card's
 // slot; unknown/empty id \u2192 the trailing add-card (visible when mounted).
 function mountFormFor(id) {
@@ -6329,6 +6356,7 @@ function showForm(values, opts) {
   kcForm.setAttribute('data-editing', formEditing);
   formModelsList = Array.isArray(d.models) ? d.models.map(String) : [];
   mountFormFor(formEditing);
+  setFormTitle(formEditing, d.label || '');
   kcForm.classList.remove('hidden');
   if (kcFormProvider) kcFormProvider.value = d.provider || '';
   if (kcFormModelInput) kcFormModelInput.value = d.model || '';
@@ -6352,6 +6380,7 @@ function hideForm() {
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
   formModelsList = [];
+  setFormTitle('', '');
   if (kcFormHome) kcFormHome.appendChild(kcForm);
   if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);
@@ -6877,7 +6906,7 @@ async function buildFailoverHooks(context, selection) {
   };
   return {
     async onRateLimit(waitSeconds, reason) {
-      const trigger = reason === "quota" ? "402 billing-\u043A\u0432\u043E\u0442\u0430" : "429";
+      const trigger = reason === "quota" ? "quota" : "429";
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === "switch") {
         if (!await readKeySecret(context.secrets, decision.profile, decision.key)) {
@@ -7006,11 +7035,15 @@ function handleAllProfilesAsleep(panel, error) {
   panel.setScanning(false);
   panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1e3), wakeLabel: error.wakeLabel });
 }
+function logEntityDrops(output, result) {
+  const drops = result.droppedEntityArtifacts ?? 0;
+  if (drops > 0) output.appendLine(`\u{1F9F9} \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E entity-\u0430\u0440\u0442\u0435\u0444\u0430\u043A\u0442\u043E\u0432: ${drops}`);
+}
 function applyRequestTimeoutSetting() {
   const seconds = requestTimeoutSecondsFromSetting(vscode4.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
   setDefaultRequestTimeoutMs(seconds * 1e3);
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}, onQuotaRotation) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key && !isLocalBaseUrl(selection.profileBaseUrl || selection.baseUrl)) {
@@ -7019,9 +7052,11 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
   beginScan(selection.profileId ?? "", selection.keyId ?? DEFAULT_KEY_ID);
   const failover = await buildFailoverHooks(context, selection);
-  const provider = createProvider(selection.provider, selection.key ?? "local-no-key", selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover, selection.profileBaseUrl);
+  const makeProvider = (apiKey, model, baseUrlOverride) => createProvider(selection.provider, apiKey, model, (event) => onRetry(event, model), selection.baseUrl, signal, failover, baseUrlOverride);
+  let provider = makeProvider(selection.key ?? "local-no-key", selection.model, selection.profileBaseUrl);
   const issues = [];
   let skippedFiles = 0;
+  let entityDrops = 0;
   const queue = files.map((_file, index) => index);
   const ladderCycles = /* @__PURE__ */ new Map();
   let processedCount = 0;
@@ -7058,10 +7093,12 @@ ${docPick.section}` : systemPrompt;
         onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
         onThinking?.(elapsedMs);
         const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
-        return parseReviewResponse(raw, file.filename).issues;
+        const parsed = parseReviewResponse(raw, file.filename);
+        entityDrops += parsed.droppedEntityArtifacts ?? 0;
+        return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
-        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error) && categorizeError(error) !== "quota";
         const halves = retriable ? splitAuditChunk(chunk) : void 0;
         if (halves) {
           adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
@@ -7095,6 +7132,22 @@ ${docPick.section}` : systemPrompt;
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
+        if (!(error instanceof AllProfilesAsleepError) && categorizeError(error) === "quota") {
+          if (failover) {
+            const quotaWait = error instanceof RateLimitError ? error.waitSeconds : void 0;
+            const decision = await failover.onRateLimit(quotaWait, "quota");
+            if (decision && decision.action === "switch") {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision && decision.action === "wait") {
+              await sleeper(decision.waitMs, signal);
+              continue;
+            }
+          }
+          break;
+        }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
@@ -7129,7 +7182,7 @@ ${docPick.section}` : systemPrompt;
       onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops };
 }
 async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown, onFileSkipped) {
   const workspaceRoot = getWorkspaceRoot();
@@ -7414,7 +7467,8 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
-    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive);
+    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive, () => skipBreakerReset(breakerState));
+    logEntityDrops(output, result);
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -7552,6 +7606,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
     }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), void 0, customAdaptive);
+    logEntityDrops(output, result);
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode4.commands.executeCommand("codescout.panel.focus");
@@ -7619,6 +7674,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
     if (result.skippedFiles > 0) {
       output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.skippedFiles} (\u043E\u0448\u0438\u0431\u043A\u0438 \u0438\u043B\u0438 rate-limit) \u2014 \u0441\u043C. \u0441\u0442\u0440\u043E\u043A\u0438 \xAB\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B\xBB \u0432\u044B\u0448\u0435.`);
     }
+    logEntityDrops(output, result);
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
     const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
     panel.update(visibleIssues, stats);

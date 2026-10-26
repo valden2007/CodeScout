@@ -802,7 +802,37 @@ pre-design now.
      stop); без failover — мгновенный skip (локальная лестница по billing
      бессмысленна). skipBreakerFeed по quota ПРОЗРАЧНА (не инкрементит,
      не сбрасывает) — предохранитель не стопит; unknown/auth/parse стопят
-     как раньше. err.title/msg/hint.quota в обоих словарях.
+     как раньше. err.title/msg/hint.quota в обоих словарях. (Прозрачность
+     quota снята в 28.5: квота участвует в ротации, а без ротации считается
+     breaker'ом.)
      Тесты: tests/batch28-4-inline-combobox.test.ts. Tests: 666.
+ 36. Квота в ротации + своя карточка + entity-страховка (микро-батч 28.5):
+     a) Скип файла с категорией quota доезжает до failover-хука в
+     reviewFiles (НЕ только типизированный 402 из llm-client): решатель
+     keychain усыпляет текущий ключ (retry-after или лестница 120/300/600) и
+     ротирует; Output обычной строкой «🔑 failover: … (quota; … спит Nс)»
+     (триггер в логe — «quota»). switch → креды пересобираются makeProvider-ом
+     и ТОТ ЖЕ файл повторяется новым ключом (ноль pointless-скипов);
+     wait → пауза через инжектируемый sleeper (отменяемая). Ротация сбрасывает
+     счётчик breaker (новый последний аргумент reviewFiles onQuotaRotation,
+     аудит передаёт skipBreakerReset). failover выключен ИЛИ ротация невозможна
+     (все спят/сломаны/stop) → мгновенный скип БЕЗ локальной billing-лестницы
+     (квота исключена и из retriable, и из адаптивного деления чанков);
+     skipBreakerFeed считает quota как обычно — лимит подряд стопит аудит
+     баннером с err.hint.quota «Квота исчерпана: …» (прозрачность quota из
+     28.4 снята). b) Редактирование ВНУТРИ своей карточки — заголовок формы
+     теперь живёт по режиму: узел #kcForm монитруется в слот кликнутой
+     карточки (как в 28.4), но h4 был серверный и всегда «Новый профиль»;
+     добавлены #kcFormTitle/#kcFormTitleIcon, клиентский setFormTitle в
+     showForm/hideForm переключает «Редактирование: <label>»/codicon-edit ↔
+     «Новый профиль»/codicon-plus; серверный draft-рендер тот же контракт
+     (метка из draft, иначе из списка, иначе id); ключи в UI-вайтлисте.
+     c) Анти-entity: в SYSTEM_PROMPT — «HTML ENTITY GUARD» (EN; ru-версия
+     дублируется в withReportLanguage(ru)); в response-parser
+     isEntityArtifactComplaint — пост-фильтр (семейство A: &имя;/&#123; +
+     жалобная лексика + «преимущественно» по остаточным словам), счётчик
+     уходит в ReviewResult.droppedEntityArtifacts → ScanResult → Output
+     «🧹 отброшено entity-артефактов: N» (logEntityDrops в аудит/своё/дифф).
+     e2e+unit: tests/batch28-5-quota-edit-entity.test.ts (13). Tests: 679.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

@@ -10,10 +10,10 @@
 //     даёт 11 опций БЕЗ фильтрации; печать фильтрует подстрокой без учёта
 //     регистра; markup: dropdown вместо datalist, счётчик/галочка/клавиши;
 //  3) quota: 402/«insufficient_quota»/«billing»/«Upgrade to … Tier» →
-//     категория quota (не unknown); skipBreakerFeed по quota прозрачна;
-//     по unknown/auth/parse breaker по-прежнему стопит; llm-client: 402
-//     с failover-хуком усыпляет ключ и ротирует (reason='quota'), без
-//     хука летит наверх мгновенно, без локальной лестницы.
+//     категория quota (не unknown); skipBreakerFeed считает quota (с 28.5
+//     прозрачность снята); llm-client: 402 с failover-хуком усыпляет ключ и
+//     ротирует (reason='quota'), без хука летит наверх мгновенно, без
+//     локальной лестницы.
 import { describe, expect, it } from 'vitest';
 import { buildSettingsHtml, type SettingsState } from '../extension/src/settingsHtml';
 import { categorizeError, formatError, ERROR_CATEGORIES } from '../src/error-classifier';
@@ -316,21 +316,18 @@ describe('микробатч 28.4: классификатор платёжной
     expect(reason.http).toBe(402);
   });
 
-  it('breaker: quota прозрачна (никогда не стопит), unknown/auth/parse — стопят по-прежнему', () => {
+  it('breaker (28.5): quota считает как обычно и стопит на лимите; other серии — по-прежнему', () => {
+    // Микро-батч 28.5 снял прозрачность quota: если failover не ротнул
+    // (выключен/все спят), скипы копятся и стопят предохранитель на лимите.
     const q: SkipBreakerState = { count: 0 };
-    for (let i = 0; i < 20; i += 1) expect(skipBreakerFeed(q, 'quota', 4), `quota #${i}`).toBe(false);
-    expect(q.category).toBeUndefined();
-    expect(q.count).toBe(0);
-    // quota не сбрасывает и не суммирует чужую серию: 4 auth подряд (вперемешку
-    // с quota) всё равно стопят.
+    for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(q, 'quota', 4), `quota #${i}`).toBe(false);
+    expect(skipBreakerFeed(q, 'quota', 4), 'quota #4').toBe(true);
+    expect(q.category).toBe('quota');
     const mix: SkipBreakerState = { count: 0 };
     expect(skipBreakerFeed(mix, 'auth_invalid_key', 4)).toBe(false);
-    expect(skipBreakerFeed(mix, 'quota', 4)).toBe(false);
-    expect(skipBreakerFeed(mix, 'auth_invalid_key', 4)).toBe(false);
-    expect(skipBreakerFeed(mix, 'quota', 4)).toBe(false);
-    expect(skipBreakerFeed(mix, 'auth_invalid_key', 4)).toBe(false);
-    expect(mix.count).toBe(3);
-    expect(skipBreakerFeed(mix, 'unknown', 4)).toBe(false); // другая серия начата
+    expect(skipBreakerFeed(mix, 'quota', 4)).toBe(false); // новая серия
+    expect(mix.category).toBe('quota');
+    expect(mix.count).toBe(1);
     const parse: SkipBreakerState = { count: 0 };
     for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(false);
     expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(true);

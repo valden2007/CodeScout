@@ -232,7 +232,7 @@ describe('микробатч 28.2: матрица рендера формы (о�
       expect(html).toContain('value="draft-label"');
       expect(html).toContain('value="m-x"');
       expect(html).toContain('<option value="groq" selected>');
-      expect(html).toContain(lang === 'ru' ? 'Редактирование профиля' : 'Edit profile');
+      expect(html).toContain(lang === 'ru' ? 'Редактирование: draft-label' : 'Editing: draft-label');
       expect(() => new Function(scriptOf(html))).not.toThrow();
       if (lang === 'en') expect(html).not.toMatch(/[\u0400-\u04FF]/);
     }

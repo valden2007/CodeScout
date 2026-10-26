@@ -219,11 +219,16 @@ function keychainFormHtml(T: (key: string, vars?: Record<string, string | number
   const open = draft !== undefined;
   const editingId = (draft?.profileId ?? '').trim();
   const err = (state.keychainFormError ?? '').trim();
+  // Микро-батч 28.5: заголовок отражает РЕЖИМ — «Редактирование: <label>»
+  // редактируемого профиля (метка из draft, иначе из списка, иначе id),
+  // «Новый профиль» — в режиме создания. Клиент переставляет заголовок и
+  // иконку при showForm/hideForm (узел формы тот же, режим — нет).
+  const editingLabel = editingId ? ((draft?.label ?? '').trim() || (state.keychainProfiles ?? []).find((profile) => profile.id === editingId)?.label || editingId) : '';
   const providerSelectOptions = `<option value="">${T('center.provider')}</option>` + providerValues
     .map((value) => `<option value="${value}"${value === draft?.provider ? ' selected' : ''}>${value}</option>`)
     .join('');
   return `<div id="kcForm" class="kc-form${open ? '' : ' hidden'}" data-editing="${escapeHtml(editingId)}">
-  <h4>${icon(editingId ? 'edit' : 'plus')} ${T(editingId ? 'keychain.formTitleEdit' : 'keychain.formTitleAdd')}</h4>
+  <h4><i id="kcFormTitleIcon" class="codicon codicon-${editingId ? 'edit' : 'plus'}" aria-hidden="true"></i> <span id="kcFormTitle">${escapeHtml(T(editingId ? 'keychain.formTitleEdit' : 'keychain.formTitleAdd', editingId ? { label: editingLabel } : undefined))}</span></h4>
   <label for="kcFormProvider">${T('keychain.formProvider')}</label>
   <select id="kcFormProvider">${providerSelectOptions}</select>
   <label for="kcFormKey">${T('keychain.formKey')}</label>
@@ -641,7 +646,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime — 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('…') call sites against this whitelist.
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading', 'keychain.formModelsCount', 'keychain.comboEmptyHint', 'keychain.comboNoMatches'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading', 'keychain.formModelsCount', 'keychain.comboEmptyHint', 'keychain.comboNoMatches', 'keychain.formTitleEdit', 'keychain.formTitleAdd'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -1046,6 +1051,17 @@ function pickComboOption(model) {
   closeCombo();
   persistForm();
 }
+// Batch 28.5: the SAME #kcForm node serves create AND edit, so the header
+// must follow the mode on the client: «Editing: <label>» with the edit icon
+// in edit mode, «New profile» with the plus icon in create mode.
+function setFormTitle(editing, label) {
+  const title = document.getElementById('kcFormTitle');
+  const ic = document.getElementById('kcFormTitleIcon');
+  if (ic) ic.className = 'codicon codicon-' + (editing ? 'edit' : 'plus');
+  if (!title) return;
+  if (editing) title.textContent = L('keychain.formTitleEdit').replace('{label}', String(label || editing));
+  else title.textContent = L('keychain.formTitleAdd');
+}
 // Batch 28.4 accordion: mount the single #kcForm node into the target card's
 // slot; unknown/empty id → the trailing add-card (visible when mounted).
 function mountFormFor(id) {
@@ -1074,6 +1090,7 @@ function showForm(values, opts) {
   kcForm.setAttribute('data-editing', formEditing);
   formModelsList = Array.isArray(d.models) ? d.models.map(String) : [];
   mountFormFor(formEditing);
+  setFormTitle(formEditing, d.label || '');
   kcForm.classList.remove('hidden');
   if (kcFormProvider) kcFormProvider.value = d.provider || '';
   if (kcFormModelInput) kcFormModelInput.value = d.model || '';
@@ -1097,6 +1114,7 @@ function hideForm() {
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
   formModelsList = [];
+  setFormTitle('', '');
   if (kcFormHome) kcFormHome.appendChild(kcForm);
   if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);

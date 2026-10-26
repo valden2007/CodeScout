@@ -30,6 +30,27 @@ function parseProof(raw: unknown): string {
   return raw.trim().slice(0, PROOF_MAX);
 }
 
+// ── Микро-батч 28.5: анти-entity пост-фильтр ────────────────────────────────
+// Транспорт иногда экранирует угловые скобки, и модель начинает «находить»
+// HTML-entities (&lt; &gt; &amp; =&gt; и т.п.) вместо реальных дефектов.
+// Семейство A — корректные entity-токены `&имя;` / `&#123;` (точная семаколка
+// обязательна: «a=1&b=2» в тексте не матчится). Находка отбрасывается, если
+// description/proof (а) содержит хотя бы один такой токен, (б) жалуется
+// словами про entity/экранирование/замену и (в) ПОСЛЕ вычеркивания токенов в
+// тексте почти не остаётся содержательных слов («преимущественно» — см.
+// порог). Настоящая находка, где entities лишь мелькают в цитате, живёт.
+export const ENTITY_TOKEN_RE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d{1,8});/g;
+const ENTITY_COMPLAIN_RE = /html[\s-]?entit|сущност|encod|decod|escap|экранир|замен|replace|convert|артефакт|\bentities?\b/i;
+
+export function isEntityArtifactComplaint(description: string, proof = ''): boolean {
+  const text = `${description}\n${proof}`;
+  const tokens = text.match(ENTITY_TOKEN_RE);
+  if (!tokens || tokens.length === 0) return false;
+  if (!ENTITY_COMPLAIN_RE.test(text)) return false;
+  const words = text.replace(ENTITY_TOKEN_RE, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}_\-]{2,}/gu);
+  return (words ? words.length : 0) <= tokens.length * 3 + 2;
+}
+
 function findBalancedJson(text: string): string | undefined {
   const start = text.search(/[[{]/);
   if (start < 0) return undefined;
@@ -124,6 +145,7 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
   if (typeof parsed !== 'object') throw new Error(`Ответ модели для ${filename} — не JSON-объект (получен ${typeof parsed})`);
   const object = parsed as { issues?: unknown; summary?: unknown };
   const rawIssues = Array.isArray(object.issues) ? object.issues : [];
+  let droppedEntityArtifacts = 0;
   const issues: ReviewIssue[] = rawIssues.flatMap((item): ReviewIssue[] => {
     if (!item || typeof item !== 'object') return [];
     const value = item as Record<string, unknown>;
@@ -137,7 +159,13 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
     const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
     const proof = parseProof(value.proof);
+    // Микро-батч 28.5: жалоба, состоящая преимущественно из HTML-entities, —
+    // артефакт передачи, не находка; режем здесь и считаем для Output.
+    if (isEntityArtifactComplaint(description, proof)) {
+      droppedEntityArtifacts += 1;
+      return [];
+    }
     return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
-  return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
+  return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1, droppedEntityArtifacts };
 }

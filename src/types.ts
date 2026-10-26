@@ -52,6 +52,9 @@ export interface ReviewResult {
   issues: ReviewIssue[];
   summary: string;
   filesAnalyzed: number;
+  // Микро-батч 28.5: сколько находок-жалоб на HTML-entities отбросил парсер
+  // (пост-фильтр isEntityArtifactComplaint); печатается в Output.
+  droppedEntityArtifacts?: number;
 }
 
 export interface LLMProvider {

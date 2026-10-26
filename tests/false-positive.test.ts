@@ -260,8 +260,9 @@ describe('батч 20b: интеграция pipeline (скрытые наход
     expect(extension).toContain('filterSuppressed(dedupeIssues(result.issues), context.workspaceState)');
     expect(extension).toContain('filterSuppressed(savedResults.findings, context.workspaceState)');
     expect(extension).toContain('panel.attachWorkspaceState(context.workspaceState)');
-    // 21-го параметра нет: adaptive остаётся последним аргументом
-    expect(extension).toContain('adaptive: AdaptiveChunkOptions = {}): Promise<ScanResult>');
+    // Микро-батч 28.5: подавление по-прежнему НЕ параметр reviewFiles;
+    // после adaptive живёт только onQuotaRotation (сброс breaker при ротации).
+    expect(extension).toContain('adaptive: AdaptiveChunkOptions = {}, onQuotaRotation?: () => void): Promise<ScanResult>');
     expect(extension).not.toMatch(/reviewFiles\([^)]*workspaceState[^)]*\): Promise<ScanResult>/);
     // extension.ts не хранит suppression-логику сам
     expect(extension).not.toContain('codescout.suppressedFindings');

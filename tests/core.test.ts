@@ -254,7 +254,8 @@ describe('E5.9 combined UX fixes', () => {
     expect(extension).toContain("await persistModelSelection(context, selection, corrected, false)");
     expect(extension).toContain("await context.secrets.store(SECRET_MODEL, model)");
     expect(extension).toContain("await context.secrets.store(SECRET_MODEL_CHOSEN, userChosen ? 'true' : 'false')");
-    expect(extension).toContain("createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model");
+    // Микро-батч 28.5: креды пересобираются через makeProvider-хелпер (quota-ротация)
+    expect(extension).toContain("createProvider(selection.provider, apiKey, model, (event) => onRetry(event, model)");
     expect(extension).toContain('await resolveExtensionSelection(context)');
   });
 
@@ -3911,7 +3912,7 @@ describe('v1.4b-16 секционный RAG', () => {
     expect(extension).toContain('makeDocsResolver(docs.sections ?? [], docBudgetBytes');
     expect(extension).toContain('const docPick = docsResolver?.(file.filename, file.patch)');
     expect(extension).toContain('provider.review(fileSystemPrompt');
-    expect(extension).toContain('docsForFile, adaptive);');
+    expect(extension).toContain('docsForFile, adaptive, () => skipBreakerReset(breakerState));');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('"codescout.docBudgetKb"');
     expect(manifest).toContain('%docBudgetKb.description%');

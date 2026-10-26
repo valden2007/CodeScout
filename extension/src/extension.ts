@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node
 import { randomBytes } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { abortError, AllProfilesAsleepError, BadResponseError, createProvider, isAbortError, ProviderHttpError, RateLimitError, requestTimeoutSecondsFromSetting, RetryEvent, setDefaultRequestTimeoutMs, sleep, type FailoverHooks, type FailoverSwitchDecision } from '../../src/llm-client';
-import { formatError } from '../../src/error-classifier';
+import { categorizeError, formatError } from '../../src/error-classifier';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -61,6 +61,8 @@ interface ScanResult {
   filesAnalyzed: number;
   skippedFiles: number;
   durationMs: number;
+  // Микро-батч 28.5: сколько находок-«entity-артефактов» отбросил парсер.
+  droppedEntityArtifacts?: number;
 }
 
 interface ProviderSelection {
@@ -351,9 +353,9 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
   };
   return {
     async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota'): Promise<FailoverSwitchDecision | undefined> {
-      // Микро-батч 28.4: reason='quota' (HTTP 402/биллинг) — тот же решатель
-      // (усыпить ключ, ротировать), но в Output печатается честная причина.
-      const trigger = reason === 'quota' ? '402 billing-квота' : '429';
+      // Микро-батч 28.4/28.5: reason='quota' (HTTP 402/биллинг/текст) — тот же
+      // решатель (усыпить ключ, ротировать); в Output печатается «quota».
+      const trigger = reason === 'quota' ? 'quota' : '429';
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === 'switch') {
         // ключ без секрета не годится: broken и шаг дальше по цепочке
@@ -537,6 +539,14 @@ function handleAllProfilesAsleep(panel: CodeScoutPanel, error: AllProfilesAsleep
   panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1000), wakeLabel: error.wakeLabel });
 }
 
+// Микро-батч 28.5: счётчик отброшенных entity-артефактов — одна RU-строка в
+// Output (лог, не UI): модель иногда жалуется на &lt;/&gt;/=&gt; как на дефект
+// кода, парсер такие находки режет (см. response-parser).
+function logEntityDrops(output: vscode.OutputChannel, result: ScanResult): void {
+  const drops = result.droppedEntityArtifacts ?? 0;
+  if (drops > 0) output.appendLine(`🧹 отброшено entity-артефактов: ${drops}`);
+}
+
 // Батч 15: дедлайн инференса (codescout.requestTimeoutSeconds, 10-600,
 // дефолт 60с) применяется к модульному значению в llm-client — новый
 // параметр reviewFiles не нужен, зависшие чанки падают в категорию timeout.
@@ -545,7 +555,7 @@ function applyRequestTimeoutSetting(): void {
   setDefaultRequestTimeoutMs(seconds * 1000);
 }
 
-export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}): Promise<ScanResult> {
+export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}, onQuotaRotation?: () => void): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost не требуют ключ.
@@ -560,10 +570,16 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   // Батч 28: += рабочий ключ профиля — единица ротации теперь ключ.
   beginScan(selection.profileId ?? '', selection.keyId ?? DEFAULT_KEY_ID);
   const failover = await buildFailoverHooks(context, selection);
-  const provider = createProvider(selection.provider, selection.key ?? 'local-no-key', selection.model, (event) => onRetry(event, selection.model), selection.baseUrl, signal, failover, selection.profileBaseUrl);
+  // Микро-батч 28.5: provider — let: quota-ротация на уровне скипа пересобирает
+  // креды (switch-решение keychain) и повторяет ТОТ ЖЕ файл новым ключом.
+  const makeProvider = (apiKey: string, model: string, baseUrlOverride?: string) =>
+    createProvider(selection.provider, apiKey, model, (event) => onRetry(event, model), selection.baseUrl, signal, failover, baseUrlOverride);
+  let provider = makeProvider(selection.key ?? 'local-no-key', selection.model, selection.profileBaseUrl);
   const issues: ReviewIssue[] = [];
   // Legacy contracts: onProgress?.(fileIndex + 1, files.length, file.filename), onThinking?.(), panel.setProgress(index, total, filename), panel.setModelThinking().
   let skippedFiles = 0;
+  // Микро-батч 28.5: счётчик entity-артефактов, отброшенных парсером находок.
+  let entityDrops = 0;
   // Очередь вместо простого прохода: карантин перекладывает тяжёлый файл
   // в конец, чтобы лёгкие не ждали его 30 пауз.
   const queue = files.map((_file, index) => index);
@@ -603,10 +619,16 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         onProgress?.(fileIndex + 1, files.length, file.filename, elapsedMs);
         onThinking?.(elapsedMs);
         const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
-        return parseReviewResponse(raw, file.filename).issues;
+        const parsed = parseReviewResponse(raw, file.filename);
+        entityDrops += parsed.droppedEntityArtifacts ?? 0;
+        return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
-        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        // Микро-батч 28.5: квота НЕ триггерит адаптивное деление чанка —
+        // деление лечит «тяжёлый запрос», а не «нет денег»: halving на
+        // billing-ключе лишь удваивает заведомо мёртвые запросы.
+        const retriable = error instanceof RateLimitError || isNetworkError(error)
+          || (isRateLimitText(error) && categorizeError(error) !== 'quota');
         const halves = retriable ? splitAuditChunk(chunk) : undefined;
         if (halves) {
           adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
@@ -643,6 +665,31 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
+        // Микро-батч 28.5: скип файла с категорией quota ДОЛЖЕН доезжать до
+        // failover-хука: решатель keychain усыпляет текущий ключ (retry-after
+        // или лестница 120/300/600) и ротирует на следующий awake ключ/профиль
+        // (Output «🔑 failover: … (quota; … спит Nс)»). Ротация состоялась →
+        // счётчик предохранителя сбрасывается, ТОТ ЖЕ файл повторяется новыми
+        // кредами — pointless-скипов больше нет. Нет хуков (failover выключен)
+        // или ротация невозможна (все спят/сломаны, stop) — мгновенный скип БЕЗ
+        // локальной billing-лестницы: skipBreakerFeed считает quota как обычно,
+        // и лимит подряд скипов стопит аудит баннером «квота исчерпана».
+        if (!(error instanceof AllProfilesAsleepError) && categorizeError(error) === 'quota') {
+          if (failover) {
+            const quotaWait = error instanceof RateLimitError ? error.waitSeconds : undefined;
+            const decision = await failover.onRateLimit(quotaWait, 'quota');
+            if (decision && decision.action === 'switch') {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision && decision.action === 'wait') {
+              await sleeper(decision.waitMs, signal);
+              continue;
+            }
+          }
+          break;
+        }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
@@ -680,7 +727,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
       onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops };
 }
 
 async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown?: (seconds: number) => void, onFileSkipped?: (filename: string, error: unknown) => void): Promise<ScanResult> {
@@ -981,7 +1028,8 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         panel.recordFileDuration(seconds);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive);
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive, () => skipBreakerReset(breakerState));
+    logEntityDrops(output, result);
     // Батч 25: находки с метками нахождателей + zone-мердж (±3) — догон
     // другим провайдером не дублирует то, что уже лежит в чекпоинте.
     const mergedIssues = collectCheckpointFindings(state);
@@ -1142,6 +1190,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
     // Батч 14: скрытые находки не попадают в панель (пост-обработка).
+    logEntityDrops(output, result);
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -1205,6 +1254,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     if (result.skippedFiles > 0) {
       output.appendLine(`⚠️ Пропущено файлов: ${result.skippedFiles} (ошибки или rate-limit) — см. строки «Пропущен файл» выше.`);
     }
+    logEntityDrops(output, result);
     // Батч 14: пост-обработка перед передачей в вебвью — скрытые (FP) находки
     // не попадают в панель; Output-лог остаётся полным (сырые данные).
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
