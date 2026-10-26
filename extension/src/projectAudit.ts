@@ -1105,8 +1105,13 @@ export interface SkipBreakerState {
 
 // Подряд идущие скипы одной категории; другая категория обнуляет счётчик
 // (вперемешку — не суммируем). Успешный файл вызывает skipBreakerReset.
+// Микро-батч 28.4: «quota» (HTTP 402/биллинг) — ПРОЗРАЧНА для предохранителя:
+// не инкрементирует и не сбрасывает состояние. Квота по деньгам лечится
+// failover-ротацией ключей, а не стопом всего аудита; по unknown/auth/parse
+// breaker стопит как раньше.
 export function skipBreakerFeed(state: SkipBreakerState, category: string, limit: number): boolean {
   if (limit <= 0) return false;
+  if (category === 'quota') return false;
   if (state.category === category) state.count += 1;
   else { state.category = category; state.count = 1; }
   return state.count >= limit;

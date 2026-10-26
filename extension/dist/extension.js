@@ -594,6 +594,7 @@ var OpenAICompatibleProvider = class {
             throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
+          if (response.status === 402) throw new ProviderHttpError(402, `402: ${details}`, details);
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           if (response.status === 502 || response.status === 503 || response.status === 504) {
             throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
@@ -616,6 +617,26 @@ var OpenAICompatibleProvider = class {
         if (!retryableError) {
           if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
             await this.failover.onAuthError(error.status);
+          }
+          if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
+            const decision = await this.failover.onRateLimit(void 0, "quota");
+            if (decision) {
+              if (decision.action === "switch") {
+                this.apiKey = sanitizeApiKey(decision.apiKey);
+                this.endpoint = completionUrl(decision.baseUrl);
+                this.model = decision.model;
+                retryCount = 0;
+                lastRetryableError = void 0;
+                continue;
+              }
+              if (decision.action === "wait") {
+                await this.sleeper(decision.waitMs, this.signal);
+                continue;
+              }
+              if (decision.action === "stop") {
+                throw new AllProfilesAsleepError("All key profiles are asleep (quota)", decision.waitMs, decision.wakeLabel);
+              }
+            }
           }
           throw error;
         }
@@ -997,6 +1018,9 @@ var ru_default = {
   "err.title.rate_limit_exceeded": "\u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (429)",
   "err.msg.rate_limit_exceeded": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441\u044B (\u043A\u0432\u043E\u0442\u0430, RPM \u0438\u043B\u0438 TPM).",
   "err.hint.rate_limit_exceeded": "\u041F\u043E\u0434\u043E\u0436\u0434\u0438\u0442\u0435 \u043F\u0430\u0440\u0443 \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u0435\u0441\u044C \u043D\u0430 \u0437\u0430\u043F\u0430\u0441\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C; \u043F\u0430\u0443\u0437\u044B \u0440\u0435\u0442\u0440\u0430\u044F \u2014 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0430\u0443\u0434\u0438\u0442\u0430.",
+  "err.title.quota": "\u041F\u043B\u0430\u0442\u0451\u0436\u043D\u0430\u044F \u043A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430 (402)",
+  "err.msg.quota": "\u0423 \u043A\u043B\u044E\u0447\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0431\u0438\u043B\u043B\u0438\u043D\u0433/\u0441\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0430\u0440\u0438\u0444.",
+  "err.hint.quota": "\u041F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430; \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover \u2014 \u043E\u043D \u0443\u0441\u044B\u043F\u0438\u0442 \u044D\u0442\u043E\u0442 \u043A\u043B\u044E\u0447 \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u044E \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435.",
   "err.title.model_not_found": "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 (404)",
   "err.msg.model_not_found": "\u0418\u043C\u044F \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435\u0432\u0435\u0440\u043D\u043E \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u044D\u0442\u043E\u043C\u0443 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.",
   "err.hint.model_not_found": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C\xBB \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439 \u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0439.",
@@ -1123,7 +1147,10 @@ var ru_default = {
   "keychain.formModelsErr": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438 \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 \u0438 Base URL.",
   "keychain.formModelsEmpty": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u043D\u0438 \u043E\u0434\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438.",
   "keychain.formModelsLoading": "\u041F\u043E\u0434\u0442\u044F\u0433\u0438\u0432\u0430\u0435\u043C \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
-  "keychain.formModelsCount": "{n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439"
+  "keychain.formModelsCount": "{n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439",
+  "keychain.comboEmptyHint": "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0443\u0441\u0442 \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438\xBB.",
+  "keychain.comboNoMatches": "\u041D\u0435\u0442 \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0439 \u043F\u043E \u043F\u043E\u0434\u0441\u0442\u0440\u043E\u043A\u0435 \u2014 \u0441\u0442\u0440\u0435\u043B\u043A\u0430 \u0432\u043D\u0438\u0437 \u043F\u043E\u043A\u0430\u0436\u0435\u0442 \u0432\u0435\u0441\u044C \u0441\u043F\u0438\u0441\u043E\u043A.",
+  "keychain.comboToggle": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0441\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438"
 };
 
 // ../src/i18n/en.json
@@ -1459,6 +1486,9 @@ var en_default = {
   "err.title.rate_limit_exceeded": "Request limit exceeded (429)",
   "err.msg.rate_limit_exceeded": "The provider temporarily throttled your requests (quota, RPM or TPM).",
   "err.hint.rate_limit_exceeded": "Wait a couple of minutes or switch to a fallback model; retry pauses live in audit settings.",
+  "err.title.quota": "Payment quota exhausted (402)",
+  "err.msg.quota": "The key ran out of credits or hit a paid-plan limit \u2014 the provider wants a billing top-up or a new tier.",
+  "err.hint.quota": "Top up the balance or change the plan in the provider console; enable failover \u2014 it sleeps this key and rotates the chain.",
   "err.title.model_not_found": "Model not found (404)",
   "err.msg.model_not_found": "The model name is wrong or the model is unavailable for this provider.",
   "err.hint.model_not_found": 'Open "Choose model" \u2014 the list is live and validated.',
@@ -1585,7 +1615,10 @@ var en_default = {
   "keychain.formModelsErr": "Could not fetch models \u2014 check the key and the base URL.",
   "keychain.formModelsEmpty": "The provider returned no models.",
   "keychain.formModelsLoading": "Fetching models\u2026",
-  "keychain.formModelsCount": "{n} models"
+  "keychain.formModelsCount": "{n} models",
+  "keychain.comboEmptyHint": "The list is empty \u2014 press \u201CPull models\u201D.",
+  "keychain.comboNoMatches": "No substring matches \u2014 the down arrow shows the full list.",
+  "keychain.comboToggle": "Show all pulled models"
 };
 
 // ../src/i18n/index.ts
@@ -1622,14 +1655,16 @@ function isConnectionFailure(raw) {
   return /ECONNREFUSED|ECONNRESET|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
 }
 function statusFromText(raw) {
-  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[134]|429)\b/i) || raw.match(/^(40[134]|429)\b/);
+  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[1-4]|429)\b/i) || raw.match(/^(40[1-4]|429)\b/);
   return match ? Number(match[1]) : void 0;
 }
+var QUOTA_TEXT_RE = /insufficient_quota|payment required|billing|\bupgrade to\b[^\n]{0,80}\btier\b/i;
 function categorizeError(error) {
   if (error instanceof RateLimitError) return "rate_limit_exceeded";
   if (error instanceof ProviderHttpError) {
     if (error.status === 401) return "auth_invalid_key";
     if (error.status === 403) return "auth_forbidden";
+    if (error.status === 402) return "quota";
     if (error.status === 404) return "model_not_found";
     if (error.status === 429) return "rate_limit_exceeded";
     return "unknown";
@@ -1641,8 +1676,10 @@ function categorizeError(error) {
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return "auth_invalid_key";
   if (textStatus === 403) return "auth_forbidden";
+  if (textStatus === 402) return "quota";
   if (textStatus === 404) return "model_not_found";
   if (textStatus === 429) return "rate_limit_exceeded";
+  if (QUOTA_TEXT_RE.test(raw)) return "quota";
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return "auth_invalid_key";
   if (/forbidden|permission denied/i.test(raw)) return "auth_forbidden";
   if (/model[^.]{0,60}?(?:not found|does not exist|is unavailable|unknown model)/i.test(raw)) return "model_not_found";
@@ -4460,6 +4497,7 @@ function upsertSkippedFile(entries, entry) {
 }
 function skipBreakerFeed(state, category, limit) {
   if (limit <= 0) return false;
+  if (category === "quota") return false;
   if (state.category === category) state.count += 1;
   else {
     state.category = category;
@@ -5400,10 +5438,11 @@ function currentKeyLine(T, state) {
   if (state.provider === "custom" && local) return escapeHtml2(T("center.nowLocal", { s: local }));
   return escapeHtml2(T("center.nowNone"));
 }
-function keychainRowsHtml(T, state) {
+function keychainRowsHtml(T, state, inject) {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? "";
   const runtimeInfo = state.keychainRuntime ?? {};
+  let placed = false;
   const rows = profiles.map((profile, index) => {
     const isActive = profile.id === activeId;
     const model = escapeHtml2(profile.model?.trim() || "");
@@ -5443,9 +5482,12 @@ function keychainRowsHtml(T, state) {
         <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon2("edit")}<span>${T("keychain.edit")}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
       </span>
+      <div class="kc-form-slot">${inject && inject.profileId === profile.id && !placed ? (placed = true, inject.html) : ""}</div>
     </div>`;
   }).join("");
-  return profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>` : `<div class="kc-list">${rows}</div><p class="hint">${T("keychain.baseUrlHint")}</p><p class="hint kc-cycle-hint">${T("keychain.cycleHint")}</p>`;
+  const addCardForm = inject && !placed ? inject.html : "";
+  const addCard = `<div class="kc-row kc-add-card${addCardForm ? "" : " hidden"}" data-add-card="1"><div class="kc-form-slot">${addCardForm}</div></div>`;
+  return profiles.length === 0 ? `<p class="hint">${T("keychain.empty")}</p>${addCard}` : `<div class="kc-list">${rows}</div>${addCard}<p class="hint">${T("keychain.baseUrlHint")}</p><p class="hint kc-cycle-hint">${T("keychain.cycleHint")}</p>`;
 }
 function keychainFormHtml(T, state) {
   const draft = state.keychainFormDraft;
@@ -5453,7 +5495,6 @@ function keychainFormHtml(T, state) {
   const editingId = (draft?.profileId ?? "").trim();
   const err = (state.keychainFormError ?? "").trim();
   const providerSelectOptions = `<option value="">${T("center.provider")}</option>` + providerValues.map((value) => `<option value="${value}"${value === draft?.provider ? " selected" : ""}>${value}</option>`).join("");
-  const modelOption = (draft?.model ?? "").trim() ? `<option value="${escapeHtml2((draft?.model ?? "").trim())}"></option>` : "";
   return `<div id="kcForm" class="kc-form${open ? "" : " hidden"}" data-editing="${escapeHtml2(editingId)}">
   <h4>${icon2(editingId ? "edit" : "plus")} ${T(editingId ? "keychain.formTitleEdit" : "keychain.formTitleAdd")}</h4>
   <label for="kcFormProvider">${T("keychain.formProvider")}</label>
@@ -5463,8 +5504,14 @@ function keychainFormHtml(T, state) {
   <p class="hint">${T("keychain.formKeyHint")}</p>
   <label for="kcFormModel">${T("keychain.formModel")}</label>
   <div class="kc-form-pull">
-    <input id="kcFormModel" type="text" list="kcFormModelList" autocomplete="off" spellcheck="false" placeholder="${T("center.nowModelMissing")}" value="${escapeHtml2((draft?.model ?? "").trim())}">
-    <datalist id="kcFormModelList">${modelOption}</datalist>
+    <div class="kc-combo" id="kcFormModelCombo">
+      <input id="kcFormModel" type="text" role="combobox" aria-expanded="false" aria-controls="kcFormModelDropdown" autocomplete="off" spellcheck="false" placeholder="${T("center.nowModelMissing")}" value="${escapeHtml2((draft?.model ?? "").trim())}">
+      <button id="kcFormModelArrow" type="button" class="kc-combo-arrow" tabindex="-1" aria-label="${T("keychain.comboToggle")}" title="${T("keychain.comboToggle")}">${icon2("chevron-down")}</button>
+      <div id="kcFormModelDropdown" class="kc-combo-list hidden" role="listbox" aria-label="${T("keychain.comboToggle")}">
+        <p class="kc-combo-count hidden" id="kcFormModelsCount"></p>
+        <div id="kcFormModelOptions"></div>
+      </div>
+    </div>
     <button id="kcFormPullModels" type="button" class="secondary">${icon2("cloud-download")}<span>${T("keychain.formPullModels")}</span></button>
   </div>
   <p class="hint kc-form-models-status hidden" id="kcFormModelsStatus"></p>
@@ -5482,20 +5529,25 @@ function keychainFormHtml(T, state) {
 }
 function keychainBlockHtml(T, state, onRenderIssue) {
   const failoverOn = state.failoverEnabled === true;
+  const draft = state.keychainFormDraft;
+  const editingId = draft ? (draft.profileId ?? "").trim() : "";
   let listHtml = "";
   let formHtml = "";
+  let homeHtml = "";
   try {
-    listHtml = keychainRowsHtml(T, state);
     formHtml = keychainFormHtml(T, state);
+    listHtml = draft ? keychainRowsHtml(T, state, { html: formHtml, profileId: editingId }) : keychainRowsHtml(T, state);
+    homeHtml = `<div id="kcFormHome" class="kc-form-home">${draft ? "" : formHtml}</div>`;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     onRenderIssue?.(`\u0431\u043B\u043E\u043A \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 keychain \u0434\u0435\u0433\u0440\u0430\u0434\u0438\u0440\u043E\u0432\u0430\u043B \u0434\u043E \u043F\u0443\u0441\u0442\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430: ${detail}`);
     listHtml = `<p class="hint">${escapeHtml2(T("keychain.renderDegraded"))}</p>`;
+    homeHtml = '<div id="kcFormHome" class="kc-form-home"></div>';
   }
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon2("clippy")} ${T("keychain.title")}</h3>
   ${listHtml}
-  ${formHtml}
+  ${homeHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon2("plus")}<span>${T("keychain.add")}</span></button>
   </div>
@@ -5635,6 +5687,18 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 .kc-form-models-status { margin: var(--cs-space-1) 0 0; }
 .kc-form-models-status.is-error { color: var(--cs-error); }
+.kc-form-slot { flex: 1 1 100%; min-width: 0; }
+.kc-combo { position: relative; flex: 1 1 auto; min-width: 0; }
+.kc-combo > input { width: 100%; padding-right: 30px; }
+.kc-combo-arrow { position: absolute; top: 3px; right: 3px; bottom: 3px; width: 24px; min-height: 0; padding: 0; border: none; background: transparent; color: var(--cs-desc); display: inline-flex; align-items: center; justify-content: center; z-index: 2; }
+.kc-combo-arrow:hover { background: var(--cs-list-hover); color: var(--cs-fg); }
+.kc-combo-list { position: absolute; z-index: 40; top: calc(100% + 3px); left: 0; right: 0; max-height: 180px; overflow-y: auto; padding: 2px; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); box-shadow: var(--cs-shadow); }
+.kc-combo-count { position: sticky; top: 0; margin: 0; padding: 2px var(--cs-space-2); background: var(--cs-input-bg); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.kc-combo-opt { display: flex; align-items: center; gap: 5px; padding: 3px var(--cs-space-2); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-2); cursor: pointer; }
+.kc-combo-opt:hover, .kc-combo-opt.active { background: var(--cs-list-hover); }
+.kc-combo-opt .kc-combo-check { visibility: hidden; display: inline-flex; color: var(--cs-pass); }
+.kc-combo-opt.is-current .kc-combo-check { visibility: visible; }
+.kc-combo-empty { margin: 0; padding: 4px var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -5829,7 +5893,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime \u2014 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('\u2026') call sites against this whitelist.
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading", "keychain.formModelsCount", "keychain.comboEmptyHint", "keychain.comboNoMatches"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -6045,11 +6109,11 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
-// Batch 28.2: the add button opens the inline card on the CLIENT (no host
-// roundtrip) \u2014 the old native-InputBox chain (command keychainAdd) stays on
-// the host for compatibility but the webview no longer posts it.
+// Batch 28.4: the \xABAdd profile\xBB button opens the same form as a NEW card at
+// the end of the list (the trailing add-card) \u2014 and scrollIntoView to it is
+// the only allowed scroll in this flow.
 const keychainAddBtn = document.getElementById('keychainAdd');
-if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}));
+if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}, { scroll: true }));
 // Batch 27: keychain row buttons are delegated \u2014 each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
 // Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
@@ -6088,11 +6152,21 @@ const kcFormError = document.getElementById('kcFormError');
 const kcFormProvider = document.getElementById('kcFormProvider');
 const kcFormKeyInput = document.getElementById('kcFormKey');
 const kcFormModelInput = document.getElementById('kcFormModel');
-const kcFormModelList = document.getElementById('kcFormModelList');
 const kcFormPullBtn = document.getElementById('kcFormPullModels');
 const kcFormLabelInput = document.getElementById('kcFormLabel');
 const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
 const kcFormSaveBtn = document.getElementById('kcFormSave');
+// Batch 28.4: combobox parts (the old datalist sibling #kcFormModelList is
+// gone) + accordion mount points: the neutral hub #kcFormHome and the
+// trailing add-card. #kcForm is ONE node moved into the target card's
+// .kc-form-slot \u2014 that is why exactly one form can be open at any moment.
+const kcFormModelCombo = document.getElementById('kcFormModelCombo');
+const kcFormModelDropdown = document.getElementById('kcFormModelDropdown');
+const kcFormModelArrow = document.getElementById('kcFormModelArrow');
+const kcFormModelsCountEl = document.getElementById('kcFormModelsCount');
+const kcFormModelOptions = document.getElementById('kcFormModelOptions');
+const kcFormHome = document.getElementById('kcFormHome');
+const kcAddCard = document.querySelector('[data-add-card]');
 let formEditing = '';
 // Batch 28.3: live models in the form. After the key was pasted or the
 // provider changed we wait 600 ms (debounce) and post keychainFormModels
@@ -6103,6 +6177,12 @@ let formEditing = '';
 const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
 let formPullTimer = 0;
 let formPullSeq = 0;
+// Batch 28.4: pulled model ids (non-secret \u2014 safe for vscode.getState), the
+// highlighted option index and the "user typed" flag (open-by-focus shows ALL
+// models unfiltered; typing switches the list into substring-filter mode).
+let formModelsList = [];
+let comboActive = -1;
+let comboTyped = false;
 function setFormModelsStatus(text, isError) {
   if (!kcFormModelsStatus) return;
   kcFormModelsStatus.textContent = text || '';
@@ -6138,15 +6218,117 @@ function setFormError(msg) { if (!kcFormError) return; kcFormError.textContent =
 function setFormPullBusy(busy) { if (!kcFormPullBtn) return; kcFormPullBtn.disabled = busy; const label = kcFormPullBtn.querySelector('span:last-child'); if (label) label.textContent = busy ? L('models.loading') : L('keychain.formPullModels'); }
 function persistForm() {
   if (!kcForm || !formVisible()) return;
-  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value });
+  // models = non-secret pulled list (28.4); the API KEY never enters state.
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value, models: formModelsList });
 }
-function showForm(values) {
+// \u2500\u2500 Batch 28.4: model combobox core. Pure functions below the markers are
+// extracted and unit-tested as-is (tests/batch28-4). Plain JS only.
+/* cs-combo-core:start */
+function comboOpenList(models) { return Array.isArray(models) ? models.slice() : []; }
+function comboFilter(models, query) {
+  const list = Array.isArray(models) ? models.slice() : [];
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(function (m) { return String(m).toLowerCase().indexOf(q) !== -1; });
+}
+function comboIsCurrent(model, current) { return String(model || '') === String(current || ''); }
+/* cs-combo-core:end */
+function comboOpen() { return Boolean(kcFormModelDropdown) && !kcFormModelDropdown.classList.contains('hidden'); }
+function setComboExpanded(open) { if (kcFormModelInput) kcFormModelInput.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+function comboItems() { return comboTyped ? comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : '') : comboOpenList(formModelsList); }
+function comboOptEls() { return kcFormModelOptions ? Array.prototype.slice.call(kcFormModelOptions.querySelectorAll('.kc-combo-opt')) : []; }
+function renderCombo() {
+  if (!kcFormModelOptions || !kcFormModelDropdown) return;
+  const items = comboItems();
+  if (kcFormModelsCountEl) {
+    if (formModelsList.length) { kcFormModelsCountEl.textContent = L('keychain.formModelsCount').replace('{n}', String(formModelsList.length)); kcFormModelsCountEl.classList.remove('hidden'); }
+    else { kcFormModelsCountEl.textContent = ''; kcFormModelsCountEl.classList.add('hidden'); }
+  }
+  kcFormModelOptions.textContent = '';
+  const current = kcFormModelInput ? kcFormModelInput.value : '';
+  items.forEach(function (model, i) {
+    const opt = document.createElement('div');
+    opt.className = 'kc-combo-opt' + (i === comboActive ? ' active' : '') + (comboIsCurrent(model, current) ? ' is-current' : '');
+    opt.setAttribute('role', 'option');
+    opt.setAttribute('data-model', String(model));
+    const check = document.createElement('span');
+    check.className = 'kc-combo-check';
+    check.innerHTML = '<i class="codicon codicon-check" aria-hidden="true"></i>';
+    const name = document.createElement('span');
+    name.textContent = String(model);
+    opt.appendChild(check);
+    opt.appendChild(name);
+    kcFormModelOptions.appendChild(opt);
+  });
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'kc-combo-empty';
+    // N=0 pulled \u2192 \xABpress Pull models\xBB hint; typed-no-match \u2192 separate hint.
+    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') : L('keychain.comboEmptyHint');
+    kcFormModelOptions.appendChild(empty);
+  }
+}
+function openCombo() {
+  if (!kcFormModelDropdown) return;
+  comboActive = -1; comboTyped = false;
+  renderCombo();
+  kcFormModelDropdown.classList.remove('hidden');
+  setComboExpanded(true);
+}
+function refreshComboTyped() {
+  comboTyped = true; comboActive = -1;
+  renderCombo();
+  if (!kcFormModelDropdown || !comboOpen()) {
+    if (kcFormModelDropdown) kcFormModelDropdown.classList.remove('hidden');
+    setComboExpanded(true);
+  }
+}
+function closeCombo() {
+  if (!kcFormModelDropdown) return;
+  kcFormModelDropdown.classList.add('hidden');
+  comboActive = -1; comboTyped = false;
+  setComboExpanded(false);
+}
+function moveComboActive(delta) {
+  const opts = comboOptEls();
+  if (!opts.length) return;
+  comboActive = delta > 0 ? (comboActive + 1) % opts.length : (comboActive <= 0 ? opts.length - 1 : comboActive - 1);
+  opts.forEach(function (el, i) { el.classList.toggle('active', i === comboActive); });
+  try { opts[comboActive].scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ }
+}
+function pickComboOption(model) {
+  if (kcFormModelInput) kcFormModelInput.value = model;
+  closeCombo();
+  persistForm();
+}
+// Batch 28.4 accordion: mount the single #kcForm node into the target card's
+// slot; unknown/empty id \u2192 the trailing add-card (visible when mounted).
+function mountFormFor(id) {
+  if (!kcForm) return;
+  let slot = null;
+  if (id) {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('.kc-row[data-profile-id]'));
+    for (const row of rows) {
+      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); break; }
+    }
+  }
+  if (!slot && kcAddCard) {
+    slot = kcAddCard.querySelector('.kc-form-slot');
+    if (slot) kcAddCard.classList.remove('hidden');
+  }
+  if (slot) slot.appendChild(kcForm);
+}
+function showForm(values, opts) {
   if (!kcForm) return;
   const d = values || {};
+  const o = opts || {};
   clearFormPullTimer();
+  closeCombo();
   setFormModelsStatus('', false);
   formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
   kcForm.setAttribute('data-editing', formEditing);
+  formModelsList = Array.isArray(d.models) ? d.models.map(String) : [];
+  mountFormFor(formEditing);
   kcForm.classList.remove('hidden');
   if (kcFormProvider) kcFormProvider.value = d.provider || '';
   if (kcFormModelInput) kcFormModelInput.value = d.model || '';
@@ -6156,14 +6338,22 @@ function showForm(values) {
   if (kcFormSaveBtn) { kcFormSaveBtn.disabled = false; const span = kcFormSaveBtn.querySelector('span:last-child'); if (span) span.textContent = L('keychain.formSave'); }
   setFormPullBusy(false);
   setFormError('');
+  // Batch 28.4: the ONLY allowed scroll is toward the newly added card;
+  // focus lands on the first field without moving the viewport (no jump).
+  if (o.scroll) { try { kcForm.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { try { kcForm.scrollIntoView(); } catch (e2) { /* ignore */ } } }
+  if (kcFormProvider) { try { kcFormProvider.focus({ preventScroll: true }); } catch (e) { try { kcFormProvider.focus(); } catch (e2) { /* ignore */ } } }
   persistForm();
 }
 function hideForm() {
   if (!kcForm) return;
   clearFormPullTimer();
+  closeCombo();
   kcForm.classList.add('hidden');
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
+  formModelsList = [];
+  if (kcFormHome) kcFormHome.appendChild(kcForm);
+  if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);
 }
 document.addEventListener('click', (event) => {
@@ -6185,7 +6375,47 @@ document.addEventListener('click', (event) => {
   }
 });
 document.addEventListener('keydown', (event) => {
+  // Batch 28.4: while the pulled-models list is open Escape closes the LIST
+  // first (a second Escape then collapses the form without saving).
+  if (event.key === 'Escape' && formVisible() && comboOpen()) { closeCombo(); return; }
   if (event.key === 'Escape' && formVisible()) hideForm();
+});
+// Batch 28.4 combobox events: arrow click and focus open the FULL unfiltered
+// list (current model checked); typing filters it case-insensitively.
+// ArrowDown/Up move the active option, Enter selects it, Escape closes only
+// the list (stopPropagation keeps the form open). Manual typing stays valid.
+if (kcFormModelArrow) kcFormModelArrow.addEventListener('click', () => { if (comboOpen()) closeCombo(); else openCombo(); });
+if (kcFormModelInput) {
+  kcFormModelInput.addEventListener('focus', () => { if (formVisible()) openCombo(); });
+  kcFormModelInput.addEventListener('input', () => { if (formVisible() && comboOpen()) refreshComboTyped(); });
+  kcFormModelInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { if (comboOpen()) { closeCombo(); event.stopPropagation(); } return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (!comboOpen()) openCombo();
+      moveComboActive(event.key === 'ArrowDown' ? 1 : -1);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === 'Enter') {
+      if (!comboOpen()) return;
+      const opts = comboOptEls();
+      if (comboActive >= 0 && opts[comboActive]) pickComboOption(String(opts[comboActive].getAttribute('data-model') || ''));
+      else closeCombo();
+      event.preventDefault();
+    }
+  });
+}
+if (kcFormModelOptions) kcFormModelOptions.addEventListener('click', (event) => {
+  const hit = event.target instanceof Element ? event.target : null;
+  const opt = hit ? hit.closest('.kc-combo-opt') : null;
+  if (opt) pickComboOption(String(opt.getAttribute('data-model') || ''));
+});
+// Click anywhere outside the combo closes the dropdown (the form stays open).
+document.addEventListener('click', (event) => {
+  if (!comboOpen()) return;
+  const hit = event.target instanceof Element ? event.target : null;
+  if (hit && kcFormModelCombo && kcFormModelCombo.contains(hit)) return;
+  closeCombo();
 });
 [kcFormProvider, kcFormKeyInput, kcFormModelInput, kcFormLabelInput, kcFormBaseUrlInput].forEach((el) => {
   if (!el) return;
@@ -6224,6 +6454,8 @@ if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (formVisible()) {
     formEditing = kcForm.getAttribute('data-editing') || '';
     if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    const prev = readFormState();
+    if (prev && !prev.submitted && Array.isArray(prev.models)) formModelsList = prev.models.map(String);
     persistForm();
     return;
   }
@@ -6275,21 +6507,23 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
-  // Batch 28.2: models pulled inside the profile card \u2014 fills the datalist;
-  // the card input keeps a user-typed model (only an empty field is preset).
+  // Batch 28.2/28.4: models pulled inside the profile card \u2014 feed the model
+  // combobox; the card input keeps a user-typed model (only an empty field is preset).
   if (data.type === 'formModels') {
     // Batch 28.3: a stale answer (the user retyped meanwhile, a newer request
     // is in flight) must NOT unlock the button or overwrite the status line.
     if (data.requestId !== formPullSeq) return;
     setFormPullBusy(false);
     if (data.ok) {
-      if (kcFormModelList) {
-        kcFormModelList.textContent = '';
-        for (const m of (data.models || [])) { const opt = document.createElement('option'); opt.value = String(m); kcFormModelList.appendChild(opt); }
-      }
+      // Batch 28.4: pulled models land in formModelsList (the datalist is gone);
+      // an open dropdown repaints in the SAME mode \u2014 full list when opened by
+      // focus/arrow (no filtering by the current value), typed-filter otherwise.
+      formModelsList = Array.isArray(data.models) ? data.models.map(String) : [];
       if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
+      if (comboOpen()) renderCombo();
       persistForm();
-      // Searchable combobox = input+datalist; the counter line is host-translated.
+      // The status line under the field is host-translated; the counter inside
+      // the dropdown is rendered by renderCombo from formModelsList.length.
       setFormModelsStatus(String(data.countText || ''), false);
     } else {
       if (data.message) setFormError(String(data.message));
@@ -6642,7 +6876,8 @@ async function buildFailoverHooks(context, selection) {
     return { action: "switch", apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
-    async onRateLimit(waitSeconds) {
+    async onRateLimit(waitSeconds, reason) {
+      const trigger = reason === "quota" ? "402 billing-\u043A\u0432\u043E\u0442\u0430" : "429";
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === "switch") {
         if (!await readKeySecret(context.secrets, decision.profile, decision.key)) {
@@ -6653,7 +6888,7 @@ async function buildFailoverHooks(context, selection) {
         if (decision.kind === "switch") {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return void 0;
-          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (429; ${decision.fromLabel} \u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
+          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} \u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
           return low;
         }
       }

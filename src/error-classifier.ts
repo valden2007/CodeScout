@@ -8,6 +8,11 @@ export type ErrorCategory =
   | 'auth_invalid_key'
   | 'auth_forbidden'
   | 'rate_limit_exceeded'
+  // Микро-батч 28.4: платёжная квота (HTTP 402, «insufficient_quota»,
+  // «billing», «Upgrade to … Tier» у groq/openrouter) — НЕ unknown и НЕ
+  // rate_limit_exceeded: failover усыпляет ключ и ротирует, breaker по ней
+  // не стопит мгновенно.
+  | 'quota'
   | 'model_not_found'
   | 'timeout'
   | 'connection_refused'
@@ -22,7 +27,7 @@ export interface FormattedError {
   rawMessage?: string;
 }
 
-export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
+export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
 
 const PROBE_TIMEOUT_FALLBACK_SECONDS = 5;
 
@@ -49,15 +54,23 @@ function isConnectionFailure(raw: string): boolean {
 }
 
 function statusFromText(raw: string): number | undefined {
-  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[134]|429)\b/i) || raw.match(/^(40[134]|429)\b/);
+  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[1-4]|429)\b/i) || raw.match(/^(40[1-4]|429)\b/);
   return match ? Number(match[1]) : undefined;
 }
+
+// Микро-батч 28.4: платёжная квота. groq/openrouter отдают её как HTTP 402
+// и/или тексты «insufficient_quota», «…billing…», «Upgrade to … Tier».
+// Проверяется ДО общего rate-limit-текста: в биллинг-сообщениях часто
+// мелькают слова «quota»/«rate limit», но смысл — деньги, а не временный
+// лимит окна: нужен сон ключа + ротация, а не пауза на несколько минут.
+const QUOTA_TEXT_RE = /insufficient_quota|payment required|billing|\bupgrade to\b[^\n]{0,80}\btier\b/i;
 
 export function categorizeError(error: unknown): ErrorCategory {
   if (error instanceof RateLimitError) return 'rate_limit_exceeded';
   if (error instanceof ProviderHttpError) {
     if (error.status === 401) return 'auth_invalid_key';
     if (error.status === 403) return 'auth_forbidden';
+    if (error.status === 402) return 'quota';
     if (error.status === 404) return 'model_not_found';
     if (error.status === 429) return 'rate_limit_exceeded';
     return 'unknown';
@@ -69,8 +82,10 @@ export function categorizeError(error: unknown): ErrorCategory {
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return 'auth_invalid_key';
   if (textStatus === 403) return 'auth_forbidden';
+  if (textStatus === 402) return 'quota';
   if (textStatus === 404) return 'model_not_found';
   if (textStatus === 429) return 'rate_limit_exceeded';
+  if (QUOTA_TEXT_RE.test(raw)) return 'quota';
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return 'auth_invalid_key';
   if (/forbidden|permission denied/i.test(raw)) return 'auth_forbidden';
   if (/model[^.]{0,60}?(?:not found|does not exist|is unavailable|unknown model)/i.test(raw)) return 'model_not_found';

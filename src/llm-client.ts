@@ -77,7 +77,9 @@ export type FailoverSwitchDecision = FailoverSwitchResult | FailoverWaitResult |
 export interface FailoverHooks {
   // Вызывается при каждом 429 (RateLimitError) ДО локальной лестницы ретраев.
   // waitSeconds — retry-after из ответа (если парсится).
-  onRateLimit(waitSeconds: number | undefined): Promise<FailoverSwitchDecision | undefined>;
+  // Микро-батч 28.4: reason='quota' — тот же решатель (усыпить ключ и
+  // ротировать), но триггер HTTP 402/биллинг, а не временный лимит окна.
+  onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota'): Promise<FailoverSwitchDecision | undefined>;
   // 401/403: пометить профиль broken. Возврат не используется — переключение
   // по auth-ошибке запрещено контрактом.
   onAuthError(status: number): Promise<void>;
@@ -319,6 +321,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
             throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
+          // Микро-батч 28.4: HTTP 402 (groq/openrouter, биллинг-квота) —
+          // типизированный ProviderHttpError: категория quota, локальная
+          // лестница ретраев при «нет денег» бессмысленна, но failover по
+          // этому же триггеру усыпляет ключ и ротирует цепочку (см. catch).
+          if (response.status === 402) throw new ProviderHttpError(402, `402: ${details}`, details);
           // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           // 502/503/504 — ретраим как 429
@@ -348,6 +355,31 @@ export class OpenAICompatibleProvider implements LLMProvider {
           // ошибка летит наверх как раньше).
           if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
             await this.failover.onAuthError(error.status);
+          }
+          // Микро-батч 28.4: 402 (billing-квота groq/openrouter) — при включённом
+          // failover спрашиваем keychain ТЕМ ЖЕ решателем, что и 429: усыпить ключ
+          // и ротировать. Без failover / при отказе решателя ошибка летит наверх
+          // мгновенно (категория quota; локальная лестница ретраев по billing
+          // бессмысленна и только жрёт время аудита).
+          if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
+            const decision = await this.failover.onRateLimit(undefined, 'quota');
+            if (decision) {
+              if (decision.action === 'switch') {
+                this.apiKey = sanitizeApiKey(decision.apiKey);
+                this.endpoint = completionUrl(decision.baseUrl);
+                this.model = decision.model;
+                retryCount = 0;
+                lastRetryableError = undefined;
+                continue;
+              }
+              if (decision.action === 'wait') {
+                await this.sleeper(decision.waitMs, this.signal);
+                continue;
+              }
+              if (decision.action === 'stop') {
+                throw new AllProfilesAsleepError('All key profiles are asleep (quota)', decision.waitMs, decision.wakeLabel);
+              }
+            }
           }
           throw error;
         }

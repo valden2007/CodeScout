@@ -328,6 +328,9 @@
   "err.title.rate_limit_exceeded": "Request limit exceeded (429)",
   "err.msg.rate_limit_exceeded": "The provider temporarily throttled your requests (quota, RPM or TPM).",
   "err.hint.rate_limit_exceeded": "Wait a couple of minutes or switch to a fallback model; retry pauses live in audit settings.",
+  "err.title.quota": "Payment quota exhausted (402)",
+  "err.msg.quota": "The key ran out of credits or hit a paid-plan limit — the provider wants a billing top-up or a new tier.",
+  "err.hint.quota": "Top up the balance or change the plan in the provider console; enable failover — it sleeps this key and rotates the chain.",
   "err.title.model_not_found": "Model not found (404)",
   "err.msg.model_not_found": "The model name is wrong or the model is unavailable for this provider.",
   "err.hint.model_not_found": "Open \"Choose model\" — the list is live and validated.",
@@ -454,5 +457,8 @@
   "keychain.formModelsErr": "Could not fetch models — check the key and the base URL.",
   "keychain.formModelsEmpty": "The provider returned no models.",
   "keychain.formModelsLoading": "Fetching models…",
-  "keychain.formModelsCount": "{n} models"
+  "keychain.formModelsCount": "{n} models",
+  "keychain.comboEmptyHint": "The list is empty — press “Pull models”.",
+  "keychain.comboNoMatches": "No substring matches — the down arrow shows the full list.",
+  "keychain.comboToggle": "Show all pulled models"
 }

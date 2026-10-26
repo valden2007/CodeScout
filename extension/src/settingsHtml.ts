@@ -134,10 +134,11 @@ function currentKeyLine(T: (key: string, vars?: Record<string, string | number>)
 // МИКРО-БАТЧ 28.1: тело блока (строки профилей/ключей) рендерится в try/catch:
 // исключение НЕ обрывает остальной HTML и <script> — деградация до пустого
 // списка + строка в Output хоста через onRenderIssue.
-function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
+function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState, inject?: { html: string; profileId: string }): string {
   const profiles = state.keychainProfiles ?? [];
   const activeId = state.keychainActiveId ?? '';
   const runtimeInfo = state.keychainRuntime ?? {};
+  let placed = false;
   const rows = profiles.map((profile, index) => {
     const isActive = profile.id === activeId;
     const model = escapeHtml(profile.model?.trim() || '');
@@ -180,22 +181,39 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
         <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon('edit')}<span>${T('keychain.edit')}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
       </span>
+      <div class="kc-form-slot">${inject && inject.profileId === profile.id && !placed ? (placed = true, inject.html) : ''}</div>
     </div>`;
   }).join('');
+  // МИКРО-БАТЧ 28.4: аккордеон — карточка «добавить профиль» в КОНЦЕ списка.
+  // Обычно скрыта; становится видимой карточкой, когда в неё вселяется
+  // открытая форма (draft нового профиля) или клиент переносит туда узел
+  // #kcForm по клику «+ Добавить профиль».
+  const addCardForm = inject && !placed ? inject.html : '';
+  const addCard = `<div class="kc-row kc-add-card${addCardForm ? '' : ' hidden'}" data-add-card="1"><div class="kc-form-slot">${addCardForm}</div></div>`;
   return profiles.length === 0
-    ? `<p class="hint">${T('keychain.empty')}</p>`
-    : `<div class="kc-list">${rows}</div><p class="hint">${T('keychain.baseUrlHint')}</p><p class="hint kc-cycle-hint">${T('keychain.cycleHint')}</p>`;
+    ? `<p class="hint">${T('keychain.empty')}</p>${addCard}`
+    : `<div class="kc-list">${rows}</div>${addCard}<p class="hint">${T('keychain.baseUrlHint')}</p><p class="hint kc-cycle-hint">${T('keychain.cycleHint')}</p>`;
 }
 
-// МИКРО-БАТЧ 28.2: инлайн-форма (карточка) профиля. Закрыта по умолчанию
-// (hidden); «+ Добавить профиль» и «Редактировать» открывают её на клиенте,
-// хост открывает с draft только при перерисовке после ошибки валидации.
+// МИКРО-БАТЧ 28.2/28.4: инлайн-форма (карточка) профиля — АККОРДЕОН.
+// Закрыта по умолчанию и живёт в нейтральном контейнере #kcFormHome;
+// «Редактировать» у строки и «+ Добавить профиль» ПЕРЕНОСЯТ этот
+// единственный узел в .kc-form-slot нужной карточки (клиент, без хоста) —
+// поэтому одновременно открыта ровно одна форма, и она появляется там же,
+// где нажали (плюс — фокус на первое поле). Хост рендерит форму внутри
+// целевой карточки только при перерисовке после ошибки валидации (draft);
+// для нового/уже удалённого профиля целевой становится add-card.
 // Сохранение — кнопка «Сохранить профиль» (command keychainFormSave),
-// отмена/Escape закрывают без postMessage. «Подтянуть модели» шлёт
-// keychainFormModels с ключом ИЗ ПОЛЯ формы — секрет до «Сохранить» нигде
-// не появляется. Микро-батч 28.3: тот же запрос авто-стаётся дебаунсом
-// 600мс после вставки ключа/смены провайдера; результат — datalist +
-// счётчик «N моделей», ошибка — подсказка категории внутри карточки.
+// отмена/Escape сворачивают без postMessage и без записи. «Подтянуть
+// модели» шлёт keychainFormModels с ключом ИЗ ПОЛЯ формы (авто — дебаунс
+// 600мс, 28.3) — секрет до «Сохранить» нигде не появляется.
+// МИКРО-БАТЧ 28.4: поле модели — честный комбобокс (input + выпадающий
+// список) ВМЕСТО datalist: раскрытие по клику на стрелку или фокус
+// показывает ВСЕ подтянутые модели БЕЗ фильтрации текущим значением,
+// текущая помечена галочкой; печать фильтрует список подстрокой без учёта
+// регистра; над списком счётчик «N моделей», при N=0 — подсказка; клавиши
+// вниз/вверх — активная опция, Enter — выбор, Escape — закрыть СПИСОК (не
+// форму). Ручной ввод произвольной модели остаётся возможным.
 function keychainFormHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   const draft = state.keychainFormDraft;
   const open = draft !== undefined;
@@ -204,7 +222,6 @@ function keychainFormHtml(T: (key: string, vars?: Record<string, string | number
   const providerSelectOptions = `<option value="">${T('center.provider')}</option>` + providerValues
     .map((value) => `<option value="${value}"${value === draft?.provider ? ' selected' : ''}>${value}</option>`)
     .join('');
-  const modelOption = (draft?.model ?? '').trim() ? `<option value="${escapeHtml((draft?.model ?? '').trim())}"></option>` : '';
   return `<div id="kcForm" class="kc-form${open ? '' : ' hidden'}" data-editing="${escapeHtml(editingId)}">
   <h4>${icon(editingId ? 'edit' : 'plus')} ${T(editingId ? 'keychain.formTitleEdit' : 'keychain.formTitleAdd')}</h4>
   <label for="kcFormProvider">${T('keychain.formProvider')}</label>
@@ -214,8 +231,14 @@ function keychainFormHtml(T: (key: string, vars?: Record<string, string | number
   <p class="hint">${T('keychain.formKeyHint')}</p>
   <label for="kcFormModel">${T('keychain.formModel')}</label>
   <div class="kc-form-pull">
-    <input id="kcFormModel" type="text" list="kcFormModelList" autocomplete="off" spellcheck="false" placeholder="${T('center.nowModelMissing')}" value="${escapeHtml((draft?.model ?? '').trim())}">
-    <datalist id="kcFormModelList">${modelOption}</datalist>
+    <div class="kc-combo" id="kcFormModelCombo">
+      <input id="kcFormModel" type="text" role="combobox" aria-expanded="false" aria-controls="kcFormModelDropdown" autocomplete="off" spellcheck="false" placeholder="${T('center.nowModelMissing')}" value="${escapeHtml((draft?.model ?? '').trim())}">
+      <button id="kcFormModelArrow" type="button" class="kc-combo-arrow" tabindex="-1" aria-label="${T('keychain.comboToggle')}" title="${T('keychain.comboToggle')}">${icon('chevron-down')}</button>
+      <div id="kcFormModelDropdown" class="kc-combo-list hidden" role="listbox" aria-label="${T('keychain.comboToggle')}">
+        <p class="kc-combo-count hidden" id="kcFormModelsCount"></p>
+        <div id="kcFormModelOptions"></div>
+      </div>
+    </div>
     <button id="kcFormPullModels" type="button" class="secondary">${icon('cloud-download')}<span>${T('keychain.formPullModels')}</span></button>
   </div>
   <p class="hint kc-form-models-status hidden" id="kcFormModelsStatus"></p>
@@ -234,21 +257,30 @@ function keychainFormHtml(T: (key: string, vars?: Record<string, string | number
 
 function keychainBlockHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState, onRenderIssue?: (message: string) => void): string {
   const failoverOn = state.failoverEnabled === true;
+  const draft = state.keychainFormDraft;
+  const editingId = draft ? (draft.profileId ?? '').trim() : '';
   let listHtml = '';
   let formHtml = '';
+  let homeHtml = '';
   try {
-    listHtml = keychainRowsHtml(T, state);
+    // Микро-батч 28.4 (аккордеон): при открытом draft форма рендерится
+    // ВНУТРИ целевой карточки (или add-card, если профиль удалён/новый);
+    // в закрытом состоянии нейтральный дом узла #kcForm — контейнер-хаб,
+    // в него клиент возвращает свёрнутую форму.
     formHtml = keychainFormHtml(T, state);
+    listHtml = draft ? keychainRowsHtml(T, state, { html: formHtml, profileId: editingId }) : keychainRowsHtml(T, state);
+    homeHtml = `<div id="kcFormHome" class="kc-form-home">${draft ? '' : formHtml}</div>`;
   } catch (error) {
     // Деградация: пустой список вместо оборванного HTML; причину — в Output хоста.
     const detail = error instanceof Error ? error.message : String(error);
     onRenderIssue?.(`блок профилей keychain деградировал до пустого списка: ${detail}`);
     listHtml = `<p class="hint">${escapeHtml(T('keychain.renderDegraded'))}</p>`;
+    homeHtml = '<div id="kcFormHome" class="kc-form-home"></div>';
   }
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon('clippy')} ${T('keychain.title')}</h3>
   ${listHtml}
-  ${formHtml}
+  ${homeHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
   </div>
@@ -403,6 +435,18 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
 .kc-form-models-status { margin: var(--cs-space-1) 0 0; }
 .kc-form-models-status.is-error { color: var(--cs-error); }
+.kc-form-slot { flex: 1 1 100%; min-width: 0; }
+.kc-combo { position: relative; flex: 1 1 auto; min-width: 0; }
+.kc-combo > input { width: 100%; padding-right: 30px; }
+.kc-combo-arrow { position: absolute; top: 3px; right: 3px; bottom: 3px; width: 24px; min-height: 0; padding: 0; border: none; background: transparent; color: var(--cs-desc); display: inline-flex; align-items: center; justify-content: center; z-index: 2; }
+.kc-combo-arrow:hover { background: var(--cs-list-hover); color: var(--cs-fg); }
+.kc-combo-list { position: absolute; z-index: 40; top: calc(100% + 3px); left: 0; right: 0; max-height: 180px; overflow-y: auto; padding: 2px; border: 1px solid var(--cs-input-border); border-radius: var(--cs-radius-1); background: var(--cs-input-bg); box-shadow: var(--cs-shadow); }
+.kc-combo-count { position: sticky; top: 0; margin: 0; padding: 2px var(--cs-space-2); background: var(--cs-input-bg); color: var(--cs-desc); font-size: var(--cs-font-1); }
+.kc-combo-opt { display: flex; align-items: center; gap: 5px; padding: 3px var(--cs-space-2); border-radius: var(--cs-radius-1); color: var(--cs-input-fg); font-family: var(--vscode-editor-font-family); font-size: var(--cs-font-2); cursor: pointer; }
+.kc-combo-opt:hover, .kc-combo-opt.active { background: var(--cs-list-hover); }
+.kc-combo-opt .kc-combo-check { visibility: hidden; display: inline-flex; color: var(--cs-pass); }
+.kc-combo-opt.is-current .kc-combo-check { visibility: visible; }
+.kc-combo-empty { margin: 0; padding: 4px var(--cs-space-2); color: var(--cs-desc); font-size: var(--cs-font-1); }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -597,7 +641,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime — 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('…') call sites against this whitelist.
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading', 'keychain.formModelsCount', 'keychain.comboEmptyHint', 'keychain.comboNoMatches'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -810,11 +854,11 @@ saveAllBtn.addEventListener('click', () => {
   });
 });
 document.getElementById('chooseModel').addEventListener('click', () => vscode.postMessage({ command: 'chooseModel' }));
-// Batch 28.2: the add button opens the inline card on the CLIENT (no host
-// roundtrip) — the old native-InputBox chain (command keychainAdd) stays on
-// the host for compatibility but the webview no longer posts it.
+// Batch 28.4: the «Add profile» button opens the same form as a NEW card at
+// the end of the list (the trailing add-card) — and scrollIntoView to it is
+// the only allowed scroll in this flow.
 const keychainAddBtn = document.getElementById('keychainAdd');
-if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}));
+if (keychainAddBtn) keychainAddBtn.addEventListener('click', () => showForm({}, { scroll: true }));
 // Batch 27: keychain row buttons are delegated — each posts its command + profile id.
 // Batch 27.1: keychainBaseUrl additionally carries the row's input value.
 // Batch 28: key-level buttons carry data-keyid, move arrows carry data-dir.
@@ -853,11 +897,21 @@ const kcFormError = document.getElementById('kcFormError');
 const kcFormProvider = document.getElementById('kcFormProvider');
 const kcFormKeyInput = document.getElementById('kcFormKey');
 const kcFormModelInput = document.getElementById('kcFormModel');
-const kcFormModelList = document.getElementById('kcFormModelList');
 const kcFormPullBtn = document.getElementById('kcFormPullModels');
 const kcFormLabelInput = document.getElementById('kcFormLabel');
 const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
 const kcFormSaveBtn = document.getElementById('kcFormSave');
+// Batch 28.4: combobox parts (the old datalist sibling #kcFormModelList is
+// gone) + accordion mount points: the neutral hub #kcFormHome and the
+// trailing add-card. #kcForm is ONE node moved into the target card's
+// .kc-form-slot — that is why exactly one form can be open at any moment.
+const kcFormModelCombo = document.getElementById('kcFormModelCombo');
+const kcFormModelDropdown = document.getElementById('kcFormModelDropdown');
+const kcFormModelArrow = document.getElementById('kcFormModelArrow');
+const kcFormModelsCountEl = document.getElementById('kcFormModelsCount');
+const kcFormModelOptions = document.getElementById('kcFormModelOptions');
+const kcFormHome = document.getElementById('kcFormHome');
+const kcAddCard = document.querySelector('[data-add-card]');
 let formEditing = '';
 // Batch 28.3: live models in the form. After the key was pasted or the
 // provider changed we wait 600 ms (debounce) and post keychainFormModels
@@ -868,6 +922,12 @@ let formEditing = '';
 const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
 let formPullTimer = 0;
 let formPullSeq = 0;
+// Batch 28.4: pulled model ids (non-secret — safe for vscode.getState), the
+// highlighted option index and the "user typed" flag (open-by-focus shows ALL
+// models unfiltered; typing switches the list into substring-filter mode).
+let formModelsList = [];
+let comboActive = -1;
+let comboTyped = false;
 function setFormModelsStatus(text, isError) {
   if (!kcFormModelsStatus) return;
   kcFormModelsStatus.textContent = text || '';
@@ -903,15 +963,117 @@ function setFormError(msg) { if (!kcFormError) return; kcFormError.textContent =
 function setFormPullBusy(busy) { if (!kcFormPullBtn) return; kcFormPullBtn.disabled = busy; const label = kcFormPullBtn.querySelector('span:last-child'); if (label) label.textContent = busy ? L('models.loading') : L('keychain.formPullModels'); }
 function persistForm() {
   if (!kcForm || !formVisible()) return;
-  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value });
+  // models = non-secret pulled list (28.4); the API KEY never enters state.
+  writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value, models: formModelsList });
 }
-function showForm(values) {
+// ── Batch 28.4: model combobox core. Pure functions below the markers are
+// extracted and unit-tested as-is (tests/batch28-4). Plain JS only.
+/* cs-combo-core:start */
+function comboOpenList(models) { return Array.isArray(models) ? models.slice() : []; }
+function comboFilter(models, query) {
+  const list = Array.isArray(models) ? models.slice() : [];
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(function (m) { return String(m).toLowerCase().indexOf(q) !== -1; });
+}
+function comboIsCurrent(model, current) { return String(model || '') === String(current || ''); }
+/* cs-combo-core:end */
+function comboOpen() { return Boolean(kcFormModelDropdown) && !kcFormModelDropdown.classList.contains('hidden'); }
+function setComboExpanded(open) { if (kcFormModelInput) kcFormModelInput.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+function comboItems() { return comboTyped ? comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : '') : comboOpenList(formModelsList); }
+function comboOptEls() { return kcFormModelOptions ? Array.prototype.slice.call(kcFormModelOptions.querySelectorAll('.kc-combo-opt')) : []; }
+function renderCombo() {
+  if (!kcFormModelOptions || !kcFormModelDropdown) return;
+  const items = comboItems();
+  if (kcFormModelsCountEl) {
+    if (formModelsList.length) { kcFormModelsCountEl.textContent = L('keychain.formModelsCount').replace('{n}', String(formModelsList.length)); kcFormModelsCountEl.classList.remove('hidden'); }
+    else { kcFormModelsCountEl.textContent = ''; kcFormModelsCountEl.classList.add('hidden'); }
+  }
+  kcFormModelOptions.textContent = '';
+  const current = kcFormModelInput ? kcFormModelInput.value : '';
+  items.forEach(function (model, i) {
+    const opt = document.createElement('div');
+    opt.className = 'kc-combo-opt' + (i === comboActive ? ' active' : '') + (comboIsCurrent(model, current) ? ' is-current' : '');
+    opt.setAttribute('role', 'option');
+    opt.setAttribute('data-model', String(model));
+    const check = document.createElement('span');
+    check.className = 'kc-combo-check';
+    check.innerHTML = '<i class="codicon codicon-check" aria-hidden="true"></i>';
+    const name = document.createElement('span');
+    name.textContent = String(model);
+    opt.appendChild(check);
+    opt.appendChild(name);
+    kcFormModelOptions.appendChild(opt);
+  });
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'kc-combo-empty';
+    // N=0 pulled → «press Pull models» hint; typed-no-match → separate hint.
+    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') : L('keychain.comboEmptyHint');
+    kcFormModelOptions.appendChild(empty);
+  }
+}
+function openCombo() {
+  if (!kcFormModelDropdown) return;
+  comboActive = -1; comboTyped = false;
+  renderCombo();
+  kcFormModelDropdown.classList.remove('hidden');
+  setComboExpanded(true);
+}
+function refreshComboTyped() {
+  comboTyped = true; comboActive = -1;
+  renderCombo();
+  if (!kcFormModelDropdown || !comboOpen()) {
+    if (kcFormModelDropdown) kcFormModelDropdown.classList.remove('hidden');
+    setComboExpanded(true);
+  }
+}
+function closeCombo() {
+  if (!kcFormModelDropdown) return;
+  kcFormModelDropdown.classList.add('hidden');
+  comboActive = -1; comboTyped = false;
+  setComboExpanded(false);
+}
+function moveComboActive(delta) {
+  const opts = comboOptEls();
+  if (!opts.length) return;
+  comboActive = delta > 0 ? (comboActive + 1) % opts.length : (comboActive <= 0 ? opts.length - 1 : comboActive - 1);
+  opts.forEach(function (el, i) { el.classList.toggle('active', i === comboActive); });
+  try { opts[comboActive].scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ }
+}
+function pickComboOption(model) {
+  if (kcFormModelInput) kcFormModelInput.value = model;
+  closeCombo();
+  persistForm();
+}
+// Batch 28.4 accordion: mount the single #kcForm node into the target card's
+// slot; unknown/empty id → the trailing add-card (visible when mounted).
+function mountFormFor(id) {
+  if (!kcForm) return;
+  let slot = null;
+  if (id) {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('.kc-row[data-profile-id]'));
+    for (const row of rows) {
+      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); break; }
+    }
+  }
+  if (!slot && kcAddCard) {
+    slot = kcAddCard.querySelector('.kc-form-slot');
+    if (slot) kcAddCard.classList.remove('hidden');
+  }
+  if (slot) slot.appendChild(kcForm);
+}
+function showForm(values, opts) {
   if (!kcForm) return;
   const d = values || {};
+  const o = opts || {};
   clearFormPullTimer();
+  closeCombo();
   setFormModelsStatus('', false);
   formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
   kcForm.setAttribute('data-editing', formEditing);
+  formModelsList = Array.isArray(d.models) ? d.models.map(String) : [];
+  mountFormFor(formEditing);
   kcForm.classList.remove('hidden');
   if (kcFormProvider) kcFormProvider.value = d.provider || '';
   if (kcFormModelInput) kcFormModelInput.value = d.model || '';
@@ -921,14 +1083,22 @@ function showForm(values) {
   if (kcFormSaveBtn) { kcFormSaveBtn.disabled = false; const span = kcFormSaveBtn.querySelector('span:last-child'); if (span) span.textContent = L('keychain.formSave'); }
   setFormPullBusy(false);
   setFormError('');
+  // Batch 28.4: the ONLY allowed scroll is toward the newly added card;
+  // focus lands on the first field without moving the viewport (no jump).
+  if (o.scroll) { try { kcForm.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { try { kcForm.scrollIntoView(); } catch (e2) { /* ignore */ } } }
+  if (kcFormProvider) { try { kcFormProvider.focus({ preventScroll: true }); } catch (e) { try { kcFormProvider.focus(); } catch (e2) { /* ignore */ } } }
   persistForm();
 }
 function hideForm() {
   if (!kcForm) return;
   clearFormPullTimer();
+  closeCombo();
   kcForm.classList.add('hidden');
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
+  formModelsList = [];
+  if (kcFormHome) kcFormHome.appendChild(kcForm);
+  if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);
 }
 document.addEventListener('click', (event) => {
@@ -950,7 +1120,47 @@ document.addEventListener('click', (event) => {
   }
 });
 document.addEventListener('keydown', (event) => {
+  // Batch 28.4: while the pulled-models list is open Escape closes the LIST
+  // first (a second Escape then collapses the form without saving).
+  if (event.key === 'Escape' && formVisible() && comboOpen()) { closeCombo(); return; }
   if (event.key === 'Escape' && formVisible()) hideForm();
+});
+// Batch 28.4 combobox events: arrow click and focus open the FULL unfiltered
+// list (current model checked); typing filters it case-insensitively.
+// ArrowDown/Up move the active option, Enter selects it, Escape closes only
+// the list (stopPropagation keeps the form open). Manual typing stays valid.
+if (kcFormModelArrow) kcFormModelArrow.addEventListener('click', () => { if (comboOpen()) closeCombo(); else openCombo(); });
+if (kcFormModelInput) {
+  kcFormModelInput.addEventListener('focus', () => { if (formVisible()) openCombo(); });
+  kcFormModelInput.addEventListener('input', () => { if (formVisible() && comboOpen()) refreshComboTyped(); });
+  kcFormModelInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { if (comboOpen()) { closeCombo(); event.stopPropagation(); } return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (!comboOpen()) openCombo();
+      moveComboActive(event.key === 'ArrowDown' ? 1 : -1);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === 'Enter') {
+      if (!comboOpen()) return;
+      const opts = comboOptEls();
+      if (comboActive >= 0 && opts[comboActive]) pickComboOption(String(opts[comboActive].getAttribute('data-model') || ''));
+      else closeCombo();
+      event.preventDefault();
+    }
+  });
+}
+if (kcFormModelOptions) kcFormModelOptions.addEventListener('click', (event) => {
+  const hit = event.target instanceof Element ? event.target : null;
+  const opt = hit ? hit.closest('.kc-combo-opt') : null;
+  if (opt) pickComboOption(String(opt.getAttribute('data-model') || ''));
+});
+// Click anywhere outside the combo closes the dropdown (the form stays open).
+document.addEventListener('click', (event) => {
+  if (!comboOpen()) return;
+  const hit = event.target instanceof Element ? event.target : null;
+  if (hit && kcFormModelCombo && kcFormModelCombo.contains(hit)) return;
+  closeCombo();
 });
 [kcFormProvider, kcFormKeyInput, kcFormModelInput, kcFormLabelInput, kcFormBaseUrlInput].forEach((el) => {
   if (!el) return;
@@ -989,6 +1199,8 @@ if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (formVisible()) {
     formEditing = kcForm.getAttribute('data-editing') || '';
     if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    const prev = readFormState();
+    if (prev && !prev.submitted && Array.isArray(prev.models)) formModelsList = prev.models.map(String);
     persistForm();
     return;
   }
@@ -1040,21 +1252,23 @@ function renderChips() {
 auditScopeInput.addEventListener('input', renderChips);
 window.addEventListener('message', (event) => {
   const data = event.data || {};
-  // Batch 28.2: models pulled inside the profile card — fills the datalist;
-  // the card input keeps a user-typed model (only an empty field is preset).
+  // Batch 28.2/28.4: models pulled inside the profile card — feed the model
+  // combobox; the card input keeps a user-typed model (only an empty field is preset).
   if (data.type === 'formModels') {
     // Batch 28.3: a stale answer (the user retyped meanwhile, a newer request
     // is in flight) must NOT unlock the button or overwrite the status line.
     if (data.requestId !== formPullSeq) return;
     setFormPullBusy(false);
     if (data.ok) {
-      if (kcFormModelList) {
-        kcFormModelList.textContent = '';
-        for (const m of (data.models || [])) { const opt = document.createElement('option'); opt.value = String(m); kcFormModelList.appendChild(opt); }
-      }
+      // Batch 28.4: pulled models land in formModelsList (the datalist is gone);
+      // an open dropdown repaints in the SAME mode — full list when opened by
+      // focus/arrow (no filtering by the current value), typed-filter otherwise.
+      formModelsList = Array.isArray(data.models) ? data.models.map(String) : [];
       if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
+      if (comboOpen()) renderCombo();
       persistForm();
-      // Searchable combobox = input+datalist; the counter line is host-translated.
+      // The status line under the field is host-translated; the counter inside
+      // the dropdown is rendered by renderCombo from formModelsList.length.
       setFormModelsStatus(String(data.countText || ''), false);
     } else {
       if (data.message) setFormError(String(data.message));

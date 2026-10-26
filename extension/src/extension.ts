@@ -350,7 +350,10 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
     return { action: 'switch', apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
-    async onRateLimit(waitSeconds: number | undefined): Promise<FailoverSwitchDecision | undefined> {
+    async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota'): Promise<FailoverSwitchDecision | undefined> {
+      // Микро-батч 28.4: reason='quota' (HTTP 402/биллинг) — тот же решатель
+      // (усыпить ключ, ротировать), но в Output печатается честная причина.
+      const trigger = reason === 'quota' ? '402 billing-квота' : '429';
       let decision = runFailover(waitSeconds, options());
       if (decision.kind === 'switch') {
         // ключ без секрета не годится: broken и шаг дальше по цепочке
@@ -362,7 +365,7 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
         if (decision.kind === 'switch') {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return undefined;
-          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (429; ${decision.fromLabel} спит ${decision.sleepSeconds}с), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
+          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} спит ${decision.sleepSeconds}с), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
           return low;
         }
       }

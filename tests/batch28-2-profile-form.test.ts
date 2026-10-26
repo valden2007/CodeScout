@@ -259,8 +259,10 @@ describe('микробатч 28.2: матрица рендера формы (о�
     const handler = source.slice(source.indexOf("closest('[data-kcf]')"), source.indexOf("document.addEventListener('keydown'"));
     expect(handler.length).toBeGreaterThan(100);
     expect(handler).not.toContain('postMessage');
-    // Кнопка «+ Добавить профиль» больше не шлёт keychainAdd — открывает форму.
-    expect(source).toContain("keychainAddBtn.addEventListener('click', () => showForm({}))");
+    // Кнопка «+ Добавить профиль» больше не шлёт keychainAdd — открывает ту же
+    // форму новой карточкой в конце списка (28.4: единственный допустимый
+    // скролл — scrollIntoView к новому месту).
+    expect(source).toContain("keychainAddBtn.addEventListener('click', () => showForm({}, { scroll: true }))");
   });
 
   it('новые команды в KNOWN_SETTINGS_COMMANDS', async () => {

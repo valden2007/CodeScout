@@ -771,5 +771,38 @@ pre-design now.
      Секрет из поля НИКОГДА не пишется (e2e: счётчик SecretStorage не
      растёт, profiles пуст). Тесты: tests/batch28-3-live-models.test.ts.
      Tests: 643.
+ 35. Аккордеон + честный комбобокс + квота (микро-батч 28.4):
+     a) Редактирование ВНУТРИ карточки: #kcForm — единственный узел, живёт
+     в нейтральном хабе #kcFormHome; «Редактировать» переносит его в
+     .kc-form-slot кликнутой карточки (showForm→mountFormFor), «+ Добавить
+     профиль» — в скрытую add-card в конце списка + scrollIntoView
+     (единственный допустимый скролл); фокус на первое поле через
+     preventScroll (без прыжка взгляда). Одна форма на список — структурно:
+     узлов-форм ровно один. Хост при ошибке валидации рендерит форму сразу
+     внутри целевой карточки (draft), для нового/удалённого профиля — в
+     add-card. Escape: сначала закрывает список моделей, потом форму;
+     «Отмена» — collapse без postMessage. Рендер формы — под try/catch
+     деградации 28.1; контракт в тестах — div-предки #kcForm по HTML-дереву.
+     b) Комбобокс вместо datalist: input+dropdown (#kcFormModelDropdown),
+     раскрытие по стрелке/фокусу = ВСЕ подтянутые модели БЕЗ фильтрации
+     текущим значением, текущая с галочкой (comboIsCurrent); печать
+     фильтрует подстрокой без учёта регистра (comboFilter); над опциями
+     счётчик «N моделей» (keychain.formModelsCount), при N=0 — подсказка
+     «нажмите Подтянуть модели» (comboEmptyHint; typing-no-match —
+     comboNoMatches); стрелки ↑/↓ = активная опция, Enter = выбор, Escape =
+     закрыть СПИСОК (не форму); ручной ввод модели живёт как раньше. Ядро
+     combo* помечено маркерами cs-combo-core и тестируется как есть
+     (11 моделей → 11 опций при непустом текущем; подстрока → только
+     совпадения).
+     c) Классификатор квот: новая категория 'quota' в error-classifier
+     (HTTP 402 у ProviderHttpError/в тексте; insufficient_quota, billing,
+     payment required, «Upgrade to … Tier»), проверяется ДО rate-limit-текста.
+     llm-client: 402 → ProviderHttpError(402), при включённом failover —
+     onRateLimit(waitSeconds,'quota') = усыпить ключ и ротация (switch/wait/
+     stop); без failover — мгновенный skip (локальная лестница по billing
+     бессмысленна). skipBreakerFeed по quota ПРОЗРАЧНА (не инкрементит,
+     не сбрасывает) — предохранитель не стопит; unknown/auth/parse стопят
+     как раньше. err.title/msg/hint.quota в обоих словарях.
+     Тесты: tests/batch28-4-inline-combobox.test.ts. Tests: 666.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.
