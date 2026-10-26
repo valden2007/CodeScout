@@ -193,7 +193,9 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
 // Сохранение — кнопка «Сохранить профиль» (command keychainFormSave),
 // отмена/Escape закрывают без postMessage. «Подтянуть модели» шлёт
 // keychainFormModels с ключом ИЗ ПОЛЯ формы — секрет до «Сохранить» нигде
-// не появляется.
+// не появляется. Микро-батч 28.3: тот же запрос авто-стаётся дебаунсом
+// 600мс после вставки ключа/смены провайдера; результат — datalist +
+// счётчик «N моделей», ошибка — подсказка категории внутри карточки.
 function keychainFormHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   const draft = state.keychainFormDraft;
   const open = draft !== undefined;
@@ -216,6 +218,7 @@ function keychainFormHtml(T: (key: string, vars?: Record<string, string | number
     <datalist id="kcFormModelList">${modelOption}</datalist>
     <button id="kcFormPullModels" type="button" class="secondary">${icon('cloud-download')}<span>${T('keychain.formPullModels')}</span></button>
   </div>
+  <p class="hint kc-form-models-status hidden" id="kcFormModelsStatus"></p>
   <p class="hint">${T('keychain.formModelHint')}</p>
   <label for="kcFormLabel">${T('keychain.formLabel')}</label>
   <input id="kcFormLabel" type="text" autocomplete="off" placeholder="${escapeHtml(T('keychain.formLabelHint'))}" value="${escapeHtml((draft?.label ?? '').trim())}">
@@ -398,6 +401,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-form-pull input { flex: 1 1 auto; min-width: 0; }
 .kc-form-pull button { width: auto; flex: 0 0 auto; }
 .kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+.kc-form-models-status { margin: var(--cs-space-1) 0 0; }
+.kc-form-models-status.is-error { color: var(--cs-error); }
 </style>
 </head>
 <body data-anchor="${escapeHtml(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -588,7 +593,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 // (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
 try {
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+// Batch 28.3 FIX (raw i18n key): the UI map MUST contain every key the L()
+// helper below pulls at runtime — 'keychain.formSave' was missing, so the
+// client-opened form showed the raw key on the Save button. A contract test
+// now diffs all L('…') call sites against this whitelist.
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -850,6 +859,43 @@ const kcFormLabelInput = document.getElementById('kcFormLabel');
 const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
 const kcFormSaveBtn = document.getElementById('kcFormSave');
 let formEditing = '';
+// Batch 28.3: live models in the form. After the key was pasted or the
+// provider changed we wait 600 ms (debounce) and post keychainFormModels
+// with the key FROM THE FIELD; the «Pull models» button stays a manual
+// instant trigger. Stale answers (requestId) are dropped, the status line
+// shows loading → "N models" counter or the category hint (401/404/net);
+// the model can always be typed by hand.
+const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
+let formPullTimer = 0;
+let formPullSeq = 0;
+function setFormModelsStatus(text, isError) {
+  if (!kcFormModelsStatus) return;
+  kcFormModelsStatus.textContent = text || '';
+  kcFormModelsStatus.classList.toggle('is-error', Boolean(isError));
+  kcFormModelsStatus.classList.toggle('hidden', !text);
+}
+function clearFormPullTimer() { if (formPullTimer) { clearTimeout(formPullTimer); formPullTimer = 0; } }
+function requestFormModels() {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  clearFormPullTimer();
+  formPullSeq += 1;
+  setFormPullBusy(true);
+  setFormModelsStatus(L('keychain.formModelsLoading'), false);
+  vscode.postMessage({
+    command: 'keychainFormModels',
+    requestId: formPullSeq,
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    profileId: formEditing || undefined,
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+}
+function scheduleFormPull() {
+  clearFormPullTimer();
+  if (!formVisible() || !kcFormProvider || !kcFormKeyInput) return;
+  if (!kcFormProvider.value || !kcFormKeyInput.value.trim()) return;
+  formPullTimer = setTimeout(() => { formPullTimer = 0; requestFormModels(); }, 600);
+}
 function readFormState() { try { const s = vscode.getState(); return (s && s.csProfileForm) || null; } catch (e) { return null; } }
 function writeFormState(value) { try { const s = vscode.getState() || {}; s.csProfileForm = value; vscode.setState(s); } catch (e) { /* state unsupported */ } }
 function formVisible() { return Boolean(kcForm) && !kcForm.classList.contains('hidden'); }
@@ -862,6 +908,8 @@ function persistForm() {
 function showForm(values) {
   if (!kcForm) return;
   const d = values || {};
+  clearFormPullTimer();
+  setFormModelsStatus('', false);
   formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
   kcForm.setAttribute('data-editing', formEditing);
   kcForm.classList.remove('hidden');
@@ -877,6 +925,7 @@ function showForm(values) {
 }
 function hideForm() {
   if (!kcForm) return;
+  clearFormPullTimer();
   kcForm.classList.add('hidden');
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
@@ -908,17 +957,11 @@ document.addEventListener('keydown', (event) => {
   el.addEventListener('input', persistForm);
   el.addEventListener('change', persistForm);
 });
-if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', () => {
-  if (!kcFormProvider || !kcFormKeyInput) return;
-  setFormPullBusy(true);
-  vscode.postMessage({
-    command: 'keychainFormModels',
-    provider: kcFormProvider.value,
-    apiKey: kcFormKeyInput.value.trim() || undefined,
-    profileId: formEditing || undefined,
-    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
-  });
-});
+// Batch 28.3: manual trigger stays — instant, and it cancels a pending
+// debounced auto-pull. Auto trigger: key paste / provider change → 600 ms.
+if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', requestFormModels);
+if (kcFormKeyInput) kcFormKeyInput.addEventListener('input', scheduleFormPull);
+if (kcFormProvider) kcFormProvider.addEventListener('change', scheduleFormPull);
 if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (!kcFormProvider || !kcFormKeyInput) return;
   // Client-side gate first: provider picked; a NEW profile needs a key.
@@ -1000,6 +1043,9 @@ window.addEventListener('message', (event) => {
   // Batch 28.2: models pulled inside the profile card — fills the datalist;
   // the card input keeps a user-typed model (only an empty field is preset).
   if (data.type === 'formModels') {
+    // Batch 28.3: a stale answer (the user retyped meanwhile, a newer request
+    // is in flight) must NOT unlock the button or overwrite the status line.
+    if (data.requestId !== formPullSeq) return;
     setFormPullBusy(false);
     if (data.ok) {
       if (kcFormModelList) {
@@ -1008,8 +1054,12 @@ window.addEventListener('message', (event) => {
       }
       if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
       persistForm();
-    } else if (data.message) {
-      setFormError(String(data.message));
+      // Searchable combobox = input+datalist; the counter line is host-translated.
+      setFormModelsStatus(String(data.countText || ''), false);
+    } else {
+      if (data.message) setFormError(String(data.message));
+      // Category hint (401/404/network) lives inside the card too.
+      setFormModelsStatus(String(data.hint || data.message || ''), true);
     }
     return;
   }

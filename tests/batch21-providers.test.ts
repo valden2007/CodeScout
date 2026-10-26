@@ -10,6 +10,7 @@ import {
   fetchLiveModels,
   keyUrl,
   normalizeProvider,
+  PROVIDERS,
   PROVIDER_ORDER,
   resolveApiKey,
   resolveBaseUrl,
@@ -91,13 +92,13 @@ describe('батч 21: конфигурация топ-12 провайдеров
     }
   });
 
-  it('витрина PROVIDER_ORDER включает новых, openrouter остаётся за витриной', () => {
-    for (const provider of ['deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']) {
+  it('витрина PROVIDER_ORDER включает новых, openrouter и zai (28.3: единый порядок из PROVIDERS)', () => {
+    for (const provider of ['deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'openrouter', 'zai']) {
       expect(PROVIDER_ORDER).toContain(provider);
     }
-    expect(PROVIDER_ORDER).not.toContain('openrouter');
-    // старый порядок первых семи не тронут
-    expect(PROVIDER_ORDER.slice(0, 7)).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github']);
+    // Микро-батч 28.3: порядок больше не отдельный массив — custom + ключи PROVIDERS.
+    expect(PROVIDER_ORDER[0]).toBe('custom');
+    expect(PROVIDER_ORDER.slice(1)).toEqual(Object.keys(PROVIDERS));
   });
 
   it('normalizeProvider знает новых; ошибка перечисляет список', () => {

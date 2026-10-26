@@ -162,6 +162,7 @@
             "opencode",
             "gemini",
             "groq",
+            "openrouter",
             "github",
             "deepseek",
             "together",
@@ -170,7 +171,7 @@
             "nvidia",
             "hyperbolic",
             "cerebras",
-            "openrouter"
+            "zai"
           ],
           "default": "gemini",
           "description": "%provider.description%"

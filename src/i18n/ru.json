@@ -452,5 +452,7 @@
   "keychain.formSavedNotify": "Профиль <{label}> сохранён",
   "keychain.formUnknownProfile": "Профиль уже удалён — нечего редактировать",
   "keychain.formModelsErr": "Не удалось подтянуть модели — проверь ключ и Base URL.",
-  "keychain.formModelsEmpty": "Провайдер не вернул ни одной модели."
+  "keychain.formModelsEmpty": "Провайдер не вернул ни одной модели.",
+  "keychain.formModelsLoading": "Подтягиваем модели…",
+  "keychain.formModelsCount": "{n} моделей"
 }

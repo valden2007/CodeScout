@@ -221,7 +221,6 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5e3) {
     return { ok: false, status: "noAnswer", baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
   }
 }
-var PROVIDER_ORDER = ["custom", "openai", "anthropic", "opencode", "gemini", "groq", "github", "deepseek", "together", "sambanova", "siliconflow", "nvidia", "hyperbolic", "cerebras"];
 var PROVIDERS = {
   openai: {
     baseUrl: "https://api.openai.com/v1",
@@ -317,8 +316,17 @@ var PROVIDERS = {
     envKey: "CEREBRAS_API_KEY",
     defaultModel: "llama3.1-8b",
     keyUrl: "https://cloud.cerebras.ai"
+  },
+  // МИКРО-БАТЧ 28.3: Z.ai (智谱开放平台) — OpenAI-совместимый v4-эндпоинт;
+  // ключи формата «id.secret» без стабильного префикса — автодетект не гадаем.
+  zai: {
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    envKey: "ZAI_API_KEY",
+    defaultModel: "glm-4.5-air",
+    keyUrl: "https://open.bigmodel.cn/usercenter/apikeys"
   }
 };
+var PROVIDER_ORDER = ["custom", ...Object.keys(PROVIDERS)];
 var SK_AMBIGUOUS_OPTIONS = [
   { label: "OpenAI", provider: "openai" },
   { label: "DeepSeek", provider: "deepseek" },
@@ -1113,7 +1121,9 @@ var ru_default = {
   "keychain.formSavedNotify": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C <{label}> \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D",
   "keychain.formUnknownProfile": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0443\u0436\u0435 \u0443\u0434\u0430\u043B\u0451\u043D \u2014 \u043D\u0435\u0447\u0435\u0433\u043E \u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C",
   "keychain.formModelsErr": "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438 \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C \u043A\u043B\u044E\u0447 \u0438 Base URL.",
-  "keychain.formModelsEmpty": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u043D\u0438 \u043E\u0434\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438."
+  "keychain.formModelsEmpty": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u043D\u0438 \u043E\u0434\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438.",
+  "keychain.formModelsLoading": "\u041F\u043E\u0434\u0442\u044F\u0433\u0438\u0432\u0430\u0435\u043C \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
+  "keychain.formModelsCount": "{n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439"
 };
 
 // ../src/i18n/en.json
@@ -1573,7 +1583,9 @@ var en_default = {
   "keychain.formSavedNotify": 'Profile "{label}" saved',
   "keychain.formUnknownProfile": "Profile was already removed \u2014 nothing to edit",
   "keychain.formModelsErr": "Could not fetch models \u2014 check the key and the base URL.",
-  "keychain.formModelsEmpty": "The provider returned no models."
+  "keychain.formModelsEmpty": "The provider returned no models.",
+  "keychain.formModelsLoading": "Fetching models\u2026",
+  "keychain.formModelsCount": "{n} models"
 };
 
 // ../src/i18n/index.ts
@@ -5455,6 +5467,7 @@ function keychainFormHtml(T, state) {
     <datalist id="kcFormModelList">${modelOption}</datalist>
     <button id="kcFormPullModels" type="button" class="secondary">${icon2("cloud-download")}<span>${T("keychain.formPullModels")}</span></button>
   </div>
+  <p class="hint kc-form-models-status hidden" id="kcFormModelsStatus"></p>
   <p class="hint">${T("keychain.formModelHint")}</p>
   <label for="kcFormLabel">${T("keychain.formLabel")}</label>
   <input id="kcFormLabel" type="text" autocomplete="off" placeholder="${escapeHtml2(T("keychain.formLabelHint"))}" value="${escapeHtml2((draft?.label ?? "").trim())}">
@@ -5620,6 +5633,8 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-form-pull input { flex: 1 1 auto; min-width: 0; }
 .kc-form-pull button { width: auto; flex: 0 0 auto; }
 .kc-form-error { color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 12%, transparent); border-radius: var(--cs-radius-1); padding: var(--cs-space-1) var(--cs-space-2); font-size: var(--cs-font-1); margin: var(--cs-space-2) 0 0; }
+.kc-form-models-status { margin: var(--cs-space-1) 0 0; }
+.kc-form-models-status.is-error { color: var(--cs-error); }
 </style>
 </head>
 <body data-anchor="${escapeHtml2(anchor)}" ${uiBodyAttrs(prefs)}>
@@ -5810,7 +5825,11 @@ button.is-dirty .dirty-dot { display: inline-block; }
 // (DevTools) and to the data-cs-ready marker. Keep this script Cyrillic-free.
 try {
 const vscode = acquireVsCodeApi();
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels"].reduce((acc, k) => {
+// Batch 28.3 FIX (raw i18n key): the UI map MUST contain every key the L()
+// helper below pulls at runtime \u2014 'keychain.formSave' was missing, so the
+// client-opened form showed the raw key on the Save button. A contract test
+// now diffs all L('\u2026') call sites against this whitelist.
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -6075,6 +6094,43 @@ const kcFormLabelInput = document.getElementById('kcFormLabel');
 const kcFormBaseUrlInput = document.getElementById('kcFormBaseUrl');
 const kcFormSaveBtn = document.getElementById('kcFormSave');
 let formEditing = '';
+// Batch 28.3: live models in the form. After the key was pasted or the
+// provider changed we wait 600 ms (debounce) and post keychainFormModels
+// with the key FROM THE FIELD; the \xABPull models\xBB button stays a manual
+// instant trigger. Stale answers (requestId) are dropped, the status line
+// shows loading \u2192 "N models" counter or the category hint (401/404/net);
+// the model can always be typed by hand.
+const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
+let formPullTimer = 0;
+let formPullSeq = 0;
+function setFormModelsStatus(text, isError) {
+  if (!kcFormModelsStatus) return;
+  kcFormModelsStatus.textContent = text || '';
+  kcFormModelsStatus.classList.toggle('is-error', Boolean(isError));
+  kcFormModelsStatus.classList.toggle('hidden', !text);
+}
+function clearFormPullTimer() { if (formPullTimer) { clearTimeout(formPullTimer); formPullTimer = 0; } }
+function requestFormModels() {
+  if (!kcFormProvider || !kcFormKeyInput) return;
+  clearFormPullTimer();
+  formPullSeq += 1;
+  setFormPullBusy(true);
+  setFormModelsStatus(L('keychain.formModelsLoading'), false);
+  vscode.postMessage({
+    command: 'keychainFormModels',
+    requestId: formPullSeq,
+    provider: kcFormProvider.value,
+    apiKey: kcFormKeyInput.value.trim() || undefined,
+    profileId: formEditing || undefined,
+    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
+  });
+}
+function scheduleFormPull() {
+  clearFormPullTimer();
+  if (!formVisible() || !kcFormProvider || !kcFormKeyInput) return;
+  if (!kcFormProvider.value || !kcFormKeyInput.value.trim()) return;
+  formPullTimer = setTimeout(() => { formPullTimer = 0; requestFormModels(); }, 600);
+}
 function readFormState() { try { const s = vscode.getState(); return (s && s.csProfileForm) || null; } catch (e) { return null; } }
 function writeFormState(value) { try { const s = vscode.getState() || {}; s.csProfileForm = value; vscode.setState(s); } catch (e) { /* state unsupported */ } }
 function formVisible() { return Boolean(kcForm) && !kcForm.classList.contains('hidden'); }
@@ -6087,6 +6143,8 @@ function persistForm() {
 function showForm(values) {
   if (!kcForm) return;
   const d = values || {};
+  clearFormPullTimer();
+  setFormModelsStatus('', false);
   formEditing = d.id ? String(d.id) : (d.editing ? String(d.editing) : '');
   kcForm.setAttribute('data-editing', formEditing);
   kcForm.classList.remove('hidden');
@@ -6102,6 +6160,7 @@ function showForm(values) {
 }
 function hideForm() {
   if (!kcForm) return;
+  clearFormPullTimer();
   kcForm.classList.add('hidden');
   kcForm.setAttribute('data-editing', '');
   formEditing = '';
@@ -6133,17 +6192,11 @@ document.addEventListener('keydown', (event) => {
   el.addEventListener('input', persistForm);
   el.addEventListener('change', persistForm);
 });
-if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', () => {
-  if (!kcFormProvider || !kcFormKeyInput) return;
-  setFormPullBusy(true);
-  vscode.postMessage({
-    command: 'keychainFormModels',
-    provider: kcFormProvider.value,
-    apiKey: kcFormKeyInput.value.trim() || undefined,
-    profileId: formEditing || undefined,
-    baseUrl: kcFormBaseUrlInput ? kcFormBaseUrlInput.value.trim() : ''
-  });
-});
+// Batch 28.3: manual trigger stays \u2014 instant, and it cancels a pending
+// debounced auto-pull. Auto trigger: key paste / provider change \u2192 600 ms.
+if (kcFormPullBtn) kcFormPullBtn.addEventListener('click', requestFormModels);
+if (kcFormKeyInput) kcFormKeyInput.addEventListener('input', scheduleFormPull);
+if (kcFormProvider) kcFormProvider.addEventListener('change', scheduleFormPull);
 if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (!kcFormProvider || !kcFormKeyInput) return;
   // Client-side gate first: provider picked; a NEW profile needs a key.
@@ -6225,6 +6278,9 @@ window.addEventListener('message', (event) => {
   // Batch 28.2: models pulled inside the profile card \u2014 fills the datalist;
   // the card input keeps a user-typed model (only an empty field is preset).
   if (data.type === 'formModels') {
+    // Batch 28.3: a stale answer (the user retyped meanwhile, a newer request
+    // is in flight) must NOT unlock the button or overwrite the status line.
+    if (data.requestId !== formPullSeq) return;
     setFormPullBusy(false);
     if (data.ok) {
       if (kcFormModelList) {
@@ -6233,8 +6289,12 @@ window.addEventListener('message', (event) => {
       }
       if (data.model && kcFormModelInput && !kcFormModelInput.value) kcFormModelInput.value = String(data.model);
       persistForm();
-    } else if (data.message) {
-      setFormError(String(data.message));
+      // Searchable combobox = input+datalist; the counter line is host-translated.
+      setFormModelsStatus(String(data.countText || ''), false);
+    } else {
+      if (data.message) setFormError(String(data.message));
+      // Category hint (401/404/network) lives inside the card too.
+      setFormModelsStatus(String(data.hint || data.message || ''), true);
     }
     return;
   }
@@ -7786,8 +7846,9 @@ function activate(context) {
             }
             if (message.command === "keychainFormModels") {
               const lang = currentReportLanguage();
+              const requestId = typeof message.requestId === "number" ? message.requestId : void 0;
               const postModels = (payload) => {
-                void settingsPanel?.webview.postMessage({ type: "formModels", ...payload });
+                void settingsPanel?.webview.postMessage({ type: "formModels", ...requestId !== void 0 ? { requestId } : {}, ...payload });
               };
               let provider;
               try {
@@ -7807,19 +7868,27 @@ function activate(context) {
               const storedKey = profileId ? await readProfileSecret(context.secrets, profileId) : void 0;
               const key = draftKey || storedKey || "";
               const overrideBase = profileBaseUrl(baseRaw) ?? profile?.baseUrl;
-              if (!key && !isLocalBaseUrl(resolveBaseUrl(provider, void 0, overrideBase))) {
+              let baseUrl = "";
+              try {
+                baseUrl = resolveBaseUrl(provider, void 0, overrideBase);
+              } catch {
+                postModels({ ok: false, message: t("keychain.formModelsErr", lang), hint: t("keychain.formErrBaseUrl", lang), category: "unknown" });
+                return;
+              }
+              if (!key && !isLocalBaseUrl(baseUrl)) {
                 postModels({ ok: false, message: t("keychain.formErrKey", lang) });
                 return;
               }
               try {
-                const models = await fetchModels({ provider, model: defaultModel(provider), key, baseUrl: "", profileBaseUrl: overrideBase, userChosenModel: false });
+                const models = await fetchLiveModelsCached(baseUrl, sanitizeApiKey(key), fetch, MODELS_FETCH_TIMEOUT_MS, provider, (messageText) => hostOutput ? hostOutput.appendLine(messageText) : console.warn(messageText), false, (messageText) => hostOutput?.appendLine(messageText));
                 if (models.length === 0) {
                   postModels({ ok: false, message: t("keychain.formModelsEmpty", lang) });
                   return;
                 }
-                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)) });
-              } catch {
-                postModels({ ok: false, message: t("keychain.formModelsErr", lang) });
+                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)), countText: t("keychain.formModelsCount", lang, { n: models.length }) });
+              } catch (error) {
+                const formatted = formatError(error, lang);
+                postModels({ ok: false, message: formatted.message || t("keychain.formModelsErr", lang), hint: formatted.actionHint, category: formatted.category });
               }
               return;
             }

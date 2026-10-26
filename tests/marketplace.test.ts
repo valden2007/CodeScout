@@ -63,11 +63,13 @@ describe('батч 16: zero-config OpenCode Go', () => {
     expect(extension).toContain("'Anthropic'");
   });
 
-  it('батч 18: порядок провайдеров custom → openai → anthropic → …, auto скрыт из UI (батч 21: витрина расширена топ-12)', () => {
-    expect(PROVIDER_ORDER).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']);
+  it('батч 18 + 28.3: единый порядок из PROVIDERS (custom → openai → …, openrouter и zai в витрине), auto скрыт', () => {
+    expect(PROVIDER_ORDER).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'openrouter', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'zai']);
     expect(PROVIDER_ORDER).not.toContain('auto');
     const providers = readFileSync('src/providers.ts', 'utf8');
-    expect(providers).toContain("['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']");
+    // Порядок выводится из реестра — ручная копия, разошедшаяся с PROVIDERS, невозможна.
+    expect(providers).toContain("export const PROVIDER_ORDER: ProviderName[] = ['custom', ...(Object.keys(PROVIDERS) as (keyof typeof PROVIDERS)[])]");
+    expect(providers).not.toContain("['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek'");
     const center = readFileSync('extension/src/settingsHtml.ts', 'utf8');
     expect(center).toContain('[...PROVIDER_ORDER]');
     expect(center).not.toContain("['auto',");
@@ -100,7 +102,7 @@ describe('батч 16: zero-config OpenCode Go', () => {
     expect(defaultModel('gemini')).toBe('gemini-1.5-flash');
     expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1');
     expect(extManifest().contributes.configuration.properties['codescout.model'].default).toBe('gemini-1.5-flash');
-    expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'openrouter']);
+    expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'openrouter', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'zai']);
   });
 
   it('батч 18: openai и anthropic — полноценные провайдеры (URL, env, model, keyUrl)', () => {

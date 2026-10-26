@@ -740,5 +740,36 @@ pre-design now.
       матрица форма открыта/закрыта + parse-контракт скрипта + e2e
       save/validate/edit/cancel/авто-метка/подтяжка/стрелки —
       tests/batch28-2-profile-form.test.ts. Tests: 619.
+ 34. Живые модели + витрина провайдеров (микро-батч 28.3):
+     a) ROOT CAUSE сырого ключа «keychain.formSave» на кнопке сохранения —
+     клиентский L() берёт строки из встроенного UI-словаря (белый список
+     ключей в шаблоне скрипта), а keychain.formSave в списке отсутствовал:
+     серверный рендер давал перевод, но showForm() на клиенте возвращал
+     сырой ключ. Фикс: ключ (и formModelsLoading) в белый список; новый
+     контракт-тест сверяет ВСЕ L('…') вызовы скрипта с UI-словарём и
+     рендер-матрицу (5 состояний × ru/en: видимые подписи button/label без
+     совпадений с ключами словарей; «rules.md» тех-термин, не ключ).
+     b) openrouter был в PROVIDERS, но отсутствовал в списках UI, потому
+     что PROVIDER_ORDER держался отдельным ручным массивом — теперь
+     PROVIDER_ORDER = ['custom', ...Object.keys(PROVIDERS)] (единый
+     порядок из реестра, расхождение невозможно); добавлен zai
+     (baseUrl https://open.bigmodel.cn/api/paas/v4, env ZAI_API_KEY,
+     defaultModel glm-4.5-air, без автодетекта — у ключей «id.secret» нет
+     стабильного префикса). openrouter+zai тем самым в четырёх списках:
+     select формы, legacy-select, QuickPick добавления/свитча профилей,
+     пикер догона (батч 25) + enum манифеста (сверен с порядком тестом).
+     c) Живые модели в форме: keychainFormModels переписан на прямой
+     fetchLiveModelsCached (временный ключ из поля, tolerateErrors=false,
+     без notifyModelsBusy — авто-подтяжка не глушит глобальный select);
+     клиент: debounce 600мс после вставки ключа/смены провайдера → тот же
+     запрос; кнопка «Подтянуть модели» = ручной мгновенный триггер;
+     requestId в обе стороны — устаревшие ответы отбрасываются; статус
+     «Подтягиваем модели…» → счётчик «N моделей» (countText шлёт хост,
+     перевод через t()); ошибка — категория formatError (401→auth_invalid_key,
+     404→model_not_found, сеть→connection_refused) с подсказкой внутри
+     карточки; datalist input = поиск + ручной ввод модели остаётся.
+     Секрет из поля НИКОГДА не пишется (e2e: счётчик SecretStorage не
+     растёт, profiles пуст). Тесты: tests/batch28-3-live-models.test.ts.
+     Tests: 643.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

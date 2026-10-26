@@ -1,4 +1,4 @@
-export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'together' | 'sambanova' | 'siliconflow' | 'nvidia' | 'hyperbolic' | 'cerebras' | 'custom';
+export type ProviderName = 'gemini' | 'groq' | 'openrouter' | 'github' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'together' | 'sambanova' | 'siliconflow' | 'nvidia' | 'hyperbolic' | 'cerebras' | 'zai' | 'custom';
 
 export interface DetectedProvider {
   provider: ProviderName;
@@ -265,14 +265,14 @@ export interface ProviderDefinition {
   keyUrl: string;
 }
 
-// Батч 18: жёсткий порядок отображения в UI (селект центра, quickPick, wizard).
-// Системный 'auto' из списка СКРЫТ: автодетект по префиксу ключа работает
-// под капотом в saveKeyProvider/setApiKey. openrouter остаётся рабочим
-// (sk-or- детект, env-ключ), но из витрины убран.
-// Батч 21: к витрине добавлены семь zero-config OpenAI-совместимых платформ
-// (top-12 из коробки) — меньше ручной настройки custom-эндпоинтов.
-export const PROVIDER_ORDER: ProviderName[] = ['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras'];
-
+// МИКРО-БАТЧ 28.3: единый порядок провайдеров во ВСЕХ списках UI (select
+// формы профиля, legacy-select, QuickPick свитча профилей, пикер догона
+// батча 25) = ['custom', ...Object.keys(PROVIDERS)]. Порядок задаётся
+// порядком полей в PROVIDERS — расхождение списка с реестром стало
+// невозможным (фикс 28.3: openrouter был в PROVIDERS, но отсутствовал в
+// витрине, потому что порядок держался отдельным ручным массивом).
+// Системный 'auto' не входит: автодетект по префиксу ключа живёт под
+// капотом в saveKeyProvider/setApiKey.
 export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefinition> = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -368,8 +368,19 @@ export const PROVIDERS: Record<Exclude<ProviderName, 'custom'>, ProviderDefiniti
     envKey: 'CEREBRAS_API_KEY',
     defaultModel: 'llama3.1-8b',
     keyUrl: 'https://cloud.cerebras.ai'
+  },
+  // МИКРО-БАТЧ 28.3: Z.ai (智谱开放平台) — OpenAI-совместимый v4-эндпоинт;
+  // ключи формата «id.secret» без стабильного префикса — автодетект не гадаем.
+  zai: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    envKey: 'ZAI_API_KEY',
+    defaultModel: 'glm-4.5-air',
+    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys'
   }
 };
+
+// МИКРО-БАТЧ 28.3: единый порядок — из самого реестра (см. комментарий выше).
+export const PROVIDER_ORDER: ProviderName[] = ['custom', ...(Object.keys(PROVIDERS) as (keyof typeof PROVIDERS)[])];
 
 // Батч 21, п.2: список для QuickPick-развилки неоднозначного `sk-`.
 // Метка — провайдер не переводится (тех-термины/i18n-вайтлист).

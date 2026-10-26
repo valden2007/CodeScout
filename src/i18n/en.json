@@ -452,5 +452,7 @@
   "keychain.formSavedNotify": "Profile \"{label}\" saved",
   "keychain.formUnknownProfile": "Profile was already removed — nothing to edit",
   "keychain.formModelsErr": "Could not fetch models — check the key and the base URL.",
-  "keychain.formModelsEmpty": "The provider returned no models."
+  "keychain.formModelsEmpty": "The provider returned no models.",
+  "keychain.formModelsLoading": "Fetching models…",
+  "keychain.formModelsCount": "{n} models"
 }

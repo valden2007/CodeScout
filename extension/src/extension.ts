@@ -1268,6 +1268,9 @@ interface SettingsMessage {
   profileId?: string;
   label?: string;
   model?: string;
+  // МИКРО-БАТЧ 28.3: номер запроса авто-подтяжки — хост эхом возвращает его
+  // в formModels, вебвью отбрасывает устаревшие ответы.
+  requestId?: number;
 }
 
 const RULES_TEMPLATE = '# Правила проекта CodeScout\n\nМодель подмешивает этот файл в каждый промт ревью.\n\n## Примеры\n- Не флагать tenant-scoped чтения через Prisma.\n- Все внешние HTTP-вызовы — с таймаутом и ретраями.\n- Миграции БД — только через папку prisma/migrations.\n';
@@ -1760,11 +1763,15 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             if (message.command === 'keychainFormModels') {
               const lang = currentReportLanguage();
+              const requestId = typeof message.requestId === 'number' ? message.requestId : undefined;
               const postModels = (payload: Record<string, unknown>): void => {
-                void settingsPanel?.webview.postMessage({ type: 'formModels', ...payload });
+                void settingsPanel?.webview.postMessage({ type: 'formModels', ...(requestId !== undefined ? { requestId } : {}), ...payload });
               };
-              // Ключ берём ИЗ ПОЛЯ ФОРМЫ (до сохранения) или из SecretStorage
-              // редактируемого профиля; НИКАКОЙ записи в settings/секреты здесь.
+              // МИКРО-БАТЧ 28.3: ключ берём ИЗ ПОЛЯ ФОРМЫ (до сохранения) или из
+              // SecretStorage редактируемого профиля; НИКАКОЙ записи в settings/
+              // секреты здесь. Запрос идёт напрямую в fetchLiveModelsCached
+              // (временный ключ + кэш на 10 мин) БЕЗ notifyModelsBusy — авто-
+              // подтяжка дебаунсом не должна глушить глобальный select центра.
               let provider: ProviderName;
               try {
                 provider = normalizeProvider((message.provider ?? '').trim());
@@ -1780,14 +1787,24 @@ export function activate(context: vscode.ExtensionContext): void {
               const storedKey = profileId ? await readProfileSecret(context.secrets, profileId) : undefined;
               const key = draftKey || storedKey || '';
               const overrideBase = profileBaseUrl(baseRaw) ?? profile?.baseUrl;
-              // localhost-режим (Ollama/LM Studio) работает без ключа — как в fetchModels.
-              if (!key && !isLocalBaseUrl(resolveBaseUrl(provider, undefined, overrideBase))) { postModels({ ok: false, message: t('keychain.formErrKey', lang) }); return; }
+              let baseUrl = '';
               try {
-                const models = await fetchModels({ provider, model: defaultModel(provider), key, baseUrl: '', profileBaseUrl: overrideBase, userChosenModel: false });
-                if (models.length === 0) { postModels({ ok: false, message: t('keychain.formModelsEmpty', lang) }); return; }
-                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)) });
+                baseUrl = resolveBaseUrl(provider, undefined, overrideBase);
               } catch {
-                postModels({ ok: false, message: t('keychain.formModelsErr', lang) });
+                postModels({ ok: false, message: t('keychain.formModelsErr', lang), hint: t('keychain.formErrBaseUrl', lang), category: 'unknown' });
+                return;
+              }
+              // localhost-режим (Ollama/LM Studio) работает без ключа — как в fetchModels.
+              if (!key && !isLocalBaseUrl(baseUrl)) { postModels({ ok: false, message: t('keychain.formErrKey', lang) }); return; }
+              try {
+                // tolerateErrors=false: 401/404/сеть должны прийти КАТЕГОРИЕЙ,
+                // а не пустым списком — подсказка рисуется внутри карточки.
+                const models = await fetchLiveModelsCached(baseUrl, sanitizeApiKey(key), fetch, MODELS_FETCH_TIMEOUT_MS, provider, (messageText) => (hostOutput ? hostOutput.appendLine(messageText) : console.warn(messageText)), false, (messageText) => hostOutput?.appendLine(messageText));
+                if (models.length === 0) { postModels({ ok: false, message: t('keychain.formModelsEmpty', lang) }); return; }
+                postModels({ ok: true, models, model: preferredLiveModel(models, defaultModel(provider)), countText: t('keychain.formModelsCount', lang, { n: models.length }) });
+              } catch (error) {
+                const formatted = formatError(error, lang);
+                postModels({ ok: false, message: formatted.message || t('keychain.formModelsErr', lang), hint: formatted.actionHint, category: formatted.category });
               }
               return;
             }
