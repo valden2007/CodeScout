@@ -316,18 +316,19 @@ describe('микробатч 28.4: классификатор платёжной
     expect(reason.http).toBe(402);
   });
 
-  it('breaker (28.5): quota считает как обычно и стопит на лимите; other серии — по-прежнему', () => {
-    // Микро-батч 28.5 снял прозрачность quota: если failover не ротнул
-    // (выключен/все спят), скипы копятся и стопят предохранитель на лимите.
+  it('breaker (28.6): quota вне предохранителя (не трогает счётчик); other серии — как в 28.5', () => {
+    // Микро-батч 28.6 вернул quota из-под breaker'а: у неё собственный
+    // механизм (quota-паузы циклами в reviewFiles), серия quota-скипов не
+    // формируется. предохранитель quota НЕ ТРОГАЕТ: ни инкремент, ни сброс.
     const q: SkipBreakerState = { count: 0 };
-    for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(q, 'quota', 4), `quota #${i}`).toBe(false);
-    expect(skipBreakerFeed(q, 'quota', 4), 'quota #4').toBe(true);
-    expect(q.category).toBe('quota');
-    const mix: SkipBreakerState = { count: 0 };
-    expect(skipBreakerFeed(mix, 'auth_invalid_key', 4)).toBe(false);
-    expect(skipBreakerFeed(mix, 'quota', 4)).toBe(false); // новая серия
-    expect(mix.category).toBe('quota');
+    for (let i = 0; i < 6; i += 1) expect(skipBreakerFeed(q, 'quota', 4), `quota #${i}`).toBe(false);
+    expect(q.category, 'quota не меняет состояние').toBeUndefined();
+    expect(q.count).toBe(0);
+    const mix: SkipBreakerState = { count: 1, category: 'auth_invalid_key' };
+    expect(skipBreakerFeed(mix, 'quota', 4)).toBe(false); // не инкрементит…
+    expect(mix.category).toBe('auth_invalid_key');        // …и не сбрасывает чужую серию
     expect(mix.count).toBe(1);
+    expect(skipBreakerFeed(mix, 'auth_invalid_key', 2)).toBe(true); // серия жива
     const parse: SkipBreakerState = { count: 0 };
     for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(false);
     expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(true);

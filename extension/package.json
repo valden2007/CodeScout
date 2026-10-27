@@ -294,6 +294,20 @@
           "maximum": 20,
           "description": "%skipBreakerLimit.description%"
         },
+        "codescout.quotaPauseSeconds": {
+          "type": "number",
+          "default": 360,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "%quotaPauseSeconds.description%"
+        },
+        "codescout.quotaPauseMaxCycles": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "%quotaPauseMaxCycles.description%"
+        },
         "codescout.requestTimeoutSeconds": {
           "type": "number",
           "default": 60,

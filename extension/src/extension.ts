@@ -15,7 +15,7 @@ import { CodeScoutPanel } from './panel';
 import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, quotaPauseMaxCyclesFromSetting, quotaPauseSecondsFromSetting, QuotaExhaustedError, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
 import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, keyLabelFor, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
@@ -555,7 +555,32 @@ function applyRequestTimeoutSetting(): void {
   setDefaultRequestTimeoutMs(seconds * 1000);
 }
 
-export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}, onQuotaRotation?: () => void): Promise<ScanResult> {
+// Микро-батч 28.6: quota-паузы циклами. Первый скип с категорией quota,
+// когда failover-ротация невозможна (failover выключен, решатель сказал
+// «stop», ключей нет), НЕ продолжает очередь текущего цикла ни на один
+// файл: печатается пара строк (skip + пауза), пишется чекпоинт, скан спит
+// pauseSeconds (отменяемо), затем ТОТ ЖЕ файл повторяется («▶️ цикл N»).
+// maxCycles > 0 — потолок циклов, после него reviewFiles бросает
+// QuotaExhaustedError (хост рисует баннер «Квота исчерпана»). При
+// выключенном автономном режиме перед ПЕРВОЙ паузой спрашиваем пользователя
+// (одна санкция на прогон; отказ = стоп очереди, текущий файл скипается).
+export interface QuotaPauseOptions {
+  pauseSeconds: number;
+  maxCycles: number;
+  autonomous: () => boolean;
+  // Автономный ВЫКЛ: баннер «Подождать и повторить / Стоп». true = пауза
+  // разрешена, false = стоп. Вызывается ровно один раз на прогон.
+  ask?: () => Promise<boolean>;
+  // «⚠ quota: ключ X исчерпан (…) — остальные N файлов цикла не стартуют».
+  onSkipLine?: (info: { filename: string; error: unknown; cycle: number; queueRemaining: number }) => void;
+  // «💤 quota-пауза: …» + чекпоинт ДО ухода в сон.
+  onBeforePause?: (info: { filename: string; error: unknown; cycle: number; seconds: number }) => void;
+  // Таймер истёк: «▶️ цикл N: продолжаю с файла X» (счётчик предохранителя
+  // сбрасывает вызывающий).
+  onResumed?: (info: { filename: string; error: unknown; cycle: number }) => void;
+}
+
+export async function reviewFiles(context: vscode.ExtensionContext, files: Array<{ filename: string; status: string; additions: number; deletions: number; patch: string }>, workspaceRoot: string | undefined, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped?: (filename: string, error: unknown) => void, onFileChecked?: (filename: string, fileIssues: ReviewIssue[]) => void, importsResolver?: (filename: string) => string, passes = 1, onPass?: (filename: string, pass: number, totalPasses: number) => void, rateLimitPauses = 0, onRatePause?: (filename: string, waitSeconds: number, pauseNumber: number, maxPauses: number) => void, sleeper: (ms: number, signal?: AbortSignal) => Promise<void> = sleep, promptLang: 'ru' | 'en' = 'ru', fileCooldown = 0, onFileCooldown?: (seconds: number) => void,   docsResolver?: (filename: string, text: string) => { section: string; used: number; bytes: number }, adaptive: AdaptiveChunkOptions = {}, onQuotaRotation?: () => void, quota?: QuotaPauseOptions): Promise<ScanResult> {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost не требуют ключ.
@@ -585,6 +610,10 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   const queue = files.map((_file, index) => index);
   const ladderCycles = new Map<number, number>();
   let processedCount = 0;
+  // Микро-батч 28.6: состояние quota-пауз этого прогона.
+  let quotaCyclesTaken = 0;
+  let quotaAsked = false;
+  let quotaStopRequested = false;
   while (queue.length > 0) {
     const fileIndex = queue.shift() as number;
     const file = files[fileIndex];
@@ -665,15 +694,17 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
-        // Микро-батч 28.5: скип файла с категорией quota ДОЛЖЕН доезжать до
-        // failover-хука: решатель keychain усыпляет текущий ключ (retry-after
-        // или лестница 120/300/600) и ротирует на следующий awake ключ/профиль
-        // (Output «🔑 failover: … (quota; … спит Nс)»). Ротация состоялась →
-        // счётчик предохранителя сбрасывается, ТОТ ЖЕ файл повторяется новыми
-        // кредами — pointless-скипов больше нет. Нет хуков (failover выключен)
-        // или ротация невозможна (все спят/сломаны, stop) — мгновенный скип БЕЗ
-        // локальной billing-лестницы: skipBreakerFeed считает quota как обычно,
-        // и лимит подряд скипов стопит аудит баннером «квота исчерпана».
+        // Микро-батч 28.5: скип файла с категорией quota доезжает до
+        // failover-хука: решатель keychain усыпляет текущий ключ и ротирует
+        // (switch/wait — ТОТ ЖЕ файл повторяется другими кредами/после сна).
+        // Микро-батч 28.6: если ротация НЕВОЗМОЖНА (failover выключен,
+        // решатель сказал stop, ключей нет) — очередь текущего цикла больше
+        // не прогоняется в пустую: первый quota-скип печатает пару строк,
+        // пишет чекпоинт и засыпает на quotaPauseSeconds; по истечении T
+        // «▶️ цикл N: продолжаю с файла X», счётчик предохранителя сбрасывается,
+        // тот же файл повторяется. Потолок quotaPauseMaxCycles (>0) после N
+        // циклов бросает QuotaExhaustedError → баннер «Квота исчерпана».
+        // Без quota-конфига (custom-ревью, git-дифф) — прежний мгновенный скип.
         if (!(error instanceof AllProfilesAsleepError) && categorizeError(error) === 'quota') {
           if (failover) {
             const quotaWait = error instanceof RateLimitError ? error.waitSeconds : undefined;
@@ -687,6 +718,31 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
               await sleeper(decision.waitMs, signal);
               continue;
             }
+            // decision stop/undefined → ротация невозможна → quota-пауза ниже.
+          }
+          if (quota) {
+            // Одна строка «⚠ quota» на цикл — независимо от длины очереди.
+            quota.onSkipLine?.({ filename: file.filename, error, cycle: quotaCyclesTaken + 1, queueRemaining: queue.length });
+            if (quota.maxCycles > 0 && quotaCyclesTaken >= quota.maxCycles) {
+              throw new QuotaExhaustedError(file.filename, quotaCyclesTaken);
+            }
+            if (!quota.autonomous() && !quotaAsked) {
+              // Автономный ВЫКЛ: одна санкция паузы на прогон; далее циклы
+              // сами идут до потолка (или без потолка при maxCycles=0).
+              quotaAsked = true;
+              const approved = quota.ask ? await quota.ask() : true;
+              if (!approved) {
+                quotaStopRequested = true;
+                break;
+              }
+            }
+            quotaCyclesTaken += 1;
+            // Чекпоинт ДО ухода в сон: закрытие окна во время паузы ничего
+            // не теряет (догон продолжит с того же файла).
+            quota.onBeforePause?.({ filename: file.filename, error, cycle: quotaCyclesTaken, seconds: quota.pauseSeconds });
+            await sleeper(quota.pauseSeconds * 1000, signal);
+            quota.onResumed?.({ filename: file.filename, error, cycle: quotaCyclesTaken });
+            continue;
           }
           break;
         }
@@ -719,6 +775,14 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         }
         break;
       }
+    }
+    // Микро-батч 28.6: «Стоп» на баннере санкции (автономный выключен) —
+    // очередь текущего цикла не продолжается; бросаем QuotaExhaustedError с
+    // нулём отработанных циклов, чтобы runFullAuditOnce сохранил чекпоинт и
+    // показал баннер догона. Текущий файл НЕ помечаем скипом (он не «упал» —
+    // его не проверяли по решению пользователя).
+    if (quotaStopRequested) {
+      throw new QuotaExhaustedError(file.filename, quotaCyclesTaken);
     }
     if (quarantined) continue;
     if (!completed) {
@@ -995,6 +1059,49 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       if (state.checked.length > 0) writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
+    // Микро-батч 28.6: quota-паузы вместо прогона очереди в пустую.
+    // Хост даёт метку ключа, строки Output и запись чекпоинта перед сном;
+    // сам сон/циклы живут в reviewFiles (отменяемы через Stop).
+    const quotaPauseSeconds = quotaPauseSecondsFromSetting(auditConfig.get<number>('quotaPauseSeconds'));
+    const quotaPauseMaxCycles = quotaPauseMaxCyclesFromSetting(auditConfig.get<number>('quotaPauseMaxCycles'));
+    const quotaKeyLabel = (): string => {
+      const current = scanCurrent();
+      if (current.profileId) {
+        const keyName = keyLabelFor(current.profileId, current.keyId) || current.keyId || DEFAULT_KEY_ID;
+        return `${profileLabel(current.profileId)}/${keyName}`;
+      }
+      return `${auditSelection.provider}/${DEFAULT_KEY_ID}`;
+    };
+    const auditQuota: QuotaPauseOptions = {
+      pauseSeconds: quotaPauseSeconds,
+      maxCycles: quotaPauseMaxCycles,
+      autonomous: () => autoResumeEnabled(),
+      ask: async () => {
+        const lang = currentReportLanguage();
+        const waitButton = t('quota.askWait', lang);
+        const answer = await vscode.window.showWarningMessage(
+          t('quota.ask', lang, { s: quotaPauseSeconds }),
+          { modal: true },
+          waitButton,
+          t('keychain.bannerStopBtn', lang)
+        );
+        return answer === waitButton;
+      },
+      onSkipLine: (info) => {
+        const reason = formatSkipReason(info.error);
+        output.appendLine(`⚠ quota: ключ ${quotaKeyLabel()} исчерпан (${reason.tail}) — остальные ${info.queueRemaining} файлов цикла не стартуют`);
+      },
+      onBeforePause: (info) => {
+        // Чекпоинт ДО паузы: закрытие окна во время сна ничего не теряет.
+        persist();
+        const findings = state.checked.reduce((sum, entry) => sum + entry.issues.length, 0);
+        output.appendLine(`💤 quota-пауза: ${info.seconds}с до попытки (цикл ${info.cycle}); проверено ${doneNames.size} из ${planFiles.length}, находок ${findings} — сохранено`);
+      },
+      onResumed: (info) => {
+        skipBreakerReset(breakerState);
+        output.appendLine(`▶️ цикл ${info.cycle}: продолжаю с файла ${info.filename}`);
+      }
+    };
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.audit', currentReportLanguage()), elapsedMs, auditEta()); if (!loggedStart.has(filename)) { loggedStart.add(filename); fileStartedAt.set(filename, Date.now()); output.appendLine(`🔎 файл ${index}/${total}: ${filename} — старт…`); } }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), true, (filename, error) => { const reason = formatSkipReason(error); state.skippedFiles = upsertSkippedFile(state.skippedFiles, { file: filename, category: reason.category, ...(reason.http !== undefined ? { http: reason.http } : {}), ts: Date.now() }); output.appendLine(skipReasonLine(filename, reason)); if (skipBreakerFeed(breakerState, reason.category, auditBreakerLimit)) throw new AuditCircuitBreakerError(reason.category, breakerState.count); }, (filename, fileIssues) => {
       const acc = chunkProgress.get(filename) ?? { done: 0, issues: [] as ReviewIssue[] };
       acc.done += 1;
@@ -1028,7 +1135,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
         panel.recordFileDuration(seconds);
         output.appendLine(`✅ файл ${doneNames.size}/${planFiles.length}: ${filename} — готово за ${seconds}с`);
       }
-    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive, () => skipBreakerReset(breakerState));
+    }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive, () => skipBreakerReset(breakerState), auditQuota);
     logEntityDrops(output, result);
     // Батч 25: находки с метками нахождателей + zone-мердж (±3) — догон
     // другим провайдером не дублирует то, что уже лежит в чекпоинте.
@@ -1119,6 +1226,20 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       if (resumeView) panel.setAuditResume(resumeView);
       panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1000), wakeLabel: error.wakeLabel });
       return { kind: 'done' };
+    }
+    // Микро-батч 28.6: quota-паузы дошли до потолка циклов (или пользователь
+    // нажал «Стоп» на баннере санкции) — финальный баннер «Квота исчерпана»
+    // с кнопками догона; красной модалки нет, чекпоинт цел (он писан перед
+    // каждой паузой), авто-догон НЕ запускаем — нужен человек/баланс.
+    if (error instanceof QuotaExhaustedError) {
+      autoResumeCancelled = true;
+      output.appendLine(`🛑 Квота исчерпана: ${error.pausedCycles} цикл(ов) паузы — аудит остановлен, догон кнопками ниже (codescout.quotaPauseMaxCycles)`);
+      panel.setScanning(false);
+      if (resumeView) {
+        resumeView.quota = { cycles: error.pausedCycles };
+        panel.setAuditResume(resumeView);
+      }
+      return { kind: 'interrupted', view: resumeView };
     }
     if (resumeView) panel.setAuditResume(resumeView);
     await reportScanFailure(context, output, panel, error);

@@ -145,6 +145,14 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
     const rowBaseUrl = escapeHtml(profile.baseUrl?.trim() || '');
     const keys = profile.keys ?? [];
     const pid = escapeHtml(profile.id);
+    // МИКРО-БАТЧ 28.6: карточка в режиме правки получает kc-editing — её
+    // рамка становится ЕДИНСТВЕННОЙ рамкой формы (у #kc-form своей рамки
+    // больше нет), а отображаемые строки (baseUrl, ключи, кнопки действий)
+    // скрываются CSS-правилом (.kc-editing > .kc-* { display: none }):
+    // визуально их в карточке нет, но «Отмена» возвращает полный вид без
+    // перерисовки хостом. Рамка ровно одна в любом режиме.
+    const editingHere = Boolean(inject) && !placed && inject!.profileId === profile.id;
+    if (editingHere) placed = true;
     const keyRows = keys.map((key) => {
       const kid = escapeHtml(key.id);
       const rt = runtimeInfo[`${profile.id}/${key.id}`];
@@ -168,7 +176,7 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
     // data-* атрибуты строки питают предзаполнение инлайн-формы (клик
     // «Редактировать» — клиентский, без хоста).
     const orderBadge = `<span class="kc-order-badge" title="${T('keychain.cycleHint')}">${index + 1}</span>`;
-    return `<div class="kc-row${isActive ? ' kc-active-row' : ''}" data-profile-id="${pid}" data-provider="${escapeHtml(profile.provider)}" data-label="${escapeHtml(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
+    return `<div class="kc-row${isActive ? ' kc-active-row' : ''}${editingHere ? ' kc-editing' : ''}" data-profile-id="${pid}" data-provider="${escapeHtml(profile.provider)}" data-label="${escapeHtml(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
       <span class="kc-line">${orderBadge}${moveUp}${moveDown} ${icon('key')} <strong>${escapeHtml(profile.provider)}</strong> · ${escapeHtml(profile.label)}${model ? ` · ${model}` : ''}${isActive ? ` <span class="kc-active-badge">${icon('pass')} ${T('keychain.activeTag')}</span>` : ''}</span>
       <span class="kc-baseurl-row"><label>${T('keychain.baseUrlField')}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon('save')}<span>${T('keychain.baseUrlSave')}</span></button></span>
       <div class="kc-keys">
@@ -181,13 +189,14 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
         <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon('edit')}<span>${T('keychain.edit')}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon('trash')}<span>${T('keychain.delete')}</span></button>
       </span>
-      <div class="kc-form-slot">${inject && inject.profileId === profile.id && !placed ? (placed = true, inject.html) : ''}</div>
+      <div class="kc-form-slot">${editingHere ? inject!.html : ''}</div>
     </div>`;
   }).join('');
   // МИКРО-БАТЧ 28.4: аккордеон — карточка «добавить профиль» в КОНЦЕ списка.
   // Обычно скрыта; становится видимой карточкой, когда в неё вселяется
   // открытая форма (draft нового профиля) или клиент переносит туда узел
-  // #kcForm по клику «+ Добавить профиль».
+  // #kcForm по клику «+ Добавить профиль». Рамка add-card (kc-row) =
+  // единственная рамка формы: «строка профиля + поля» под одним border.
   const addCardForm = inject && !placed ? inject.html : '';
   const addCard = `<div class="kc-row kc-add-card${addCardForm ? '' : ' hidden'}" data-add-card="1"><div class="kc-form-slot">${addCardForm}</div></div>`;
   return profiles.length === 0
@@ -431,7 +440,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 .kc-move { width: auto; padding: 2px 6px; min-height: auto; }
 .kc-order-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cs-accent); color: var(--cs-editor-bg); font-size: var(--cs-font-1); font-weight: 700; flex: 0 0 auto; }
-.kc-form { margin-top: var(--cs-space-2); padding: var(--cs-space-3); border: 1px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 6%, transparent); }
+/* Batch 28.6: the form has NO frame of its own — it renders INSIDE the
+   profile card's frame (same border/background). .kc-editing on the card =
+   editing mode: the displayed rows (baseUrl, keys, action buttons) are not
+   shown, the accent border moves onto the card. Exactly ONE border per card
+   in any mode. Keep this CSS Cyrillic-free (EN render contract). */
+.kc-form { margin-top: var(--cs-space-1); }
+.kc-row.kc-editing { border-color: var(--cs-accent); }
+.kc-row.kc-editing > .kc-baseurl-row, .kc-row.kc-editing > .kc-keys, .kc-row.kc-editing > .kc-actions { display: none; }
 .kc-form h4 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-accent); }
 .kc-form label { margin: 10px 0 var(--cs-space-1); }
 .kc-form-pull { display: flex; align-items: center; gap: var(--cs-space-2); }
@@ -1064,20 +1080,59 @@ function setFormTitle(editing, label) {
 }
 // Batch 28.4 accordion: mount the single #kcForm node into the target card's
 // slot; unknown/empty id → the trailing add-card (visible when mounted).
+// Batch 28.6: the mounted card gets .kc-editing — its border becomes the ONE
+// frame of the editing card (the form has no border of its own). The displayed
+// rows (keys, actions, baseUrl) are physically REMOVED from the card while
+// editing (contract: an editing card has no displayed key rows in the DOM)
+// and restored untouched on cancel/Escape/save — a full host re-render is not
+// needed to bring the card back to view mode.
+const hiddenRows = new Map();
+function cardRows(card) {
+  const nodes = [];
+  const kids = card.children;
+  for (let i = 0; i < kids.length; i += 1) {
+    const el = kids[i];
+    if (el.matches && el.matches('.kc-baseurl-row, .kc-keys, .kc-actions')) nodes.push(el);
+  }
+  return nodes;
+}
+function hideCardRows(card) {
+  if (!card || hiddenRows.has(card)) return;
+  const nodes = cardRows(card);
+  if (!nodes.length) return;
+  hiddenRows.set(card, nodes);
+  nodes.forEach(function (el) { el.parentNode.removeChild(el); });
+}
+function restoreCardRows(card) {
+  const nodes = hiddenRows.get(card);
+  if (!nodes) return;
+  hiddenRows.delete(card);
+  const slot = card.querySelector('.kc-form-slot');
+  nodes.forEach(function (el) { if (slot) card.insertBefore(el, slot); else card.appendChild(el); });
+}
+function clearEditingCards() {
+  document.querySelectorAll('.kc-row.kc-editing').forEach(function (el) { el.classList.remove('kc-editing'); restoreCardRows(el); });
+}
 function mountFormFor(id) {
   if (!kcForm) return;
+  clearEditingCards();
   let slot = null;
+  let card = null;
   if (id) {
     const rows = Array.prototype.slice.call(document.querySelectorAll('.kc-row[data-profile-id]'));
     for (const row of rows) {
-      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); break; }
+      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); card = row; break; }
     }
   }
   if (!slot && kcAddCard) {
     slot = kcAddCard.querySelector('.kc-form-slot');
+    card = kcAddCard;
     if (slot) kcAddCard.classList.remove('hidden');
   }
-  if (slot) slot.appendChild(kcForm);
+  if (slot) {
+    slot.appendChild(kcForm);
+    if (card) { card.classList.add('kc-editing'); hideCardRows(card); }
+  }
 }
 function showForm(values, opts) {
   if (!kcForm) return;
@@ -1115,6 +1170,7 @@ function hideForm() {
   formEditing = '';
   formModelsList = [];
   setFormTitle('', '');
+  clearEditingCards();
   if (kcFormHome) kcFormHome.appendChild(kcForm);
   if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);
@@ -1217,6 +1273,11 @@ if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (formVisible()) {
     formEditing = kcForm.getAttribute('data-editing') || '';
     if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    // Batch 28.6: the host-rendered editing card (validation redraft) must
+    // ALSO physically drop its displayed rows — same contract as clicking
+    // the card's Edit button: no displayed key rows while the form is open.
+    const serverCard = kcForm.closest ? kcForm.closest('.kc-row') : null;
+    if (serverCard && serverCard.classList.contains('kc-editing')) hideCardRows(serverCard);
     const prev = readFormState();
     if (prev && !prev.submitted && Array.isArray(prev.models)) formModelsList = prev.models.map(String);
     persistForm();

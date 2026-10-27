@@ -1004,6 +1004,9 @@ export interface AuditResumeView {
   // Батч 28: умный догон — скоуп изменился, но пер-файловые хэши есть:
   // догон идёт, files файлов ушли на перепроверку, findings сохранено.
   scopeUpdate?: { files: number; findings: number };
+  // Микро-батч 28.6: quota-паузы дошли до потолка циклов — баннер
+  // «Квота исчерпана» + кнопки догона (cycles = сколько пауз отработало).
+  quota?: { cycles: number };
 }
 
 // Батч 25 (cross-provider resume): чекпоинт переживает ЛЮБУЮ остановку и
@@ -1105,14 +1108,16 @@ export interface SkipBreakerState {
 
 // Подряд идущие скипы одной категории; другая категория обнуляет счётчик
 // (вперемешку — не суммируем). Успешный файл вызывает skipBreakerReset.
-// Микро-батч 28.5: «quota» БОЛЬШЕ НЕ прозрачна — считает как обычно. Квота
-// сначала доезжает до failover-хука (reviewFiles усыпляет ключ и ротит);
-// если failover выключен ИЛИ ротация невозможна (все спят/сломаны) — скипы
-// копятся, и после skipBreakerLimit подряд стопит предохранитель с баннером
-// «квота исчерпана» (err.hint.quota). При состоявшейся ротации счётчик
-// сбрасывает skipBreakerReset.
+// Микро-батч 28.5: квота участвовала в ротации и считалась breaker'ом.
+// Микро-батч 28.6: «quota» СНОВА вне предохранителя — у неё собственный
+// механизм (quota-паузы циклами в reviewFiles): первый quota-скип без
+// возможности ротации останавливает очередь цикла и уходит в паузу,
+// поэтому серия quota-скипов больше не формируется. Категория quota
+// НЕ ТРОГАЕТ состояние breakera (ни инкремент, ни сброс); прочие категории
+// работают как в 28.5 (unknown/auth/parse стопят на лимите).
 export function skipBreakerFeed(state: SkipBreakerState, category: string, limit: number): boolean {
   if (limit <= 0) return false;
+  if (category === 'quota') return false;
   if (state.category === category) state.count += 1;
   else { state.category = category; state.count = 1; }
   return state.count >= limit;
@@ -1131,6 +1136,45 @@ export class AuditCircuitBreakerError extends Error {
     this.name = 'AuditCircuitBreakerError';
     this.category = category;
     this.skippedCount = skippedCount;
+  }
+}
+
+// ── Микро-батч 28.6: quota-паузы циклами ────────────────────────────────────
+// Квота (категория 'quota') без возможности failover-ротации больше не
+// «сжигает» очередь скипами: первый quota-скип останавливает цикл, пишет
+// чекпоинт и засыпает на quotaPauseSeconds; после паузы тот же файл
+// повторяется (цикл N+1). quotaPauseMaxCycles >0 — потолок циклов, после
+// него reviewFiles бросает QuotaExhaustedError, аудит рисует баннер
+// «Квота исчерпана» с кнопками догона.
+export const QUOTA_PAUSE_DEFAULT_SECONDS = 360;
+export const QUOTA_PAUSE_MIN_SECONDS = 30;
+export const QUOTA_PAUSE_MAX_SECONDS = 3600;
+export const QUOTA_PAUSE_MAX_CYCLES_LIMIT = 100;
+
+// Кламп 30..3600; мусор/пусто = дефолт 360.
+export function quotaPauseSecondsFromSetting(value: unknown): number {
+  if (value === undefined || value === null || value === '') return QUOTA_PAUSE_DEFAULT_SECONDS;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return QUOTA_PAUSE_DEFAULT_SECONDS;
+  return Math.min(QUOTA_PAUSE_MAX_SECONDS, Math.max(QUOTA_PAUSE_MIN_SECONDS, n));
+}
+
+// 0 = без лимита (автономный режим крутит паузы до пробуждения квоты);
+// N > 0 = потолок quota-циклов, после него — финальный стоп.
+export function quotaPauseMaxCyclesFromSetting(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(QUOTA_PAUSE_MAX_CYCLES_LIMIT, n);
+}
+
+export class QuotaExhaustedError extends Error {
+  readonly file: string;
+  readonly pausedCycles: number;
+  constructor(file: string, pausedCycles: number) {
+    super(`quota: ${pausedCycles} циклов паузы исчерпаны — стоп, нужен человек`);
+    this.name = 'QuotaExhaustedError';
+    this.file = file;
+    this.pausedCycles = pausedCycles;
   }
 }
 
@@ -1302,6 +1346,8 @@ export function progressView(progress: AuditCheckpoint | undefined, breakerLimit
   const total = done + progress.remaining.length;
   if (total === 0) return undefined;
   const tag = lastCheckpointTag(progress);
+  // Микро-батч 28.6: хвост «quota» не рисует breaker-подсказку — у квоты
+  // свой баннер (quota-паузы / QuotaExhaustedError), предохранитель её не трогает.
   const run = trailingSkippedRun(progress.skippedFiles);
   return {
     done,
@@ -1310,7 +1356,7 @@ export function progressView(progress: AuditCheckpoint | undefined, breakerLimit
     ...(tag.provider ? { provider: tag.provider } : {}),
     startedAt: progress.startedAt,
     findings: collectCheckpointFindings(progress).length,
-    ...(breakerLimit > 0 && run && run.count >= breakerLimit ? { breaker: run } : {})
+    ...(breakerLimit > 0 && run && run.category !== 'quota' && run.count >= breakerLimit ? { breaker: run } : {})
   };
 }
 

@@ -1021,6 +1021,9 @@ var ru_default = {
   "err.title.quota": "\u041F\u043B\u0430\u0442\u0451\u0436\u043D\u0430\u044F \u043A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430 (402)",
   "err.msg.quota": "\u0423 \u043A\u043B\u044E\u0447\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0431\u0438\u043B\u043B\u0438\u043D\u0433/\u0441\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0430\u0440\u0438\u0444.",
   "err.hint.quota": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430; \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover \u2014 \u043E\u043D \u0443\u0441\u044B\u043F\u0438\u0442 \u044D\u0442\u043E\u0442 \u043A\u043B\u044E\u0447 \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435.",
+  "quota.ask": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430. \u041F\u043E\u0434\u043E\u0436\u0434\u0430\u0442\u044C {s}\u0441 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C?",
+  "quota.askWait": "\u041F\u043E\u0434\u043E\u0436\u0434\u0430\u0442\u044C \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C",
+  "quota.banner": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: {n} \u0446\u0438\u043A\u043B(\u043E\u0432) \u043F\u0430\u0443\u0437\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E \u2014 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043A\u043B\u044E\u0447, \u0434\u043E\u0433\u043E\u043D\u0438\u0442\u0435 \u043A\u043D\u043E\u043F\u043A\u0430\u043C\u0438 \u043D\u0438\u0436\u0435",
   "err.title.model_not_found": "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 (404)",
   "err.msg.model_not_found": "\u0418\u043C\u044F \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435\u0432\u0435\u0440\u043D\u043E \u0438\u043B\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u044D\u0442\u043E\u043C\u0443 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.",
   "err.hint.model_not_found": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u044C\xBB \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \u0436\u0438\u0432\u043E\u0439 \u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043D\u044B\u0439.",
@@ -1489,6 +1492,9 @@ var en_default = {
   "err.title.quota": "Payment quota exhausted (402)",
   "err.msg.quota": "The key ran out of credits or hit a paid-plan limit \u2014 the provider wants a billing top-up or a new tier.",
   "err.hint.quota": "Quota exhausted: top up the balance or change the plan in the provider console; enable failover \u2014 it sleeps this key and rotates the chain.",
+  "quota.ask": "Quota exhausted. Wait {s}s and retry?",
+  "quota.askWait": "Wait and retry",
+  "quota.banner": "Quota exhausted: {n} pause cycle(s) used up \u2014 top up the balance or change the key, then catch up with the buttons below",
   "err.title.model_not_found": "Model not found (404)",
   "err.msg.model_not_found": "The model name is wrong or the model is unavailable for this provider.",
   "err.hint.model_not_found": 'Open "Choose model" \u2014 the list is live and validated.',
@@ -2771,7 +2777,7 @@ ${headHtml(assets, nonce)}
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
-    ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon("zap")} ${T("resume.breaker", { n: resumeView.breaker.count })} \xAB${escapeHtml(resumeView.breaker.category)}\xBB \u2014 ${escapeHtml(T("err.hint." + resumeView.breaker.category))}</div>` : ""}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
+    ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon("zap")} ${T("resume.breaker", { n: resumeView.breaker.count })} \xAB${escapeHtml(resumeView.breaker.category)}\xBB \u2014 ${escapeHtml(T("err.hint." + resumeView.breaker.category))}</div>` : ""}${resumeView.quota ? `<div class="resume-breaker">${icon("zap")} ${escapeHtml(T("quota.banner", { n: resumeView.quota.cycles }))}</div>` : ""}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     ${auditResume?.scopeUpdate ? `<div class="audit-resume scope-update"><strong>${icon("warning")} ${T("resume.scopeUpdate", { n: auditResume.scopeUpdate.files, m: auditResume.scopeUpdate.findings })}</strong></div>` : ""}
     ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon("clock")} ${T("keychain.bannerAllSleep", { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon("play")}<span>${T("keychain.bannerWaitBtn")}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon("debug-stop")}<span>${T("keychain.bannerStopBtn")}</span></button></div></div>` : ""}
     <div class="actions">
@@ -4513,6 +4519,7 @@ function upsertSkippedFile(entries, entry) {
 }
 function skipBreakerFeed(state, category, limit) {
   if (limit <= 0) return false;
+  if (category === "quota") return false;
   if (state.category === category) state.count += 1;
   else {
     state.category = category;
@@ -4532,6 +4539,31 @@ var AuditCircuitBreakerError = class extends Error {
     this.name = "AuditCircuitBreakerError";
     this.category = category;
     this.skippedCount = skippedCount;
+  }
+};
+var QUOTA_PAUSE_DEFAULT_SECONDS = 360;
+var QUOTA_PAUSE_MIN_SECONDS = 30;
+var QUOTA_PAUSE_MAX_SECONDS = 3600;
+var QUOTA_PAUSE_MAX_CYCLES_LIMIT = 100;
+function quotaPauseSecondsFromSetting(value) {
+  if (value === void 0 || value === null || value === "") return QUOTA_PAUSE_DEFAULT_SECONDS;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return QUOTA_PAUSE_DEFAULT_SECONDS;
+  return Math.min(QUOTA_PAUSE_MAX_SECONDS, Math.max(QUOTA_PAUSE_MIN_SECONDS, n));
+}
+function quotaPauseMaxCyclesFromSetting(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(QUOTA_PAUSE_MAX_CYCLES_LIMIT, n);
+}
+var QuotaExhaustedError = class extends Error {
+  file;
+  pausedCycles;
+  constructor(file, pausedCycles) {
+    super(`quota: ${pausedCycles} \u0446\u0438\u043A\u043B\u043E\u0432 \u043F\u0430\u0443\u0437\u044B \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u044B \u2014 \u0441\u0442\u043E\u043F, \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A`);
+    this.name = "QuotaExhaustedError";
+    this.file = file;
+    this.pausedCycles = pausedCycles;
   }
 };
 function trailingSkippedRun(entries) {
@@ -4657,7 +4689,7 @@ function progressView(progress, breakerLimit = SKIP_BREAKER_DEFAULT_LIMIT) {
     ...tag.provider ? { provider: tag.provider } : {},
     startedAt: progress.startedAt,
     findings: collectCheckpointFindings(progress).length,
-    ...breakerLimit > 0 && run && run.count >= breakerLimit ? { breaker: run } : {}
+    ...breakerLimit > 0 && run && run.category !== "quota" && run.count >= breakerLimit ? { breaker: run } : {}
   };
 }
 var AUDIT_RESULTS_FILE = "audit-results.json";
@@ -5464,6 +5496,8 @@ function keychainRowsHtml(T, state, inject) {
     const rowBaseUrl = escapeHtml2(profile.baseUrl?.trim() || "");
     const keys = profile.keys ?? [];
     const pid = escapeHtml2(profile.id);
+    const editingHere = Boolean(inject) && !placed && inject.profileId === profile.id;
+    if (editingHere) placed = true;
     const keyRows = keys.map((key) => {
       const kid = escapeHtml2(key.id);
       const rt = runtimeInfo[`${profile.id}/${key.id}`];
@@ -5484,7 +5518,7 @@ function keychainRowsHtml(T, state, inject) {
     const moveUp = index > 0 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveUp")}" data-kc="keychainMove" data-id="${pid}" data-dir="-1">${icon2("arrow-up")}</button>` : "";
     const moveDown = index < profiles.length - 1 ? `<button type="button" class="secondary kc-move" title="${T("keychain.moveDown")}" data-kc="keychainMove" data-id="${pid}" data-dir="1">${icon2("arrow-down")}</button>` : "";
     const orderBadge = `<span class="kc-order-badge" title="${T("keychain.cycleHint")}">${index + 1}</span>`;
-    return `<div class="kc-row${isActive ? " kc-active-row" : ""}" data-profile-id="${pid}" data-provider="${escapeHtml2(profile.provider)}" data-label="${escapeHtml2(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
+    return `<div class="kc-row${isActive ? " kc-active-row" : ""}${editingHere ? " kc-editing" : ""}" data-profile-id="${pid}" data-provider="${escapeHtml2(profile.provider)}" data-label="${escapeHtml2(profile.label)}" data-model="${model}" data-baseurl="${rowBaseUrl}">
       <span class="kc-line">${orderBadge}${moveUp}${moveDown} ${icon2("key")} <strong>${escapeHtml2(profile.provider)}</strong> \xB7 ${escapeHtml2(profile.label)}${model ? ` \xB7 ${model}` : ""}${isActive ? ` <span class="kc-active-badge">${icon2("pass")} ${T("keychain.activeTag")}</span>` : ""}</span>
       <span class="kc-baseurl-row"><label>${T("keychain.baseUrlField")}</label><input class="kc-baseurl" data-id="${pid}" type="text" placeholder="https://api.example.com/v1" value="${rowBaseUrl}"><button type="button" class="secondary" data-kc="keychainBaseUrl" data-id="${pid}">${icon2("save")}<span>${T("keychain.baseUrlSave")}</span></button></span>
       <div class="kc-keys">
@@ -5497,7 +5531,7 @@ function keychainRowsHtml(T, state, inject) {
         <button type="button" class="secondary" data-kcf="edit" data-id="${pid}">${icon2("edit")}<span>${T("keychain.edit")}</span></button>
         <button type="button" class="secondary" data-kc="keychainDelete" data-id="${pid}">${icon2("trash")}<span>${T("keychain.delete")}</span></button>
       </span>
-      <div class="kc-form-slot">${inject && inject.profileId === profile.id && !placed ? (placed = true, inject.html) : ""}</div>
+      <div class="kc-form-slot">${editingHere ? inject.html : ""}</div>
     </div>`;
   }).join("");
   const addCardForm = inject && !placed ? inject.html : "";
@@ -5694,7 +5728,14 @@ button.is-dirty .dirty-dot { display: inline-block; }
 .kc-key-actions button { width: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); min-height: auto; }
 .kc-move { width: auto; padding: 2px 6px; min-height: auto; }
 .kc-order-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cs-accent); color: var(--cs-editor-bg); font-size: var(--cs-font-1); font-weight: 700; flex: 0 0 auto; }
-.kc-form { margin-top: var(--cs-space-2); padding: var(--cs-space-3); border: 1px solid var(--cs-accent); border-radius: var(--cs-radius-1); background: color-mix(in srgb, var(--cs-accent) 6%, transparent); }
+/* Batch 28.6: the form has NO frame of its own \u2014 it renders INSIDE the
+   profile card's frame (same border/background). .kc-editing on the card =
+   editing mode: the displayed rows (baseUrl, keys, action buttons) are not
+   shown, the accent border moves onto the card. Exactly ONE border per card
+   in any mode. Keep this CSS Cyrillic-free (EN render contract). */
+.kc-form { margin-top: var(--cs-space-1); }
+.kc-row.kc-editing { border-color: var(--cs-accent); }
+.kc-row.kc-editing > .kc-baseurl-row, .kc-row.kc-editing > .kc-keys, .kc-row.kc-editing > .kc-actions { display: none; }
 .kc-form h4 { display: flex; align-items: center; gap: var(--cs-space-2); margin: 0 0 var(--cs-space-1); font-size: var(--cs-font-2); color: var(--cs-accent); }
 .kc-form label { margin: 10px 0 var(--cs-space-1); }
 .kc-form-pull { display: flex; align-items: center; gap: var(--cs-space-2); }
@@ -6330,20 +6371,59 @@ function setFormTitle(editing, label) {
 }
 // Batch 28.4 accordion: mount the single #kcForm node into the target card's
 // slot; unknown/empty id \u2192 the trailing add-card (visible when mounted).
+// Batch 28.6: the mounted card gets .kc-editing \u2014 its border becomes the ONE
+// frame of the editing card (the form has no border of its own). The displayed
+// rows (keys, actions, baseUrl) are physically REMOVED from the card while
+// editing (contract: an editing card has no displayed key rows in the DOM)
+// and restored untouched on cancel/Escape/save \u2014 a full host re-render is not
+// needed to bring the card back to view mode.
+const hiddenRows = new Map();
+function cardRows(card) {
+  const nodes = [];
+  const kids = card.children;
+  for (let i = 0; i < kids.length; i += 1) {
+    const el = kids[i];
+    if (el.matches && el.matches('.kc-baseurl-row, .kc-keys, .kc-actions')) nodes.push(el);
+  }
+  return nodes;
+}
+function hideCardRows(card) {
+  if (!card || hiddenRows.has(card)) return;
+  const nodes = cardRows(card);
+  if (!nodes.length) return;
+  hiddenRows.set(card, nodes);
+  nodes.forEach(function (el) { el.parentNode.removeChild(el); });
+}
+function restoreCardRows(card) {
+  const nodes = hiddenRows.get(card);
+  if (!nodes) return;
+  hiddenRows.delete(card);
+  const slot = card.querySelector('.kc-form-slot');
+  nodes.forEach(function (el) { if (slot) card.insertBefore(el, slot); else card.appendChild(el); });
+}
+function clearEditingCards() {
+  document.querySelectorAll('.kc-row.kc-editing').forEach(function (el) { el.classList.remove('kc-editing'); restoreCardRows(el); });
+}
 function mountFormFor(id) {
   if (!kcForm) return;
+  clearEditingCards();
   let slot = null;
+  let card = null;
   if (id) {
     const rows = Array.prototype.slice.call(document.querySelectorAll('.kc-row[data-profile-id]'));
     for (const row of rows) {
-      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); break; }
+      if ((row.getAttribute('data-profile-id') || '') === id) { slot = row.querySelector('.kc-form-slot'); card = row; break; }
     }
   }
   if (!slot && kcAddCard) {
     slot = kcAddCard.querySelector('.kc-form-slot');
+    card = kcAddCard;
     if (slot) kcAddCard.classList.remove('hidden');
   }
-  if (slot) slot.appendChild(kcForm);
+  if (slot) {
+    slot.appendChild(kcForm);
+    if (card) { card.classList.add('kc-editing'); hideCardRows(card); }
+  }
 }
 function showForm(values, opts) {
   if (!kcForm) return;
@@ -6381,6 +6461,7 @@ function hideForm() {
   formEditing = '';
   formModelsList = [];
   setFormTitle('', '');
+  clearEditingCards();
   if (kcFormHome) kcFormHome.appendChild(kcForm);
   if (kcAddCard) kcAddCard.classList.add('hidden');
   writeFormState(null);
@@ -6483,6 +6564,11 @@ if (kcFormSaveBtn) kcFormSaveBtn.addEventListener('click', () => {
   if (formVisible()) {
     formEditing = kcForm.getAttribute('data-editing') || '';
     if (kcFormKeyInput) kcFormKeyInput.placeholder = formEditing ? L('keychain.formKeyKeep') : L('center.keyPaste');
+    // Batch 28.6: the host-rendered editing card (validation redraft) must
+    // ALSO physically drop its displayed rows \u2014 same contract as clicking
+    // the card's Edit button: no displayed key rows while the form is open.
+    const serverCard = kcForm.closest ? kcForm.closest('.kc-row') : null;
+    if (serverCard && serverCard.classList.contains('kc-editing')) hideCardRows(serverCard);
     const prev = readFormState();
     if (prev && !prev.submitted && Array.isArray(prev.models)) formModelsList = prev.models.map(String);
     persistForm();
@@ -7043,7 +7129,7 @@ function applyRequestTimeoutSetting() {
   const seconds = requestTimeoutSecondsFromSetting(vscode4.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
   setDefaultRequestTimeoutMs(seconds * 1e3);
 }
-async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}, onQuotaRotation) {
+async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, continueOnFileError = false, onFileSkipped, onFileChecked, importsResolver, passes = 1, onPass, rateLimitPauses = 0, onRatePause, sleeper = sleep, promptLang = "ru", fileCooldown = 0, onFileCooldown, docsResolver, adaptive = {}, onQuotaRotation, quota) {
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key && !isLocalBaseUrl(selection.profileBaseUrl || selection.baseUrl)) {
@@ -7060,6 +7146,9 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   const queue = files.map((_file, index) => index);
   const ladderCycles = /* @__PURE__ */ new Map();
   let processedCount = 0;
+  let quotaCyclesTaken = 0;
+  let quotaAsked = false;
+  let quotaStopRequested = false;
   while (queue.length > 0) {
     const fileIndex = queue.shift();
     const file = files[fileIndex];
@@ -7146,6 +7235,25 @@ ${docPick.section}` : systemPrompt;
               continue;
             }
           }
+          if (quota) {
+            quota.onSkipLine?.({ filename: file.filename, error, cycle: quotaCyclesTaken + 1, queueRemaining: queue.length });
+            if (quota.maxCycles > 0 && quotaCyclesTaken >= quota.maxCycles) {
+              throw new QuotaExhaustedError(file.filename, quotaCyclesTaken);
+            }
+            if (!quota.autonomous() && !quotaAsked) {
+              quotaAsked = true;
+              const approved = quota.ask ? await quota.ask() : true;
+              if (!approved) {
+                quotaStopRequested = true;
+                break;
+              }
+            }
+            quotaCyclesTaken += 1;
+            quota.onBeforePause?.({ filename: file.filename, error, cycle: quotaCyclesTaken, seconds: quota.pauseSeconds });
+            await sleeper(quota.pauseSeconds * 1e3, signal);
+            quota.onResumed?.({ filename: file.filename, error, cycle: quotaCyclesTaken });
+            continue;
+          }
           break;
         }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
@@ -7174,6 +7282,9 @@ ${docPick.section}` : systemPrompt;
         }
         break;
       }
+    }
+    if (quotaStopRequested) {
+      throw new QuotaExhaustedError(file.filename, quotaCyclesTaken);
     }
     if (quarantined) continue;
     if (!completed) {
@@ -7423,6 +7534,45 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       if (state.checked.length > 0) writeAuditResultsFromCheckpoint(workspaceRoot, state, planFiles.length);
     };
     persist();
+    const quotaPauseSeconds = quotaPauseSecondsFromSetting(auditConfig.get("quotaPauseSeconds"));
+    const quotaPauseMaxCycles = quotaPauseMaxCyclesFromSetting(auditConfig.get("quotaPauseMaxCycles"));
+    const quotaKeyLabel = () => {
+      const current = scanCurrent();
+      if (current.profileId) {
+        const keyName = keyLabelFor(current.profileId, current.keyId) || current.keyId || DEFAULT_KEY_ID;
+        return `${profileLabel(current.profileId)}/${keyName}`;
+      }
+      return `${auditSelection.provider}/${DEFAULT_KEY_ID}`;
+    };
+    const auditQuota = {
+      pauseSeconds: quotaPauseSeconds,
+      maxCycles: quotaPauseMaxCycles,
+      autonomous: () => autoResumeEnabled(),
+      ask: async () => {
+        const lang = currentReportLanguage();
+        const waitButton = t("quota.askWait", lang);
+        const answer = await vscode4.window.showWarningMessage(
+          t("quota.ask", lang, { s: quotaPauseSeconds }),
+          { modal: true },
+          waitButton,
+          t("keychain.bannerStopBtn", lang)
+        );
+        return answer === waitButton;
+      },
+      onSkipLine: (info) => {
+        const reason = formatSkipReason(info.error);
+        output.appendLine(`\u26A0 quota: \u043A\u043B\u044E\u0447 ${quotaKeyLabel()} \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (${reason.tail}) \u2014 \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 ${info.queueRemaining} \u0444\u0430\u0439\u043B\u043E\u0432 \u0446\u0438\u043A\u043B\u0430 \u043D\u0435 \u0441\u0442\u0430\u0440\u0442\u0443\u044E\u0442`);
+      },
+      onBeforePause: (info) => {
+        persist();
+        const findings = state.checked.reduce((sum, entry) => sum + entry.issues.length, 0);
+        output.appendLine(`\u{1F4A4} quota-\u043F\u0430\u0443\u0437\u0430: ${info.seconds}\u0441 \u0434\u043E \u043F\u043E\u043F\u044B\u0442\u043A\u0438 (\u0446\u0438\u043A\u043B ${info.cycle}); \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${doneNames.size} \u0438\u0437 ${planFiles.length}, \u043D\u0430\u0445\u043E\u0434\u043E\u043A ${findings} \u2014 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E`);
+      },
+      onResumed: (info) => {
+        skipBreakerReset(breakerState);
+        output.appendLine(`\u25B6\uFE0F \u0446\u0438\u043A\u043B ${info.cycle}: \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0430\u044E \u0441 \u0444\u0430\u0439\u043B\u0430 ${info.filename}`);
+      }
+    };
     const result = await reviewFiles(context, toReview, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.audit", currentReportLanguage()), elapsedMs, auditEta());
       if (!loggedStart.has(filename)) {
@@ -7467,7 +7617,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       recordRateLimitHit();
       const hits = rateLimitHitsLast5min();
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
-    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive, () => skipBreakerReset(breakerState));
+    }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive, () => skipBreakerReset(breakerState), auditQuota);
     logEntityDrops(output, result);
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
@@ -7532,6 +7682,16 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       if (resumeView) panel.setAuditResume(resumeView);
       panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1e3), wakeLabel: error.wakeLabel });
       return { kind: "done" };
+    }
+    if (error instanceof QuotaExhaustedError) {
+      autoResumeCancelled = true;
+      output.appendLine(`\u{1F6D1} \u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: ${error.pausedCycles} \u0446\u0438\u043A\u043B(\u043E\u0432) \u043F\u0430\u0443\u0437\u044B \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u0434\u043E\u0433\u043E\u043D \u043A\u043D\u043E\u043F\u043A\u0430\u043C\u0438 \u043D\u0438\u0436\u0435 (codescout.quotaPauseMaxCycles)`);
+      panel.setScanning(false);
+      if (resumeView) {
+        resumeView.quota = { cycles: error.pausedCycles };
+        panel.setAuditResume(resumeView);
+      }
+      return { kind: "interrupted", view: resumeView };
     }
     if (resumeView) panel.setAuditResume(resumeView);
     await reportScanFailure(context, output, panel, error);

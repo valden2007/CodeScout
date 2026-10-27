@@ -3912,7 +3912,8 @@ describe('v1.4b-16 секционный RAG', () => {
     expect(extension).toContain('makeDocsResolver(docs.sections ?? [], docBudgetBytes');
     expect(extension).toContain('const docPick = docsResolver?.(file.filename, file.patch)');
     expect(extension).toContain('provider.review(fileSystemPrompt');
-    expect(extension).toContain('docsForFile, adaptive, () => skipBreakerReset(breakerState));');
+    // Микро-батч 28.6: хвост вызова дополнен quota-конфигом (пауза циклами).
+    expect(extension).toContain('docsForFile, adaptive, () => skipBreakerReset(breakerState), auditQuota);');
     const manifest = readFileSync('extension/package.json', 'utf8');
     expect(manifest).toContain('"codescout.docBudgetKb"');
     expect(manifest).toContain('%docBudgetKb.description%');

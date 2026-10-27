@@ -31,6 +31,9 @@ class StubState {
   inputBoxAnswers: unknown[] = [];
   quickPickCalls: unknown[][] = [];
   inputBoxCalls: unknown[][] = [];
+  // Микро-батч 28.6: учёт showWarningMessage (баннер санкции quota-паузы —
+  // ровно один на прогон) — ответы всё так же из очереди warningAnswers.
+  warningCalls: unknown[][] = [];
 
   reset(): void {
     this.config.clear();
@@ -55,6 +58,7 @@ class StubState {
     this.inputBoxAnswers = [];
     this.quickPickCalls = [];
     this.inputBoxCalls = [];
+    this.warningCalls = [];
   }
 
   set(sectionKey: string, value: unknown): void {
@@ -137,7 +141,7 @@ export const window = {
   },
   async showErrorMessage(message?: unknown, ..._args: unknown[]): Promise<undefined> { state.errorMessages.push(String(message ?? '')); return undefined; },
   async showInformationMessage(..._args: unknown[]): Promise<undefined> { return undefined; },
-  async showWarningMessage(..._args: unknown[]): Promise<unknown> { return state.warningAnswers.shift(); },
+  async showWarningMessage(...args: unknown[]): Promise<unknown> { state.warningCalls.push(args); return state.warningAnswers.shift(); },
   async showInputBox(...args: unknown[]): Promise<unknown> { state.inputBoxCalls.push(args); return state.inputBoxAnswers.shift(); },
   async showQuickPick(...args: unknown[]): Promise<unknown> { state.quickPickCalls.push(args); return state.quickPickAnswers.shift(); },
   async showOpenDialog(..._args: unknown[]): Promise<undefined> { return undefined; },

@@ -34061,6 +34061,27 @@ function parseProof(raw) {
         return '';
     return raw.trim().slice(0, PROOF_MAX);
 }
+// ── Микро-батч 28.5: анти-entity пост-фильтр ────────────────────────────────
+// Транспорт иногда экранирует угловые скобки, и модель начинает «находить»
+// HTML-entities (&lt; &gt; &amp; =&gt; и т.п.) вместо реальных дефектов.
+// Семейство A — корректные entity-токены `&имя;` / `&#123;` (точная семаколка
+// обязательна: «a=1&b=2» в тексте не матчится). Находка отбрасывается, если
+// description/proof (а) содержит хотя бы один такой токен, (б) жалуется
+// словами про entity/экранирование/замену и (в) ПОСЛЕ вычеркивания токенов в
+// тексте почти не остаётся содержательных слов («преимущественно» — см.
+// порог). Настоящая находка, где entities лишь мелькают в цитате, живёт.
+const ENTITY_TOKEN_RE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d{1,8});/g;
+const ENTITY_COMPLAIN_RE = /html[\s-]?entit|сущност|encod|decod|escap|экранир|замен|replace|convert|артефакт|\bentities?\b/i;
+function isEntityArtifactComplaint(description, proof = '') {
+    const text = `${description}\n${proof}`;
+    const tokens = text.match(ENTITY_TOKEN_RE);
+    if (!tokens || tokens.length === 0)
+        return false;
+    if (!ENTITY_COMPLAIN_RE.test(text))
+        return false;
+    const words = text.replace(ENTITY_TOKEN_RE, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}_\-]{2,}/gu);
+    return (words ? words.length : 0) <= tokens.length * 3 + 2;
+}
 function findBalancedJson(text) {
     const start = text.search(/[[{]/);
     if (start < 0)
@@ -34168,6 +34189,7 @@ function parseReviewResponse(raw, filename) {
         throw new Error(`Ответ модели для ${filename} — не JSON-объект (получен ${typeof parsed})`);
     const object = parsed;
     const rawIssues = Array.isArray(object.issues) ? object.issues : [];
+    let droppedEntityArtifacts = 0;
     const issues = rawIssues.flatMap((item) => {
         if (!item || typeof item !== 'object')
             return [];
@@ -34183,9 +34205,15 @@ function parseReviewResponse(raw, filename) {
         const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
         const severity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
         const proof = parseProof(value.proof);
+        // Микро-батч 28.5: жалоба, состоящая преимущественно из HTML-entities, —
+        // артефакт передачи, не находка; режем здесь и считаем для Output.
+        if (isEntityArtifactComplaint(description, proof)) {
+            droppedEntityArtifacts += 1;
+            return [];
+        }
         return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
     });
-    return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1 };
+    return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1, droppedEntityArtifacts };
 }
 
 ;// CONCATENATED MODULE: ./src/report-formatter.ts
@@ -34570,13 +34598,14 @@ async function probeLocalServer(rawUrl, fetcher = fetch, timeoutMs = 5000) {
         return { ok: false, status: 'noAnswer', baseUrl: openAiUrl, models: [], message: error instanceof Error ? error.message : String(error) };
     }
 }
-// Батч 18: жёсткий порядок отображения в UI (селект центра, quickPick, wizard).
-// Системный 'auto' из списка СКРЫТ: автодетект по префиксу ключа работает
-// под капотом в saveKeyProvider/setApiKey. openrouter остаётся рабочим
-// (sk-or- детект, env-ключ), но из витрины убран.
-// Батч 21: к витрине добавлены семь zero-config OpenAI-совместимых платформ
-// (top-12 из коробки) — меньше ручной настройки custom-эндпоинтов.
-const PROVIDER_ORDER = (/* unused pure expression or super */ null && (['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras']));
+// МИКРО-БАТЧ 28.3: единый порядок провайдеров во ВСЕХ списках UI (select
+// формы профиля, legacy-select, QuickPick свитча профилей, пикер догона
+// батча 25) = ['custom', ...Object.keys(PROVIDERS)]. Порядок задаётся
+// порядком полей в PROVIDERS — расхождение списка с реестром стало
+// невозможным (фикс 28.3: openrouter был в PROVIDERS, но отсутствовал в
+// витрине, потому что порядок держался отдельным ручным массивом).
+// Системный 'auto' не входит: автодетект по префиксу ключа живёт под
+// капотом в saveKeyProvider/setApiKey.
 const PROVIDERS = {
     openai: {
         baseUrl: 'https://api.openai.com/v1',
@@ -34672,8 +34701,18 @@ const PROVIDERS = {
         envKey: 'CEREBRAS_API_KEY',
         defaultModel: 'llama3.1-8b',
         keyUrl: 'https://cloud.cerebras.ai'
+    },
+    // МИКРО-БАТЧ 28.3: Z.ai (智谱开放平台) — OpenAI-совместимый v4-эндпоинт;
+    // ключи формата «id.secret» без стабильного префикса — автодетект не гадаем.
+    zai: {
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        envKey: 'ZAI_API_KEY',
+        defaultModel: 'glm-4.5-air',
+        keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys'
     }
 };
+// МИКРО-БАТЧ 28.3: единый порядок — из самого реестра (см. комментарий выше).
+const PROVIDER_ORDER = ['custom', ...Object.keys(PROVIDERS)];
 // Батч 21, п.2: список для QuickPick-развилки неоднозначного `sk-`.
 // Метка — провайдер не переводится (тех-термины/i18n-вайтлист).
 const SK_AMBIGUOUS_OPTIONS = [
@@ -35053,6 +35092,12 @@ class OpenAICompatibleProvider {
                     }
                     if (response.status === 404)
                         throw new ProviderHttpError(404, notFoundMessage(this.model), details);
+                    // Микро-батч 28.4: HTTP 402 (groq/openrouter, биллинг-квота) —
+                    // типизированный ProviderHttpError: категория quota, локальная
+                    // лестница ретраев при «нет денег» бессмысленна, но failover по
+                    // этому же триггеру усыпляет ключ и ротирует цепочку (см. catch).
+                    if (response.status === 402)
+                        throw new ProviderHttpError(402, `402: ${details}`, details);
                     // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
                     if (response.status === 401 || response.status === 403)
                         throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
@@ -35088,6 +35133,31 @@ class OpenAICompatibleProvider {
                     // ошибка летит наверх как раньше).
                     if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
                         await this.failover.onAuthError(error.status);
+                    }
+                    // Микро-батч 28.4: 402 (billing-квота groq/openrouter) — при включённом
+                    // failover спрашиваем keychain ТЕМ ЖЕ решателем, что и 429: усыпить ключ
+                    // и ротировать. Без failover / при отказе решателя ошибка летит наверх
+                    // мгновенно (категория quota; локальная лестница ретраев по billing
+                    // бессмысленна и только жрёт время аудита).
+                    if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
+                        const decision = await this.failover.onRateLimit(undefined, 'quota');
+                        if (decision) {
+                            if (decision.action === 'switch') {
+                                this.apiKey = sanitizeApiKey(decision.apiKey);
+                                this.endpoint = completionUrl(decision.baseUrl);
+                                this.model = decision.model;
+                                retryCount = 0;
+                                lastRetryableError = undefined;
+                                continue;
+                            }
+                            if (decision.action === 'wait') {
+                                await this.sleeper(decision.waitMs, this.signal);
+                                continue;
+                            }
+                            if (decision.action === 'stop') {
+                                throw new AllProfilesAsleepError('All key profiles are asleep (quota)', decision.waitMs, decision.wakeLabel);
+                            }
+                        }
                     }
                     throw error;
                 }
@@ -35226,7 +35296,7 @@ BE LENIENT on:
 
 Report at most 3 issues per file, and include only the most important findings. Precision over recall: if unsure whether something is a real problem, do NOT flag it.
 Category accuracy matters: security is ONLY for secrets, injection, authorization or authentication flaws, and unsafe cryptography. Performance is for indexes, caching, N+1 queries, and heavy loops. NEVER label performance or style advice as security. Do NOT suggest database indexes unless the diff clearly shows a query pattern that would be slow without the index. Do NOT flag missing logging libraries in small projects. ONLY flag when you would block a PR merge based on the issue; otherwise do NOT flag it.
-Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 — how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
+Be strict on hardcoded secrets, real bugs, security vulnerabilities, division by zero, and out-of-bounds access. Only mark an issue critical when the severity is truly critical and confidence is at least 90; otherwise use medium or low. Seed, ORM, and migration observations should be low or omitted unless there is a concrete defect. Absolute new-file line numbers are printed on the left of each added or context line; use them EXACTLY in your answer. Always return the exact changed code snippet in the code field. HTML ENTITY GUARD (mandatory): code is transmitted AS IS; it is FORBIDDEN to report HTML entities (&lt; &gt; &amp; =&gt; and the like) as code defects — if you see them, that is a transport artifact, not a bug of the file. BATCH TRUST RULES (mandatory for every finding): "confidence" is an INTEGER from 0 to 100 — how sure you are that this is a real problem (0 = pure guess, 100 = certain; the UI marks findings with confidence 70 and above as code-verified, below 70 as model assumptions). "proof" is a STRING justification: quote the exact line(s) of code that demonstrate the defect or state the concrete reason it is harmful; when you truly have no evidence use an empty string "". Return valid JSON only with this shape: {"issues":[{"file":"string","line":1,"code":"exact code snippet","category":"bug|security|performance|maintainability|docs|style","severity":"low|medium|high|critical","description":"string","suggestion":"string","confidence":0,"proof":"string"}],"summary":"string"}. Line must refer to an absolute new-file line shown on the left when possible. Use an empty issues array when there is no meaningful finding.`;
 function controlSafe(value) {
     return value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -35239,9 +35309,12 @@ const PATCH_FENCE = '<<<CODESCOUT_PATCH_BEGIN>>>';
 const PATCH_END_FENCE = '<<<CODESCOUT_PATCH_END>>>';
 const UNTRUSTED_IMPORTS_FENCE = '<<<CODESCOUT_UNTRUSTED_IMPORTS>>>';
 function withReportLanguage(prompt, language) {
+    // Микро-батч 28.5: анти-entity страховка — в EN она уже в SYSTEM_PROMPT
+    // (HTML ENTITY GUARD); для ru-сборки дублируем правило по-русски, чтобы
+    // модель читала его на языке ответа.
     return language === 'en'
         ? `${prompt}\n\nWrite the human-readable fields (description, suggestion, summary) in English. Do not translate code.`
-        : `${prompt}\n\nПиши человекочитаемые поля (description, suggestion, summary) по-русски. Код не переводи.`;
+        : `${prompt}\n\nПиши человекочитаемые поля (description, suggestion, summary) по-русски. Код не переводи. Код передаётся КАК ЕСТЬ. Запрещено сообщать о HTML-entities (&lt; &gt; &amp; =&gt; и т.п.) как о дефектах кода: если ты их видишь, это артефакт передачи, а не баг файла.`;
 }
 function withFocusInstructions(prompt, focus) {
     const clean = controlSafe(focus).replace(/\r/g, '').slice(0, 2000).trim();

@@ -834,5 +834,50 @@ pre-design now.
      уходит в ReviewResult.droppedEntityArtifacts → ScanResult → Output
      «🧹 отброшено entity-артефактов: N» (logEntityDrops в аудит/своё/дифф).
      e2e+unit: tests/batch28-5-quota-edit-entity.test.ts (13). Tests: 679.
+ 37. Quota-паузы циклами + форма ВНУТРИ рамки (микробатч 28.6):
+     a) Первый скип категории quota, когда failover-ротация невозможна
+     (failover выключен/решатель сказал stop/ключей нет), НЕ продолжает
+     очередь цикла: reviewFiles получил последний параметр quota?:
+     QuotaPauseOptions (ask/onSkipLine/onBeforePause/onResumed; pauseSeconds/
+     maxCycles/autonomous). Output цикла = ровно 2 строки независимо от
+     длины очереди: «⚠ quota: ключ X исчерпан (хвост) — остальные N файлов
+     цикла не стартуют» + «💤 quota-пауза: Tс до попытки (цикл N); проверено
+     X из Y, находок Z — сохранено»; чекпоинт пишется ДО каждой паузы
+     (persist), сон через инжектируемый sleeper (отменяем, cancel =
+     'cancelled'); после T — «▶️ цикл N: продолжаю с файла X»,
+     skipBreakerReset, тот же файл повторяется. Настройки:
+     codescout.quotaPauseSeconds (360, кламп 30-3600),
+     codescout.quotaPauseMaxCycles (0 = без лимита в автономном; >0 —
+     потолок, затем QuotaExhaustedError → финальный Output «🛑 Квота
+     исчерпана…» + resume-баннер с quota.banner-строкой и кнопками догона;
+     авто-догон не стартует). Автономный ВЫКЛ: ровно ОДИН showWarningMessage
+     «Квота исчерпана. Подождать Tс и повторить?» [Подождать и повторить |
+     Стоп] на прогон (quotaAsked); санкция → циклы сами до потолка; «Стоп» →
+     очередь стоит, текущий файл НЕ помечен скипом (остался в remaining).
+     skipBreakerFeed СНОВА прозрачен для quota (не инкрементит и не сбрасывает
+     — у неё свой механизм), progressView не рисует breaker-хвост по quota;
+     прочие категории — как в 28.5. Failover-ротация (switch/wait) работает
+     по-прежнему приоритетно — пауза только когда ротация невозможна.
+     quota-конфиг передаёт только аудит; свои ревью/diff — прежний мгновенный
+     скип. Pure-хелперы quotaPauseSeconds/MaxCyclesFromSetting + класс
+     QuotaExhaustedError в projectAudit; quota.banner/resume — в reportHtml
+     (t-ключи quota.ask/askWait/banner в обоих словарях).
+     b) Форма ВНУТРИ рамки карточки: у .kc-form больше НЕТ своей
+     border/background — открытая форма монится в .kc-form-slot редактируемой
+     карточки (аккордеон 28.4), карточка получает класс kc-editing (рамка
+     карточки = единственная рамка: один border вокруг «строка профиля +
+     поля»); отображаемые строки (kc-baseurl-row, kc-keys, kc-actions) в
+     режиме правки не показываются: CSS-гейт .kc-row.kc-editing > … display:none
+     + клиент физически снимает их с DOM (hideCardRows) и возвращает на
+     «Отмена»/Escape/сворачивании (restoreCardRows/clearEditingCards);
+     серверный draft-рендер (ошибка валидации) синхронизирует initForm→hideCardRows.
+     «+ Добавить профиль» — та же add-card (kc-row-рамка) с заголовком
+     «Новый профиль». Контракт: ближайший kc-row-предок открытой формы =
+     редактируемая карточка (draft p2 → не p1, не add-card).
+     Тесты: tests/batch28-6-quota-pause-frame.test.ts (16: unit-очередь/
+     resume-тот-же-файл/одна-санкция/клампы + e2e fake-timers потолок/
+     санкция/cancel-во-сне + рамка формы + i18n/манифест); batch28-5
+     обновлён под новые quota-семантики, batch28-4 breaker-тест — quota
+     прозрачна. Tests: 695.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

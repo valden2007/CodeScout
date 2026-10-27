@@ -5,8 +5,9 @@
 //     (усыпить ключ — retry-after/лестница 120/300/600 — и ротнуть; Output
 //     «🔑 failover: … (quota; … спит Nс)»); после ротации счётчик breaker
 //     сбрасывается и pointless-скипов нет. Failover выключен → мгновенный
-//     скип БЕЗ локальной billing-лестницы, skipBreakerFeed считает quota,
-//     лимит подряд стопит аудит баннером «Квота исчерпана»;
+//     скип БЕЗ локальной billing-лестницы. МИКРО-БАТЧ 28.6: в аудите вместо
+//     серии скипов работают quota-паузы циклами (см. batch28-6), а
+//     skipBreakerFeed снова НЕ трогает категорию quota (у неё свой механизм);
 //  2) форма редактирования монтируется в слот КЛИКНУТОЙ карточки, заголовок
 //     = «Редактирование: <label>» / «Новый профиль», иконка следует режиму;
 //  3) анти-entity: правило HTML ENTITY GUARD в промпте (EN в базе, RU в
@@ -22,7 +23,8 @@ import { buildSettingsHtml, type SettingsState } from '../extension/src/settings
 import { SYSTEM_PROMPT, withReportLanguage } from '../src/prompt-builder';
 import { isEntityArtifactComplaint, parseReviewResponse } from '../src/response-parser';
 import { categorizeError } from '../src/error-classifier';
-import { skipBreakerFeed, skipBreakerReset, readAuditProgress, type SkipBreakerState } from '../extension/src/projectAudit';
+import { skipBreakerFeed, readAuditProgress, type SkipBreakerState } from '../extension/src/projectAudit';
+import { t } from '../src/i18n';
 import { keySecretId, resetRuntime, runtime, keyRuntimeId, scanCurrent, type KeychainProfile } from '../extension/src/keychain';
 import { clearModelsCache } from '../src/providers';
 
@@ -148,7 +150,7 @@ describe('микробатч 28.5: quota доезжает до failover-хука
     expect(line).toContain('спит 120с');
   }, 60000);
 
-  it('failover выключен: квота → мгновенный скип БЕЗ billing-лестницы; skipBreakerFeed считает quota', async () => {
+  it('failover выключен, БЕЗ quota-конфига: мгновенный скип БЕЗ billing-лестницы; breaker quota не трогает (28.6)', async () => {
     state.set('codescout.keychain', twoProfiles());
     state.set('codescout.keychain.active', 'a');
     state.set('codescout.failover.enabled', false);
@@ -169,22 +171,22 @@ describe('микробатч 28.5: quota доезжает до failover-хука
     );
     expect(result.skippedFiles).toBe(3);
     expect(skipped.map((s) => s.category)).toEqual(['quota', 'quota', 'quota']);
-    expect(breaker.count).toBe(3);
+    // Микро-батч 28.6: квота вне предохранителя — у неё свои quota-паузы
+    // (они живут в аудите; здесь reviewFiles вызван БЕЗ quota-конфига).
+    expect(breaker.count).toBe(0);
+    expect(breaker.category).toBeUndefined();
     // локальная лестница 120/300/600 НЕ крутилась: пауз >2с не было вовсе
     expect(slept.filter((ms) => ms > 2000)).toEqual([]);
     // failover-состояние не тронуто
     expect(runtime.get(keyRuntimeId('a', 'default'))?.sleepUntil ?? 0).toBe(0);
-    // и breaker на лимите: 4-й подряд quota стопит
-    expect(skipBreakerFeed(breaker, 'quota', 4)).toBe(true);
-    skipBreakerReset(breaker);
-    expect(breaker.count).toBe(0);
   }, 60000);
 
-  it('e2e аудит: failover выключен, 402 на всех файлах → предохранитель на лимите, баннер «Квота исчерпана»', async () => {
+  it('e2e аудит: failover выключен, автономный выкл, «Стоп» на баннере санкции → очередь стоит, ни один следующий файл не начат', async () => {
     const root = makeWorkspace(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
     state.workspaceRoot = root;
     state.secrets.set('codescout.apiKey', 'CS_MOCK_KEY_FOR_TESTS');
     state.set('codescout.failover.enabled', false);
+    state.set('codescout.autoResume', false);
     state.set('codescout.rateLimitPauses', 3);
     let chatCalls = 0;
     globalThis.fetch = (async (url: string) => {
@@ -193,20 +195,27 @@ describe('микробатч 28.5: quota доезжает до failover-хука
       return quota402();
     }) as typeof fetch;
     const html = boot();
+    // Ответ на баннер санкции — «Стоп»: quota-пауза не стартует, цикл не продолжается.
+    state.warningAnswers.push(t('keychain.bannerStopBtn', 'ru'));
     await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
     await flush();
-    // пятый файл не запрашивался: breaker стопит на 4-м подряд «quota»
-    expect(chatCalls).toBe(4);
-    expect(state.outputLines.some((line) => line.includes('причина: quota (HTTP 402'))).toBe(true);
+    // Очередь НЕ прогоняется в пустую: только первый файл дёрнул провайдер.
+    expect(chatCalls).toBe(1);
+    expect(state.warningCalls.length).toBe(1);
+    expect(String(state.warningCalls[0][0])).toContain('Квота исчерпана');
+    // Output цикла: строка «⚠ quota» (скип) — без строки паузы (пользователь отказал).
+    expect(state.outputLines.some((line) => line.includes('⚠ quota: ключ') && line.includes('файлов цикла не стартуют'))).toBe(true);
+    expect(state.outputLines.some((line) => line.includes('💤 quota-пауза'))).toBe(false);
     // локальная billing-лестница не крутилась
     expect(state.outputLines.some((line) => line.includes('⏸ rate-limit:'))).toBe(false);
-    expect(state.outputLines.some((line) => line.includes('🛑 Circuit breaker: 4 скипа подряд одной категории «quota»'))).toBe(true);
     const view = html();
-    expect(view).toContain('Сработал предохранитель: 4 одинаковых скипа подряд');
-    expect(view).toContain('Квота исчерпана');
+    expect(view).toContain('resumeAudit');
     const cp = readAuditProgress(root)!;
-    expect(cp.skippedFiles?.length).toBe(4);
-    expect(cp.skippedFiles?.every((entry) => entry.category === 'quota')).toBe(true);
+    expect(cp.state).toBe('interrupted');
+    // «Стоп» НЕ помечает текущий файл скипом — он остаётся в remaining
+    // (ничего не теряется); остальные 4 файла цикла не стартовали вообще.
+    expect(cp.remaining.length).toBe(5);
+    expect(cp.checked.length).toBe(0);
     rmSync(root, { recursive: true, force: true });
   }, 120000);
 
