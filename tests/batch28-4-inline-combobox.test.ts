@@ -181,7 +181,6 @@ const MODELS_11 = [
 ];
 
 interface ComboCore {
-  comboOpenList(models: unknown): string[];
   comboFilter(models: unknown, query: unknown): string[];
   comboIsCurrent(model: unknown, current: unknown): boolean;
 }
@@ -190,21 +189,22 @@ function comboCore(): ComboCore {
   const script = readScriptSource();
   const m = script.match(/\/\* cs-combo-core:start \*\/([\s\S]*?)\/\* cs-combo-core:end \*\//);
   expect(m, 'маркеры cs-combo-core не найдены в скрипте').toBeTruthy();
-  const factory = new Function(`${m![1]}; return { comboOpenList, comboFilter, comboIsCurrent };`);
+  const factory = new Function(`${m![1]}; return { comboFilter, comboIsCurrent };`);
   return factory() as ComboCore;
 }
 
-describe('микробатч 28.4: честный комбобокс моделей (ядро из живого скрипта)', () => {
+describe('микробатч 28.4/28.9: честный комбобокс моделей (ядро из живого скрипта)', () => {
   const core = comboCore();
 
-  it('раскрытие при НЕПУСТОМ текущем значении — ВСЕ 11 моделей, без фильтрации', () => {
+  // 28.9: раскрытие СПИШКА всегда применяет текущий фильтр: при непустом
+  // значении comboFilter даёт только совпадения; полный список — при пустом.
+  it('раскрытие = текущий фильтр: непустое значение сужает список, пустое — все 11', () => {
     const current = 'llama-3.3-70b-versatile';
-    expect(current).not.toBe('');
-    const list = core.comboOpenList(MODELS_11);
-    expect(list).toHaveLength(11);
-    expect(list).toEqual(MODELS_11);
+    expect(core.comboFilter(MODELS_11, current)).toEqual([current]);
+    expect(core.comboFilter(MODELS_11, 'llama')).toHaveLength(2);
+    expect(core.comboFilter(MODELS_11, '')).toHaveLength(11);
     // Текущая помечается галочкой через comboIsCurrent — она в списке.
-    expect(list.some((model) => core.comboIsCurrent(model, current))).toBe(true);
+    expect(core.comboFilter(MODELS_11, current).some((model) => core.comboIsCurrent(model, current))).toBe(true);
     expect(core.comboIsCurrent('llama-3.1-8b-instant', current)).toBe(false);
   });
 
@@ -235,10 +235,13 @@ describe('микробатч 28.4: честный комбобокс модел�
     expect(html.indexOf('id="kcFormModelsCount"')).toBeLessThan(html.indexOf('id="kcFormModelOptions"'));
   });
 
-  it('скрипт: фокус/стрелка открывают ПОЛНЫЙ список, печать фильтрует, стрелки/Enter/Escape клавиатура, ручной ввод жив', () => {
+  it('скрипт: раскрытие фильтрует текущим значением, ЛЮБОЕ изменение (input) перерисовывает, стрелки/Enter/Escape клавиатура, ручной ввод жив', () => {
     const source = readScriptSource();
     expect(source).toContain("kcFormModelInput.addEventListener('focus', () => { if (formVisible()) openCombo(); })");
-    expect(source).toContain("kcFormModelInput.addEventListener('input', () => { if (formVisible() && comboOpen()) refreshComboTyped(); })");
+    // 28.9: фильтр применяется к любому событию input (keystroke/paste/programmatic),
+    // а не только когда список уже открыт.
+    expect(source).toContain("kcFormModelInput.addEventListener('input', () => { if (formVisible()) refreshComboTyped(); })");
+    expect(source).toContain('function comboItems() { return comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : \'\'); }');
     expect(source).toContain("kcFormModelArrow.addEventListener('click', () => { if (comboOpen()) closeCombo(); else openCombo(); })");
     expect(source).toContain("event.key === 'ArrowDown' || event.key === 'ArrowUp'");
     expect(source).toContain('moveComboActive(event.key === \'ArrowDown\' ? 1 : -1)');

@@ -225,12 +225,14 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
 // отмена/Escape сворачивают без postMessage и без записи. «Подтянуть
 // модели» шлёт keychainFormModels с ключом ИЗ ПОЛЯ формы (авто — дебаунс
 // 600мс, 28.3) — секрет до «Сохранить» нигде не появляется.
-// МИКРО-БАТЧ 28.4: поле модели — честный комбобокс (input + выпадающий
-// список) ВМЕСТО datalist: раскрытие по клику на стрелку или фокус
-// показывает ВСЕ подтянутые модели БЕЗ фильтрации текущим значением,
-// текущая помечена галочкой; печать фильтрует список подстрокой без учёта
-// регистра; над списком счётчик «N моделей», при N=0 — подсказка; клавиши
-// вниз/вверх — активная опция, Enter — выбор, Escape — закрыть СПИСОК (не
+// МИКРО-БАТЧ 28.4/28.9: поле модели — честный комбобокс (input + выпадающий
+// список) ВМЕСТО datalist. 28.9: ФИЛЬТР ПРИМЕНЯЕТСЯ К ЛЮБОМУ ИЗМЕНЕНИЮ
+// ЗНАЧЕНИЯ (keystroke/paste/drop/программная установка — событие input) и
+// раскрытие (стрелка/фокус) ВСЕГДА показывает список, отфильтрованный по
+// ТЕКУЩЕМУ значению; при пустом значении это весь список. Текущая помечена
+// галочкой; ноль совпадений — «нет совпадений» + «впиши модель руками»;
+// над списком счётчик «N моделей», при N=0 — подсказка; клавиши вниз/вверх —
+// активная опция, Enter — выбор, Escape — закрыть СПИСОК (не
 // форму). Ручной ввод произвольной модели остаётся возможным.
 function keychainFormHtml(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   const draft = state.keychainFormDraft;
@@ -671,7 +673,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime — 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('…') call sites against this whitelist.
-const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading', 'keychain.formModelsCount', 'keychain.comboEmptyHint', 'keychain.comboNoMatches', 'keychain.formTitleEdit', 'keychain.formTitleAdd'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
+const UI = ${JSON.stringify(['save.save', 'save.saving', 'save.clean', 'save.dirty', 'chip.removeTip', 'form.pickOutside', 'form.pickNoWorkspace', 'center.connecting', 'center.retry', 'center.liveModels', 'models.loading', 'keychain.formKeyKeep', 'center.keyPaste', 'keychain.formErrProvider', 'keychain.formErrKey', 'keychain.formPullModels', 'keychain.formSave', 'keychain.formModelsLoading', 'keychain.formModelsCount', 'keychain.comboEmptyHint', 'keychain.comboNoMatches', 'keychain.comboManual', 'keychain.formTitleEdit', 'keychain.formTitleAdd'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>))};
 function L(key) { return UI[key] || key; }
 const providerSelect = document.getElementById('provider');
 const baseUrlRow = document.getElementById('baseUrlRow');
@@ -952,12 +954,12 @@ let formEditing = '';
 const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
 let formPullTimer = 0;
 let formPullSeq = 0;
-// Batch 28.4: pulled model ids (non-secret — safe for vscode.getState), the
-// highlighted option index and the "user typed" flag (open-by-focus shows ALL
-// models unfiltered; typing switches the list into substring-filter mode).
+// Batch 28.4: pulled model ids (non-secret — safe for vscode.getState) and the
+// highlighted option index. Batch 28.9: NO "unfiltered open" mode anymore —
+// every render (typing, paste, programmatic set, opening) filters by the
+// current input value; empty value keeps the full list.
 let formModelsList = [];
 let comboActive = -1;
-let comboTyped = false;
 function setFormModelsStatus(text, isError) {
   if (!kcFormModelsStatus) return;
   kcFormModelsStatus.textContent = text || '';
@@ -996,10 +998,11 @@ function persistForm() {
   // models = non-secret pulled list (28.4); the API KEY never enters state.
   writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value, models: formModelsList });
 }
-// ── Batch 28.4: model combobox core. Pure functions below the markers are
-// extracted and unit-tested as-is (tests/batch28-4). Plain JS only.
+// ── Batch 28.4/28.9: model combobox core. Pure functions below the markers
+// are extracted and unit-tested as-is (tests/batch28-4, batch28-9). 28.9:
+// opening ALWAYS applies the current filter (comboFilter), so no
+// unfiltered-open helper remains. Plain JS only.
 /* cs-combo-core:start */
-function comboOpenList(models) { return Array.isArray(models) ? models.slice() : []; }
 function comboFilter(models, query) {
   const list = Array.isArray(models) ? models.slice() : [];
   const q = String(query || '').trim().toLowerCase();
@@ -1010,7 +1013,7 @@ function comboIsCurrent(model, current) { return String(model || '') === String(
 /* cs-combo-core:end */
 function comboOpen() { return Boolean(kcFormModelDropdown) && !kcFormModelDropdown.classList.contains('hidden'); }
 function setComboExpanded(open) { if (kcFormModelInput) kcFormModelInput.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-function comboItems() { return comboTyped ? comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : '') : comboOpenList(formModelsList); }
+function comboItems() { return comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : ''); }
 function comboOptEls() { return kcFormModelOptions ? Array.prototype.slice.call(kcFormModelOptions.querySelectorAll('.kc-combo-opt')) : []; }
 function renderCombo() {
   if (!kcFormModelOptions || !kcFormModelDropdown) return;
@@ -1038,20 +1041,21 @@ function renderCombo() {
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'kc-combo-empty';
-    // N=0 pulled → «press Pull models» hint; typed-no-match → separate hint.
-    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') : L('keychain.comboEmptyHint');
+    // N=0 pulled → «press Pull models» hint; typing-no-match → «no matches»
+    // plus «type the model manually» (28.9: the filter never blocks manual input).
+    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') + ' — ' + L('keychain.comboManual') : L('keychain.comboEmptyHint');
     kcFormModelOptions.appendChild(empty);
   }
 }
 function openCombo() {
   if (!kcFormModelDropdown) return;
-  comboActive = -1; comboTyped = false;
+  comboActive = -1;
   renderCombo();
   kcFormModelDropdown.classList.remove('hidden');
   setComboExpanded(true);
 }
 function refreshComboTyped() {
-  comboTyped = true; comboActive = -1;
+  comboActive = -1;
   renderCombo();
   if (!kcFormModelDropdown || !comboOpen()) {
     if (kcFormModelDropdown) kcFormModelDropdown.classList.remove('hidden');
@@ -1061,7 +1065,7 @@ function refreshComboTyped() {
 function closeCombo() {
   if (!kcFormModelDropdown) return;
   kcFormModelDropdown.classList.add('hidden');
-  comboActive = -1; comboTyped = false;
+  comboActive = -1;
   setComboExpanded(false);
 }
 function moveComboActive(delta) {
@@ -1215,7 +1219,7 @@ document.addEventListener('keydown', (event) => {
 if (kcFormModelArrow) kcFormModelArrow.addEventListener('click', () => { if (comboOpen()) closeCombo(); else openCombo(); });
 if (kcFormModelInput) {
   kcFormModelInput.addEventListener('focus', () => { if (formVisible()) openCombo(); });
-  kcFormModelInput.addEventListener('input', () => { if (formVisible() && comboOpen()) refreshComboTyped(); });
+  kcFormModelInput.addEventListener('input', () => { if (formVisible()) refreshComboTyped(); });
   kcFormModelInput.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { if (comboOpen()) { closeCombo(); event.stopPropagation(); } return; }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

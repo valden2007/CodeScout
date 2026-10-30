@@ -467,7 +467,7 @@
   "keychain.formModelsLoading": "Подтягиваем модели…",
   "keychain.formModelsCount": "{n} моделей",
   "keychain.comboEmptyHint": "Список пуст — нажмите «Подтянуть модели».",
-  "keychain.comboNoMatches": "Нет совпадений по подстроке — стрелка вниз покажет весь список.",
+  "keychain.comboNoMatches": "нет совпадений",
   "keychain.comboToggle": "Показать все подтянутые модели",
   "err.title.billing": "Стена тарифа (402/биллинг)",
   "err.msg.billing": "Провайдер не покрывает модель тарифом: кончились деньги или нужна платная линейка — сон и паузы не помогут.",
@@ -478,5 +478,6 @@
   "keychain.diagBilling": "{label} — стена тарифа",
   "keychain.diagAsleep": "{label} — спит {s}с",
   "keychain.diagBroken": "{label} — сломан (401/403)",
-  "keychain.diagOff": "{label} — выключен"
+  "keychain.diagOff": "{label} — выключен",
+  "keychain.comboManual": "впиши модель руками"
 }

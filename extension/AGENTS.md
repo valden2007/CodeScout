@@ -875,9 +875,46 @@ pre-design now.
      «Новый профиль». Контракт: ближайший kc-row-предок открытой формы =
      редактируемая карточка (draft p2 → не p1, не add-card).
      Тесты: tests/batch28-6-quota-pause-frame.test.ts (16: unit-очередь/
-     resume-тот-же-файл/одна-санкция/клампы + e2e fake-timers потолок/
-     санкция/cancel-во-сне + рамка формы + i18n/манифест); batch28-5
-     обновлён под новые quota-семантики, batch28-4 breaker-тест — quota
-     прозрачна. Tests: 695.
+      resume-тот-же-файл/одна-санкция/клампы + e2e fake-timers потолок/
+      санкция/cancel-во-сне + рамка формы + i18n/манифест); batch28-5
+      обновлён под новые quota-семантики, batch28-4 breaker-тест — quota
+      прозрачна. Tests: 695.
+  38. Микро-батч 28.9 (три коммита):
+     a) Ключ — один источник: кейчейн ЕДИНСТВЕННЫЙ источник ключа для
+     аудита/ревью/моделей; legacy-слот codescout.apiKey — только миграция и
+     фолбэк при НУЛЕ профилей. resolveExtensionSelection в профильной ветке
+     НЕ подмешивает legacy/env; ошибка/тост при профиле без секрета говорит
+     фактическое место («сохрани ключ в профиле …», panel.errNoKeyProfile /
+     key.needFirstProfile), команду палитры упоминают только при нуле
+     профилей; «сейчас:» в центре = маска+провайдер+модель+метка активного
+     профиля (keyActiveLabel, center.nowProfile), без legacy-фолбэка;
+     «Сохранить»/setApiKey пишут в рабочий enabled-ключ активного профиля
+     (storeProfileSecret включает выключенный и снимает broken), без двойной
+     записи в legacy; догон «Продолжить другими…» strict (без env). Тесты:
+     матрица (только legacy/профили/рассинхрон/failover off) × (save,
+     models, resume) — tests/batch28-9-key-source.test.ts (14).
+     b) Billing-стенка не спит: новая категория 'billing' в error-classifier
+     (402, insufficient_credits/credits/billing/payment required, «upgrade
+     to … tier», «requires paid/flash tier»); 'quota' теперь = 429 с
+     retry-after/reset-текстами (сон и циклы 28.6 как были). 402 → ключ
+     billing-blocked (runtime.billingBlocked, НЕ sleepUntil), выводится из
+     ротации как broken (awakeKeys/решатель), хук reason='billing' +
+     detailTail, Output «💳 billing: ключ X у стены тарифа (хвост) — сон не
+     поможет»; switch → тот же файл новым ключом; живых нет (billingWall/
+     noneLeft) → BillingWallError: немедленный стоп с баннером-списком
+     диагнозов (billingDiagnosisLines, строка на профиль; keychain.banner
+     Billing/billingHint/diag*), без кнопок «подождать», авто-догон не
+     стартует; бейдж «тариф» в центре. Без failover: метка + 💳-строка,
+     стоп при нуле живых, иначе скип (breaker считает billing). Тесты:
+     tests/batch28-9-billing-wall.test.ts (10) + обновлённые 28.4/28.5/28.6
+     (402→billing, окно-429→quota-циклы; регресс механик сохранён).
+     c) Комбобокс моделей фильтрует при ЛЮБОМ изменении: comboItems всегда
+     через comboFilter(текущее значение), событие input перерисовывает и
+     открывает список (keystroke/paste/программная установка), раскрытие
+     применяет текущий фильтр; ноль совпадений → «нет совпадений — впиши
+     модель руками» (keychain.comboManual, в UI-белом списке); comboOpenList
+     удалён из ядра. Контракт paste «nemotron» + регресс 28.4
+     (стрелки/Enter/Escape/галочка/ручной ввод) —
+     tests/batch28-9-combo-filter.test.ts (4), 28.4 обновлён. Tests: 724.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

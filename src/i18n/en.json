@@ -467,7 +467,7 @@
   "keychain.formModelsLoading": "Fetching models…",
   "keychain.formModelsCount": "{n} models",
   "keychain.comboEmptyHint": "The list is empty — press “Pull models”.",
-  "keychain.comboNoMatches": "No substring matches — the down arrow shows the full list.",
+  "keychain.comboNoMatches": "no matches",
   "keychain.comboToggle": "Show all pulled models",
   "err.title.billing": "Billing/tier wall (402)",
   "err.msg.billing": "The provider does not cover this model by the plan: out of credits or a paid tier is required — sleeping will not help.",
@@ -478,5 +478,6 @@
   "keychain.diagBilling": "{label} — billing wall",
   "keychain.diagAsleep": "{label} — asleep {s}s",
   "keychain.diagBroken": "{label} — broken (401/403)",
-  "keychain.diagOff": "{label} — disabled"
+  "keychain.diagOff": "{label} — disabled",
+  "keychain.comboManual": "type the model name manually"
 }
