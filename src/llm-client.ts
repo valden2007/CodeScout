@@ -348,6 +348,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
           if (response.status === 402) throw new ProviderHttpError(402, `402: ${details}`, details);
           // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          // ЗАДАЧА 28.10 (context-wall): 400/413 — типизированный
+          // ProviderHttpError, чтобы skip-строка печатала «HTTP 400/413»,
+          // а классификатор видел статус. НЕ ретраится локальной лестницей
+          // (isRetryableError — только 502/503/504), ключ не блокируется:
+          // лечит это деление чанка в retry-слой above (reviewChunk).
+          if (response.status === 400 || response.status === 413) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           // 502/503/504 — ретраим как 429
           if (response.status === 502 || response.status === 503 || response.status === 504) {
             throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);

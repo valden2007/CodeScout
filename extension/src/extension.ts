@@ -15,7 +15,7 @@ import { CodeScoutPanel } from './panel';
 import { filterSuppressed } from './findingsStore';
 import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
-import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, quotaPauseMaxCyclesFromSetting, quotaPauseSecondsFromSetting, QuotaExhaustedError, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
+import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, CONTEXT_WALL_MAX_SPLITS, quotaPauseMaxCyclesFromSetting, quotaPauseSecondsFromSetting, QuotaExhaustedError, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
 import { activeProfile, activeUsableProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, diagnoseKeys, disableAllKeys, enableAllKeys, failoverEnabled, failoverMaxCycles, grantWaitOnce, hasAwakeKey, hasEnabledKey, keyLabelFor, markKeyBillingBlocked, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
@@ -467,12 +467,16 @@ export function fileCooldownSecondsFromSetting(value: unknown, auditPasses: numb
 // (maxRequestKTokens*1000); onPreSplit/onAdaptiveSplit/onQuarantineSkip —
 // Output-логи (RU, не UI); quarantine — включать перекладывание в конец
 // очереди (только для аудитов, которые не бросают на первой ошибке).
+// ЗАДАЧА 28.10: onContextWallSplit — деление чанка из-за context-wall
+// (HTTP 400/413 «request too large / context length»): n — номер деления
+// этого файла (1..CONTEXT_WALL_MAX_SPLITS), ключ при этом НЕ блокируется.
 export interface AdaptiveChunkOptions {
   preSplitTokens?: number;
   quarantine?: boolean;
   onAdaptiveSplit?: (filename: string, fromLines: number, toLines: number) => void;
   onPreSplit?: (filename: string, fromLines: number, toLines: number) => void;
   onQuarantineSkip?: (filename: string) => void;
+  onContextWallSplit?: (filename: string, fromLines: number, toLines: number, n: number) => void;
 }
 
 function isNetworkError(error: unknown): boolean {
@@ -694,6 +698,10 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
     let lastError: unknown;
     let pauses = 0;
     let quickRetries = 0;
+    // ЗАДАЧА 28.10 (context-wall): счётник делений ЭТОГО файла. Бюджет чанка
+    // уменьшается вдвое, файл ретрится до CONTEXT_WALL_MAX_SPLITS делений;
+    // после предела — скип с причиной context-wall. Ключ НЕ блокируется.
+    let contextWallSplits = 0;
     const docPick = docsResolver?.(file.filename, file.patch);
     const fileSystemPrompt = docPick?.section ? `${systemPrompt}\n\n${docPick.section}` : systemPrompt;
     // Рекурсивный обзор чанка: перелимит → делим этот чанк пополам (min 200
@@ -722,6 +730,21 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         // МИКРО-БАТЧ 28.9: BillingWallError из retry-слоя = стена тарифа —
         // стоп немедленно, деление чанка по billing бессмысленно.
         if (error instanceof BillingWallError) throw error;
+        // ЗАДАЧА 28.10 (context-wall): 400/413 «request too large /
+        // context length / maximum context» — НЕ тариф и НЕ лимит: бюджет
+        // чанка уменьшаем вдвое (до CONTEXT_WALL_MAX_SPLITS делений на файл),
+        // ретрим половинки, ключ НЕ блокируется (ни сна, ни broken/billing).
+        // После предела или при неделимом чанке — ошибка летит наверх:
+        // файл скипается с причиной context-wall (err.hint в баннере).
+        if (categorizeError(error) === 'context-wall') {
+          const halves = contextWallSplits < CONTEXT_WALL_MAX_SPLITS ? splitAuditChunk(chunk) : undefined;
+          if (halves) {
+            contextWallSplits += 1;
+            adaptive.onContextWallSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]), contextWallSplits);
+            return [...await reviewChunk(halves[0], importsLine, passLine), ...await reviewChunk(halves[1], importsLine, passLine)];
+          }
+          throw error;
+        }
         // Микро-батч 28.5: квота НЕ триггерит адаптивное деление чанка —
         // деление лечит «тяжёлый запрос», а не «нет денег»: halving на
         // billing-ключе лишь удваивает заведомо мёртвые запросы.
@@ -846,6 +869,11 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
           break;
         }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        // ЗАДАЧА 28.10 (context-wall): наверх от reviewChunk сюда падает
+        // «после предела делений» или неделимый чанок. Лестница пауз/карантин
+        // для него бессмысленны (окно от размера не зависит), ключ не блокируем —
+        // мгновенный скип с причиной context-wall (skipBreakerFeed считает).
+        if (categorizeError(error) === 'context-wall') break;
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
           pauses += 1;
@@ -1048,6 +1076,9 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       quarantine: true,
       onAdaptiveSplit: (filename, from, to) => output.appendLine(`🪶 чанк тяжёл: делю ${from}→${to} строк, файл ${filename}`),
       onPreSplit: (filename, from, to) => output.appendLine(`📏 пред-деление: чанк ${from}→${to} по бюджету токенов`),
+      // ЗАДАЧА 28.10 (context-wall): деление из-за «request too large /
+      // context length» — ключ не блокируем, это размер, не лимит и не тариф.
+      onContextWallSplit: (filename, from, to, n) => output.appendLine(`🧱 context-wall: узкое окно модели — делю чанк ${from}→${to} строк, файл ${filename} (деление ${n}/${CONTEXT_WALL_MAX_SPLITS})`),
       onQuarantineSkip: (filename) => output.appendLine(`⛳ файл слишком тяжёл: снизь chunkLines или maxRequestKTokens (${filename})`)
     };
     const auditSelection = await resolveExtensionSelection(context);
@@ -1409,7 +1440,9 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const customAdaptive: AdaptiveChunkOptions = {
       preSplitTokens: maxRequestKTokensFromSetting(reviewConfig.get<number>('maxRequestKTokens')) * 1000,
       onAdaptiveSplit: (filename, from, to) => output.appendLine(`🪶 чанк тяжёл: делю ${from}→${to} строк, файл ${filename}`),
-      onPreSplit: (filename, from, to) => output.appendLine(`📏 пред-деление: чанк ${from}→${to} по бюджету токенов`)
+      onPreSplit: (filename, from, to) => output.appendLine(`📏 пред-деление: чанк ${from}→${to} по бюджету токенов`),
+      // ЗАДАЧА 28.10 (context-wall): тот же лог, что в аудите — ключ не блокируется.
+      onContextWallSplit: (filename, from, to, n) => output.appendLine(`🧱 context-wall: узкое окно модели — делю чанк ${from}→${to} строк, файл ${filename} (деление ${n}/${CONTEXT_WALL_MAX_SPLITS})`)
     };
     const collection = collectFilesForScope(workspaceRoot, scope as ReviewScope, globs, vscode.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
     for (const entry of collection.chunked) output.appendLine(`📄 файл ${entry.file}: ${entry.chunks} чанков (перекрытие ${AUDIT_CHUNK_OVERLAP} строк)`);

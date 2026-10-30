@@ -679,6 +679,11 @@ export const ADAPTIVE_MIN_CHUNK_LINES = 200;
 // очереди); после 3 кругов (12-й цикл) — скип с подсказкой.
 export const QUARANTINE_CYCLES_PER_ROUND = 3;
 export const QUARANTINE_MAX_ROUNDS = 3;
+// ЗАДАЧА 28.10 (context-wall): сколько раз максимум делить чанк файла вдвое
+// при HTTP 400/413 «request too large / context length / maximum context».
+// Специка задачи фиксирует предел (до 3 делений) — ключ при этом НЕ
+// блокируется; после предела файл скипается с причиной context-wall.
+export const CONTEXT_WALL_MAX_SPLITS = 3;
 
 export function chunkLinesFromSetting(value: unknown): number {
   if (value === undefined || value === null || value === '') return AUDIT_CHUNK_LINES;

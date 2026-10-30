@@ -607,6 +607,7 @@ var OpenAICompatibleProvider = class {
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
           if (response.status === 402) throw new ProviderHttpError(402, `402: ${details}`, details);
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
+          if (response.status === 400 || response.status === 413) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           if (response.status === 502 || response.status === 503 || response.status === 504) {
             throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
           }
@@ -1172,6 +1173,9 @@ var ru_default = {
   "err.title.billing": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430 (402/\u0431\u0438\u043B\u043B\u0438\u043D\u0433)",
   "err.msg.billing": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0432\u0430\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u044C \u0442\u0430\u0440\u0438\u0444\u043E\u043C: \u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043D\u0443\u0436\u043D\u0430 \u043F\u043B\u0430\u0442\u043D\u0430\u044F \u043B\u0438\u043D\u0435\u0439\u043A\u0430 \u2014 \u0441\u043E\u043D \u0438 \u043F\u0430\u0443\u0437\u044B \u043D\u0435 \u043F\u043E\u043C\u043E\u0433\u0443\u0442.",
   "err.hint.billing": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B: \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043D\u0430 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u0443\u044E \u0438\u043B\u0438 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441; \u043A\u043B\u044E\u0447 \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438 \u0434\u043E \u0438\u0441\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F.",
+  "err.title.context-wall": "\u0417\u0430\u043F\u0440\u043E\u0441 \u0431\u043E\u043B\u044C\u0448\u0435 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u043E\u0433\u043E \u043E\u043A\u043D\u0430 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "err.msg.context-wall": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441 \u0438\u0437-\u0437\u0430 \u0440\u0430\u0437\u043C\u0435\u0440\u0430 (HTTP 400/413): \u0442\u0435\u043A\u0441\u0442 \u043D\u0435 \u0432\u043B\u0435\u0437\u0430\u0435\u0442 \u0432 \u043E\u043A\u043D\u043E \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430 \u043C\u043E\u0434\u0435\u043B\u0438.",
+  "err.hint.context-wall": "\u041C\u043E\u0434\u0435\u043B\u044C \u0441 \u0443\u0437\u043A\u0438\u043C \u043E\u043A\u043D\u043E\u043C \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u0448\u0438\u0440\u0435; \u0447\u0430\u043D\u043A \u0443\u0436\u0435 \u0434\u0435\u043B\u0451\u043D \u0432\u0434\u0432\u043E\u0435 \u0434\u043E \u043F\u0440\u0435\u0434\u0435\u043B\u0430 (\u0438\u043B\u0438 \u0441\u043D\u0438\u0437\u044C chunkLines/maxRequestKTokens).",
   "keychain.badgeBilling": "\u0442\u0430\u0440\u0438\u0444",
   "keychain.bannerBilling": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442",
   "keychain.billingHint": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0438\u043B\u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441. \u0421\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442.",
@@ -1664,6 +1668,9 @@ var en_default = {
   "err.title.billing": "Billing/tier wall (402)",
   "err.msg.billing": "The provider does not cover this model by the plan: out of credits or a paid tier is required \u2014 sleeping will not help.",
   "err.hint.billing": "Model/tier not covered: switch the profile to a free model or top up the balance; the key is out of rotation until fixed.",
+  "err.title.context-wall": "Request exceeds the model context window",
+  "err.msg.context-wall": "The provider rejected the request as too large (HTTP 400/413): the text does not fit into the model context window.",
+  "err.hint.context-wall": "Narrow-window model \u2014 pick a wider one; the chunk was already halved to the limit (or lower chunkLines/maxRequestKTokens).",
   "keychain.badgeBilling": "tier",
   "keychain.bannerBilling": "Billing wall: no live keys left",
   "keychain.billingHint": "Model/tier not covered \u2014 change the profile model or check the balance. Sleeping will not help.",
@@ -1708,11 +1715,17 @@ function isConnectionFailure(raw) {
   return /ECONNREFUSED|ECONNRESET|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
 }
 function statusFromText(raw) {
-  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[1-4]|429)\b/i) || raw.match(/^(40[1-4]|429)\b/);
+  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[0-4]|413|429)\b/i) || raw.match(/^(40[0-4]|413|429)\b/);
   return match ? Number(match[1]) : void 0;
 }
 var BILLING_TEXT_RE = /insufficient[_ ](?:quota|credits)|\bcredits\b|billing|payment required|upgrade to[^\n]{0,80}tier|(?:model|plan)[^\n]{0,60}requires (?:an? )?(?:paid|pro|flash|premium)[^\n]{0,40}tier|requires (?:a )?(?:paid|flash) tier/i;
 var QUOTA_RESET_TEXT_RE = /retry[ -]?after|reset(?:s|ting)? (?:in|at|on)\b|\bdaily (?:limit|quota|usage|request)|\bhourly (?:limit|quota)|\bminute(?:ly)? limit|x-ratelimit-reset|per[ -](?:day|hour|minute) (?:limit|quota|request)/i;
+var CONTEXT_WALL_TEXT_RE = /request too large|context(?: length| window)?(?: of)? ?(?:is|was)? ?(?:too|exceed)|too many (?:input )?tokens|maximum context|context length|prompt is too (?:long|large|big)|input too (?:long|large)|exceed(?:s|ed)? the (?:model )?context|reduce your (?:prompt|input)/i;
+function contextWallHit(status, blob) {
+  if (status === 413) return true;
+  if (status === 400 || status === void 0) return CONTEXT_WALL_TEXT_RE.test(blob);
+  return false;
+}
 function categorizeError(error) {
   if (error instanceof RateLimitError) {
     if (BILLING_TEXT_RE.test(messageOf(error))) return "billing";
@@ -1728,6 +1741,7 @@ function categorizeError(error) {
       if (BILLING_TEXT_RE.test(blob)) return "billing";
       return QUOTA_RESET_TEXT_RE.test(blob) ? "quota" : "rate_limit_exceeded";
     }
+    if ((error.status === 400 || error.status === 413) && contextWallHit(error.status, `${error.message} ${error.details}`)) return "context-wall";
     return "unknown";
   }
   if (error instanceof BadResponseError) return "invalid_json";
@@ -1743,6 +1757,7 @@ function categorizeError(error) {
     if (BILLING_TEXT_RE.test(raw)) return "billing";
     return QUOTA_RESET_TEXT_RE.test(raw) ? "quota" : "rate_limit_exceeded";
   }
+  if (contextWallHit(textStatus, raw)) return "context-wall";
   if (BILLING_TEXT_RE.test(raw)) return "billing";
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return "auth_invalid_key";
   if (/forbidden|permission denied/i.test(raw)) return "auth_forbidden";
@@ -4312,6 +4327,7 @@ var MAX_REQUEST_K_TOKENS_DEFAULT = 12;
 var ADAPTIVE_MIN_CHUNK_LINES = 200;
 var QUARANTINE_CYCLES_PER_ROUND = 3;
 var QUARANTINE_MAX_ROUNDS = 3;
+var CONTEXT_WALL_MAX_SPLITS = 3;
 function chunkLinesFromSetting(value) {
   if (value === void 0 || value === null || value === "") return AUDIT_CHUNK_LINES;
   const n = Math.round(Number(value));
@@ -7364,6 +7380,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
     let lastError;
     let pauses = 0;
     let quickRetries = 0;
+    let contextWallSplits = 0;
     const docPick = docsResolver?.(file.filename, file.patch);
     const fileSystemPrompt = docPick?.section ? `${systemPrompt}
 
@@ -7389,6 +7406,15 @@ ${docPick.section}` : systemPrompt;
       } catch (error) {
         if (isAbortError(error)) throw error;
         if (error instanceof BillingWallError) throw error;
+        if (categorizeError(error) === "context-wall") {
+          const halves2 = contextWallSplits < CONTEXT_WALL_MAX_SPLITS ? splitAuditChunk(chunk) : void 0;
+          if (halves2) {
+            contextWallSplits += 1;
+            adaptive.onContextWallSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves2[0]), contextWallSplits);
+            return [...await reviewChunk(halves2[0], importsLine, passLine), ...await reviewChunk(halves2[1], importsLine, passLine)];
+          }
+          throw error;
+        }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error) && categorizeError(error) !== "quota" && categorizeError(error) !== "billing";
         const halves = retriable ? splitAuditChunk(chunk) : void 0;
         if (halves) {
@@ -7479,6 +7505,7 @@ ${docPick.section}` : systemPrompt;
           break;
         }
         const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error);
+        if (categorizeError(error) === "context-wall") break;
         if (retriable && rateLimitPauses > 0 && pauses < rateLimitPauses) {
           const waitSeconds = RATE_LIMIT_PAUSE_LADDER[Math.min(pauses, RATE_LIMIT_PAUSE_LADDER.length - 1)];
           pauses += 1;
@@ -7667,6 +7694,9 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       quarantine: true,
       onAdaptiveSplit: (filename, from, to) => output.appendLine(`\u{1FAB6} \u0447\u0430\u043D\u043A \u0442\u044F\u0436\u0451\u043B: \u0434\u0435\u043B\u044E ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename}`),
       onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`),
+      // ЗАДАЧА 28.10 (context-wall): деление из-за «request too large /
+      // context length» — ключ не блокируем, это размер, не лимит и не тариф.
+      onContextWallSplit: (filename, from, to, n) => output.appendLine(`\u{1F9F1} context-wall: \u0443\u0437\u043A\u043E\u0435 \u043E\u043A\u043D\u043E \u043C\u043E\u0434\u0435\u043B\u0438 \u2014 \u0434\u0435\u043B\u044E \u0447\u0430\u043D\u043A ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename} (\u0434\u0435\u043B\u0435\u043D\u0438\u0435 ${n}/${CONTEXT_WALL_MAX_SPLITS})`),
       onQuarantineSkip: (filename) => output.appendLine(`\u26F3 \u0444\u0430\u0439\u043B \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0442\u044F\u0436\u0451\u043B: \u0441\u043D\u0438\u0437\u044C chunkLines \u0438\u043B\u0438 maxRequestKTokens (${filename})`)
     };
     const auditSelection = await resolveExtensionSelection(context);
@@ -7980,7 +8010,9 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
     const customAdaptive = {
       preSplitTokens: maxRequestKTokensFromSetting(reviewConfig.get("maxRequestKTokens")) * 1e3,
       onAdaptiveSplit: (filename, from, to) => output.appendLine(`\u{1FAB6} \u0447\u0430\u043D\u043A \u0442\u044F\u0436\u0451\u043B: \u0434\u0435\u043B\u044E ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename}`),
-      onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`)
+      onPreSplit: (filename, from, to) => output.appendLine(`\u{1F4CF} \u043F\u0440\u0435\u0434-\u0434\u0435\u043B\u0435\u043D\u0438\u0435: \u0447\u0430\u043D\u043A ${from}\u2192${to} \u043F\u043E \u0431\u044E\u0434\u0436\u0435\u0442\u0443 \u0442\u043E\u043A\u0435\u043D\u043E\u0432`),
+      // ЗАДАЧА 28.10 (context-wall): тот же лог, что в аудите — ключ не блокируется.
+      onContextWallSplit: (filename, from, to, n) => output.appendLine(`\u{1F9F1} context-wall: \u0443\u0437\u043A\u043E\u0435 \u043E\u043A\u043D\u043E \u043C\u043E\u0434\u0435\u043B\u0438 \u2014 \u0434\u0435\u043B\u044E \u0447\u0430\u043D\u043A ${from}\u2192${to} \u0441\u0442\u0440\u043E\u043A, \u0444\u0430\u0439\u043B ${filename} (\u0434\u0435\u043B\u0435\u043D\u0438\u0435 ${n}/${CONTEXT_WALL_MAX_SPLITS})`)
     };
     const collection = collectFilesForScope(workspaceRoot, scope, globs, vscode4.window.activeTextEditor?.document.uri.fsPath, maxFiles, maxLines, (message) => output.appendLine(message), customChunkLines);
     for (const entry of collection.chunked) output.appendLine(`\u{1F4C4} \u0444\u0430\u0439\u043B ${entry.file}: ${entry.chunks} \u0447\u0430\u043D\u043A\u043E\u0432 (\u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0442\u0438\u0435 ${AUDIT_CHUNK_OVERLAP} \u0441\u0442\u0440\u043E\u043A)`);

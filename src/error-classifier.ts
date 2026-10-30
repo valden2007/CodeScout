@@ -16,6 +16,11 @@ export type ErrorCategory =
   // billing, «upgrade to … Tier», «model requires paid/flash tier». Сон НЕ
   // поможет: ключ выводится из ротации как broken, нужен баланс/смена модели.
   | 'billing'
+  // ЗАДАЧА 28.10 (context-wall): HTTP 400/413 с текстами request too large /
+  // context length / maximum context — запрос не влезает в окно модели. Это НЕ
+  // тариф и НЕ лимит: ключ НЕ блокируется, чанк делится пополам (до 3 делений),
+  // после предела — скип файла с подсказкой «модель с узким окном».
+  | 'context-wall'
   | 'model_not_found'
   | 'timeout'
   | 'connection_refused'
@@ -30,7 +35,7 @@ export interface FormattedError {
   rawMessage?: string;
 }
 
-export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'billing', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
+export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'billing', 'context-wall', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
 
 const PROBE_TIMEOUT_FALLBACK_SECONDS = 5;
 
@@ -57,7 +62,7 @@ function isConnectionFailure(raw: string): boolean {
 }
 
 function statusFromText(raw: string): number | undefined {
-  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[1-4]|429)\b/i) || raw.match(/^(40[1-4]|429)\b/);
+  const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[0-4]|413|429)\b/i) || raw.match(/^(40[0-4]|413|429)\b/);
   return match ? Number(match[1]) : undefined;
 }
 
@@ -70,6 +75,20 @@ const BILLING_TEXT_RE = /insufficient[_ ](?:quota|credits)|\bcredits\b|billing|p
 
 // 28.9: «окно»-квота: 429 с явным retry-after/reset-текстом — сон помогает.
 const QUOTA_RESET_TEXT_RE = /retry[ -]?after|reset(?:s|ting)? (?:in|at|on)\b|\bdaily (?:limit|quota|usage|request)|\bhourly (?:limit|quota)|\bminute(?:ly)? limit|x-ratelimit-reset|per[ -](?:day|hour|minute) (?:limit|quota|request)/i;
+
+// ЗАДАЧА 28.10 (context-wall): тексты перелимита контекстного окна.
+// «request too large», «context length», «maximum context», «prompt is too
+// long», «too many tokens». Проверяется ДО billing/quota/rate-limit: в этих
+// текстах бывают слова «exceeded»/«quota», но смысл — размер запроса: сон не
+// поможет и тариф ни при чём — лечится только делением чанка/выбором модели шире.
+const CONTEXT_WALL_TEXT_RE = /request too large|context(?: length| window)?(?: of)? ?(?:is|was)? ?(?:too|exceed)|too many (?:input )?tokens|maximum context|context length|prompt is too (?:long|large|big)|input too (?:long|large)|exceed(?:s|ed)? the (?:model )?context|reduce your (?:prompt|input)/i;
+
+// 413 — сам по себе «request entity too large»; 400 — только с текстом окна.
+function contextWallHit(status: number | undefined, blob: string): boolean {
+  if (status === 413) return true;
+  if (status === 400 || status === undefined) return CONTEXT_WALL_TEXT_RE.test(blob);
+  return false;
+}
 
 export function categorizeError(error: unknown): ErrorCategory {
   if (error instanceof RateLimitError) {
@@ -86,6 +105,7 @@ export function categorizeError(error: unknown): ErrorCategory {
       if (BILLING_TEXT_RE.test(blob)) return 'billing';
       return QUOTA_RESET_TEXT_RE.test(blob) ? 'quota' : 'rate_limit_exceeded';
     }
+    if ((error.status === 400 || error.status === 413) && contextWallHit(error.status, `${error.message} ${error.details}`)) return 'context-wall';
     return 'unknown';
   }
   if (error instanceof BadResponseError) return 'invalid_json';
@@ -101,6 +121,7 @@ export function categorizeError(error: unknown): ErrorCategory {
     if (BILLING_TEXT_RE.test(raw)) return 'billing';
     return QUOTA_RESET_TEXT_RE.test(raw) ? 'quota' : 'rate_limit_exceeded';
   }
+  if (contextWallHit(textStatus, raw)) return 'context-wall';
   if (BILLING_TEXT_RE.test(raw)) return 'billing';
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return 'auth_invalid_key';
   if (/forbidden|permission denied/i.test(raw)) return 'auth_forbidden';

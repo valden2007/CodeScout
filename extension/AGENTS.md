@@ -916,7 +916,7 @@ pre-design now.
      удалён из ядра. Контракт paste «nemotron» + регресс 28.4
      (стрелки/Enter/Escape/галочка/ручной ввод) —
      tests/batch28-9-combo-filter.test.ts (4), 28.4 обновлён. Tests: 724.
- 39. Микро-батч 28.10:
+ 39. Микро-батч 28.10 (два коммита):
      a) Opt-out из кейчейна: «выключено = удалено для фолбэка». Условие
      legacy-фолбэка — «ноль профилей ИЛИ ноль включённых ключей»
      (hasEnabledKey/activeUsableProfile в keychain.ts): выключил все ключи →
@@ -934,6 +934,15 @@ pre-design now.
      (все выкл / один вкл / обратно) × (save, models, resume) в обе стороны —
      tests/batch28-10-opt-out.test.ts (13); batch28.9-key-source обновлён
      («save выключенный ключ включается» → «все выкл → saveAll в legacy»).
-     Tests: 738.
+     b) Context-wall: 400/413 с текстами request too large / context length /
+     maximum context → категория 'context-wall' (error-classifier; llm-client
+     типизирует 400/413 как ProviderHttpError). reviewChunk уменьшает бюджет
+     чанка вдвое и ретрит (CONTEXT_WALL_MAX_SPLITS=3 на файл), ключ НЕ
+     блокируется (ни сна, ни broken/billing, ни хуков); ladder/карантин для
+     context-wall не привлекается; после предела/неделимости — скип с причиной
+     context-wall и подсказкой «модель с узким окном, выбери шире»
+     (err.hint.context-wall, Output «🧱 context-wall: … деление N/3»,
+     onContextWallSplit в AdaptiveChunkOptions). Billing-регресс 28.9 зелёный.
+     Тесты: tests/batch28-10-context-wall.test.ts (7). Tests: 745.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.
