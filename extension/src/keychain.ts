@@ -346,6 +346,59 @@ export function pickActiveKey(profile: KeychainProfile | undefined): KeychainKey
   return enabled.find((key) => !isKeyBroken(profile.id, key.id)) ?? enabled[0];
 }
 
+// МИКРО-БАТЧ 28.10 (opt-out): есть ли в цепочке хоть один ВКЛЮЧЁННЫЙ ключ.
+// «Выключено = удалено для фолбэка»: ноль профилей ИЛИ ноль включённых
+// ключей → кейчейн спит, источник ключа — legacy-карточка центра.
+// Секреты при этом НЕ теряются: тумблер только выводит ключ из ротации.
+export function hasEnabledKey(profiles: KeychainProfile[] = readProfiles()): boolean {
+  return profiles.some((profile) => profile.keys.some((key) => key.enabled));
+}
+
+// Профиль-источник в ключевом пути: активный id среди профилей с
+// включёнными ключами, иначе первый такой профиль; ни одного включённого
+// ключа во всём списке — undefined (простой режим, legacy-фолбэк).
+export function activeUsableProfile(profiles: KeychainProfile[] = readProfiles(), activeId = readActiveId()): KeychainProfile | undefined {
+  const usable = profiles.filter((profile) => profile.keys.some((key) => key.enabled));
+  return usable.find((profile) => profile.id === activeId) ?? usable[0];
+}
+
+// Кнопка «Выключить все ключи (простой режим)»: один клик вместо N
+// тумблеров. enabled=false у всех ключей всех профилей одним writeProfiles;
+// секретные записи не трогаются — обратный переход (включить любой ключ)
+// возвращает кейчейн как источник без потери секретов.
+export async function disableAllKeys(): Promise<{ profiles: KeychainProfile[]; disabled: number }> {
+  const profiles = readProfiles();
+  let disabled = 0;
+  const next = profiles.map((profile) => ({
+    ...profile,
+    keys: profile.keys.map((key) => {
+      if (!key.enabled) return key;
+      disabled += 1;
+      return { ...key, enabled: false };
+    })
+  }));
+  if (disabled > 0) await writeProfiles(next);
+  return { profiles: next, disabled };
+}
+
+// Обратный ход кнопки-подсказки: включить ВСЕ ключи всех профилей одним
+// writeProfiles. Секреты не трогаем; ключи без секрета включаются как есть
+// (честный errNoKeyProfile-путь). Кейчейн снова источник, legacy засыпает.
+export async function enableAllKeys(): Promise<{ profiles: KeychainProfile[]; enabled: number }> {
+  const profiles = readProfiles();
+  let enabled = 0;
+  const next = profiles.map((profile) => ({
+    ...profile,
+    keys: profile.keys.map((key) => {
+      if (key.enabled) return key;
+      enabled += 1;
+      return { ...key, enabled: true };
+    })
+  }));
+  if (enabled > 0) await writeProfiles(next);
+  return { profiles: next, enabled };
+}
+
 // Батч 27.1, п.1: «Override Base URL» профиля. Пустая строка = сброс
 // (используем базовый URL провайдера); битый URL — undefined → вызывающий
 // показывает ошибку и ничего не пишет.

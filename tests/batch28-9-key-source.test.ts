@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate, reviewFiles } from '../extension/src/extension';
-import { keySecretId, pickActiveKey, resetRuntime } from '../extension/src/keychain';
+import { isKeyBroken, keySecretId, markKeyBroken, pickActiveKey, resetRuntime } from '../extension/src/keychain';
 import { clearModelsCache, maskApiKey } from '../src/providers';
 
 const REAL_FETCH = globalThis.fetch;
@@ -192,16 +192,36 @@ describe('28.9 save: единая запись в активный профил�
     expect(state.secrets.get('codescout.apiKey')).toBe(KEY_NEW);
   });
 
-  it('сохранённый выключенный ключ включается и чистит broken (источник = рабочий профиль)', async () => {
+  // ЗАДАЧА 28.10 (opt-out) отменяет прежний смысл «save включает выключенный
+  // ключ»: выключено = удалено для фолбэка. Все ключи выключены → простой
+  // режим, saveAll пишет в legacy-карточку центра, тумблеры НЕ включаются,
+  // секреты профилей не затираются. Снятие broken остаётся для ВКЛЮЧЁННОГО
+  // рабочего ключа (второй тест) — там save и правда «чинит» ключ.
+  it('все ключи выключены → saveAll в legacy-поле центра; ключи остаются выключены, секреты целы', async () => {
     state.set('codescout.keychain', [profile('a', 'Alpha', 'groq', 'default', false)]);
     state.set('codescout.keychain.active', 'a');
+    state.secrets.set(keySecretId('a', 'default'), KEY_A);
+    globalThis.fetch = (async () => new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const center = await openCenter();
+    center.send({ command: 'saveAll', apiKey: KEY_NEW, providerKey: 'auto', baseUrl: '', reportLanguage: 'ru', showAuditBanner: true, linksText: '', docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, rateLimitPauses: 3, requestTimeoutSeconds: 60, uiTheme: 'auto', accentColor: 'auto', uiDensity: 'compact', uiFontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', customColors: '{}', failoverEnabled: false, failoverMaxCycles: 0 });
+    await flush(); await flush(); await flush();
+    expect(state.secrets.get('codescout.apiKey')).toBe(KEY_NEW);
+    const profiles = state.config.get('codescout.keychain')?.globalValue as Array<{ keys: Array<{ id: string; enabled: boolean }> }>;
+    expect(pickActiveKey(profiles[0] as never)).toBeUndefined(); // ключ не включился сам собой
+    expect(state.secrets.get(keySecretId('a', 'default'))).toBe(KEY_A); // секрет профиля не потерян
+  });
+
+  it('включённый broken-ключ: saveAll перезаписывает секрет и снимает broken (источник = профиль)', async () => {
+    state.set('codescout.keychain', [profile('a', 'Alpha', 'groq')]);
+    state.set('codescout.keychain.active', 'a');
+    state.secrets.set(keySecretId('a', 'default'), KEY_STALE);
+    markKeyBroken('a', 'default');
     globalThis.fetch = (async () => new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
     const center = await openCenter();
     center.send({ command: 'saveAll', apiKey: KEY_A, providerKey: 'auto', baseUrl: '', reportLanguage: 'ru', showAuditBanner: true, linksText: '', docMaxKb: 50, docMaxLinks: 5, maxLines: 0, maxFiles: 100, autoResume: false, autoResumeMaxAttempts: 0, autoResumeMaxMinutes: 0, auditScope: '', auditPasses: 1, rateLimitPauses: 3, requestTimeoutSeconds: 60, uiTheme: 'auto', accentColor: 'auto', uiDensity: 'compact', uiFontSize: 'm', showConfidence: true, findingsSort: 'severity', reportTheme: 'auto', customColors: '{}', failoverEnabled: false, failoverMaxCycles: 0 });
     await flush(); await flush(); await flush();
-    const profiles = state.config.get('codescout.keychain')?.globalValue as Array<{ keys: Array<{ id: string; enabled: boolean }> }>;
-    expect(pickActiveKey(profiles[0] as never)?.id).toBe('default');
     expect(state.secrets.get(keySecretId('a', 'default'))).toBe(KEY_A);
+    expect(isKeyBroken('a', 'default')).toBe(false);
   });
 });
 

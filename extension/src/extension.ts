@@ -17,7 +17,7 @@ import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, quotaPauseMaxCyclesFromSetting, quotaPauseSecondsFromSetting, QuotaExhaustedError, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
-import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, diagnoseKeys, failoverEnabled, failoverMaxCycles, grantWaitOnce, hasAwakeKey, keyLabelFor, markKeyBillingBlocked, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
+import { activeProfile, activeUsableProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, diagnoseKeys, disableAllKeys, enableAllKeys, failoverEnabled, failoverMaxCycles, grantWaitOnce, hasAwakeKey, hasEnabledKey, keyLabelFor, markKeyBillingBlocked, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
@@ -49,7 +49,7 @@ const WIZARD_PROVIDER_LABELS: Record<string, ProviderName> = {
   'Hyperbolic': 'hyperbolic',
   'Cerebras': 'cerebras'
 };
-export const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey', 'keychainFormSave', 'keychainFormModels']);
+export const KNOWN_SETTINGS_COMMANDS = new Set(['saveKeyProvider', 'saveAppearance', 'saveAll', 'clearApiKey', 'chooseModel', 'testConnection', 'saveDocLinks', 'openRules', 'openLink', 'pickScope', 'reportIssue', 'refreshContext', 'keychainAdd', 'keychainRename', 'keychainDelete', 'keychainSetActive', 'keychainBaseUrl', 'keychainMove', 'keychainAddKey', 'keychainRenameKey', 'keychainDeleteKey', 'keychainToggleKey', 'keychainDisableAllKeys', 'keychainEnableAllKeys', 'keychainFormSave', 'keychainFormModels']);
 
 // Батч 20a, п.2: sink предупреждений списка моделей — core (providers.ts)
 // про vscode не знает, расширение подставляет свой Output-канал (заполняется
@@ -294,8 +294,14 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
   // Разовый оверрайд догона («Продолжить другими…») приоритетнее профиля —
   // это выбор пользователя для ЭТОГО прогона, он не меняет состояние keychain.
   if (oneShotSelectionOverride) return { ...oneShotSelectionOverride, baseUrl: oneShotSelectionOverride.baseUrl || baseUrl };
+  // МИКРО-БАТЧ 28.10 (opt-out): условие legacy-фолбэка — «ноль профилей ИЛИ
+  // ноль включённых ключей». Выключил все ключи → кейчейн спит, источник —
+  // рабочая legacy-карточка центра (провайдер + ключ + «сейчас»), аудит,
+  // модели и догон идут через неё; секреты профилей НЕ теряются. Включил
+  // любой ключ профиля → activeUsableProfile снова отдаёт профиль, и кейчейн
+  // становится источником — переход в обе стороны без записей «в чужой слот».
   const profiles = readProfiles();
-  const active = activeProfile(profiles);
+  const active = activeUsableProfile(profiles);
   if (active) {
     // Батч 28: профиль даёт ПЕРВЫЙ enabled-ключ (предпочтительно не broken);
     // секрет — keychain.<profileId>.<keyId>. Молчаливого фолбэка на чужой
@@ -345,6 +351,9 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
   if (oneShotSelectionOverride) return undefined;
   const profiles = readProfiles();
   if (profiles.length === 0) return undefined;
+  // МИКРО-БАТЧ 28.10: все ключи выключены (простой режим) — ротировать нечего:
+  // legacy-стек живёт своей лестницей 429 без keychain-хуков.
+  if (!hasEnabledKey(profiles)) return undefined;
   if (!failoverEnabled()) return undefined;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
@@ -638,6 +647,11 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
     if (selection.profileId) {
       throw new Error(t('panel.errNoKeyProfile', promptLang, { label: profileLabel(selection.profileId) }));
     }
+    // МИКРО-БАТЧ 28.10: простой режим (профили есть, все ключи выключены) —
+    // источник legacy, и ошибка ведёт в ПОЛЕ ЦЕНТРА, а не «в профиль».
+    if (readProfiles().length > 0) {
+      throw new Error(t('panel.errNoKeyCenter', promptLang, { p: selection.provider }));
+    }
     throw new Error(`${t('panel.errNoKey', promptLang, { p: selection.provider })}${t('panel.keyGet', promptLang, { x: keyUrl(selection.provider) ?? t('panel.keyGetAlt', promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
@@ -776,7 +790,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
             markKeyBillingBlocked(current.profileId, current.keyId);
             keychainLog(`💳 billing: ключ ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} у стены тарифа (${tail}) — сон не поможет`);
           }
-          if (readProfiles().length > 0 && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
+          if (readProfiles().length > 0 && hasEnabledKey(readProfiles()) && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
           break;
         }
         // Микро-батч 28.5: скип файла с категорией quota доезжает до
@@ -1631,6 +1645,12 @@ async function runConnectionTest(context: vscode.ExtensionContext): Promise<Conn
     const message = t('key.needFirstProfile', lang, { label: profileLabel(selection.profileId) });
     return { ok: false, message, title: t('err.title.auth_invalid_key', lang), hint: message, category: 'auth_invalid_key' };
   }
+  // МИКРО-БАТЧ 28.10: простой режим (профили есть, все ключи выключены) без
+  // legacy-ключа — честный ответ «сохрани ключ в ПОЛЕ ЦЕНТРА», а не «connected, 0».
+  if (!selection.profileId && !selection.key && readProfiles().length > 0 && !isLocalBaseUrl(selection.baseUrl)) {
+    const message = t('key.needFirstCenter', lang);
+    return { ok: false, message, title: t('err.title.auth_invalid_key', lang), hint: message, category: 'auth_invalid_key' };
+  }
   if (!selection.baseUrl && selection.provider !== 'custom') {
     return { ok: true, message: t('center.connected', lang, { n: 0 }) };
   }
@@ -1695,6 +1715,10 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
     customColors: JSON.stringify(readUiPrefs().customColors),
     keychainProfiles: readProfiles(),
     keychainActiveId: readActiveId(),
+    // ЗАДАЧА 28.10: «простой режим» — профили есть, но ни одного
+    // включённого ключа: источник — legacy-поле центра, блок профилей
+    // показывает это и даёт одну кнопку обратного перехода.
+    keychainSimpleMode: readProfiles().length > 0 && !hasEnabledKey(),
     // Батч 28: состояние ключей (asleep/broken) для бейджей в центре.
     keychainRuntime: runtimeSnapshot(),
     failoverEnabled: failoverEnabled(),
@@ -2185,6 +2209,30 @@ export function activate(context: vscode.ExtensionContext): void {
               await render(t(saved?.enabled ? 'keychain.keyEnabledNotify' : 'keychain.keyDisabledNotify', lang, { label: saved?.label ?? keyId }));
               return;
             }
+            // ЗАДАЧА 28.10: «Выключить все ключи (простой режим)» — один клик
+            // вместо N тумблеров. Секреты НЕ удаляем: обратный переход —
+            // «Включить все ключи» (или любой тумблер), источник снова кейчейн.
+            if (message.command === 'keychainDisableAllKeys') {
+              const lang = currentReportLanguage();
+              const { disabled } = await disableAllKeys();
+              if (disabled === 0) { await render(t('keychain.actionCancelled', lang)); return; }
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t('keychain.allKeysOffNotify', lang));
+              return;
+            }
+            // ЗАДАЧА 28.10: обратный ход той же кнопки-подсказки — включить
+            // все ключи, кейчейн снова источник (legacy засыпает). Секреты
+            // не создаются и не удаляются — меняется только enabled.
+            if (message.command === 'keychainEnableAllKeys') {
+              const lang = currentReportLanguage();
+              const { enabled } = await enableAllKeys();
+              if (enabled === 0) { await render(t('keychain.actionCancelled', lang)); return; }
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t('keychain.allKeysOnNotify', lang));
+              return;
+            }
             if (message.command === 'keychainRename') {
               const lang = currentReportLanguage();
               const id = String(message.id ?? '');
@@ -2379,7 +2427,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const lang = currentReportLanguage();
       const config = vscode.workspace.getConfiguration('codescout');
       const profiles = readProfiles();
-      if (profiles.length > 0) {
+      // ЗАДАЧА 28.10: простой режим (профили есть, все ключи выключены) —
+      // догон идёт legacy-пикером провайдер→модель, как при нуле профилей:
+      // источник ключа сейчас одиночный секрет/env, а не цепочка.
+      if (profiles.length > 0 && hasEnabledKey(profiles)) {
         const target = await pickResumeProfile({
           lang,
           profiles,
@@ -2503,11 +2554,13 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const validated = await validateDefaultModel(context, { provider: selection.provider, model: selection.model, key: key.trim() });
       selection = { provider: selection.provider, model: validated.model };
-      // МИКРО-БАТЧ 28.9: единый источник — есть профили, пишем ТОЛЬКО в
-      // рабочий ключ активного профиля (без legacy-дубля, иначе следующий
-      // рассинхрон); при нуле профилей — прежний legacy-слот.
+      // МИКРО-БАТЧ 28.9: единый источник — есть ПРОФИЛИ С ВКЛЮЧЁННЫМИ
+      // ключами, пишем ТОЛЬКО в рабочий ключ активного профиля (без
+      // legacy-дубля, иначе следующий рассинхрон); при нуле профилей ИЛИ
+      // когда все ключи выключены (задача 28.10, простой режим) — прежний
+      // legacy-слот: источник сейчас он.
       const existingProfiles = readProfiles();
-      const activeNow = activeProfile(existingProfiles);
+      const activeNow = activeUsableProfile(existingProfiles);
       if (activeNow) {
         await storeProfileSecret(context.secrets, activeNow.id, key.trim());
         await writeProfiles(existingProfiles.map((profile) => (profile.id === activeNow.id ? { ...profile, provider: selection.provider, model: selection.model } : profile)));
@@ -2529,10 +2582,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!current.key) {
         // МИКРО-БАТЧ 28.9: тост говорит фактическое место; команду палитры
         // упоминаем только при нуле профилей (legacy-фолбэк живёт там).
+        // ЗАДАЧА 28.10: профили есть, но все ключи выключены — источник
+        // legacy, тост ведёт в поле ключа центра, а не в профиль/палитру.
         const lang = currentReportLanguage();
         void vscode.window.showErrorMessage(current.profileId
           ? t('key.needFirstProfile', lang, { label: profileLabel(current.profileId) })
-          : t('key.needFirst', lang));
+          : readProfiles().length > 0
+            ? t('key.needFirstCenter', lang)
+            : t('key.needFirst', lang));
         return;
       }
       const chosen = await chooseLiveModel(current, t('model.pickTitleShort', currentReportLanguage()));

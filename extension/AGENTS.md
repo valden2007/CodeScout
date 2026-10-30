@@ -916,5 +916,24 @@ pre-design now.
      удалён из ядра. Контракт paste «nemotron» + регресс 28.4
      (стрелки/Enter/Escape/галочка/ручной ввод) —
      tests/batch28-9-combo-filter.test.ts (4), 28.4 обновлён. Tests: 724.
+ 39. Микро-батч 28.10:
+     a) Opt-out из кейчейна: «выключено = удалено для фолбэка». Условие
+     legacy-фолбэка — «ноль профилей ИЛИ ноль включённых ключей»
+     (hasEnabledKey/activeUsableProfile в keychain.ts): выключил все ключи →
+     resolveExtensionSelection отдаёт рабочую legacy-карточку (провайдер +
+     ключ + «сейчас» без метки профиля), аудит/модели/догон идут через неё,
+     saveAll пишет в legacy-слот (секреты профилей НЕ трогаются); ошибки
+     ведут в поле «API-ключ» центра (panel.errNoKeyCenter/key.needFirstCenter),
+     а не «в профиль». Включил любой ключ → кейчейн снова источник, legacy
+     засыпает; переход в обе стороны без потери секретов. Кнопка-подсказка
+     в блоке профилей: «Выключить все ключи (простой режим)» ⇄ «Включить все
+     ключи (режим профилей)» (keychainDisableAllKeys/keychainEnableAllKeys,
+     disableAllKeys/enableAllKeys — только enabled-флаги); failover-хуки и
+     billing-стена в простом режиме не строятся. UI-гейтинг НЕ делать:
+     блок профилей виден всегда при наличии профилей. Тесты: матрица
+     (все выкл / один вкл / обратно) × (save, models, resume) в обе стороны —
+     tests/batch28-10-opt-out.test.ts (13); batch28.9-key-source обновлён
+     («save выключенный ключ включается» → «все выкл → saveAll в legacy»).
+     Tests: 738.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

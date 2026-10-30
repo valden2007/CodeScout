@@ -42,6 +42,10 @@ export interface SettingsState {
   // МИКРО-БАТЧ 28.9: метка АКТИВНОГО профиля для строки «сейчас:» —
   // источник один: ключ/провайдер/модель профиля + его метка.
   keyActiveLabel?: string;
+  // ЗАДАЧА 28.10: «простой режим» — профили есть, но ни одного включённого
+  // ключа: источник — legacy-поле ключа выше, блок профилей это показывает
+  // и даёт одну кнопку-подсказку обратного перехода.
+  keychainSimpleMode?: boolean;
   failoverEnabled?: boolean;
   failoverMaxCycles?: number;
   // МИКРО-БАТЧ 28.2: инлайн-форма профиля. draft != undefined = форма
@@ -302,12 +306,28 @@ function keychainBlockHtml(T: (key: string, vars?: Record<string, string | numbe
     listHtml = `<p class="hint">${escapeHtml(T('keychain.renderDegraded'))}</p>`;
     homeHtml = '<div id="kcFormHome" class="kc-form-home"></div>';
   }
+  // ЗАДАЧА 28.10 (opt-out): кнопка-подсказка в блоке профилей. Пока есть
+  // включённые ключи — «Выключить все ключи (простой режим)» (один клик
+  // вместо N тумблеров); в простом режиме — обратный ход «Включить все
+  // ключи (режим профилей)». data-id="_" — формальность: делегат вебвью
+  // требует непустой id, хост его игнорирует. Секреты ни там, ни там не
+  // трогаются — переход в обе стороны без потерь.
+  const hasProfiles = (state.keychainProfiles?.length ?? 0) > 0;
+  const simpleMode = state.keychainSimpleMode === true;
+  const toggleAllButton = hasProfiles
+    ? `<button id="keychainToggleAllKeys" type="button" class="secondary" data-kc="${simpleMode ? 'keychainEnableAllKeys' : 'keychainDisableAllKeys'}" data-id="_">${icon(simpleMode ? 'key' : 'circle-slash')}<span>${T(simpleMode ? 'keychain.enableAll' : 'keychain.disableAll')}</span></button>`
+    : '';
+  const simpleModeHint = hasProfiles && simpleMode
+    ? `<p class="hint kc-simple-hint">${icon('info')}<span>${T('keychain.simpleModeHint')}</span></p>`
+    : '';
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon('clippy')} ${T('keychain.title')}</h3>
+  ${simpleModeHint}
   ${listHtml}
   ${homeHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon('plus')}<span>${T('keychain.add')}</span></button>
+    ${toggleAllButton}
   </div>
   <label class="checkbox"><input id="failoverEnabled" type="checkbox"${failoverOn ? ' checked' : ''}> <span>${T('keychain.failoverEnabled')}</span></label>
   <label for="failoverMaxCycles">${T('keychain.failoverMaxCycles')}</label>

@@ -37,6 +37,7 @@ __export(extension_exports, {
   PASS_BETWEEN_SECONDS: () => PASS_BETWEEN_SECONDS,
   RATE_LIMIT_PAUSE_LADDER: () => RATE_LIMIT_PAUSE_LADDER,
   activate: () => activate,
+  billingDiagnosisLines: () => billingDiagnosisLines,
   deactivate: () => deactivate,
   fileCooldownSecondsFromSetting: () => fileCooldownSecondsFromSetting,
   migrateApiKeyFromSettings: () => migrateApiKeyFromSettings,
@@ -427,6 +428,16 @@ var AllProfilesAsleepError = class extends Error {
     this.wakeLabel = wakeLabel;
   }
 };
+var BillingWallError = class extends Error {
+  tail;
+  wakeLabel;
+  constructor(tail = "", wakeLabel = "") {
+    super(`billing wall: keys are out of credits/tier coverage${tail ? ` (${tail.slice(0, 80)})` : ""}`);
+    this.name = "BillingWallError";
+    this.tail = tail;
+    this.wakeLabel = wakeLabel;
+  }
+};
 function abortError() {
   const error = new Error("The operation was aborted");
   error.name = "AbortError";
@@ -619,7 +630,7 @@ var OpenAICompatibleProvider = class {
             await this.failover.onAuthError(error.status);
           }
           if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
-            const decision = await this.failover.onRateLimit(void 0, "quota");
+            const decision = await this.failover.onRateLimit(void 0, "billing", error.details || error.message);
             if (decision) {
               if (decision.action === "switch") {
                 this.apiKey = sanitizeApiKey(decision.apiKey);
@@ -629,13 +640,7 @@ var OpenAICompatibleProvider = class {
                 lastRetryableError = void 0;
                 continue;
               }
-              if (decision.action === "wait") {
-                await this.sleeper(decision.waitMs, this.signal);
-                continue;
-              }
-              if (decision.action === "stop") {
-                throw new AllProfilesAsleepError("All key profiles are asleep (quota)", decision.waitMs, decision.wakeLabel);
-              }
+              throw new BillingWallError(error.details || error.message, decision.action === "stop" ? decision.wakeLabel : "");
             }
           }
           throw error;
@@ -819,6 +824,7 @@ var ru_default = {
   "center.baseUrlHint": "\u041D\u0443\u0436\u0435\u043D \u0434\u043B\u044F custom: Ollama, LM Studio, \u0441\u0432\u043E\u0439 \u043F\u0440\u043E\u043A\u0441\u0438. \u041F\u0440\u0438\u043E\u0440\u0438\u0442\u0435\u0442: \u044D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 > env CODESCOUT_BASE_URL.",
   "center.baseUrlIgnored": "\u0413\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0439 Base URL \u0437\u0430\u0434\u0430\u043D, \u043D\u043E \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u043E\u043D \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F",
   "center.now": "\u0441\u0435\u0439\u0447\u0430\u0441:",
+  "center.nowProfile": "\u043F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{label}\xBB",
   "center.secureNote": "\u041A\u043B\u044E\u0447 \u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E \u0437\u0430\u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D \u0432 \u041E\u0421 (SecretStorage)",
   "center.nowNone": "\u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
   "center.nowLocal": "\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \xB7 {s}",
@@ -958,6 +964,8 @@ var ru_default = {
   "panel.errNoGlobMatch": '\u041F\u043E \u0433\u043B\u043E\u0431\u0430\u043C "{globs}" \u043D\u0435 \u043F\u043E\u0434\u043E\u0448\u043B\u043E \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 (\u043F\u0440\u043E\u0432\u0435\u0440\u044C \u0438\u0433\u043D\u043E\u0440-\u043B\u0438\u0441\u0442\u044B).',
   "panel.errNoFiles": "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u0440\u0435\u0432\u044C\u044E.",
   "panel.errNoKey": "\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F {p}. \u0423\u043A\u0430\u0436\u0438 codescout.apiKey \u0438\u043B\u0438 \u0432\u044B\u043F\u043E\u043B\u043D\u0438 CodeScout: set API key.",
+  "panel.errNoKeyProfile": "\u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D: \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u0435 \xAB{label}\xBB (\u0446\u0435\u043D\u0442\u0440 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u2192 \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C).",
+  "panel.errNoKeyCenter": "\u041D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D API-\u043A\u043B\u044E\u0447 \u0434\u043B\u044F {p}: \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B (\u043F\u0440\u043E\u0441\u0442\u043E\u0439 \u0440\u0435\u0436\u0438\u043C). \u0421\u043E\u0445\u0440\u0430\u043D\u0438 \u043A\u043B\u044E\u0447 \u0432 \u043F\u043E\u043B\u0435 \xABAPI-\u043A\u043B\u044E\u0447\xBB \u0446\u0435\u043D\u0442\u0440\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A.",
   "panel.keyGet": " \u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u043A\u043B\u044E\u0447: {x}",
   "panel.keyGetAlt": "\u043D\u0430\u0441\u0442\u0440\u043E\u0439 codescout.baseUrl / CODESCOUT_BASE_URL",
   "panel.errNoGit": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 \u0441 Git-\u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u0435\u043C \u0432 VS Code \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0443.",
@@ -981,6 +989,8 @@ var ru_default = {
   "key.sourceManual": "\u0432\u044B\u0431\u0440\u0430\u043D\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E",
   "key.savedNotify": "\u2705 \u041A\u043B\u044E\u0447 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D. \u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440: {p}, \u043C\u043E\u0434\u0435\u043B\u044C: {m} ({s})",
   "key.needFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0447\u0435\u0440\u0435\u0437 CodeScout: set API key.",
+  "key.needFirstProfile": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u0435 \xAB{label}\xBB (\u0446\u0435\u043D\u0442\u0440 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \u2192 \u041A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C).",
+  "key.needFirstCenter": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 API-\u043A\u043B\u044E\u0447 \u0432 \u043F\u043E\u043B\u0435 \xABAPI-\u043A\u043B\u044E\u0447\xBB \u0446\u0435\u043D\u0442\u0440\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A (\u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B \u2014 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u043F\u0440\u043E\u0441\u0442\u043E\u0439 \u0440\u0435\u0436\u0438\u043C).",
   "key.deleteConfirm": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 API-\u043A\u043B\u044E\u0447 CodeScout?",
   "key.deletedNotify": "\u041A\u043B\u044E\u0447 \u0443\u0434\u0430\u043B\u0451\u043D \u0438\u0437 \u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
   "rules.errNoWorkspace": "\u041E\u0442\u043A\u0440\u043E\u0439 \u043F\u0430\u043F\u043A\u0443 workspace \u0432 VS Code",
@@ -1018,9 +1028,9 @@ var ru_default = {
   "err.title.rate_limit_exceeded": "\u041B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (429)",
   "err.msg.rate_limit_exceeded": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441\u044B (\u043A\u0432\u043E\u0442\u0430, RPM \u0438\u043B\u0438 TPM).",
   "err.hint.rate_limit_exceeded": "\u041F\u043E\u0434\u043E\u0436\u0434\u0438\u0442\u0435 \u043F\u0430\u0440\u0443 \u043C\u0438\u043D\u0443\u0442 \u0438\u043B\u0438 \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0438\u0442\u0435\u0441\u044C \u043D\u0430 \u0437\u0430\u043F\u0430\u0441\u043D\u0443\u044E \u043C\u043E\u0434\u0435\u043B\u044C; \u043F\u0430\u0443\u0437\u044B \u0440\u0435\u0442\u0440\u0430\u044F \u2014 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0430\u0443\u0434\u0438\u0442\u0430.",
-  "err.title.quota": "\u041F\u043B\u0430\u0442\u0451\u0436\u043D\u0430\u044F \u043A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430 (402)",
-  "err.msg.quota": "\u0423 \u043A\u043B\u044E\u0447\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0431\u0438\u043B\u043B\u0438\u043D\u0433/\u0441\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0430\u0440\u0438\u0444.",
-  "err.hint.quota": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444 \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430; \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover \u2014 \u043E\u043D \u0443\u0441\u044B\u043F\u0438\u0442 \u044D\u0442\u043E\u0442 \u043A\u043B\u044E\u0447 \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435.",
+  "err.title.quota": "\u041B\u0438\u043C\u0438\u0442 \u043E\u043A\u043D\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D (429)",
+  "err.msg.quota": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0441\u0431\u0440\u0430\u0441\u044B\u0432\u0430\u0435\u0442 \u043B\u0438\u043C\u0438\u0442 \u043F\u043E \u0432\u0440\u0435\u043C\u0435\u043D\u0438 (retry-after / daily/hourly) \u2014 \u043F\u0430\u0443\u0437\u0430 \u0438 \u0434\u043E\u0433\u043E\u043D \u043F\u043E\u043C\u043E\u0433\u0430\u044E\u0442.",
+  "err.hint.quota": "\u041B\u0438\u043C\u0438\u0442 \u043E\u043A\u043D\u0430: \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 failover (\u043A\u043B\u044E\u0447 \u0443\u0441\u043D\u0451\u0442, \u0440\u043E\u0442\u0430\u0446\u0438\u044F \u043F\u043E\u0439\u0434\u0451\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E \u0446\u0435\u043F\u043E\u0447\u043A\u0435) \u0438\u043B\u0438 \u0434\u043E\u0436\u0434\u0438\u0442\u0435\u0441\u044C quota-\u043F\u0430\u0443\u0437\u044B \u0446\u0438\u043A\u043B\u0430\u043C\u0438 \u2014 \u0434\u043E\u0433\u043E\u043D \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442 \u043F\u043E\u0441\u043B\u0435 \u0441\u0431\u0440\u043E\u0441\u0430.",
   "quota.ask": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430. \u041F\u043E\u0434\u043E\u0436\u0434\u0430\u0442\u044C {s}\u0441 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C?",
   "quota.askWait": "\u041F\u043E\u0434\u043E\u0436\u0434\u0430\u0442\u044C \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C",
   "quota.banner": "\u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: {n} \u0446\u0438\u043A\u043B(\u043E\u0432) \u043F\u0430\u0443\u0437\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E \u2014 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441 \u0438\u043B\u0438 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043A\u043B\u044E\u0447, \u0434\u043E\u0433\u043E\u043D\u0438\u0442\u0435 \u043A\u043D\u043E\u043F\u043A\u0430\u043C\u0438 \u043D\u0438\u0436\u0435",
@@ -1104,6 +1114,11 @@ var ru_default = {
   "keychain.noKeyForResume": "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \xAB{label}\xBB: \u043A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u2014 \u0434\u043E\u0433\u043E\u043D \u044D\u0442\u0438\u043C \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u043C \u043D\u0435\u0432\u043E\u0437\u043C\u043E\u0436\u0435\u043D",
   "keychain.keysTitle": "\u041A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F",
   "keychain.keysHint": "\u0420\u043E\u0442\u0430\u0446\u0438\u044F \u0431\u0435\u0440\u0451\u0442 \u0432\u043A\u043B\u044E\u0447\u0451\u043D\u043D\u044B\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u043E \u043F\u043E\u0440\u044F\u0434\u043A\u0443; \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043D\u044B\u0435 \u043D\u0435 \u0434\u0451\u0440\u0433\u0430\u044E\u0442\u0441\u044F.",
+  "keychain.disableAll": "\u0412\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 (\u043F\u0440\u043E\u0441\u0442\u043E\u0439 \u0440\u0435\u0436\u0438\u043C)",
+  "keychain.enableAll": "\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 (\u0440\u0435\u0436\u0438\u043C \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439)",
+  "keychain.allKeysOffNotify": "\u0412\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B \u2014 \u043F\u0440\u043E\u0441\u0442\u043E\u0439 \u0440\u0435\u0436\u0438\u043C: \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u043A\u043B\u044E\u0447\u0430 \u2014 \u043F\u043E\u043B\u0435 \xABAPI-\u043A\u043B\u044E\u0447\xBB \u0432\u044B\u0448\u0435, \u0441\u0435\u043A\u0440\u0435\u0442\u044B \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B",
+  "keychain.allKeysOnNotify": "\u0412\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0432\u043A\u043B\u044E\u0447\u0435\u043D\u044B \u2014 \u043A\u0435\u0439\u0447\u0435\u0439\u043D \u0441\u043D\u043E\u0432\u0430 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u043A\u043B\u044E\u0447\u0430, legacy \u0437\u0430\u0441\u044B\u043F\u0430\u0435\u0442",
+  "keychain.simpleModeHint": "\u041F\u0440\u043E\u0441\u0442\u043E\u0439 \u0440\u0435\u0436\u0438\u043C: \u043D\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0432\u043A\u043B\u044E\u0447\u0451\u043D\u043D\u043E\u0433\u043E \u043A\u043B\u044E\u0447\u0430 \u0432 \u043F\u0440\u043E\u0444\u0438\u043B\u044F\u0445 \u2014 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440, \u043A\u043B\u044E\u0447 \u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0431\u0435\u0440\u0443\u0442\u0441\u044F \u0438\u0437 \u043F\u043E\u043B\u0435\u0439 \u0432\u044B\u0448\u0435 (legacy-\u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430), \u0430\u0443\u0434\u0438\u0442 \u0438 \u043C\u043E\u0434\u0435\u043B\u0438 \u0438\u0434\u0443\u0442 \u0447\u0435\u0440\u0435\u0437 \u043D\u0435\u0451. \u0412\u043A\u043B\u044E\u0447\u0438\u0442\u0435 \u043B\u044E\u0431\u043E\u0439 \u043A\u043B\u044E\u0447 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u2014 \u0446\u0435\u043F\u043E\u0447\u043A\u0430 \u0441\u043D\u043E\u0432\u0430 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A.",
   "keychain.addKey": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447",
   "keychain.keyOn": "\u0432\u043A\u043B\u044E\u0447\u0451\u043D",
   "keychain.keyOff": "\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D",
@@ -1152,8 +1167,19 @@ var ru_default = {
   "keychain.formModelsLoading": "\u041F\u043E\u0434\u0442\u044F\u0433\u0438\u0432\u0430\u0435\u043C \u043C\u043E\u0434\u0435\u043B\u0438\u2026",
   "keychain.formModelsCount": "{n} \u043C\u043E\u0434\u0435\u043B\u0435\u0439",
   "keychain.comboEmptyHint": "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0443\u0441\u0442 \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438\xBB.",
-  "keychain.comboNoMatches": "\u041D\u0435\u0442 \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0439 \u043F\u043E \u043F\u043E\u0434\u0441\u0442\u0440\u043E\u043A\u0435 \u2014 \u0441\u0442\u0440\u0435\u043B\u043A\u0430 \u0432\u043D\u0438\u0437 \u043F\u043E\u043A\u0430\u0436\u0435\u0442 \u0432\u0435\u0441\u044C \u0441\u043F\u0438\u0441\u043E\u043A.",
-  "keychain.comboToggle": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0441\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438"
+  "keychain.comboNoMatches": "\u043D\u0435\u0442 \u0441\u043E\u0432\u043F\u0430\u0434\u0435\u043D\u0438\u0439",
+  "keychain.comboToggle": "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0432\u0441\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B\u0435 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "err.title.billing": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430 (402/\u0431\u0438\u043B\u043B\u0438\u043D\u0433)",
+  "err.msg.billing": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0432\u0430\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u044C \u0442\u0430\u0440\u0438\u0444\u043E\u043C: \u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C \u0434\u0435\u043D\u044C\u0433\u0438 \u0438\u043B\u0438 \u043D\u0443\u0436\u043D\u0430 \u043F\u043B\u0430\u0442\u043D\u0430\u044F \u043B\u0438\u043D\u0435\u0439\u043A\u0430 \u2014 \u0441\u043E\u043D \u0438 \u043F\u0430\u0443\u0437\u044B \u043D\u0435 \u043F\u043E\u043C\u043E\u0433\u0443\u0442.",
+  "err.hint.billing": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B: \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u043D\u0430 \u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u0443\u044E \u0438\u043B\u0438 \u043F\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441; \u043A\u043B\u044E\u0447 \u0432\u044B\u0432\u0435\u0434\u0435\u043D \u0438\u0437 \u0440\u043E\u0442\u0430\u0446\u0438\u0438 \u0434\u043E \u0438\u0441\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F.",
+  "keychain.badgeBilling": "\u0442\u0430\u0440\u0438\u0444",
+  "keychain.bannerBilling": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442",
+  "keychain.billingHint": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0438\u043B\u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441. \u0421\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442.",
+  "keychain.diagBilling": "{label} \u2014 \u0441\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430",
+  "keychain.diagAsleep": "{label} \u2014 \u0441\u043F\u0438\u0442 {s}\u0441",
+  "keychain.diagBroken": "{label} \u2014 \u0441\u043B\u043E\u043C\u0430\u043D (401/403)",
+  "keychain.diagOff": "{label} \u2014 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D",
+  "keychain.comboManual": "\u0432\u043F\u0438\u0448\u0438 \u043C\u043E\u0434\u0435\u043B\u044C \u0440\u0443\u043A\u0430\u043C\u0438"
 };
 
 // ../src/i18n/en.json
@@ -1290,6 +1316,7 @@ var en_default = {
   "center.baseUrlHint": "Needed for custom: Ollama, LM Studio, your proxy. Priority: this setting > env CODESCOUT_BASE_URL.",
   "center.baseUrlIgnored": "Global Base URL is set but ignored for this provider",
   "center.now": "now:",
+  "center.nowProfile": 'profile "{label}"',
   "center.secureNote": "Key is securely encrypted in your OS (SecretStorage)",
   "center.nowNone": "key not configured",
   "center.nowLocal": "local mode \xB7 {s}",
@@ -1429,6 +1456,8 @@ var en_default = {
   "panel.errNoGlobMatch": 'No files matched the globs "{globs}" (check the ignore lists).',
   "panel.errNoFiles": "No files available for review.",
   "panel.errNoKey": "No API key found for {p}. Set codescout.apiKey or run CodeScout: set API key.",
+  "panel.errNoKeyProfile": 'No key found: save the API key in profile "{label}" (Settings center \u2192 Key & model).',
+  "panel.errNoKeyCenter": 'No API key found for {p}: all profile keys are disabled (simple mode). Save the key in the "API key" field of the Settings center.',
   "panel.keyGet": " Get a key: {x}",
   "panel.keyGetAlt": "configure codescout.baseUrl / CODESCOUT_BASE_URL",
   "panel.errNoGit": "Open a folder with a Git repository in VS Code and run the command again.",
@@ -1452,6 +1481,8 @@ var en_default = {
   "key.sourceManual": "chosen manually",
   "key.savedNotify": "\u2705 Key saved. Provider: {p}, model: {m} ({s})",
   "key.needFirst": "Save an API key first via CodeScout: set API key.",
+  "key.needFirstProfile": 'Save an API key in profile "{label}" first (Settings center \u2192 Key & model).',
+  "key.needFirstCenter": 'Save an API key in the "API key" field of the Settings center first (all profile keys are disabled \u2014 simple mode is active).',
   "key.deleteConfirm": "Delete the saved CodeScout API key?",
   "key.deletedNotify": "Key removed from secret storage",
   "rules.errNoWorkspace": "Open a workspace folder in VS Code",
@@ -1489,9 +1520,9 @@ var en_default = {
   "err.title.rate_limit_exceeded": "Request limit exceeded (429)",
   "err.msg.rate_limit_exceeded": "The provider temporarily throttled your requests (quota, RPM or TPM).",
   "err.hint.rate_limit_exceeded": "Wait a couple of minutes or switch to a fallback model; retry pauses live in audit settings.",
-  "err.title.quota": "Payment quota exhausted (402)",
-  "err.msg.quota": "The key ran out of credits or hit a paid-plan limit \u2014 the provider wants a billing top-up or a new tier.",
-  "err.hint.quota": "Quota exhausted: top up the balance or change the plan in the provider console; enable failover \u2014 it sleeps this key and rotates the chain.",
+  "err.title.quota": "Window limit exhausted (429)",
+  "err.msg.quota": "The provider resets the limit over time (retry-after / daily/hourly) \u2014 pausing and resuming help.",
+  "err.hint.quota": "Window limit: enable failover (the key sleeps and rotation continues) or use quota-pause cycles \u2014 the run resumes after the reset.",
   "quota.ask": "Quota exhausted. Wait {s}s and retry?",
   "quota.askWait": "Wait and retry",
   "quota.banner": "Quota exhausted: {n} pause cycle(s) used up \u2014 top up the balance or change the key, then catch up with the buttons below",
@@ -1575,6 +1606,11 @@ var en_default = {
   "keychain.noKeyForResume": 'Profile "{label}": key not found \u2014 resuming with it is not possible',
   "keychain.keysTitle": "Profile keys",
   "keychain.keysHint": "Rotation uses enabled keys in order; disabled keys are never touched.",
+  "keychain.disableAll": "Disable all keys (simple mode)",
+  "keychain.enableAll": "Enable all keys (profile mode)",
+  "keychain.allKeysOffNotify": 'All profile keys are disabled \u2014 simple mode: the key source is the "API key" field above, profile secrets are kept',
+  "keychain.allKeysOnNotify": "All profile keys are enabled \u2014 the keychain is the key source again, legacy goes to sleep",
+  "keychain.simpleModeHint": "Simple mode: no enabled profile key left \u2014 provider, key and model come from the fields above (the legacy card); audit and models run through it. Enable any profile key and the chain becomes the source again.",
   "keychain.addKey": "Add key",
   "keychain.keyOn": "enabled",
   "keychain.keyOff": "disabled",
@@ -1623,8 +1659,19 @@ var en_default = {
   "keychain.formModelsLoading": "Fetching models\u2026",
   "keychain.formModelsCount": "{n} models",
   "keychain.comboEmptyHint": "The list is empty \u2014 press \u201CPull models\u201D.",
-  "keychain.comboNoMatches": "No substring matches \u2014 the down arrow shows the full list.",
-  "keychain.comboToggle": "Show all pulled models"
+  "keychain.comboNoMatches": "no matches",
+  "keychain.comboToggle": "Show all pulled models",
+  "err.title.billing": "Billing/tier wall (402)",
+  "err.msg.billing": "The provider does not cover this model by the plan: out of credits or a paid tier is required \u2014 sleeping will not help.",
+  "err.hint.billing": "Model/tier not covered: switch the profile to a free model or top up the balance; the key is out of rotation until fixed.",
+  "keychain.badgeBilling": "tier",
+  "keychain.bannerBilling": "Billing wall: no live keys left",
+  "keychain.billingHint": "Model/tier not covered \u2014 change the profile model or check the balance. Sleeping will not help.",
+  "keychain.diagBilling": "{label} \u2014 billing wall",
+  "keychain.diagAsleep": "{label} \u2014 asleep {s}s",
+  "keychain.diagBroken": "{label} \u2014 broken (401/403)",
+  "keychain.diagOff": "{label} \u2014 disabled",
+  "keychain.comboManual": "type the model name manually"
 };
 
 // ../src/i18n/index.ts
@@ -1664,15 +1711,23 @@ function statusFromText(raw) {
   const match = raw.match(/\b(?:HTTP|status|error)[^\d]{0,12}(40[1-4]|429)\b/i) || raw.match(/^(40[1-4]|429)\b/);
   return match ? Number(match[1]) : void 0;
 }
-var QUOTA_TEXT_RE = /insufficient_quota|payment required|billing|\bupgrade to\b[^\n]{0,80}\btier\b/i;
+var BILLING_TEXT_RE = /insufficient[_ ](?:quota|credits)|\bcredits\b|billing|payment required|upgrade to[^\n]{0,80}tier|(?:model|plan)[^\n]{0,60}requires (?:an? )?(?:paid|pro|flash|premium)[^\n]{0,40}tier|requires (?:a )?(?:paid|flash) tier/i;
+var QUOTA_RESET_TEXT_RE = /retry[ -]?after|reset(?:s|ting)? (?:in|at|on)\b|\bdaily (?:limit|quota|usage|request)|\bhourly (?:limit|quota)|\bminute(?:ly)? limit|x-ratelimit-reset|per[ -](?:day|hour|minute) (?:limit|quota|request)/i;
 function categorizeError(error) {
-  if (error instanceof RateLimitError) return "rate_limit_exceeded";
+  if (error instanceof RateLimitError) {
+    if (BILLING_TEXT_RE.test(messageOf(error))) return "billing";
+    return QUOTA_RESET_TEXT_RE.test(messageOf(error)) ? "quota" : "rate_limit_exceeded";
+  }
   if (error instanceof ProviderHttpError) {
     if (error.status === 401) return "auth_invalid_key";
     if (error.status === 403) return "auth_forbidden";
-    if (error.status === 402) return "quota";
+    if (error.status === 402) return "billing";
     if (error.status === 404) return "model_not_found";
-    if (error.status === 429) return "rate_limit_exceeded";
+    if (error.status === 429) {
+      const blob = `${error.message} ${error.details}`;
+      if (BILLING_TEXT_RE.test(blob)) return "billing";
+      return QUOTA_RESET_TEXT_RE.test(blob) ? "quota" : "rate_limit_exceeded";
+    }
     return "unknown";
   }
   if (error instanceof BadResponseError) return "invalid_json";
@@ -1682,13 +1737,17 @@ function categorizeError(error) {
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return "auth_invalid_key";
   if (textStatus === 403) return "auth_forbidden";
-  if (textStatus === 402) return "quota";
+  if (textStatus === 402) return "billing";
   if (textStatus === 404) return "model_not_found";
-  if (textStatus === 429) return "rate_limit_exceeded";
-  if (QUOTA_TEXT_RE.test(raw)) return "quota";
+  if (textStatus === 429) {
+    if (BILLING_TEXT_RE.test(raw)) return "billing";
+    return QUOTA_RESET_TEXT_RE.test(raw) ? "quota" : "rate_limit_exceeded";
+  }
+  if (BILLING_TEXT_RE.test(raw)) return "billing";
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return "auth_invalid_key";
   if (/forbidden|permission denied/i.test(raw)) return "auth_forbidden";
   if (/model[^.]{0,60}?(?:not found|does not exist|is unavailable|unknown model)/i.test(raw)) return "model_not_found";
+  if (QUOTA_RESET_TEXT_RE.test(raw)) return "quota";
   if (/rate.?limit|too many requests|overloaded|quota|exceeded/i.test(raw)) return "rate_limit_exceeded";
   if (isConnectionFailure(raw)) return "connection_refused";
   return "unknown";
@@ -2724,6 +2783,9 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 .resume-breaker { margin-top: 5px; color: var(--cs-error); font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .audit-resume.scope { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); color: var(--cs-error); }
 .audit-resume.scope-update { border-color: var(--cs-warn); border-left-color: var(--cs-warn); background: color-mix(in srgb, var(--cs-warn) 14%, transparent); color: var(--cs-warn); }
+.audit-resume.billing { border-color: var(--cs-error); border-left-color: var(--cs-error); background: color-mix(in srgb, var(--cs-error) 10%, transparent); }
+.billing-diag { margin: 6px 0 0; padding-left: 18px; color: var(--cs-fg); }
+.billing-diag li { margin: 2px 0; }
 .auto-line { margin-top: 7px; color: var(--cs-accent); font-size: var(--cs-font-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .auto-badge { margin-top: 6px; color: var(--cs-desc); font-size: var(--cs-font-1); display: flex; align-items: center; gap: 5px; }
 .search-line { margin-top: 10px; }
@@ -2731,7 +2793,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo, suppressed, failoverSleep) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo, suppressed, failoverSleep, billingWall) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -2780,6 +2842,7 @@ ${headHtml(assets, nonce)}
     ${resumeView ? resumeView.scopeMismatch ? `<div class="audit-resume scope"><strong>${icon("warning")} ${T("resume.scopeChanged")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="scanFull">${icon("telescope")}<span>${T("resume.newAudit")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : `<div class="audit-resume"><strong>${icon("debug-alt")} ${resumeView.provider ? T("resume.stopped", { done: resumeView.done, total: resumeView.total, provider: escapeHtml(resumeView.provider), model: escapeHtml(resumeView.model) }) : T("resume.title", { done: resumeView.done, total: resumeView.total, model: escapeHtml(resumeView.model) })}${resumeView.findings !== void 0 ? ` ${T("resume.findings", { n: resumeView.findings })}` : ""}</strong>${resumeView.breaker ? `<div class="resume-breaker">${icon("zap")} ${T("resume.breaker", { n: resumeView.breaker.count })} \xAB${escapeHtml(resumeView.breaker.category)}\xBB \u2014 ${escapeHtml(T("err.hint." + resumeView.breaker.category))}</div>` : ""}${resumeView.quota ? `<div class="resume-breaker">${icon("zap")} ${escapeHtml(T("quota.banner", { n: resumeView.quota.cycles }))}</div>` : ""}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="resumeAudit">${icon("play")}<span>${T("resume.continueSame")}</span></button><button type="button" class="cs-btn" data-command="resumeAuditOther">${icon("rocket")}<span>${T("resume.continueOther")}</span></button><button type="button" class="cs-btn" data-command="restartAudit">${icon("refresh")}<span>${T("resume.restart")}</span></button></div></div>` : ""}
     ${auditResume?.scopeUpdate ? `<div class="audit-resume scope-update"><strong>${icon("warning")} ${T("resume.scopeUpdate", { n: auditResume.scopeUpdate.files, m: auditResume.scopeUpdate.findings })}</strong></div>` : ""}
     ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon("clock")} ${T("keychain.bannerAllSleep", { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon("play")}<span>${T("keychain.bannerWaitBtn")}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon("debug-stop")}<span>${T("keychain.bannerStopBtn")}</span></button></div></div>` : ""}
+    ${!isScanning && billingWall ? `<div class="audit-resume billing"><strong>${icon("credit-card")} ${T("keychain.bannerBilling")}</strong><ul class="billing-diag">${billingWall.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>${billingWall.tail ? `<div class="resume-breaker">${escapeHtml(billingWall.tail)}</div>` : ""}<div class="err-hint">${icon("lightbulb")} <span>${T("keychain.billingHint")}</span></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -3046,8 +3109,8 @@ ${headHtml(assets, nonce)}
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, suppressed, failoverSleep) {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, "", void 0, suppressed, failoverSleep);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, suppressed, failoverSleep, billingWall) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, "", void 0, suppressed, failoverSleep, billingWall);
 }
 
 // src/reportIssue.ts
@@ -3175,6 +3238,8 @@ var CodeScoutPanel = class {
   errorInfo;
   auditDurations = [];
   failoverSleep;
+  // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
+  billingWall;
   workspaceState;
   onWelcomeStart;
   onWelcomeDismiss;
@@ -3280,6 +3345,7 @@ var CodeScoutPanel = class {
         void vscode.commands.executeCommand("codescout.failoverWaitResume");
       } else if (message.command === "failoverDismiss") {
         this.failoverSleep = void 0;
+        this.billingWall = void 0;
         this.render();
       } else if (message.command === "switchKeyProfile") {
         void vscode.commands.executeCommand("codescout.switchKeyProfile");
@@ -3441,6 +3507,12 @@ var CodeScoutPanel = class {
     this.failoverSleep = view;
     this.render();
   }
+  // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — немедленный стоп со списком
+  // диагнозов; кнопки «подождать» нет (сон не поможет), догон — resume-кнопки.
+  setBillingWall(view) {
+    this.billingWall = view;
+    this.render();
+  }
   clearProjectContext() {
     this.issues = [];
     this.stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
@@ -3456,6 +3528,7 @@ var CodeScoutPanel = class {
     this.auditSummary = void 0;
     this.auditDurations = [];
     this.failoverSleep = void 0;
+    this.billingWall = void 0;
     this.firstAuditDone = false;
     this.welcomeBanner = false;
     this.errorInfo = void 0;
@@ -3504,6 +3577,7 @@ var CodeScoutPanel = class {
       this.auditResume = void 0;
       this.autoResumeView = void 0;
       this.failoverSleep = void 0;
+      this.billingWall = void 0;
       this.progressInfo = void 0;
       this.auditSummary = void 0;
       this.errorInfo = void 0;
@@ -3592,6 +3666,7 @@ var CodeScoutPanel = class {
     this.auditResume = void 0;
     this.autoResumeView = void 0;
     this.failoverSleep = void 0;
+    this.billingWall = void 0;
     this.progressMessage = "";
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? "error" : testMode ? "test" : "success";
@@ -3613,7 +3688,7 @@ var CodeScoutPanel = class {
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep);
+    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
   }
 };
 
@@ -4996,11 +5071,15 @@ async function storeProfileSecret(secrets, profileId, value) {
   const profiles = readProfiles();
   const profile = profiles.find((candidate) => candidate.id === profileId);
   if (!profile) {
-    await storeKeySecret(secrets, defaultKeyFor(profileId), value);
-    return;
+    const fresh = defaultKeyFor(profileId);
+    await storeKeySecret(secrets, fresh, value.trim());
+    return fresh;
   }
   const key = pickActiveKey(profile) ?? profile.keys[0];
   await storeKeySecret(secrets, key, value.trim());
+  clearKeyBroken(profileId, key.id);
+  if (!key.enabled) await setKeyEnabled(profileId, key.id, true);
+  return key;
 }
 async function deleteProfileSecret(secrets, profileId) {
   const profiles = readProfiles();
@@ -5110,6 +5189,41 @@ function pickActiveKey(profile) {
   if (!enabled.length) return void 0;
   return enabled.find((key) => !isKeyBroken(profile.id, key.id)) ?? enabled[0];
 }
+function hasEnabledKey(profiles = readProfiles()) {
+  return profiles.some((profile) => profile.keys.some((key) => key.enabled));
+}
+function activeUsableProfile(profiles = readProfiles(), activeId = readActiveId()) {
+  const usable = profiles.filter((profile) => profile.keys.some((key) => key.enabled));
+  return usable.find((profile) => profile.id === activeId) ?? usable[0];
+}
+async function disableAllKeys() {
+  const profiles = readProfiles();
+  let disabled = 0;
+  const next = profiles.map((profile) => ({
+    ...profile,
+    keys: profile.keys.map((key) => {
+      if (!key.enabled) return key;
+      disabled += 1;
+      return { ...key, enabled: false };
+    })
+  }));
+  if (disabled > 0) await writeProfiles(next);
+  return { profiles: next, disabled };
+}
+async function enableAllKeys() {
+  const profiles = readProfiles();
+  let enabled = 0;
+  const next = profiles.map((profile) => ({
+    ...profile,
+    keys: profile.keys.map((key) => {
+      if (key.enabled) return key;
+      enabled += 1;
+      return { ...key, enabled: true };
+    })
+  }));
+  if (enabled > 0) await writeProfiles(next);
+  return { profiles: next, enabled };
+}
 async function setProfileBaseUrl(id, baseUrl) {
   const profiles = readProfiles();
   const target = profiles.find((profile) => profile.id === id);
@@ -5147,7 +5261,14 @@ async function updateProfileFromForm(secrets, id, input) {
   if (trimmedKey) {
     const updated = next.find((profile) => profile.id === id);
     const key = updated ? pickActiveKey(updated) ?? updated.keys[0] : void 0;
-    if (key) await storeKeySecret(secrets, key, trimmedKey);
+    if (key) {
+      await storeKeySecret(secrets, key, trimmedKey);
+      clearKeyBroken(id, key.id);
+      for (const profile of next) {
+        if (profile.id !== id) continue;
+        profile.keys = profile.keys.map((candidate) => candidate.id === key.id ? { ...candidate, enabled: true } : candidate);
+      }
+    }
   }
   await writeProfiles(next);
   return next.find((profile) => profile.id === id);
@@ -5269,7 +5390,7 @@ function grantWaitOnce() {
 function stateOf(runtimeId) {
   let state = runtime.get(runtimeId);
   if (!state) {
-    state = { sleepUntil: 0, ladderStep: 0, broken: false };
+    state = { sleepUntil: 0, ladderStep: 0, broken: false, billingBlocked: false };
     runtime.set(runtimeId, state);
   }
   return state;
@@ -5290,9 +5411,18 @@ function markKeyRateLimited(profileId, keyId, now, waitSeconds) {
 function markKeyBroken(profileId, keyId) {
   stateOf(keyRuntimeId(profileId, keyId)).broken = true;
 }
+function markKeyBillingBlocked(profileId, keyId) {
+  stateOf(keyRuntimeId(profileId, keyId)).billingBlocked = true;
+}
+function isKeyBillingBlocked(profileId, keyId) {
+  return runtime.get(keyRuntimeId(profileId, keyId))?.billingBlocked === true;
+}
 function clearKeyBroken(profileId, keyId) {
   const state = runtime.get(keyRuntimeId(profileId, keyId));
-  if (state) state.broken = false;
+  if (state) {
+    state.broken = false;
+    state.billingBlocked = false;
+  }
 }
 function markKeyHealthy(profileId, keyId) {
   const state = runtime.get(keyRuntimeId(profileId, keyId));
@@ -5308,19 +5438,39 @@ function runtimeSnapshot(profiles = readProfiles(), now = Date.now()) {
       const state = runtime.get(keyRuntimeId(profile.id, key.id));
       if (!state) continue;
       const sleepSeconds = Math.max(0, Math.ceil((state.sleepUntil - now) / 1e3));
-      if (state.broken || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds };
+      if (state.broken || state.billingBlocked || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds, billing: state.billingBlocked };
     }
   }
   return snapshot;
+}
+function hasAwakeKey(profiles = readProfiles(), now = Date.now()) {
+  return profiles.some((profile) => profile.keys.some((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now)));
+}
+function diagnoseKeys(profiles = readProfiles(), now = Date.now()) {
+  const out = [];
+  for (const profile of profiles) {
+    for (const key of profile.keys) {
+      const state = runtime.get(keyRuntimeId(profile.id, key.id));
+      const sleepSeconds = Math.max(0, Math.ceil(((state?.sleepUntil ?? 0) - now) / 1e3));
+      let diagnosis = "awake";
+      if (!key.enabled) diagnosis = "disabled";
+      else if (state?.billingBlocked) diagnosis = "billing";
+      else if (state?.broken) diagnosis = "broken";
+      else if (sleepSeconds > 0) diagnosis = "asleep";
+      out.push({ profileId: profile.id, profileLabel: profile.label, keyId: key.id, keyLabel: key.label, state: diagnosis, sleepSeconds });
+    }
+  }
+  return out;
 }
 function keyFullName(profile, key) {
   return `${profile.label}/${key.label}`;
 }
 function awakeKeys(profile, currentKeyId, now) {
-  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
+  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
 }
-function decideFailover(ctx, options, waitSeconds, now) {
-  const sleepSeconds = ctx.current.profileId ? markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
+function decideFailover(ctx, options, waitSeconds, now, trigger = "rate_limit") {
+  const billing = trigger === "billing";
+  const sleepSeconds = ctx.current.profileId ? billing ? (markKeyBillingBlocked(ctx.current.profileId, ctx.current.keyId), 0) : markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
   const chain = ctx.profiles;
   const currentIndex = chain.findIndex((profile) => profile.id === ctx.current.profileId);
   const currentProfile = currentIndex >= 0 ? chain[currentIndex] : void 0;
@@ -5333,7 +5483,7 @@ function decideFailover(ctx, options, waitSeconds, now) {
     for (let step = 1; step < enabled.length; step += 1) {
       const candidate = enabled[((keyIndex >= 0 ? keyIndex : 0) + step + enabled.length) % enabled.length];
       if (!candidate || candidate.id === ctx.current.keyId) continue;
-      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
+      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
       return {
         decision: { kind: "switch", profile: currentProfile, key: candidate, fromLabel, sleepSeconds, cycle, profileChanged: false },
         cycle,
@@ -5355,6 +5505,14 @@ function decideFailover(ctx, options, waitSeconds, now) {
       cycle,
       allowWaitOnce: ctx.allowWaitOnce
     };
+  }
+  const blockedCount = chain.reduce((total, profile) => total + profile.keys.filter((key) => key.enabled && (isKeyBillingBlocked(profile.id, key.id) || isKeyBroken(profile.id, key.id))).length, 0);
+  if (billing || blockedCount > 0) {
+    const sleepers2 = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
+    if (sleepers2.length === 0) {
+      return { decision: { kind: "stop", reason: "noneLeft", waitMs: 0, wakeLabel: "" }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+    }
+    return { decision: { kind: "stop", reason: "billingWall", waitMs: sleepWaitMs(chain, now), wakeLabel: wakeLabelFor(chain, now) }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
   const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
   if (sleepers.length === 0) {
@@ -5398,13 +5556,14 @@ function wakeLabelFor(chain, now) {
   }
   return best?.name ?? "";
 }
-function runFailover(waitSeconds, options, now = Date.now()) {
+function runFailover(waitSeconds, options, now = Date.now(), trigger = "rate_limit") {
   const profiles = readProfiles();
   const result = decideFailover(
     { profiles, current: { profileId: scanRuntime.currentId, keyId: scanRuntime.currentKeyId }, allowWaitOnce: scanRuntime.allowWaitOnce, cycle: scanRuntime.cycle },
     options,
     waitSeconds,
-    now
+    now,
+    trigger
   );
   scanRuntime.cycle = result.cycle;
   scanRuntime.allowWaitOnce = result.allowWaitOnce;
@@ -5413,10 +5572,6 @@ function runFailover(waitSeconds, options, now = Date.now()) {
     scanRuntime.currentKeyId = result.decision.key.id;
   }
   return result.decision;
-}
-function activeProfile(profiles = readProfiles(), activeId = readActiveId()) {
-  if (profiles.length === 0) return void 0;
-  return profiles.find((profile) => profile.id === activeId) ?? profiles[0];
 }
 function profileLabel(id, profiles = readProfiles()) {
   if (!id) return "";
@@ -5479,7 +5634,9 @@ var LOCAL_BASE_URL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
 function currentKeyLine(T, state) {
   if (state.keyConfigured) {
     const model = state.model.trim() || T("center.nowModelMissing");
-    return `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(model)}`;
+    const label = state.keyActiveLabel?.trim();
+    const tail = label ? ` \xB7 ${T("center.nowProfile", { label: escapeHtml2(label) })}` : "";
+    return `${escapeHtml2(state.keyMask)} \xB7 ${escapeHtml2(state.provider)} \xB7 ${escapeHtml2(model)}${tail}`;
   }
   const local = localServiceName(state.baseUrl);
   if (state.provider === "custom" && local) return escapeHtml2(T("center.nowLocal", { s: local }));
@@ -5503,6 +5660,8 @@ function keychainRowsHtml(T, state, inject) {
       const rt = runtimeInfo[`${profile.id}/${key.id}`];
       const badges = [
         key.enabled ? `<span class="kc-key-on">${icon2("pass")} ${T("keychain.keyOn")}</span>` : `<span class="kc-key-off">${icon2("circle-slash")} ${T("keychain.keyOff")}</span>`,
+        // 28.9: «тариф» — стена биллинга; такой ключ НЕ спит и выведен из ротации.
+        ...rt?.billing ? [`<span class="kc-key-broken">${icon2("credit-card")} ${T("keychain.badgeBilling")}</span>`] : [],
         ...rt?.broken ? [`<span class="kc-key-broken">${icon2("error")} ${T("keychain.badgeBroken")}</span>`] : [],
         ...rt && rt.sleepSeconds > 0 ? [`<span class="kc-key-asleep">${icon2("clock")} ${T("keychain.badgeAsleep", { s: rt.sleepSeconds })}</span>`] : []
       ].join(" ");
@@ -5594,12 +5753,18 @@ function keychainBlockHtml(T, state, onRenderIssue) {
     listHtml = `<p class="hint">${escapeHtml2(T("keychain.renderDegraded"))}</p>`;
     homeHtml = '<div id="kcFormHome" class="kc-form-home"></div>';
   }
+  const hasProfiles = (state.keychainProfiles?.length ?? 0) > 0;
+  const simpleMode = state.keychainSimpleMode === true;
+  const toggleAllButton = hasProfiles ? `<button id="keychainToggleAllKeys" type="button" class="secondary" data-kc="${simpleMode ? "keychainEnableAllKeys" : "keychainDisableAllKeys"}" data-id="_">${icon2(simpleMode ? "key" : "circle-slash")}<span>${T(simpleMode ? "keychain.enableAll" : "keychain.disableAll")}</span></button>` : "";
+  const simpleModeHint = hasProfiles && simpleMode ? `<p class="hint kc-simple-hint">${icon2("info")}<span>${T("keychain.simpleModeHint")}</span></p>` : "";
   return `<div id="kcBlock" class="kc-block">
   <h3>${icon2("clippy")} ${T("keychain.title")}</h3>
+  ${simpleModeHint}
   ${listHtml}
   ${homeHtml}
   <div class="row">
     <button id="keychainAdd" type="button" class="secondary">${icon2("plus")}<span>${T("keychain.add")}</span></button>
+    ${toggleAllButton}
   </div>
   <label class="checkbox"><input id="failoverEnabled" type="checkbox"${failoverOn ? " checked" : ""}> <span>${T("keychain.failoverEnabled")}</span></label>
   <label for="failoverMaxCycles">${T("keychain.failoverMaxCycles")}</label>
@@ -5950,7 +6115,7 @@ const vscode = acquireVsCodeApi();
 // helper below pulls at runtime \u2014 'keychain.formSave' was missing, so the
 // client-opened form showed the raw key on the Save button. A contract test
 // now diffs all L('\u2026') call sites against this whitelist.
-const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading", "keychain.formModelsCount", "keychain.comboEmptyHint", "keychain.comboNoMatches", "keychain.formTitleEdit", "keychain.formTitleAdd"].reduce((acc, k) => {
+const UI = ${JSON.stringify(["save.save", "save.saving", "save.clean", "save.dirty", "chip.removeTip", "form.pickOutside", "form.pickNoWorkspace", "center.connecting", "center.retry", "center.liveModels", "models.loading", "keychain.formKeyKeep", "center.keyPaste", "keychain.formErrProvider", "keychain.formErrKey", "keychain.formPullModels", "keychain.formSave", "keychain.formModelsLoading", "keychain.formModelsCount", "keychain.comboEmptyHint", "keychain.comboNoMatches", "keychain.comboManual", "keychain.formTitleEdit", "keychain.formTitleAdd"].reduce((acc, k) => {
     acc[k] = T(k);
     return acc;
   }, {}))};
@@ -6234,12 +6399,12 @@ let formEditing = '';
 const kcFormModelsStatus = document.getElementById('kcFormModelsStatus');
 let formPullTimer = 0;
 let formPullSeq = 0;
-// Batch 28.4: pulled model ids (non-secret \u2014 safe for vscode.getState), the
-// highlighted option index and the "user typed" flag (open-by-focus shows ALL
-// models unfiltered; typing switches the list into substring-filter mode).
+// Batch 28.4: pulled model ids (non-secret \u2014 safe for vscode.getState) and the
+// highlighted option index. Batch 28.9: NO "unfiltered open" mode anymore \u2014
+// every render (typing, paste, programmatic set, opening) filters by the
+// current input value; empty value keeps the full list.
 let formModelsList = [];
 let comboActive = -1;
-let comboTyped = false;
 function setFormModelsStatus(text, isError) {
   if (!kcFormModelsStatus) return;
   kcFormModelsStatus.textContent = text || '';
@@ -6278,10 +6443,11 @@ function persistForm() {
   // models = non-secret pulled list (28.4); the API KEY never enters state.
   writeFormState({ editing: formEditing, provider: kcFormProvider.value, model: kcFormModelInput.value, label: kcFormLabelInput.value, baseUrl: kcFormBaseUrlInput.value, models: formModelsList });
 }
-// \u2500\u2500 Batch 28.4: model combobox core. Pure functions below the markers are
-// extracted and unit-tested as-is (tests/batch28-4). Plain JS only.
+// \u2500\u2500 Batch 28.4/28.9: model combobox core. Pure functions below the markers
+// are extracted and unit-tested as-is (tests/batch28-4, batch28-9). 28.9:
+// opening ALWAYS applies the current filter (comboFilter), so no
+// unfiltered-open helper remains. Plain JS only.
 /* cs-combo-core:start */
-function comboOpenList(models) { return Array.isArray(models) ? models.slice() : []; }
 function comboFilter(models, query) {
   const list = Array.isArray(models) ? models.slice() : [];
   const q = String(query || '').trim().toLowerCase();
@@ -6292,7 +6458,7 @@ function comboIsCurrent(model, current) { return String(model || '') === String(
 /* cs-combo-core:end */
 function comboOpen() { return Boolean(kcFormModelDropdown) && !kcFormModelDropdown.classList.contains('hidden'); }
 function setComboExpanded(open) { if (kcFormModelInput) kcFormModelInput.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-function comboItems() { return comboTyped ? comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : '') : comboOpenList(formModelsList); }
+function comboItems() { return comboFilter(formModelsList, kcFormModelInput ? kcFormModelInput.value : ''); }
 function comboOptEls() { return kcFormModelOptions ? Array.prototype.slice.call(kcFormModelOptions.querySelectorAll('.kc-combo-opt')) : []; }
 function renderCombo() {
   if (!kcFormModelOptions || !kcFormModelDropdown) return;
@@ -6320,20 +6486,21 @@ function renderCombo() {
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'kc-combo-empty';
-    // N=0 pulled \u2192 \xABpress Pull models\xBB hint; typed-no-match \u2192 separate hint.
-    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') : L('keychain.comboEmptyHint');
+    // N=0 pulled \u2192 \xABpress Pull models\xBB hint; typing-no-match \u2192 \xABno matches\xBB
+    // plus \xABtype the model manually\xBB (28.9: the filter never blocks manual input).
+    empty.textContent = formModelsList.length ? L('keychain.comboNoMatches') + ' \u2014 ' + L('keychain.comboManual') : L('keychain.comboEmptyHint');
     kcFormModelOptions.appendChild(empty);
   }
 }
 function openCombo() {
   if (!kcFormModelDropdown) return;
-  comboActive = -1; comboTyped = false;
+  comboActive = -1;
   renderCombo();
   kcFormModelDropdown.classList.remove('hidden');
   setComboExpanded(true);
 }
 function refreshComboTyped() {
-  comboTyped = true; comboActive = -1;
+  comboActive = -1;
   renderCombo();
   if (!kcFormModelDropdown || !comboOpen()) {
     if (kcFormModelDropdown) kcFormModelDropdown.classList.remove('hidden');
@@ -6343,7 +6510,7 @@ function refreshComboTyped() {
 function closeCombo() {
   if (!kcFormModelDropdown) return;
   kcFormModelDropdown.classList.add('hidden');
-  comboActive = -1; comboTyped = false;
+  comboActive = -1;
   setComboExpanded(false);
 }
 function moveComboActive(delta) {
@@ -6497,7 +6664,7 @@ document.addEventListener('keydown', (event) => {
 if (kcFormModelArrow) kcFormModelArrow.addEventListener('click', () => { if (comboOpen()) closeCombo(); else openCombo(); });
 if (kcFormModelInput) {
   kcFormModelInput.addEventListener('focus', () => { if (formVisible()) openCombo(); });
-  kcFormModelInput.addEventListener('input', () => { if (formVisible() && comboOpen()) refreshComboTyped(); });
+  kcFormModelInput.addEventListener('input', () => { if (formVisible()) refreshComboTyped(); });
   kcFormModelInput.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { if (comboOpen()) { closeCombo(); event.stopPropagation(); } return; }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -6784,7 +6951,7 @@ var WIZARD_PROVIDER_LABELS = {
   "Hyperbolic": "hyperbolic",
   "Cerebras": "cerebras"
 };
-var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl", "keychainMove", "keychainAddKey", "keychainRenameKey", "keychainDeleteKey", "keychainToggleKey", "keychainFormSave", "keychainFormModels"]);
+var KNOWN_SETTINGS_COMMANDS = /* @__PURE__ */ new Set(["saveKeyProvider", "saveAppearance", "saveAll", "clearApiKey", "chooseModel", "testConnection", "saveDocLinks", "openRules", "openLink", "pickScope", "reportIssue", "refreshContext", "keychainAdd", "keychainRename", "keychainDelete", "keychainSetActive", "keychainBaseUrl", "keychainMove", "keychainAddKey", "keychainRenameKey", "keychainDeleteKey", "keychainToggleKey", "keychainDisableAllKeys", "keychainEnableAllKeys", "keychainFormSave", "keychainFormModels"]);
 var hostOutput;
 function formatIssue(issue) {
   const severity = issue.severity.toUpperCase();
@@ -6948,7 +7115,7 @@ async function resolveExtensionSelection(context) {
   };
   if (oneShotSelectionOverride) return { ...oneShotSelectionOverride, baseUrl: oneShotSelectionOverride.baseUrl || baseUrl };
   const profiles = readProfiles();
-  const active = activeProfile(profiles);
+  const active = activeUsableProfile(profiles);
   if (active) {
     const keyRef = pickActiveKey(active);
     const profileKey = keyRef ? await readKeySecret(context.secrets, active, keyRef) : void 0;
@@ -6956,7 +7123,7 @@ async function resolveExtensionSelection(context) {
     return {
       provider: active.provider,
       model: profileModel,
-      key: resolveApiKeyPriority(profileKey, active.provider),
+      key: profileKey?.trim() || void 0,
       baseUrl,
       userChosenModel: Boolean(active.model?.trim()),
       profileId: active.id,
@@ -6982,6 +7149,7 @@ async function buildFailoverHooks(context, selection) {
   if (oneShotSelectionOverride) return void 0;
   const profiles = readProfiles();
   if (profiles.length === 0) return void 0;
+  if (!hasEnabledKey(profiles)) return void 0;
   if (!failoverEnabled()) return void 0;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
@@ -6991,21 +7159,32 @@ async function buildFailoverHooks(context, selection) {
     return { action: "switch", apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
-    async onRateLimit(waitSeconds, reason) {
-      const trigger = reason === "quota" ? "quota" : "429";
-      let decision = runFailover(waitSeconds, options());
+    async onRateLimit(waitSeconds, reason, detailTail) {
+      const trigger = reason === "quota" ? "quota" : reason === "billing" ? "billing" : "429";
+      const billing = reason === "billing";
+      if (billing) {
+        const current = scanCurrent();
+        if (current.profileId) {
+          markKeyBillingBlocked(current.profileId, current.keyId);
+          keychainLog(`\u{1F4B3} billing: \u043A\u043B\u044E\u0447 ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} \u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430 (${(detailTail ?? "").slice(0, 80)}) \u2014 \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442`);
+        }
+      }
+      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? "billing" : reason === "quota" ? "quota" : "rate_limit");
       if (decision.kind === "switch") {
         if (!await readKeySecret(context.secrets, decision.profile, decision.key)) {
           markKeyBroken(decision.profile.id, decision.key.id);
           keychainLog(`\u{1F511} failover: \u043A\u043B\u044E\u0447 \xAB${decision.key.label}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB${decision.profile.label}\xBB \u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430 \u2014 \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken`);
-          decision = runFailover(void 0, options());
+          decision = runFailover(void 0, options(), Date.now(), billing ? "billing" : reason === "quota" ? "quota" : "rate_limit");
         }
         if (decision.kind === "switch") {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return void 0;
-          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} \u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
+          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? "\u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430" : `\u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441`}), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
           return low;
         }
+      }
+      if (decision.kind === "wait" && billing) {
+        return { action: "stop", waitMs: 0, wakeLabel: decision.wakeLabel };
       }
       if (decision.kind === "wait") {
         keychainLog(`\u23F3 \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u0441\u043F\u044F\u0442, \u043F\u0440\u043E\u0431\u0443\u0436\u0434\u0435\u043D\u0438\u0435: ${decision.wakeLabel} \u0447\u0435\u0440\u0435\u0437 ${Math.ceil(decision.waitMs / 1e3)}\u0441, \u0446\u0438\u043A\u043B ${decision.cycle}`);
@@ -7014,6 +7193,8 @@ async function buildFailoverHooks(context, selection) {
       if (decision.kind === "stop") {
         if (decision.reason === "noneLeft") {
           keychainLog("\u{1F511} failover: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0432\u0441\u0435 broken/\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B/\u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430) \u2014 \u0441\u0442\u043E\u043F");
+        } else if (decision.reason === "billingWall") {
+          keychainLog("\u{1F6D1} billing: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0441\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430 + \u0441\u043E\u043D/\u0441\u043B\u043E\u043C\u0430\u043D\u043D\u044B\u0435) \u2014 \u043D\u0435\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u044B\u0439 \u0441\u0442\u043E\u043F, \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442");
         } else if (decision.reason === "maxCycles") {
           keychainLog(`\u{1F511} failover: \u043F\u043E\u0442\u043E\u043B\u043E\u043A \u0446\u0438\u043A\u043B\u043E\u0432 ${failoverMaxCycles()} \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D \u2014 \u0441\u0442\u043E\u043F, \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A`);
         } else {
@@ -7121,6 +7302,20 @@ function handleAllProfilesAsleep(panel, error) {
   panel.setScanning(false);
   panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1e3), wakeLabel: error.wakeLabel });
 }
+function billingDiagnosisLines(lang) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const entry of diagnoseKeys()) {
+    const text = entry.state === "billing" ? t("keychain.diagBilling", lang, { label: entry.keyLabel }) : entry.state === "broken" ? t("keychain.diagBroken", lang, { label: entry.keyLabel }) : entry.state === "asleep" ? t("keychain.diagAsleep", lang, { label: entry.keyLabel, s: entry.sleepSeconds }) : entry.state === "disabled" ? t("keychain.diagOff", lang, { label: entry.keyLabel }) : `${entry.keyLabel} \u2713`;
+    const list = groups.get(entry.profileLabel) ?? [];
+    list.push(text);
+    groups.set(entry.profileLabel, list);
+  }
+  return [...groups.entries()].map(([profile, keys]) => `${profile}: ${keys.join(", ")}`);
+}
+function handleBillingWall(panel, error) {
+  panel.setScanning(false);
+  panel.setBillingWall({ lines: billingDiagnosisLines(currentReportLanguage()), tail: error.tail.slice(0, 80) });
+}
 function logEntityDrops(output, result) {
   const drops = result.droppedEntityArtifacts ?? 0;
   if (drops > 0) output.appendLine(`\u{1F9F9} \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E entity-\u0430\u0440\u0442\u0435\u0444\u0430\u043A\u0442\u043E\u0432: ${drops}`);
@@ -7133,6 +7328,12 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   const startedAt = Date.now();
   const selection = await resolveExtensionSelection(context);
   if (!selection.key && !isLocalBaseUrl(selection.profileBaseUrl || selection.baseUrl)) {
+    if (selection.profileId) {
+      throw new Error(t("panel.errNoKeyProfile", promptLang, { label: profileLabel(selection.profileId) }));
+    }
+    if (readProfiles().length > 0) {
+      throw new Error(t("panel.errNoKeyCenter", promptLang, { p: selection.provider }));
+    }
     throw new Error(`${t("panel.errNoKey", promptLang, { p: selection.provider })}${t("panel.keyGet", promptLang, { x: keyUrl(selection.provider) ?? t("panel.keyGetAlt", promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
@@ -7187,7 +7388,8 @@ ${docPick.section}` : systemPrompt;
         return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
-        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error) && categorizeError(error) !== "quota";
+        if (error instanceof BillingWallError) throw error;
+        const retriable = error instanceof RateLimitError || isNetworkError(error) || isRateLimitText(error) && categorizeError(error) !== "quota" && categorizeError(error) !== "billing";
         const halves = retriable ? splitAuditChunk(chunk) : void 0;
         if (halves) {
           adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
@@ -7221,6 +7423,26 @@ ${docPick.section}` : systemPrompt;
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
+        if (error instanceof BillingWallError) throw error;
+        if (categorizeError(error) === "billing") {
+          const tail = scrubErrorSecrets(error instanceof Error ? error.message : String(error)).slice(0, 80);
+          if (failover) {
+            const decision = await failover.onRateLimit(void 0, "billing", tail);
+            if (decision && decision.action === "switch") {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision) throw new BillingWallError(tail, decision.action === "stop" ? decision.wakeLabel : "");
+          }
+          const current = scanCurrent();
+          if (current.profileId) {
+            markKeyBillingBlocked(current.profileId, current.keyId);
+            keychainLog(`\u{1F4B3} billing: \u043A\u043B\u044E\u0447 ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} \u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430 (${tail}) \u2014 \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442`);
+          }
+          if (readProfiles().length > 0 && hasEnabledKey(readProfiles()) && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
+          break;
+        }
         if (!(error instanceof AllProfilesAsleepError) && categorizeError(error) === "quota") {
           if (failover) {
             const quotaWait = error instanceof RateLimitError ? error.waitSeconds : void 0;
@@ -7330,6 +7552,10 @@ async function runSampleReview(context, output, panel) {
     }
     if (error instanceof AllProfilesAsleepError) {
       handleAllProfilesAsleep(panel, error);
+      return;
+    }
+    if (error instanceof BillingWallError) {
+      handleBillingWall(panel, error);
       return;
     }
     await reportScanFailure(context, output, panel, error, "Self-test error");
@@ -7683,6 +7909,14 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1e3), wakeLabel: error.wakeLabel });
       return { kind: "done" };
     }
+    if (error instanceof BillingWallError) {
+      autoResumeCancelled = true;
+      output.appendLine(`\u{1F6D1} billing: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0441\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430) \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442${error.tail ? `; \u0445\u0432\u043E\u0441\u0442: ${error.tail.slice(0, 80)}` : ""}`);
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      handleBillingWall(panel, error);
+      return { kind: "interrupted", view: resumeView };
+    }
     if (error instanceof QuotaExhaustedError) {
       autoResumeCancelled = true;
       output.appendLine(`\u{1F6D1} \u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: ${error.pausedCycles} \u0446\u0438\u043A\u043B(\u043E\u0432) \u043F\u0430\u0443\u0437\u044B \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u0434\u043E\u0433\u043E\u043D \u043A\u043D\u043E\u043F\u043A\u0430\u043C\u0438 \u043D\u0438\u0436\u0435 (codescout.quotaPauseMaxCycles)`);
@@ -7781,6 +8015,10 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       handleAllProfilesAsleep(panel, error);
       return;
     }
+    if (error instanceof BillingWallError) {
+      handleBillingWall(panel, error);
+      return;
+    }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -7856,6 +8094,10 @@ async function runReview(context, lastCommit, output, panel, signal) {
       handleAllProfilesAsleep(panel, error);
       return;
     }
+    if (error instanceof BillingWallError) {
+      handleBillingWall(panel, error);
+      return;
+    }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -7916,6 +8158,14 @@ async function migrateLanguageSetting(context) {
 async function runConnectionTest(context) {
   const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
+  if (selection.profileId && !selection.key) {
+    const message = t("key.needFirstProfile", lang, { label: profileLabel(selection.profileId) });
+    return { ok: false, message, title: t("err.title.auth_invalid_key", lang), hint: message, category: "auth_invalid_key" };
+  }
+  if (!selection.profileId && !selection.key && readProfiles().length > 0 && !isLocalBaseUrl(selection.baseUrl)) {
+    const message = t("key.needFirstCenter", lang);
+    return { ok: false, message, title: t("err.title.auth_invalid_key", lang), hint: message, category: "auth_invalid_key" };
+  }
   if (!selection.baseUrl && selection.provider !== "custom") {
     return { ok: true, message: t("center.connected", lang, { n: 0 }) };
   }
@@ -7937,12 +8187,14 @@ async function fileIsDirectory(uri) {
 }
 async function readSettingsState(context) {
   const selection = await resolveExtensionSelection(context);
-  const key = selection.key ?? await context.secrets.get(SECRET_KEY);
+  const key = selection.key;
   return {
     keyMask: key ? maskApiKey(key) : "",
     keyConfigured: Boolean(key?.trim()),
     provider: selection.provider,
     model: selection.model,
+    // «сейчас:» = активный профиль: метка профиля для строки центра.
+    keyActiveLabel: selection.profileId ? profileLabel(selection.profileId) : "",
     baseUrl: vscode4.workspace.getConfiguration("codescout").get("baseUrl")?.trim() || "",
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled(),
@@ -7969,6 +8221,10 @@ async function readSettingsState(context) {
     customColors: JSON.stringify(readUiPrefs().customColors),
     keychainProfiles: readProfiles(),
     keychainActiveId: readActiveId(),
+    // ЗАДАЧА 28.10: «простой режим» — профили есть, но ни одного
+    // включённого ключа: источник — legacy-поле центра, блок профилей
+    // показывает это и даёт одну кнопку обратного перехода.
+    keychainSimpleMode: readProfiles().length > 0 && !hasEnabledKey(),
     // Батч 28: состояние ключей (asleep/broken) для бейджей в центре.
     keychainRuntime: runtimeSnapshot(),
     failoverEnabled: failoverEnabled(),
@@ -7999,13 +8255,13 @@ async function saveKeyProvider(context, message) {
   } else if (skChosen) {
     provider = skChosen.provider;
     model = selection.userChosenModel ? model : skChosen.model;
-    await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
+    if (!profileId) await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
     notes.push(t("center.noteProviderManual", lang));
   } else if (message.providerKey && message.providerKey !== "auto") {
     provider = message.providerKey;
     if (provider !== selection.provider || key) {
       model = defaultModel(provider);
-      await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
+      if (!profileId) await context.secrets.store(SECRET_MODEL_CHOSEN, "false");
     }
   } else if (key) {
     notes.push(t("center.noteProviderManual", lang));
@@ -8030,7 +8286,7 @@ async function saveKeyProvider(context, message) {
 async function autoSelectModelAfterProviderChange(context, providerChanged) {
   if (!providerChanged) return;
   const selection = await resolveExtensionSelection(context);
-  if (!(selection.key || await context.secrets.get(SECRET_KEY))) return;
+  if (!selection.key) return;
   await vscode4.commands.executeCommand("codescout.chooseModel");
 }
 async function confirmAndActivateProfile(profileId) {
@@ -8457,6 +8713,30 @@ function activate(context) {
               await render(t(saved?.enabled ? "keychain.keyEnabledNotify" : "keychain.keyDisabledNotify", lang, { label: saved?.label ?? keyId }));
               return;
             }
+            if (message.command === "keychainDisableAllKeys") {
+              const lang = currentReportLanguage();
+              const { disabled } = await disableAllKeys();
+              if (disabled === 0) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t("keychain.allKeysOffNotify", lang));
+              return;
+            }
+            if (message.command === "keychainEnableAllKeys") {
+              const lang = currentReportLanguage();
+              const { enabled } = await enableAllKeys();
+              if (enabled === 0) {
+                await render(t("keychain.actionCancelled", lang));
+                return;
+              }
+              clearModelsCache();
+              await syncKeyStatus();
+              await render(t("keychain.allKeysOnNotify", lang));
+              return;
+            }
             if (message.command === "keychainRename") {
               const lang = currentReportLanguage();
               const id = String(message.id ?? "");
@@ -8681,18 +8961,20 @@ function activate(context) {
       const lang = currentReportLanguage();
       const config = vscode4.workspace.getConfiguration("codescout");
       const profiles = readProfiles();
-      if (profiles.length > 0) {
+      if (profiles.length > 0 && hasEnabledKey(profiles)) {
         const target2 = await pickResumeProfile({
           lang,
           profiles,
           // Батч 28: резолвим РаБОЧИЙ enabled-ключ профиля (первый не broken);
-          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback).
+          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback для
+          // немигрированных установок батча 27).
+          // МИКРО-БАТЧ 28.9: без env/legacy-подмеси: секрета ключа нет —
+          // догон этим профилем невозможен (честный «сохрани ключ в профиле»).
           resolveKeyForProfile: async (profile) => {
             const key = pickActiveKey(profile);
             if (!key) return void 0;
             const secret = await readKeySecret(context.secrets, profile, key);
-            const resolved = resolveApiKeyPriority(secret, profile.provider);
-            return resolved ? { key: resolved, keyId: key.id, keyLabel: key.label } : void 0;
+            return secret?.trim() ? { key: secret.trim(), keyId: key.id, keyLabel: key.label } : void 0;
           },
           resolveBaseUrlFor: async (provider, profileBaseUrl2) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config), profileBaseUrl2),
           log: (message) => output.appendLine(message)
@@ -8794,15 +9076,16 @@ function activate(context) {
       }
       const validated = await validateDefaultModel(context, { provider: selection.provider, model: selection.model, key: key.trim() });
       selection = { provider: selection.provider, model: validated.model };
-      await context.secrets.store(SECRET_KEY, key.trim());
-      await context.secrets.store(SECRET_PROVIDER, selection.provider);
-      await context.secrets.store(SECRET_MODEL, selection.model);
-      await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       const existingProfiles = readProfiles();
-      const activeNow = activeProfile(existingProfiles);
+      const activeNow = activeUsableProfile(existingProfiles);
       if (activeNow) {
         await storeProfileSecret(context.secrets, activeNow.id, key.trim());
         await writeProfiles(existingProfiles.map((profile) => profile.id === activeNow.id ? { ...profile, provider: selection.provider, model: selection.model } : profile));
+      } else {
+        await context.secrets.store(SECRET_KEY, key.trim());
+        await context.secrets.store(SECRET_PROVIDER, selection.provider);
+        await context.secrets.store(SECRET_MODEL, selection.model);
+        await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       }
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
       const source = autoDetected ? t("key.sourceAuto", lang) : t("key.sourceManual", lang);
@@ -8814,7 +9097,8 @@ function activate(context) {
     vscode4.commands.registerCommand("codescout.chooseModel", async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
-        void vscode4.window.showErrorMessage(t("key.needFirst", currentReportLanguage()));
+        const lang = currentReportLanguage();
+        void vscode4.window.showErrorMessage(current.profileId ? t("key.needFirstProfile", lang, { label: profileLabel(current.profileId) }) : readProfiles().length > 0 ? t("key.needFirstCenter", lang) : t("key.needFirst", lang));
         return;
       }
       const chosen = await chooseLiveModel(current, t("model.pickTitleShort", currentReportLanguage()));
@@ -8868,6 +9152,7 @@ function activate(context) {
     vscode4.commands.registerCommand("codescout.failoverWaitResume", () => {
       grantWaitOnce();
       panel.setFailoverSleep(void 0);
+      panel.setBillingWall(void 0);
       if (panel.isScanRunning()) return void 0;
       if (lastScanKind === "audit") return runScan(() => runFullAudit(context, output, panel, true));
       if (lastScanKind === "sample") return runScan(() => runSampleReview(context, output, panel));
@@ -9001,6 +9286,7 @@ function deactivate() {
   PASS_BETWEEN_SECONDS,
   RATE_LIMIT_PAUSE_LADDER,
   activate,
+  billingDiagnosisLines,
   deactivate,
   fileCooldownSecondsFromSetting,
   migrateApiKeyFromSettings,
