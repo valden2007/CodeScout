@@ -8,11 +8,14 @@ export type ErrorCategory =
   | 'auth_invalid_key'
   | 'auth_forbidden'
   | 'rate_limit_exceeded'
-  // Микро-батч 28.4: платёжная квота (HTTP 402, «insufficient_quota»,
-  // «billing», «Upgrade to … Tier» у groq/openrouter) — НЕ unknown и НЕ
-  // rate_limit_exceeded: failover усыпляет ключ и ротирует, breaker по ней
-  // не стопит мгновенно.
+  // Микро-батч 28.4/28.9: 'quota' — ОГРАНИЧЕНИЕ ОКНА (HTTP 429 с retry-after /
+  // «resets in …» / daily/hourly-текстами): сон ключа и циклы догона 28.6
+  // помогают. Деньги — отдельная категория 'billing' ниже.
   | 'quota'
+  // МИКРО-БАТЧ 28.9: «стена тарифа» — HTTP 402, insufficient_credits/credits/
+  // billing, «upgrade to … Tier», «model requires paid/flash tier». Сон НЕ
+  // поможет: ключ выводится из ротации как broken, нужен баланс/смена модели.
+  | 'billing'
   | 'model_not_found'
   | 'timeout'
   | 'connection_refused'
@@ -27,7 +30,7 @@ export interface FormattedError {
   rawMessage?: string;
 }
 
-export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
+export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'billing', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
 
 const PROBE_TIMEOUT_FALLBACK_SECONDS = 5;
 
@@ -58,21 +61,31 @@ function statusFromText(raw: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
-// Микро-батч 28.4: платёжная квота. groq/openrouter отдают её как HTTP 402
-// и/или тексты «insufficient_quota», «…billing…», «Upgrade to … Tier».
-// Проверяется ДО общего rate-limit-текста: в биллинг-сообщениях часто
-// мелькают слова «quota»/«rate limit», но смысл — деньги, а не временный
-// лимит окна: нужен сон ключа + ротация, а не пауза на несколько минут.
-const QUOTA_TEXT_RE = /insufficient_quota|payment required|billing|\bupgrade to\b[^\n]{0,80}\btier\b/i;
+// МИКРО-БАТЧ 28.9: стена тарифа. groq/openrouter отдают её как HTTP 402
+// и/или тексты «insufficient_quota», «insufficient credits», «billing»,
+// «Upgrade to … Tier», «model requires paid/flash tier». Проверяется ДО
+// rate-limit-текста: в биллинг-сообщениях мелькают «quota»/«rate limit»,
+// но смысл — деньги: сон и циклы не помогут, ключ выводится из ротации.
+const BILLING_TEXT_RE = /insufficient[_ ](?:quota|credits)|\bcredits\b|billing|payment required|upgrade to[^\n]{0,80}tier|(?:model|plan)[^\n]{0,60}requires (?:an? )?(?:paid|pro|flash|premium)[^\n]{0,40}tier|requires (?:a )?(?:paid|flash) tier/i;
+
+// 28.9: «окно»-квота: 429 с явным retry-after/reset-текстом — сон помогает.
+const QUOTA_RESET_TEXT_RE = /retry[ -]?after|reset(?:s|ting)? (?:in|at|on)\b|\bdaily (?:limit|quota|usage|request)|\bhourly (?:limit|quota)|\bminute(?:ly)? limit|x-ratelimit-reset|per[ -](?:day|hour|minute) (?:limit|quota|request)/i;
 
 export function categorizeError(error: unknown): ErrorCategory {
-  if (error instanceof RateLimitError) return 'rate_limit_exceeded';
+  if (error instanceof RateLimitError) {
+    if (BILLING_TEXT_RE.test(messageOf(error))) return 'billing';
+    return QUOTA_RESET_TEXT_RE.test(messageOf(error)) ? 'quota' : 'rate_limit_exceeded';
+  }
   if (error instanceof ProviderHttpError) {
     if (error.status === 401) return 'auth_invalid_key';
     if (error.status === 403) return 'auth_forbidden';
-    if (error.status === 402) return 'quota';
+    if (error.status === 402) return 'billing';
     if (error.status === 404) return 'model_not_found';
-    if (error.status === 429) return 'rate_limit_exceeded';
+    if (error.status === 429) {
+      const blob = `${error.message} ${error.details}`;
+      if (BILLING_TEXT_RE.test(blob)) return 'billing';
+      return QUOTA_RESET_TEXT_RE.test(blob) ? 'quota' : 'rate_limit_exceeded';
+    }
     return 'unknown';
   }
   if (error instanceof BadResponseError) return 'invalid_json';
@@ -82,13 +95,17 @@ export function categorizeError(error: unknown): ErrorCategory {
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return 'auth_invalid_key';
   if (textStatus === 403) return 'auth_forbidden';
-  if (textStatus === 402) return 'quota';
+  if (textStatus === 402) return 'billing';
   if (textStatus === 404) return 'model_not_found';
-  if (textStatus === 429) return 'rate_limit_exceeded';
-  if (QUOTA_TEXT_RE.test(raw)) return 'quota';
+  if (textStatus === 429) {
+    if (BILLING_TEXT_RE.test(raw)) return 'billing';
+    return QUOTA_RESET_TEXT_RE.test(raw) ? 'quota' : 'rate_limit_exceeded';
+  }
+  if (BILLING_TEXT_RE.test(raw)) return 'billing';
   if (/invalid api key|incorrect api key|unauthorized|api[_ ]key/i.test(raw)) return 'auth_invalid_key';
   if (/forbidden|permission denied/i.test(raw)) return 'auth_forbidden';
   if (/model[^.]{0,60}?(?:not found|does not exist|is unavailable|unknown model)/i.test(raw)) return 'model_not_found';
+  if (QUOTA_RESET_TEXT_RE.test(raw)) return 'quota';
   if (/rate.?limit|too many requests|overloaded|quota|exceeded/i.test(raw)) return 'rate_limit_exceeded';
   if (isConnectionFailure(raw)) return 'connection_refused';
   return 'unknown';

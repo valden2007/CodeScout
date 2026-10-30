@@ -49,8 +49,12 @@ function okContent(): Response {
   return new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[],"summary":"ok"}' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
+// МИКРО-БАТЧ 28.9: quota-паузы циклами — теперь про ОКНО (429/reset-текст),
+// не про деньги. Агрегаторы отдают окно и 429-статусом, и обычным текстом
+// (HTTP 500 + «resets in …») — берём текст: путь reviewFiles без внутренней
+// лестницы llm-client, как в 28.5. Деньги (402) — отдельная история (billing).
 function quota402(): Response {
-  return new Response(JSON.stringify({ error: { message: 'insufficient_quota: top up your billing' } }), { status: 402, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify({ error: { message: 'You exceeded your current quota; this daily limit resets in 42s' } }), { status: 500, headers: { 'content-type': 'application/json' } });
 }
 
 // Какой файл дёрнули (по «File: <path>» в user-промпте) — счётчик запросов.

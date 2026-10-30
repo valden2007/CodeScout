@@ -1589,7 +1589,7 @@ describe('E1.3j settings button + auto-audit indicator', () => {
     expect(panel).toContain("get<boolean>('autoResume', false)");
     expect(panel).toContain("'autoResume', 'autoResumeMaxAttempts', 'autoResumeMaxMinutes'");
     expect(panel).toContain('event.affectsConfiguration(`codescout.${key}`)');
-    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep)');
+    expect(panel).toContain('this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall)');
   });
 
   it('badge shows when autoResume is on, hidden when off, placed under the actions', () => {
@@ -3427,7 +3427,7 @@ describe('v1.4b-5 i18n: ru/en dictionaries, globe switch, migration, prompts', (
     expect(extension).toContain("const language = message.reportLanguage === 'en' ? 'en' : 'ru'");
     expect(extension).toContain("await config.update('language', language, vscode.ConfigurationTarget.Global)");
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep)');
+    expect(panel).toContain('this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall)');
   });
 
   it('manifest nls: every %token% resolves, default file is English, ru file is Russian', () => {

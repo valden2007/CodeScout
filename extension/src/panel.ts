@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx, type FailoverSleepView } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx, type FailoverSleepView, type BillingWallView } from './reportHtml';
 import { computeFingerprint, getSuppressed, isSuppressed, suppress, unsuppress } from './findingsStore';
 import { isContactUrlAllowed } from './reportIssue';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
@@ -105,6 +105,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private errorInfo?: ScanErrorInfo;
   private auditDurations: number[] = [];
   private failoverSleep?: FailoverSleepView;
+  // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
+  private billingWall?: BillingWallView;
   private workspaceState?: vscode.Memento;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
@@ -224,6 +226,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.failoverWaitResume');
       } else if (message.command === 'failoverDismiss') {
         this.failoverSleep = undefined;
+        this.billingWall = undefined;
         this.render();
       } else if (message.command === 'switchKeyProfile') {
         void vscode.commands.executeCommand('codescout.switchKeyProfile');
@@ -402,6 +405,13 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — немедленный стоп со списком
+  // диагнозов; кнопки «подождать» нет (сон не поможет), догон — resume-кнопки.
+  setBillingWall(view: BillingWallView | undefined): void {
+    this.billingWall = view;
+    this.render();
+  }
+
   clearProjectContext(): void {
     this.issues = [];
     this.stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
@@ -417,6 +427,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditSummary = undefined;
     this.auditDurations = [];
     this.failoverSleep = undefined;
+    this.billingWall = undefined;
     this.firstAuditDone = false;
     this.welcomeBanner = false;
     this.errorInfo = undefined;
@@ -468,6 +479,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.auditResume = undefined;
       this.autoResumeView = undefined;
       this.failoverSleep = undefined;
+      this.billingWall = undefined;
       this.progressInfo = undefined;
       this.auditSummary = undefined;
       this.errorInfo = undefined;
@@ -565,6 +577,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditResume = undefined;
     this.autoResumeView = undefined;
     this.failoverSleep = undefined;
+    this.billingWall = undefined;
     this.progressMessage = '';
     this.statusMessage = testMessage;
     this.statusKind = testWarning ? 'error' : testMode ? 'test' : 'success';
@@ -588,7 +601,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
     this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
   }
 }

@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSettingsHtml, type SettingsState } from '../extension/src/settingsHtml';
 import { categorizeError, formatError, ERROR_CATEGORIES } from '../src/error-classifier';
-import { OpenAICompatibleProvider, ProviderHttpError, RateLimitError, type FailoverHooks } from '../src/llm-client';
+import { BillingWallError, OpenAICompatibleProvider, ProviderHttpError, RateLimitError, type FailoverHooks } from '../src/llm-client';
 import { formatSkipReason, skipBreakerFeed, type SkipBreakerState } from '../extension/src/projectAudit';
 import { t, keysOf } from '../src/i18n';
 import type { KeychainProfile } from '../extension/src/keychain';
@@ -264,33 +264,38 @@ describe('микробатч 28.4: честный комбобокс модел�
   });
 });
 
-describe('микробатч 28.4: классификатор платёжной квоты (quota)', () => {
-  it('ERROR_CATEGORIES + словари: quota везде (ru/en ключи err.title/msg/hint)', () => {
+describe('микробатч 28.4/28.9: классификатор — стена тарифа (billing) и окно (quota)', () => {
+  it('ERROR_CATEGORIES + словари: quota/billing везде (ru/en ключи err.title/msg/hint)', () => {
     expect(ERROR_CATEGORIES).toContain('quota');
+    expect(ERROR_CATEGORIES).toContain('billing');
     const ru = new Set(keysOf('ru'));
     const en = new Set(keysOf('en'));
-    for (const key of ['err.title.quota', 'err.msg.quota', 'err.hint.quota']) {
+    for (const key of ['err.title.quota', 'err.msg.quota', 'err.hint.quota', 'err.title.billing', 'err.msg.billing', 'err.hint.billing']) {
       expect(ru.has(key), `ru ${key}`).toBe(true);
       expect(en.has(key), `en ${key}`).toBe(true);
     }
   });
 
-  it('HTTP 402 (ProviderHttpError) → quota, НЕ unknown', () => {
-    expect(categorizeError(new ProviderHttpError(402, '402: Out of credits — top up your account', ''))).toBe('quota');
-    expect(categorizeError(new Error('402: Payment Required'))).toBe('quota');
-    expect(categorizeError(new Error('status 402'))).toBe('quota');
+  // МИКРО-БАТЧ 28.9: 402-семейство — НЕ квота-окно, а billing: сон не поможет.
+  it('HTTP 402 (ProviderHttpError) → billing, НЕ unknown', () => {
+    expect(categorizeError(new ProviderHttpError(402, '402: Out of credits — top up your account', ''))).toBe('billing');
+    expect(categorizeError(new Error('402: Payment Required'))).toBe('billing');
+    expect(categorizeError(new Error('status 402'))).toBe('billing');
   });
 
-  it('groq billing-текст → quota', () => {
+  it('groq billing-текст → billing', () => {
     const groq = new Error('Please upgrade to Go (https://console.groq.com/playground) to increase your rate limit. See https://console.groq.com/settings/billing');
-    expect(categorizeError(groq)).toBe('quota');
-    expect(categorizeError(new Error('Upgrade to a paid tier to keep using this model'))).toBe('quota');
+    expect(categorizeError(groq)).toBe('billing');
+    expect(categorizeError(new Error('Upgrade to a paid tier to keep using this model'))).toBe('billing');
+    expect(categorizeError(new Error('This model requires a paid tier'))).toBe('billing');
+    expect(categorizeError(new Error('Model requires a flash tier on this account'))).toBe('billing');
   });
 
-  it('openrouter «insufficient_quota» / credits+billing → quota', () => {
-    expect(categorizeError(new Error('insufficient_quota: You exceeded your current quota, please check your plan and billing details'))).toBe('quota');
-    expect(categorizeError(new Error('out of credits — top up your billing account'))).toBe('quota');
-    expect(categorizeError(new Error('Payment required: add credits to continue'))).toBe('quota');
+  it('openrouter «insufficient_credits/quota» / credits+billing → billing', () => {
+    expect(categorizeError(new Error('insufficient_quota: You exceeded your current quota, please check your plan and billing details'))).toBe('billing');
+    expect(categorizeError(new Error('insufficient_credits: add more to continue'))).toBe('billing');
+    expect(categorizeError(new Error('out of credits — top up your billing account'))).toBe('billing');
+    expect(categorizeError(new Error('Payment required: add credits to continue'))).toBe('billing');
   });
 
   it('не ломаем 429: rate limit остаётся rate_limit_exceeded', () => {
@@ -300,23 +305,30 @@ describe('микробатч 28.4: классификатор платёжной
     expect(categorizeError(new Error('overloaded, try again'))).toBe('rate_limit_exceeded');
   });
 
-  it('formatError(quota) — локализованные title/message/hint в ru и en', () => {
+  // 28.9: «quota» — теперь 429 с retry-after/reset-текстом: сон и циклы 28.6.
+  it('429 с retry-after/reset-текстами → quota (28.9)', () => {
+    expect(categorizeError(new RateLimitError('Rate limited: daily quota exceeded, resets at midnight', 1))).toBe('quota');
+    expect(categorizeError(new RateLimitError('Rate limited: too many requests, retry after 40000s', 40000))).toBe('quota');
+    expect(categorizeError(new Error('HTTP 429: you hit your hourly limit (reset in 1200s)'))).toBe('quota');
+  });
+
+  it('formatError(billing) — локализованные title/message/hint в ru и en', () => {
     const ru = formatError(new ProviderHttpError(402, '402: insufficient_quota', ''), 'ru');
-    expect(ru.category).toBe('quota');
-    expect(ru.title).toBe(t('err.title.quota', 'ru'));
-    expect(ru.actionHint).toBe(t('err.hint.quota', 'ru'));
+    expect(ru.category).toBe('billing');
+    expect(ru.title).toBe(t('err.title.billing', 'ru'));
+    expect(ru.actionHint).toBe(t('err.hint.billing', 'ru'));
     const en = formatError(new ProviderHttpError(402, '402: insufficient_quota', ''), 'en');
-    expect(en.actionHint).toBe(t('err.hint.quota', 'en'));
+    expect(en.actionHint).toBe(t('err.hint.billing', 'en'));
     expect(en.actionHint).not.toMatch(/[\u0400-\u04FF]/);
   });
 
-  it('formatSkipReason: 402 → категория quota + HTTP 402 в чекпоинт', () => {
+  it('formatSkipReason: 402 → категория billing + HTTP 402 в чекпоинт', () => {
     const reason = formatSkipReason(new ProviderHttpError(402, '402: billing', 'details'));
-    expect(reason.category).toBe('quota');
+    expect(reason.category).toBe('billing');
     expect(reason.http).toBe(402);
   });
 
-  it('breaker (28.6): quota вне предохранителя (не трогает счётчик); other серии — как в 28.5', () => {
+  it('breaker (28.6/28.9): quota вне предохранителя; billing считается как обычная категория', () => {
     // Микро-батч 28.6 вернул quota из-под breaker'а: у неё собственный
     // механизм (quota-паузы циклами в reviewFiles), серия quota-скипов не
     // формируется. предохранитель quota НЕ ТРОГАЕТ: ни инкремент, ни сброс.
@@ -329,6 +341,11 @@ describe('микробатч 28.4: классификатор платёжной
     expect(mix.category).toBe('auth_invalid_key');        // …и не сбрасывает чужую серию
     expect(mix.count).toBe(1);
     expect(skipBreakerFeed(mix, 'auth_invalid_key', 2)).toBe(true); // серия жива
+    // 28.9: billing НЕ прозрачен — серия ведёт к стопу с err.hint.billing
+    // (если ещё есть живые ключи и failover выключен).
+    const b: SkipBreakerState = { count: 0 };
+    for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(b, 'billing', 4)).toBe(false);
+    expect(skipBreakerFeed(b, 'billing', 4)).toBe(true);
     const parse: SkipBreakerState = { count: 0 };
     for (let i = 0; i < 3; i += 1) expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(false);
     expect(skipBreakerFeed(parse, 'invalid_json', 4)).toBe(true);
@@ -337,7 +354,7 @@ describe('микробатч 28.4: классификатор платёжной
     expect(skipBreakerFeed(un, 'unknown', 4)).toBe(true);
   });
 
-  it('llm-client 402 + failover: reason=quota, ключ усыпляется ротацией switch, повтор с новым ключом', async () => {
+  it('llm-client 402 + failover: reason=billing, ключ billing-blocked БЕЗ сна, ротация switch, повтор с новым ключом', async () => {
     const calls: Array<{ url: string; auth: string }> = [];
     const fetcher = (async (url: string | URL, init?: RequestInit) => {
       const auth = String((init?.headers as Record<string, string>)?.Authorization ?? '');
@@ -345,10 +362,10 @@ describe('микробатч 28.4: классификатор платёжной
       if (calls.length === 1) return new Response(JSON.stringify({ error: { message: 'insufficient_quota: upgrade to a paid tier' } }), { status: 402, headers: { 'content-type': 'application/json' } });
       return new Response(JSON.stringify({ choices: [{ message: { content: 'ok-quota-switch' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
-    const hookCalls: Array<{ waitSeconds: number | undefined; reason?: string }> = [];
+    const hookCalls: Array<{ waitSeconds: number | undefined; reason?: string; tail?: string }> = [];
     const hooks: FailoverHooks = {
-      async onRateLimit(waitSeconds, reason) {
-        hookCalls.push({ waitSeconds, reason });
+      async onRateLimit(waitSeconds, reason, detailTail) {
+        hookCalls.push({ waitSeconds, reason, tail: detailTail });
         return { action: 'switch', apiKey: 'KEY-SECOND', baseUrl: 'https://api.groq.com/openai/v1', model: 'm2' };
       },
       async onAuthError() { /* noop */ }
@@ -357,7 +374,9 @@ describe('микробатч 28.4: классификатор платёжной
     const content = await provider.review('sys', 'user');
     expect(content).toBe('ok-quota-switch');
     expect(hookCalls).toHaveLength(1);
-    expect(hookCalls[0].reason).toBe('quota');
+    // 28.9: 402 — триггер 'billing' + хвост сообщения для Output.
+    expect(hookCalls[0].reason).toBe('billing');
+    expect(hookCalls[0].tail).toContain('insufficient_quota');
     expect(calls[0].auth).toBe('Bearer KEY-FIRST');
     expect(calls[1].auth).toBe('Bearer KEY-SECOND');
   });
@@ -374,20 +393,23 @@ describe('микробатч 28.4: классификатор платёжной
     await provider.review('sys', 'user').then(() => { throw new Error('must reject'); }, (error: unknown) => {
       expect(error).toBeInstanceOf(ProviderHttpError);
       expect((error as ProviderHttpError).status).toBe(402);
-      expect(categorizeError(error)).toBe('quota');
+      expect(categorizeError(error)).toBe('billing');
     });
     expect(fetches).toBe(2);
     // Никаких пауз лестницы 30/60/120 — только внутренний pacing ≤2с.
     expect(slept.every((ms) => ms <= 2000)).toBe(true);
   });
 
-  it('llm-client 402 + stop: AllProfilesAsleepError вместо бесконечной ротации', async () => {
+  it('llm-client 402 + stop: BillingWallError без сна (28.9: сон не поможет)', async () => {
+    const slept: number[] = [];
     const fetcher = (async () => new Response(JSON.stringify({ error: { message: 'insufficient_quota' } }), { status: 402, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
     const hooks: FailoverHooks = {
       async onRateLimit() { return { action: 'stop', waitMs: 60000, wakeLabel: 'k1' }; },
       async onAuthError() { /* noop */ }
     };
-    const provider = new OpenAICompatibleProvider('K', 'm', fetcher, async () => undefined, undefined, 'https://api.groq.com/openai/v1', undefined, undefined, hooks);
-    await expect(provider.review('sys', 'user')).rejects.toThrow(/asleep/);
+    const provider = new OpenAICompatibleProvider('K', 'm', fetcher, async (ms) => { slept.push(ms); }, undefined, 'https://api.groq.com/openai/v1', undefined, undefined, hooks);
+    await expect(provider.review('sys', 'user')).rejects.toBeInstanceOf(BillingWallError);
+    // стоп без пауз: sleeper не вызывался вообще (циклов сна нет).
+    expect(slept).toEqual([]);
   });
 });

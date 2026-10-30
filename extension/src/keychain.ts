@@ -530,6 +530,10 @@ export interface ProfileRuntime {
   sleepUntil: number;
   ladderStep: number;
   broken: boolean;
+  // МИКРО-БАТЧ 28.9: «стена тарифа» (402/credits/billing). Ключ НЕ спит —
+  // сон не поможет; выведен из ротации как broken, диагноз отдельный.
+  // Опционально: записи старых процессов/тестов без поля = не заблокирован.
+  billingBlocked?: boolean;
 }
 
 // Композитный id состояния: «profileId/keyId».
@@ -590,7 +594,7 @@ export function grantWaitOnce(): void {
 function stateOf(runtimeId: string): ProfileRuntime {
   let state = runtime.get(runtimeId);
   if (!state) {
-    state = { sleepUntil: 0, ladderStep: 0, broken: false };
+    state = { sleepUntil: 0, ladderStep: 0, broken: false, billingBlocked: false };
     runtime.set(runtimeId, state);
   }
   return state;
@@ -621,9 +625,24 @@ export function markKeyBroken(profileId: string, keyId: string): void {
   stateOf(keyRuntimeId(profileId, keyId)).broken = true;
 }
 
+// МИКРО-БАТЧ 28.9: стена тарифа (402/credits/billing). НЕ сон: sleepUntil не
+// трогаем, лестницу не крутим — ключ выводится из ротации как broken.
+export function markKeyBillingBlocked(profileId: string, keyId: string): void {
+  stateOf(keyRuntimeId(profileId, keyId)).billingBlocked = true;
+}
+
+export function isKeyBillingBlocked(profileId: string, keyId: string): boolean {
+  return runtime.get(keyRuntimeId(profileId, keyId))?.billingBlocked === true;
+}
+
 export function clearKeyBroken(profileId: string, keyId: string): void {
   const state = runtime.get(keyRuntimeId(profileId, keyId));
-  if (state) state.broken = false;
+  if (state) {
+    state.broken = false;
+    // 28.9: новый ключ/активация профиля снимает и billing-метку — баланс
+    // мог пополниться, модель могла измениться, старый диагноз протух.
+    state.billingBlocked = false;
+  }
 }
 
 // Успешный файл на ключе — сбрасываем лестницу (квота живая).
@@ -637,10 +656,12 @@ function deleteRuntimeForKey(profileId: string, keyId: string): void {
   runtime.delete(keyRuntimeId(profileId, keyId));
 }
 
-// Бейджи UI (центр настроек): состояние каждого ключа — broken/асlep+сек.
+// Бейджи UI (центр настроек): состояние каждого ключа — broken/billing/асlep+сек.
 export interface KeyRuntimeView {
   broken: boolean;
   sleepSeconds: number;
+  // МИКРО-БАТЧ 28.9: стена тарифа — отдельный бейдж («тариф»), сон не показывать.
+  billing?: boolean;
 }
 
 export function runtimeSnapshot(profiles: KeychainProfile[] = readProfiles(), now = Date.now()): Record<string, KeyRuntimeView> {
@@ -650,10 +671,45 @@ export function runtimeSnapshot(profiles: KeychainProfile[] = readProfiles(), no
       const state = runtime.get(keyRuntimeId(profile.id, key.id));
       if (!state) continue;
       const sleepSeconds = Math.max(0, Math.ceil((state.sleepUntil - now) / 1000));
-      if (state.broken || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds };
+      if (state.broken || state.billingBlocked || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds, billing: state.billingBlocked };
     }
   }
   return snapshot;
+}
+
+// Жив ли хоть один enabled-ключ (не broken/billing/не спит) — «есть ли куда
+// ротировать» без циклов сна. МИКРО-БАТЧ 28.9: решает немедленный стоп у
+// стены тарифа.
+export function hasAwakeKey(profiles: KeychainProfile[] = readProfiles(), now = Date.now()): boolean {
+  return profiles.some((profile) => profile.keys.some((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now)));
+}
+
+// Строки диагноза для баннера-списка (по одному ключу на строку группой по
+// профилям). Возвращает сырые состояния; текст строки собирает хост через t().
+export interface KeyDiagnosisEntry {
+  profileId: string;
+  profileLabel: string;
+  keyId: string;
+  keyLabel: string;
+  state: 'billing' | 'broken' | 'asleep' | 'disabled' | 'awake';
+  sleepSeconds: number;
+}
+
+export function diagnoseKeys(profiles: KeychainProfile[] = readProfiles(), now = Date.now()): KeyDiagnosisEntry[] {
+  const out: KeyDiagnosisEntry[] = [];
+  for (const profile of profiles) {
+    for (const key of profile.keys) {
+      const state = runtime.get(keyRuntimeId(profile.id, key.id));
+      const sleepSeconds = Math.max(0, Math.ceil(((state?.sleepUntil ?? 0) - now) / 1000));
+      let diagnosis: KeyDiagnosisEntry['state'] = 'awake';
+      if (!key.enabled) diagnosis = 'disabled';
+      else if (state?.billingBlocked) diagnosis = 'billing';
+      else if (state?.broken) diagnosis = 'broken';
+      else if (sleepSeconds > 0) diagnosis = 'asleep';
+      out.push({ profileId: profile.id, profileLabel: profile.label, keyId: key.id, keyLabel: key.label, state: diagnosis, sleepSeconds });
+    }
+  }
+  return out;
 }
 
 // ── решатель цепочки «ключи внутри профиля → следующий профиль» ─────────────
@@ -672,7 +728,11 @@ export type FailoverDecision =
   | { kind: 'none' }
   | { kind: 'switch'; profile: KeychainProfile; key: KeychainKey; fromLabel: string; sleepSeconds: number; cycle: number; profileChanged: boolean }
   | { kind: 'wait'; waitMs: number; wakeLabel: string; cycle: number }
-  | { kind: 'stop'; reason: 'allSleep' | 'maxCycles' | 'noneLeft'; waitMs: number; wakeLabel: string };
+  // МИКРО-БАТЧ 28.9: 'billingWall' — живых ключей нет, среди них есть
+  // billing-блокированные: немедленный стоп со списком диагнозов, БЕЗ циклов сна.
+  | { kind: 'stop'; reason: 'allSleep' | 'maxCycles' | 'noneLeft' | 'billingWall'; waitMs: number; wakeLabel: string };
+
+export type FailoverTrigger = 'rate_limit' | 'quota' | 'billing';
 
 export interface FailoverContext {
   profiles: KeychainProfile[];
@@ -685,9 +745,9 @@ function keyFullName(profile: KeychainProfile, key: KeychainKey): string {
   return `${profile.label}/${key.label}`;
 }
 
-// Живые кандидаты профиля: enabled, не broken, не asleep.
+// Живые кандидаты профиля: enabled, не broken, не billing-blocked, не asleep.
 function awakeKeys(profile: KeychainProfile, currentKeyId: string | undefined, now: number): KeychainKey[] {
-  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
+  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
 }
 
 // Циклический решатель (батч 28): 429 на ключе → следующий enabled-ключ
@@ -695,8 +755,12 @@ function awakeKeys(profile: KeychainProfile, currentKeyId: string | undefined, n
 // порядку списка (стрелки UI), cycle++; никто не awake → пауза
 // min(sleepUntil) − now (новый цикл); автономный выкл → stop с баннером;
 // потолок maxCycles (>0) останавливает ротацию так же баннером.
-export function decideFailover(ctx: FailoverContext, options: FailoverOptions, waitSeconds: number | undefined, now: number): { decision: FailoverDecision; cycle: number; allowWaitOnce: boolean } {
-  const sleepSeconds = ctx.current.profileId ? markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
+// МИКРО-БАТЧ 28.9: trigger='billing' — ключ помечается billing-blocked
+// (НЕ усыпляется), ротация идёт как обычно; живых нет и среди мёртвых есть
+// blocked/сломанные → немедленный stop 'billingWall' без сна.
+export function decideFailover(ctx: FailoverContext, options: FailoverOptions, waitSeconds: number | undefined, now: number, trigger: FailoverTrigger = 'rate_limit'): { decision: FailoverDecision; cycle: number; allowWaitOnce: boolean } {
+  const billing = trigger === 'billing';
+  const sleepSeconds = ctx.current.profileId ? (billing ? (markKeyBillingBlocked(ctx.current.profileId, ctx.current.keyId), 0) : markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds)) : 0;
   const chain = ctx.profiles;
   const currentIndex = chain.findIndex((profile) => profile.id === ctx.current.profileId);
   const currentProfile = currentIndex >= 0 ? chain[currentIndex] : undefined;
@@ -710,7 +774,7 @@ export function decideFailover(ctx: FailoverContext, options: FailoverOptions, w
     for (let step = 1; step < enabled.length; step += 1) {
       const candidate = enabled[((keyIndex >= 0 ? keyIndex : 0) + step + enabled.length) % enabled.length];
       if (!candidate || candidate.id === ctx.current.keyId) continue;
-      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
+      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
       return {
         decision: { kind: 'switch', profile: currentProfile, key: candidate, fromLabel, sleepSeconds, cycle, profileChanged: false },
         cycle,
@@ -733,6 +797,16 @@ export function decideFailover(ctx: FailoverContext, options: FailoverOptions, w
       cycle,
       allowWaitOnce: ctx.allowWaitOnce
     };
+  }
+  // 28.9: стена тарифа — живой ключ никто не найдёт, а среди «мёртвых» есть
+  // billing-блокированные (или сломанные): ждать бессмысленно, стоп сразу.
+  const blockedCount = chain.reduce((total, profile) => total + profile.keys.filter((key) => key.enabled && (isKeyBillingBlocked(profile.id, key.id) || isKeyBroken(profile.id, key.id))).length, 0);
+  if (billing || blockedCount > 0) {
+    const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
+    if (sleepers.length === 0) {
+      return { decision: { kind: 'stop', reason: 'noneLeft', waitMs: 0, wakeLabel: '' }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+    }
+    return { decision: { kind: 'stop', reason: 'billingWall', waitMs: sleepWaitMs(chain, now), wakeLabel: wakeLabelFor(chain, now) }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
   // 3) ни один ключ нигде не awake: пауза до ближайшего пробуждения.
   const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
@@ -784,13 +858,14 @@ function wakeLabelFor(chain: KeychainProfile[], now: number): string {
 // Обёртка решателя для хука llm-client: читает список из settings, обновляет
 // цикл/текущую пару профиль+ключ скана. now — инъекция для детерминированных
 // тестов.
-export function runFailover(waitSeconds: number | undefined, options: FailoverOptions, now = Date.now()): FailoverDecision {
+export function runFailover(waitSeconds: number | undefined, options: FailoverOptions, now = Date.now(), trigger: FailoverTrigger = 'rate_limit'): FailoverDecision {
   const profiles = readProfiles();
   const result = decideFailover(
     { profiles, current: { profileId: scanRuntime.currentId, keyId: scanRuntime.currentKeyId }, allowWaitOnce: scanRuntime.allowWaitOnce, cycle: scanRuntime.cycle },
     options,
     waitSeconds,
-    now
+    now,
+    trigger
   );
   scanRuntime.cycle = result.cycle;
   scanRuntime.allowWaitOnce = result.allowWaitOnce;

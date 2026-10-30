@@ -50,6 +50,22 @@ export class AllProfilesAsleepError extends Error {
   }
 }
 
+// МИКРО-БАТЧ 28.9: «стена тарифа» (402/credits/billing) — живых ключей нет,
+// среди мёртвых есть billing-блокированные. ЦИКЛОВ СНА НЕТ: сон не поможет,
+// нужен человек (баланс/смена модели). Scan-level превращает в баннер-список
+// диагнозов (строка на профиль/ключ).
+export class BillingWallError extends Error {
+  readonly tail: string;
+  readonly wakeLabel: string;
+
+  constructor(tail = '', wakeLabel = '') {
+    super(`billing wall: keys are out of credits/tier coverage${tail ? ` (${tail.slice(0, 80)})` : ''}`);
+    this.name = 'BillingWallError';
+    this.tail = tail;
+    this.wakeLabel = wakeLabel;
+  }
+}
+
 // Failover-хуки (батч 27): retry-слой спрашивает keychain при 429 и
 // 401/403. Реализацию даёт расширение (extension/src/keychain.ts);
 // llm-client не знает ни про профили, ни про SecretStorage — только
@@ -77,9 +93,13 @@ export type FailoverSwitchDecision = FailoverSwitchResult | FailoverWaitResult |
 export interface FailoverHooks {
   // Вызывается при каждом 429 (RateLimitError) ДО локальной лестницы ретраев.
   // waitSeconds — retry-after из ответа (если парсится).
-  // Микро-батч 28.4: reason='quota' — тот же решатель (усыпить ключ и
-  // ротировать), но триггер HTTP 402/биллинг, а не временный лимит окна.
-  onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota'): Promise<FailoverSwitchDecision | undefined>;
+  // Микро-батч 28.4/28.5: reason='quota' — окно с retry-after/reset: тот же
+  // решатель (усыпить ключ и ротировать).
+  // МИКРО-БАТЧ 28.9: reason='billing' — стена тарифа (402/credits/billing):
+  // ключ billing-blocked (НЕ сон), выводится из ротации как broken; switch —
+  // следующий живой ключ, stop/wait — BillingWallError (баннер-список).
+  // detailTail — хвост сообщения провайдера для Output («💳 … (<хвост>)»).
+  onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing', detailTail?: string): Promise<FailoverSwitchDecision | undefined>;
   // 401/403: пометить профиль broken. Возврат не используется — переключение
   // по auth-ошибке запрещено контрактом.
   onAuthError(status: number): Promise<void>;
@@ -321,10 +341,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
             throw new RateLimitError(`Rate limited by ${this.model}: ${details}`, waitSeconds, details);
           }
           if (response.status === 404) throw new ProviderHttpError(404, notFoundMessage(this.model), details);
-          // Микро-батч 28.4: HTTP 402 (groq/openrouter, биллинг-квота) —
-          // типизированный ProviderHttpError: категория quota, локальная
-          // лестница ретраев при «нет денег» бессмысленна, но failover по
-          // этому же триггеру усыпляет ключ и ротирует цепочку (см. catch).
+          // Микро-батч 28.4/28.9: HTTP 402 (groq/openrouter, стена тарифа) —
+          // типизированный ProviderHttpError: категория billing, локальная
+          // лестница ретраев при «нет денег» бессмысленна; failover помечает
+          // ключ billing-blocked и ротирует без сна (см. catch).
           if (response.status === 402) throw new ProviderHttpError(402, `402: ${details}`, details);
           // Категория «Ключ отклонён или нет доступа» (батч 13, п.4)
           if (response.status === 401 || response.status === 403) throw new ProviderHttpError(response.status, `${response.status}: ${details}`, details);
@@ -356,13 +376,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
           if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
             await this.failover.onAuthError(error.status);
           }
-          // Микро-батч 28.4: 402 (billing-квота groq/openrouter) — при включённом
-          // failover спрашиваем keychain ТЕМ ЖЕ решателем, что и 429: усыпить ключ
-          // и ротировать. Без failover / при отказе решателя ошибка летит наверх
-          // мгновенно (категория quota; локальная лестница ретраев по billing
-          // бессмысленна и только жрёт время аудита).
+          // МИКРО-БАТЧ 28.4/28.9: HTTP 402 — СТЕНА ТАРИФА (billing). При
+          // включённом failover спрашиваем keychain: ключ помечается
+          // billing-blocked (НЕ усыпляется!), switch — следующий живой ключ,
+          // stop/wait — BillingWallError (немедленный стоп, сон не поможет).
+          // Без failover ошибка летит наверх мгновенно (retry-лестница по
+          // billing бессмысленна); reviewFiles дорисует диагноз.
           if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
-            const decision = await this.failover.onRateLimit(undefined, 'quota');
+            const decision = await this.failover.onRateLimit(undefined, 'billing', error.details || error.message);
             if (decision) {
               if (decision.action === 'switch') {
                 this.apiKey = sanitizeApiKey(decision.apiKey);
@@ -372,13 +393,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
                 lastRetryableError = undefined;
                 continue;
               }
-              if (decision.action === 'wait') {
-                await this.sleeper(decision.waitMs, this.signal);
-                continue;
-              }
-              if (decision.action === 'stop') {
-                throw new AllProfilesAsleepError('All key profiles are asleep (quota)', decision.waitMs, decision.wakeLabel);
-              }
+              // billing НЕ спит: и wait, и stop = стена (баннер-список ниже).
+              throw new BillingWallError(error.details || error.message, decision.action === 'stop' ? decision.wakeLabel : '');
             }
           }
           throw error;

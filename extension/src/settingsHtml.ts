@@ -165,6 +165,8 @@ function keychainRowsHtml(T: (key: string, vars?: Record<string, string | number
       const rt = runtimeInfo[`${profile.id}/${key.id}`];
       const badges = [
         key.enabled ? `<span class="kc-key-on">${icon('pass')} ${T('keychain.keyOn')}</span>` : `<span class="kc-key-off">${icon('circle-slash')} ${T('keychain.keyOff')}</span>`,
+        // 28.9: «тариф» — стена биллинга; такой ключ НЕ спит и выведен из ротации.
+        ...(rt?.billing ? [`<span class="kc-key-broken">${icon('credit-card')} ${T('keychain.badgeBilling')}</span>`] : []),
         ...(rt?.broken ? [`<span class="kc-key-broken">${icon('error')} ${T('keychain.badgeBroken')}</span>`] : []),
         ...(rt && rt.sleepSeconds > 0 ? [`<span class="kc-key-asleep">${icon('clock')} ${T('keychain.badgeAsleep', { s: rt.sleepSeconds })}</span>`] : [])
       ].join(' ');

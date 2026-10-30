@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { abortError, AllProfilesAsleepError, BadResponseError, createProvider, isAbortError, ProviderHttpError, RateLimitError, requestTimeoutSecondsFromSetting, RetryEvent, setDefaultRequestTimeoutMs, sleep, type FailoverHooks, type FailoverSwitchDecision } from '../../src/llm-client';
-import { categorizeError, formatError } from '../../src/error-classifier';
+import { abortError, AllProfilesAsleepError, BadResponseError, BillingWallError, createProvider, isAbortError, ProviderHttpError, RateLimitError, requestTimeoutSecondsFromSetting, RetryEvent, setDefaultRequestTimeoutMs, sleep, type FailoverHooks, type FailoverSwitchDecision } from '../../src/llm-client';
+import { categorizeError, formatError, scrubErrorSecrets } from '../../src/error-classifier';
 import { buildReviewPrompt, SYSTEM_PROMPT, withFocusInstructions } from '../../src/prompt-builder';
 import { confidencePercent, parseReviewResponse } from '../../src/response-parser';
 import { correctIssueLine } from '../../src/line-correction';
@@ -17,11 +17,11 @@ import { ReportStats } from './reportHtml';
 import { SAMPLE_FILE, sampleTestSummary } from './sampleReview';
 import { buildFindingsDiff, buildProjectSystemPrompt, checkpointHasFileHashes, clearAuditProgress, clearAuditResults, collectAuditFiles, collectCheckpointFindings, collectFilesForScope, AUDIT_CHUNK_OVERLAP, AUDIT_PASSES_MAX, auditPassesFromSetting, auditEtaSeconds, autoResumeBadgeDetail, autoResumeDecision, autoResumeLimitFromSetting, AUTO_RESUME_LADDER_SECONDS, AuditCircuitBreakerError, chunkLineCount, chunkLinesFromSetting, defaultDocFetcher, dedupeIssues, docBudgetBytesFromSetting, DOC_FETCH_TIMEOUT_MS, estimateRequestTokens, fetchDocsForPrompt, formatSkipReason, hashAuditFile, importsContextLine, ladderRemainingSeconds, lastCheckpointTag, makeDocsResolver, maxRequestKTokensFromSetting, parseScopeGlobs, passFindingsSummary, pruneAuditCheckpoint, QUARANTINE_CYCLES_PER_ROUND, QUARANTINE_MAX_ROUNDS, quotaPauseMaxCyclesFromSetting, quotaPauseSecondsFromSetting, QuotaExhaustedError, readAuditProgress, readAuditResults, readFindingsHistory, readProjectContext, reconcileCheckedHashes, ReviewScope, skipBreakerFeed, skipBreakerLimitFromSetting, skipBreakerReset, skipReasonLine, splitAuditChunk, upsertSkippedFile, writeAuditProgress, writeAuditResults, writeAuditResultsFromCheckpoint, writeFindingsHistory, writeProjectContext, auditResultsPath, type AuditCheckpoint, type AuditResumeView, type DocsResult, type SkipBreakerState, progressView } from './projectAudit';
 import { checkpointScopeVerdict, computeScopeHash, getGitHead, pickResumeTarget, pickResumeProfile } from './auditResume';
-import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, failoverEnabled, failoverMaxCycles, grantWaitOnce, keyLabelFor, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
+import { activeProfile, addKey, addProfile, beginScan, clearKeyBroken, DEFAULT_KEY_ID, deleteProfileSecret, diagnoseKeys, failoverEnabled, failoverMaxCycles, grantWaitOnce, hasAwakeKey, keyLabelFor, markKeyBillingBlocked, markKeyBroken, markKeyHealthy, migrateLegacyKeyToDefault, migrateProfilesToMultiKey, moveProfile, pickActiveKey, profileBaseUrl, readActiveId, readKeySecret, readProfileSecret, readProfiles, removeKey, removeProfile, renameKey, renameProfile, resetRuntime, runtimeSnapshot, runFailover, scanCurrent, secretKeyForProfile, setKeyEnabled, setProfileBaseUrl, storeProfileSecret, updateProfileFromForm, upsertOnboardedProfile, writeActiveId, writeProfiles, profileLabel, type KeychainProfile } from './keychain';
 import { buildSettingsHtml, SettingsState } from './settingsHtml';
 import { normalizeUiPrefs, type UiPrefs } from './uiPrefs';
 import { withReportLanguage } from '../../src/prompt-builder';
-import { t } from '../../src/i18n';
+import { t, type Lang } from '../../src/i18n';
 import { buildIssueBody, isContactUrlAllowed, redactSecrets, reportIssueUrl } from './reportIssue';
 import { platform, release } from 'node:os';
 
@@ -354,24 +354,42 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
     return { action: 'switch', apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
-    async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota'): Promise<FailoverSwitchDecision | undefined> {
-      // Микро-батч 28.4/28.5: reason='quota' (HTTP 402/биллинг/текст) — тот же
-      // решатель (усыпить ключ, ротировать); в Output печатается «quota».
-      const trigger = reason === 'quota' ? 'quota' : '429';
-      let decision = runFailover(waitSeconds, options());
+    async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing', detailTail?: string): Promise<FailoverSwitchDecision | undefined> {
+      // Микро-батч 28.4/28.5: reason='quota' (429 с retry-after/reset — окно)
+      // — тот же решатель (усыпить ключ и ротировать); в Output «quota».
+      // МИКРО-БАТЧ 28.9: reason='billing' — стена тарифа: ключ billing-blocked
+      // (НЕ усыпляется!), ротация к живым; живых нет → stop без циклов сна.
+      const trigger = reason === 'quota' ? 'quota' : reason === 'billing' ? 'billing' : '429';
+      const billing = reason === 'billing';
+      if (billing) {
+        const current = scanCurrent();
+        if (current.profileId) {
+          markKeyBillingBlocked(current.profileId, current.keyId);
+          keychainLog(`💳 billing: ключ ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} у стены тарифа (${(detailTail ?? '').slice(0, 80)}) — сон не поможет`);
+        }
+      }
+      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? 'billing' : reason === 'quota' ? 'quota' : 'rate_limit');
       if (decision.kind === 'switch') {
         // ключ без секрета не годится: broken и шаг дальше по цепочке
         if (!(await readKeySecret(context.secrets, decision.profile, decision.key))) {
           markKeyBroken(decision.profile.id, decision.key.id);
           keychainLog(`🔑 failover: ключ «${decision.key.label}» профиля «${decision.profile.label}» без секрета — помечен broken`);
-          decision = runFailover(undefined, options());
+          // МИКРО-БАТЧ 28.9: триггер прокидываем в решатель: billing метит
+          // ключ billing-blocked (без сна), quota/rate_limit — усыпляют как в
+          // 28.6/28.7. Хук выше тоже зовёт runFailover с тем же триггером.
+          decision = runFailover(undefined, options(), Date.now(), billing ? 'billing' : reason === 'quota' ? 'quota' : 'rate_limit');
         }
         if (decision.kind === 'switch') {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return undefined;
-          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} спит ${decision.sleepSeconds}с), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
+          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? 'у стены тарифа' : `спит ${decision.sleepSeconds}с`}), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
           return low;
         }
+      }
+      if (decision.kind === 'wait' && billing) {
+        // 28.9: при billing wait не возвращаем — спящие ключи не проснутся до
+        // сброса окна, а стена тарифа никуда не денется: стоп без сна.
+        return { action: 'stop', waitMs: 0, wakeLabel: decision.wakeLabel };
       }
       if (decision.kind === 'wait') {
         keychainLog(`⏳ все ключи спят, пробуждение: ${decision.wakeLabel} через ${Math.ceil(decision.waitMs / 1000)}с, цикл ${decision.cycle}`);
@@ -380,6 +398,8 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
       if (decision.kind === 'stop') {
         if (decision.reason === 'noneLeft') {
           keychainLog('🔑 failover: живых ключей нет (все broken/выключены/без секрета) — стоп');
+        } else if (decision.reason === 'billingWall') {
+          keychainLog('🛑 billing: живых ключей нет (стена тарифа + сон/сломанные) — немедленный стоп, сон не поможет');
         } else if (decision.reason === 'maxCycles') {
           keychainLog(`🔑 failover: потолок циклов ${failoverMaxCycles()} исчерпан — стоп, нужен человек`);
         } else {
@@ -541,6 +561,31 @@ function handleAllProfilesAsleep(panel: CodeScoutPanel, error: AllProfilesAsleep
   panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1000), wakeLabel: error.wakeLabel });
 }
 
+// МИКРО-БАТЧ 28.9: список диагнозов для баннера billing-стены — ровно одна
+// строка на профиль (ключи через запятую: «тариф», «спит Nс», «сломан»,
+// «выключен»). Строки переводятся здесь же через t() (UI, не Output).
+export function billingDiagnosisLines(lang: Lang): string[] {
+  const groups = new Map<string, string[]>();
+  for (const entry of diagnoseKeys()) {
+    const text = entry.state === 'billing' ? t('keychain.diagBilling', lang, { label: entry.keyLabel })
+      : entry.state === 'broken' ? t('keychain.diagBroken', lang, { label: entry.keyLabel })
+      : entry.state === 'asleep' ? t('keychain.diagAsleep', lang, { label: entry.keyLabel, s: entry.sleepSeconds })
+      : entry.state === 'disabled' ? t('keychain.diagOff', lang, { label: entry.keyLabel })
+      : `${entry.keyLabel} ✓`;
+    const list = groups.get(entry.profileLabel) ?? [];
+    list.push(text);
+    groups.set(entry.profileLabel, list);
+  }
+  return [...groups.entries()].map(([profile, keys]) => `${profile}: ${keys.join(', ')}`);
+}
+
+// Баннер «стена тарифа» вместо красной модалки: сон не поможет, решает
+// человек (баланс/смена модели). Кнопки догона рисует resume-баннер выше.
+function handleBillingWall(panel: CodeScoutPanel, error: BillingWallError): void {
+  panel.setScanning(false);
+  panel.setBillingWall({ lines: billingDiagnosisLines(currentReportLanguage()), tail: error.tail.slice(0, 80) });
+}
+
 // Микро-батч 28.5: счётчик отброшенных entity-артефактов — одна RU-строка в
 // Output (лог, не UI): модель иногда жалуется на &lt;/&gt;/=&gt; как на дефект
 // кода, парсер такие находки режет (см. response-parser).
@@ -660,11 +705,15 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
+        // МИКРО-БАТЧ 28.9: BillingWallError из retry-слоя = стена тарифа —
+        // стоп немедленно, деление чанка по billing бессмысленно.
+        if (error instanceof BillingWallError) throw error;
         // Микро-батч 28.5: квота НЕ триггерит адаптивное деление чанка —
         // деление лечит «тяжёлый запрос», а не «нет денег»: halving на
         // billing-ключе лишь удваивает заведомо мёртвые запросы.
+        // 28.9: billing (стена тарифа) исключена так же, как quota-окно.
         const retriable = error instanceof RateLimitError || isNetworkError(error)
-          || (isRateLimitText(error) && categorizeError(error) !== 'quota');
+          || (isRateLimitText(error) && categorizeError(error) !== 'quota' && categorizeError(error) !== 'billing');
         const halves = retriable ? splitAuditChunk(chunk) : undefined;
         if (halves) {
           adaptive.onAdaptiveSplit?.(file.filename, chunkLineCount(chunk), chunkLineCount(halves[0]));
@@ -701,6 +750,35 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
       } catch (error) {
         lastError = error;
         if (isAbortError(error)) throw error;
+        // МИКРО-БАТЧ 28.9: стена тарифа из retry-слоя (llm-client) — стоп
+        // всего прогона без циклов сна: баннер-список рисует scan-level.
+        if (error instanceof BillingWallError) throw error;
+        // МИКРО-БАТЧ 28.9: billing-стенка (402/credits/тариф). Ключ
+        // billing-blocked: НЕ усыпляется, выводится из ротации как broken.
+        // failover вкл: хук ротирует к живым ключам (switch — ТОТ ЖЕ файл
+        // новым ключом); stop → BillingWallError (немедленный стоп).
+        // failover выкл: метка на текущий ключ + Output «💳 billing …»;
+        // живых ключей ноль → тот же стоп; живые есть → скип файла без сна,
+        // предохранитель считает серию billing (err.hint.billing в баннере).
+        if (categorizeError(error) === 'billing') {
+          const tail = scrubErrorSecrets(error instanceof Error ? error.message : String(error)).slice(0, 80);
+          if (failover) {
+            const decision = await failover.onRateLimit(undefined, 'billing', tail);
+            if (decision && decision.action === 'switch') {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision) throw new BillingWallError(tail, decision.action === 'stop' ? decision.wakeLabel : '');
+          }
+          const current = scanCurrent();
+          if (current.profileId) {
+            markKeyBillingBlocked(current.profileId, current.keyId);
+            keychainLog(`💳 billing: ключ ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} у стены тарифа (${tail}) — сон не поможет`);
+          }
+          if (readProfiles().length > 0 && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
+          break;
+        }
         // Микро-батч 28.5: скип файла с категорией quota доезжает до
         // failover-хука: решатель keychain усыпляет текущий ключ и ротирует
         // (switch/wait — ТОТ ЖЕ файл повторяется другими кредами/после сна).
@@ -838,7 +916,9 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
       panel.setCancelled();
       return;
     }
-    if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
+      if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
     await reportScanFailure(context, output, panel, error, 'Self-test error');
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -1234,6 +1314,17 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       panel.setFailoverSleep({ wakeSeconds: Math.ceil(error.waitMs / 1000), wakeLabel: error.wakeLabel });
       return { kind: 'done' };
     }
+    // МИКРО-БАТЧ 28.9: стена тарифа — немедленный стоп БЕЗ циклов сна с
+    // баннером-списком диагнозов (строка на профиль); чекпоинт цел,
+    // авто-догон не запускаем (нужен баланс/смена модели).
+    if (error instanceof BillingWallError) {
+      autoResumeCancelled = true;
+      output.appendLine(`🛑 billing: живых ключей нет (стена тарифа) — аудит остановлен, сон не поможет${error.tail ? `; хвост: ${error.tail.slice(0, 80)}` : ''}`);
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      handleBillingWall(panel, error);
+      return { kind: 'interrupted', view: resumeView };
+    }
     // Микро-батч 28.6: quota-паузы дошли до потолка циклов (или пользователь
     // нажал «Стоп» на баннере санкции) — финальный баннер «Квота исчерпана»
     // с кнопками догона; красной модалки нет, чекпоинт цел (он писан перед
@@ -1326,7 +1417,9 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     void vscode.window.showInformationMessage(t('notify.customDone', lang, { n: result.issues.length }));
   } catch (error) {
     if (isAbortError(error)) { panel.setCancelled(); return; }
-    if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
+      if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -1402,7 +1495,9 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
       panel.setCancelled();
       return;
     }
-    if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
+      // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
+      if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -2493,6 +2588,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.failoverWaitResume', () => {
       grantWaitOnce();
       panel.setFailoverSleep(undefined);
+      panel.setBillingWall(undefined);
       if (panel.isScanRunning()) return undefined;
       if (lastScanKind === 'audit') return runScan(() => runFullAudit(context, output, panel, true));
       if (lastScanKind === 'sample') return runScan(() => runSampleReview(context, output, panel));

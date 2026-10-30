@@ -51,13 +51,14 @@ function okContent(): Response {
   return new Response(JSON.stringify({ choices: [{ message: { content: '{"issues":[],"summary":"ok"}' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
-// Агрегатор отдаёт биллинг-квоту НЕ 402-статусом, а обычным Error с текстом
-// (HTTP 500 + insufficient_quota) — ровно тот кейс, который в 28.4 не доезжал
-// до failover-хука и превращался в pointless-серию скипов.
+// МИКРО-БАТЧ 28.9: «quota» — это ОКНО (429/reset-тексты), сон помогает.
+// Агрегатор отдаёт его НЕ всегда 429-статусом, иногда обычным Error с текстом
+// (HTTP 500 + «resets in …») — тот же кейс 28.5: текст должен доехать до хука.
 function quotaTextError(): Response {
-  return new Response(JSON.stringify({ error: { message: 'insufficient_quota: please check your plan and billing details' } }), { status: 500, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify({ error: { message: 'exceeded your current quota, this daily limit resets in 42s' } }), { status: 500, headers: { 'content-type': 'application/json' } });
 }
 
+// Стена тарифа (billing): 402-статус — сон не поможет, ключ billing-blocked.
 function quota402(): Response {
   return new Response(JSON.stringify({ error: { message: 'insufficient_quota: top up your billing' } }), { status: 402, headers: { 'content-type': 'application/json' } });
 }
@@ -192,7 +193,8 @@ describe('микробатч 28.5: quota доезжает до failover-хука
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
       chatCalls += 1;
-      return quota402();
+      // 28.9: quota-циклы 28.6 теперь про ОКНО (429/reset-текст), не про деньги.
+      return quotaTextError();
     }) as typeof fetch;
     const html = boot();
     // Ответ на баннер санкции — «Стоп»: quota-пауза не стартует, цикл не продолжается.
@@ -219,9 +221,10 @@ describe('микробатч 28.5: quota доезжает до failover-хука
     rmSync(root, { recursive: true, force: true });
   }, 120000);
 
-  it('ротация = сброс счётчика breaker: после switch на B следующие файлы идут на B без скипов', async () => {
-    // 402-статус (не текст) с включённым failover: ротация внутри retry-слоя,
-    // breaker-серия не копится — скипов нет вообще.
+  it('ротация = сброс счётчика breaker: 402-стена на A → billing-blocked БЕЗ сна, switch на B, скипов нет', async () => {
+    // 28.9: статусный 402 с включённым failover — retry-слой спрашивает
+    // keychain (reason='billing'): A помечен billing-blocked (sleepUntil не
+    // трогался), тот же файл повторяется на B, breaker-серия не копится.
     state.set('codescout.keychain', twoProfiles());
     state.set('codescout.keychain.active', 'a');
     state.set('codescout.failover.enabled', true);
@@ -238,7 +241,13 @@ describe('микробатч 28.5: quota доезжает до failover-хука
     expect(result.skippedFiles).toBe(0);
     expect(result.filesAnalyzed).toBe(2);
     expect(scanCurrent()).toEqual({ profileId: 'b', keyId: 'default' });
-    expect(state.outputLines.some((line) => line.includes('🔑 failover:') && line.includes('(quota;'))).toBe(true);
+    // сон не ставился, стоит billing-метка:
+    const stateA = runtime.get(keyRuntimeId('a', 'default'));
+    expect(stateA?.sleepUntil ?? 0).toBe(0);
+    expect(stateA?.billingBlocked).toBe(true);
+    // прозрачность: 💳-строка + failover с триггером billing
+    expect(state.outputLines.some((line) => line.includes('💳 billing: ключ Alpha/default у стены тарифа'))).toBe(true);
+    expect(state.outputLines.some((line) => line.includes('🔑 failover:') && line.includes('(billing;') && line.includes('у стены тарифа'))).toBe(true);
   }, 60000);
 });
 
