@@ -197,12 +197,19 @@ export async function readProfileSecret(secrets: SecretsLike, profileId: string)
   return key ? await readKeySecret(secrets, profile, key) : undefined;
 }
 
-export async function storeProfileSecret(secrets: SecretsLike, profileId: string, value: string): Promise<void> {
+export async function storeProfileSecret(secrets: SecretsLike, profileId: string, value: string): Promise<KeychainKey | undefined> {
   const profiles = readProfiles();
   const profile = profiles.find((candidate) => candidate.id === profileId);
-  if (!profile) { await storeKeySecret(secrets, defaultKeyFor(profileId), value); return; }
+  if (!profile) { const fresh = defaultKeyFor(profileId); await storeKeySecret(secrets, fresh, value.trim()); return fresh; }
+  // МИКРО-БАТЧ 28.9: сохранённый ключ = свежий ключ: чистим broken-метку и
+  // возвращаем выключенный ключ в ротацию (иначе «Сохранить» писал бы в
+  // ключ, который решатель никогда не возьмёт, — источник формально один,
+  // а рабочий ключ мёртвый).
   const key = pickActiveKey(profile) ?? profile.keys[0];
   await storeKeySecret(secrets, key, value.trim());
+  clearKeyBroken(profileId, key.id);
+  if (!key.enabled) await setKeyEnabled(profileId, key.id, true);
+  return key;
 }
 
 // Удаление всех секретов профиля: каждый key.secretId + legacy-адрес.
@@ -385,7 +392,17 @@ export async function updateProfileFromForm(secrets: SecretsLike, id: string, in
   if (trimmedKey) {
     const updated = next.find((profile) => profile.id === id);
     const key = updated ? pickActiveKey(updated) ?? updated.keys[0] : undefined;
-    if (key) await storeKeySecret(secrets, key, trimmedKey);
+    if (key) {
+      await storeKeySecret(secrets, key, trimmedKey);
+      // 28.9: новый ключ в том же адресе — broken-метка про него больше не
+      // правда; выключенный ключ включается в том же writeProfiles(next)
+      // (отдельный setKeyEnabled был бы затёрт массивом next ниже).
+      clearKeyBroken(id, key.id);
+      for (const profile of next) {
+        if (profile.id !== id) continue;
+        profile.keys = profile.keys.map((candidate) => (candidate.id === key.id ? { ...candidate, enabled: true } : candidate));
+      }
+    }
   }
   await writeProfiles(next);
   return next.find((profile) => profile.id === id);

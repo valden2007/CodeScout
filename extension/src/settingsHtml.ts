@@ -39,6 +39,9 @@ export interface SettingsState {
   keychainActiveId?: string;
   // Батч 28: состояние ключей («profileId/keyId» → asleep/broken) — бейджи.
   keychainRuntime?: Record<string, KeyRuntimeView>;
+  // МИКРО-БАТЧ 28.9: метка АКТИВНОГО профиля для строки «сейчас:» —
+  // источник один: ключ/провайдер/модель профиля + его метка.
+  keyActiveLabel?: string;
   failoverEnabled?: boolean;
   failoverMaxCycles?: number;
   // МИКРО-БАТЧ 28.2: инлайн-форма профиля. draft != undefined = форма
@@ -117,7 +120,11 @@ const LOCAL_BASE_URL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
 function currentKeyLine(T: (key: string, vars?: Record<string, string | number>) => string, state: SettingsState): string {
   if (state.keyConfigured) {
     const model = state.model.trim() || T('center.nowModelMissing');
-    return `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(model)}`;
+    // МИКРО-БАТЧ 28.9: «сейчас:» = активный профиль (маска ключа, провайдер и
+    // модель — из него же) + его метка; legacy-слот в строку не подмешивается.
+    const label = state.keyActiveLabel?.trim();
+    const tail = label ? ` · ${T('center.nowProfile', { label: escapeHtml(label) })}` : '';
+    return `${escapeHtml(state.keyMask)} · ${escapeHtml(state.provider)} · ${escapeHtml(model)}${tail}`;
   }
   const local = localServiceName(state.baseUrl);
   if (state.provider === 'custom' && local) return escapeHtml(T('center.nowLocal', { s: local }));

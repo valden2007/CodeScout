@@ -300,13 +300,15 @@ async function resolveExtensionSelection(context: vscode.ExtensionContext): Prom
     // Батч 28: профиль даёт ПЕРВЫЙ enabled-ключ (предпочтительно не broken);
     // секрет — keychain.<profileId>.<keyId>. Молчаливого фолбэка на чужой
     // ключ нет: ключа у рабочего ключа нет → undefined (401-путь честный).
+    // МИКРО-БАТЧ 28.9: кейчейн — ЕДИНСТВЕННЫЙ источник ключа при наличии
+    // профилей: ни legacy-секрета, ни env-фолбэка в этот путь не подмешиваем.
     const keyRef = pickActiveKey(active);
     const profileKey = keyRef ? await readKeySecret(context.secrets, active, keyRef) : undefined;
     const profileModel = active.model?.trim() || settingsModel || defaultModel(active.provider);
     return {
       provider: active.provider,
       model: profileModel,
-      key: resolveApiKeyPriority(profileKey, active.provider),
+      key: profileKey?.trim() || undefined,
       baseUrl,
       userChosenModel: Boolean(active.model?.trim()),
       profileId: active.id,
@@ -585,7 +587,12 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   const selection = await resolveExtensionSelection(context);
   // Локальный режим (батч 13, п.2): Ollama/LM Studio на localhost не требуют ключ.
   // Батч 27.1: локальный эндпоинт может жить в профиле (profile.baseUrl).
+  // МИКРО-БАТЧ 28.9: при наличии профилей ошибка говорит фактическое место —
+  // «сохрани ключ в профиле …»; про сеттинг/палитру — только при нуле профилей.
   if (!selection.key && !isLocalBaseUrl(selection.profileBaseUrl || selection.baseUrl)) {
+    if (selection.profileId) {
+      throw new Error(t('panel.errNoKeyProfile', promptLang, { label: profileLabel(selection.profileId) }));
+    }
     throw new Error(`${t('panel.errNoKey', promptLang, { p: selection.provider })}${t('panel.keyGet', promptLang, { x: keyUrl(selection.provider) ?? t('panel.keyGetAlt', promptLang) })}`);
   }
   if (files.length === 0) return { issues: [], filesAnalyzed: 0, skippedFiles: 0, durationMs: Date.now() - startedAt };
@@ -1522,6 +1529,13 @@ interface ConnectionTestResult {
 async function runConnectionTest(context: vscode.ExtensionContext): Promise<ConnectionTestResult> {
   const lang = currentReportLanguage();
   const selection = await resolveExtensionSelection(context);
+  // МИКРО-БАТЧ 28.9: есть профили, а у активного ключа секрета нет — честный
+  // ответ «сохрани ключ в профиле …», а не «подключено, 0 моделей» с пустым
+  // Authorization (фолбэк на legacy-слот запрещён: ключ уже не там).
+  if (selection.profileId && !selection.key) {
+    const message = t('key.needFirstProfile', lang, { label: profileLabel(selection.profileId) });
+    return { ok: false, message, title: t('err.title.auth_invalid_key', lang), hint: message, category: 'auth_invalid_key' };
+  }
   if (!selection.baseUrl && selection.provider !== 'custom') {
     return { ok: true, message: t('center.connected', lang, { n: 0 }) };
   }
@@ -1549,12 +1563,17 @@ async function readSettingsState(context: vscode.ExtensionContext): Promise<Sett
   const selection = await resolveExtensionSelection(context);
   // Батч 27: маска и факт ключа — от активного профиля keychain, иначе от
   // одиночного секрета (иначе центр показывает «ключа нет» при активном профиле).
-  const key = selection.key ?? await context.secrets.get(SECRET_KEY);
+  // МИКРО-БАТЧ 28.9: resolveExtensionSelection САМ отдаёт legacy-слот при нуле
+  // профилей — фолбэк здесь только смешивал бы источники (профиль без секрета
+  // показывался бы «настроенным» чужим legacy-ключом).
+  const key = selection.key;
   return {
     keyMask: key ? maskApiKey(key) : '',
     keyConfigured: Boolean(key?.trim()),
     provider: selection.provider,
     model: selection.model,
+    // «сейчас:» = активный профиль: метка профиля для строки центра.
+    keyActiveLabel: selection.profileId ? profileLabel(selection.profileId) : '',
     baseUrl: vscode.workspace.getConfiguration('codescout').get<string>('baseUrl')?.trim() || '',
     reportLanguage: currentReportLanguage(),
     showAuditBanner: auditBannerEnabled(),
@@ -1622,13 +1641,13 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
   } else if (skChosen) {
     provider = skChosen.provider;
     model = selection.userChosenModel ? model : skChosen.model;
-    await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
+    if (!profileId) await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
     notes.push(t('center.noteProviderManual', lang));
   } else if (message.providerKey && message.providerKey !== 'auto') {
     provider = message.providerKey as ProviderName;
     if (provider !== selection.provider || key) {
       model = defaultModel(provider);
-      await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
+      if (!profileId) await context.secrets.store(SECRET_MODEL_CHOSEN, 'false');
     }
   } else if (key) {
     notes.push(t('center.noteProviderManual', lang));
@@ -1658,8 +1677,10 @@ async function saveKeyProvider(context: vscode.ExtensionContext, message: Settin
 async function autoSelectModelAfterProviderChange(context: vscode.ExtensionContext, providerChanged: boolean): Promise<void> {
   if (!providerChanged) return;
   // Батч 27: ключ может жить в профиле keychain — проверяем оба пути.
+  // МИКРО-БАТЧ 28.9: resolveExtensionSelection уже покрывает оба (профиль >
+  // legacy при нуле профилей) — отдельное чтение legacy-слота только смешивает.
   const selection = await resolveExtensionSelection(context);
-  if (!(selection.key || (await context.secrets.get(SECRET_KEY)))) return;
+  if (!selection.key) return;
   await vscode.commands.executeCommand('codescout.chooseModel');
 }
 
@@ -2268,13 +2289,15 @@ export function activate(context: vscode.ExtensionContext): void {
           lang,
           profiles,
           // Батч 28: резолвим РаБОЧИЙ enabled-ключ профиля (первый не broken);
-          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback).
+          // секрет — keychain.<profileId>.<keyId> (+ legacy fallback для
+          // немигрированных установок батча 27).
+          // МИКРО-БАТЧ 28.9: без env/legacy-подмеси: секрета ключа нет —
+          // догон этим профилем невозможен (честный «сохрани ключ в профиле»).
           resolveKeyForProfile: async (profile) => {
             const key = pickActiveKey(profile);
             if (!key) return undefined;
             const secret = await readKeySecret(context.secrets, profile, key);
-            const resolved = resolveApiKeyPriority(secret, profile.provider);
-            return resolved ? { key: resolved, keyId: key.id, keyLabel: key.label } : undefined;
+            return secret?.trim() ? { key: secret.trim(), keyId: key.id, keyLabel: key.label } : undefined;
           },
           resolveBaseUrlFor: async (provider, profileBaseUrl) => resolveBaseUrl(provider, await resolveTrustedBaseUrl(context, config), profileBaseUrl),
           log: (message) => output.appendLine(message)
@@ -2385,17 +2408,19 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const validated = await validateDefaultModel(context, { provider: selection.provider, model: selection.model, key: key.trim() });
       selection = { provider: selection.provider, model: validated.model };
-      await context.secrets.store(SECRET_KEY, key.trim());
-      await context.secrets.store(SECRET_PROVIDER, selection.provider);
-      await context.secrets.store(SECRET_MODEL, selection.model);
-      await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
-      // Батч 27: если профили уже заведены — быстрый «set API key» обновляет
-      // активный профиль (иначе keychain перекроет секреты, и ключ «не применится»).
+      // МИКРО-БАТЧ 28.9: единый источник — есть профили, пишем ТОЛЬКО в
+      // рабочий ключ активного профиля (без legacy-дубля, иначе следующий
+      // рассинхрон); при нуле профилей — прежний legacy-слот.
       const existingProfiles = readProfiles();
       const activeNow = activeProfile(existingProfiles);
       if (activeNow) {
         await storeProfileSecret(context.secrets, activeNow.id, key.trim());
         await writeProfiles(existingProfiles.map((profile) => (profile.id === activeNow.id ? { ...profile, provider: selection.provider, model: selection.model } : profile)));
+      } else {
+        await context.secrets.store(SECRET_KEY, key.trim());
+        await context.secrets.store(SECRET_PROVIDER, selection.provider);
+        await context.secrets.store(SECRET_MODEL, selection.model);
+        await context.secrets.store(SECRET_MODEL_CHOSEN, String(validated.userChosen));
       }
       panel.setKey(maskApiKey(key.trim()), selection.provider, selection.model);
       const source = autoDetected ? t('key.sourceAuto', lang) : t('key.sourceManual', lang);
@@ -2407,7 +2432,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codescout.chooseModel', async () => {
       const current = await resolveExtensionSelection(context);
       if (!current.key) {
-        void vscode.window.showErrorMessage(t('key.needFirst', currentReportLanguage()));
+        // МИКРО-БАТЧ 28.9: тост говорит фактическое место; команду палитры
+        // упоминаем только при нуле профилей (legacy-фолбэк живёт там).
+        const lang = currentReportLanguage();
+        void vscode.window.showErrorMessage(current.profileId
+          ? t('key.needFirstProfile', lang, { label: profileLabel(current.profileId) })
+          : t('key.needFirst', lang));
         return;
       }
       const chosen = await chooseLiveModel(current, t('model.pickTitleShort', currentReportLanguage()));
