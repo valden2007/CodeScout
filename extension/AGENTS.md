@@ -27,8 +27,8 @@ CodeScout — AI code reviewer with THREE interfaces:
 - cd extension && npm run package (builds .vsix)
 
 ## Work rules
-- ONE task = ONE commit, then push
-- Commit messages: Russian, lowercase, human style: "модальный баннер аудита"
+- Follow the task's requested commit groups; multiple related commits per task are allowed. Push after the required checks pass.
+- Commit messages: follow the task's required format; otherwise use lowercase English Conventional Commits (e.g. "fix(security): validate workspace base URL").
 - After ANY change: npm test + typecheck must pass
 - Providers are OpenAI-compatible; models come from live GET /models
 - Keys stored in SecretStorage (extension) / env (CLI) / Secrets (action)
