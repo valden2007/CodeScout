@@ -23,6 +23,15 @@ interface ScanMessage {
   url?: string;
 }
 
+export interface LastGoodSummary {
+  issues: number;
+  files: number;
+  seconds: number;
+  updatedAt: number;
+  model: string;
+  carried?: boolean;
+}
+
 function safePost(webview: vscode.Webview, message: Record<string, unknown>): void {
   try {
     void Promise.resolve(webview.postMessage(message)).then(undefined, () => undefined);
@@ -100,7 +109,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private onboardingHidden = false;
   private firstAuditDone: boolean | undefined;
   private progressInfo?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
-  private auditSummary?: { issues: number; files: number; seconds: number };
+  // Last-good — состояние отчёта, а не событие завершения. Сохраняется при
+  // рендерах текущего пустого diff и восстанавливается из audit-results.json.
+  private lastGood?: LastGoodSummary;
+  private lastGoodFindings: ReviewIssue[] = [];
   private diagnosticDetails?: string;
   private errorInfo?: ScanErrorInfo;
   private auditDurations: number[] = [];
@@ -384,8 +396,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
-  showAuditSummary(summary: { issues: number; files: number; seconds: number } | undefined): void {
-    this.auditSummary = summary;
+  setLastGoodSummary(summary: (Omit<LastGoodSummary, 'model'> & { model?: string }) | undefined, findings: ReviewIssue[] = []): void {
+    this.lastGood = summary ? { ...summary, model: summary.model ?? this.model, carried: summary.carried ?? false } : undefined;
+    this.lastGoodFindings = summary ? [...findings] : [];
+    this.render();
+  }
+
+  setLastGoodCarried(carried: boolean): void {
+    if (!this.lastGood) return;
+    this.lastGood = { ...this.lastGood, carried };
     this.render();
   }
 
@@ -442,7 +461,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditResume = undefined;
     this.autoResumeView = undefined;
     this.progressInfo = undefined;
-    this.auditSummary = undefined;
+    this.lastGood = undefined;
+    this.lastGoodFindings = [];
     this.auditDurations = [];
     this.failoverSleep = undefined;
     this.billingWall = undefined;
@@ -457,7 +477,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   // панель рисует находки с диска как обычный отчёт + resume-баннер.
   // Единственный источник правды о скане — хост; во время живого скана
   // рестору нечего делать (иначе он сбил бы скан-UI).
-  restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined): void {
+  restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined, lastGood?: LastGoodSummary, lastGoodFindings: ReviewIssue[] = issues): void {
     if (this.scanning) return;
     this.issues = issues;
     this.stats = stats;
@@ -468,7 +488,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.statusMessage = '';
     this.findingsDiff = undefined;
     this.customFocus = '';
-    this.auditSummary = undefined;
+    this.lastGood = lastGood ? { ...lastGood, carried: lastGood.carried ?? false } : undefined;
+    this.lastGoodFindings = lastGood ? [...lastGoodFindings] : [];
     this.auditResume = resume;
     this.errorInfo = undefined;
     this.render();
@@ -501,7 +522,6 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.billingWall = undefined;
       this.regionWall = undefined;
       this.progressInfo = undefined;
-      this.auditSummary = undefined;
       this.errorInfo = undefined;
       if (!keepAuditStats) this.auditDurations = [];
     }
@@ -612,7 +632,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     // должен лишать пользователя уже открытого отчёта (деградация 28.1).
     if (this.reportTab) {
       try {
-        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false);
+        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false, true);
       } catch {
         // вкладка догонит следующий update()/render()
       }
@@ -623,21 +643,32 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   // Общая сборка html отчёта для обоих surfaces: сайдбар (welcome-оверлей — его
   // родной дом) и редакторная вкладка codescout.report (28.11). Один и тот же
   // reportHtml.ts, те же настройки внешнего вида и язык.
-  private composeHtml(webview: Pick<vscode.Webview, 'asWebviewUri' | 'cspSource'>, welcomeBanner: boolean): string {
+  private composeHtml(webview: Pick<vscode.Webview, 'asWebviewUri' | 'cspSource'>, welcomeBanner: boolean, useLastGood = false): string {
     const assets: WebviewAssets = {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'codicon.css')).toString(),
       cspSource: webview.cspSource
     };
     const nonce = randomBytes(16).toString('hex');
     const suppressedEntries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    const showLastGoodReport = useLastGood && this.lastGood?.carried === true;
+    const reportIssues = showLastGoodReport ? this.lastGoodFindings : this.issues;
+    const reportStats = showLastGoodReport && this.lastGood
+      ? {
+          files: this.lastGood.files,
+          seconds: this.lastGood.seconds,
+          critical: reportIssues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high').length,
+          medium: reportIssues.filter((issue) => issue.severity === 'medium').length,
+          low: reportIssues.filter((issue) => issue.severity !== 'critical' && issue.severity !== 'high' && issue.severity !== 'medium').length
+        }
+      : this.stats;
     const ux: PanelUx = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
       progress: this.progressInfo ? { ...this.progressInfo } : undefined,
-      summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
+      lastGood: this.lastGood ? { ...this.lastGood } : undefined
     };
     return this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall)
+      ? buildReportHtml(reportIssues, reportStats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, showLastGoodReport ? undefined : this.findingsDiff, showLastGoodReport ? '' : this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall)
       : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall);
   }
 

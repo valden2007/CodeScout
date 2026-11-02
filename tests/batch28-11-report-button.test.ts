@@ -11,6 +11,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { state, flush, makeFakeContext } from './vscode-stub';
 import { activate } from '../extension/src/extension';
 
@@ -92,7 +93,7 @@ describe('микробатч 28.11 задача 3: вкладка полного
     expect(html()).toContain('Аудит завершён');
     expect(html()).toContain('data-command="openReport"');
     expect(html()).toContain('data-command="openFullReport"');
-    expect(html()).toContain('title="Открыть полный отчёт"');
+    expect(html()).toContain('title="Открыть отчёт"');
     // сам webview-скрипт шлёт data-command как команду хосту (контракт 28.1)
     expect(html()).toContain("vscode.postMessage({ command: element.dataset.command");
 
@@ -176,7 +177,7 @@ describe('микробатч 28.11 задача 3: вкладка полного
     expect(extensionSource).toContain("output.show(true)");
   });
 
-  it('после reload last-good кнопка остаётся, событие завершения не дублируется; palette открывает вкладку', async () => {
+  it('после reload last-good карточка с подписанными кнопками восстанавливается и открывает ту же вкладку', async () => {
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
       return response('PERSISTED_REPORT_FINDING');
@@ -189,8 +190,16 @@ describe('микробатч 28.11 задача 3: вкладка полного
     const revived = bootPanel();
     await flush();
     expect(revived.html()).toContain('PERSISTED_REPORT_FINDING');
+    expect(revived.html()).toContain('<div class="summary-card">');
+    expect(revived.html()).toContain('<span>Открыть отчёт</span>');
+    expect(revived.html()).toContain('<span>Запустить снова</span>');
     expect(revived.html()).toContain('data-command="openFullReport"');
-    expect(revived.html()).not.toContain('<div class="summary-card">');
+    expect(revived.html()).toContain('Находок: 2 · Файлов: 2 · Время:');
+
+    revived.receive({ command: 'openReport' });
+    await flush();
+    expect(state.panels.filter((p) => p.viewType === 'codescout.report')).toHaveLength(1);
+    expect(state.panels[0]!.webview.html).toContain('PERSISTED_REPORT_FINDING');
 
     await (state.commands.get('codescout.openFullReport') as () => Promise<unknown>)();
     await flush();
@@ -200,8 +209,80 @@ describe('микробатч 28.11 задача 3: вкладка полного
     await (state.commands.get('codescout.openFullReport') as () => Promise<unknown>)();
     expect(state.panels.filter((p) => p.viewType === 'codescout.report')).toHaveLength(1);
     expect(state.panels).toHaveLength(panelsBefore);
+    expect(state.panels[0]!.revealCalls).toBeGreaterThan(1);
     const manifest = JSON.parse(readFileSync('extension/package.json', 'utf8')) as { contributes: { commands: Array<{ command: string; title: string }> } };
     expect(manifest.contributes.commands).toContainEqual({ command: 'codescout.openFullReport', title: 'CodeScout: Open Full Report' });
+  }, 120000);
+
+  it('само-тест показывает ту же карточку под зелёным баннером «Ревьюер жив!»', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      const payload = JSON.stringify({ issues: [
+        { line: 3, category: 'bug', severity: 'medium', description: 'SAMPLE_ONE', confidence: 80 },
+        { line: 8, category: 'security', severity: 'high', description: 'SAMPLE_TWO', confidence: 90 },
+        { line: 13, category: 'bug', severity: 'low', description: 'SAMPLE_THREE', confidence: 75 }
+      ], summary: 'ok' });
+      return new Response(JSON.stringify({ choices: [{ message: { content: payload } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const panel = bootPanel();
+    await flush();
+    await (state.commands.get('codescout.testSample') as () => Promise<unknown>)();
+    await flush();
+    const html = panel.html();
+    expect(html).toContain('Ревьюер жив!');
+    expect(html).toContain('<div class="summary-card">');
+    expect(html).toContain('<span>Открыть отчёт</span>');
+    expect(html).toContain('<span>Запустить снова</span>');
+    expect(html.indexOf('Ревьюер жив!')).toBeLessThan(html.indexOf('<div class="summary-card">'));
+  }, 120000);
+
+  it('пустой diff сохраняет карточку последнего полного аудита с датой и моделью; отчётная вкладка открывает last-good', async () => {
+    writeFileSync(join(root, '.gitignore'), '.codescout/\n', 'utf8');
+    execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'codescout-test@example.com'], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'CodeScout Test'], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['add', '.'], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: root, stdio: 'ignore' });
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return response('FULL_AUDIT_LAST_GOOD');
+    }) as typeof fetch;
+    const panel = bootPanel();
+    await flush();
+    await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
+    await flush();
+    expect(panel.html()).toContain('FULL_AUDIT_LAST_GOOD');
+
+    // Полный чистый аудит заменяет текущий результат, но не удаляет доступ
+    // к последнему непустому completed audit.
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return response('');
+    }) as typeof fetch;
+    await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
+    await flush();
+    expect(panel.html()).toContain('<strong>0 issues</strong>');
+    expect(panel.html()).toMatch(/Полный аудит от .+ · gemini-1\.5-flash/);
+
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      throw new Error('пустой diff не должен отправляться модели');
+    }) as typeof fetch;
+    execFileSync('git', ['commit', '--allow-empty', '-m', 'empty diff'], { cwd: root, stdio: 'ignore' });
+    await (state.commands.get('codescout.scanLastCommit') as () => Promise<unknown>)();
+    await flush();
+    const html = panel.html();
+    expect(html).toContain('<div class="summary-card">');
+    expect(html).toMatch(/Полный аудит от .+ · gemini-1\.5-flash/);
+    expect(html).toContain('data-command="openFullReport"');
+    expect(html).toContain('title="Открыть отчёт"');
+    expect(html).not.toContain('FULL_AUDIT_LAST_GOOD');
+    expect(html).toContain('<strong>0 issues</strong>');
+    expect(state.outputLines.join('\n')).toContain('Итог проверки коммита: 0 находок');
+    panel.receive({ command: 'openFullReport' });
+    await flush();
+    expect(state.panels.filter((p) => p.viewType === 'codescout.report')).toHaveLength(1);
+    expect(state.panels[0]!.webview.html).toContain('FULL_AUDIT_LAST_GOOD');
   }, 120000);
 
   it('пустой отчёт не показывает постоянную кнопку полного отчёта', async () => {

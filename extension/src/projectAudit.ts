@@ -1380,9 +1380,21 @@ export interface AuditResults {
   total: number;
   model: string;
   updatedAt: number;
+  durationMs?: number;
+}
+
+export interface LastGoodAudit {
+  findings: ReviewIssue[];
+  files: number;
+  seconds: number;
+  provider: string;
+  model: string;
+  completedAt: number;
 }
 
 const AUDIT_RESULTS_FILE = 'audit-results.json';
+const LAST_GOOD_AUDIT_FILE = 'last-good-audit.json';
+const PANEL_RESULTS_FILE = 'panel-results.json';
 
 // Атомарная запись: пишем в temp в том же каталоге и переименовываем.
 // rename внутри одного тома атомарен, поэтому перечитать можно либо
@@ -1398,10 +1410,54 @@ export function auditResultsPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
 }
 
+export function writeLastGoodAudit(workspaceRoot: string, audit: LastGoodAudit): void {
+  const directory = join(workspaceRoot, '.codescout');
+  mkdirSync(directory, { recursive: true });
+  writeJsonAtomic(directory, LAST_GOOD_AUDIT_FILE, audit);
+}
+
+export function readLastGoodAudit(workspaceRoot: string): LastGoodAudit | undefined {
+  const path = join(workspaceRoot, '.codescout', LAST_GOOD_AUDIT_FILE);
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<LastGoodAudit>;
+    if (!parsed || !Array.isArray(parsed.findings) || typeof parsed.model !== 'string') return undefined;
+    const findings = parsed.findings.filter((entry) => entry && typeof entry.file === 'string' && Number.isFinite(Number(entry.line)));
+    if (!findings.length) return undefined;
+    return {
+      findings,
+      files: Number.isFinite(parsed.files) ? Math.max(0, Number(parsed.files)) : 0,
+      seconds: Number.isFinite(parsed.seconds) ? Math.max(0, Number(parsed.seconds)) : 0,
+      provider: typeof parsed.provider === 'string' ? parsed.provider : '',
+      model: parsed.model,
+      completedAt: Number.isFinite(parsed.completedAt) ? Number(parsed.completedAt) : 0
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearLastGoodAudit(workspaceRoot: string): void {
+  const path = join(workspaceRoot, '.codescout', LAST_GOOD_AUDIT_FILE);
+  if (existsSync(path)) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // Файл мог уже исчезнуть.
+    }
+  }
+}
+
 export function writeAuditResults(workspaceRoot: string, results: AuditResults): void {
   const directory = join(workspaceRoot, '.codescout');
   mkdirSync(directory, { recursive: true });
   writeJsonAtomic(directory, AUDIT_RESULTS_FILE, results);
+}
+
+export function writePanelResults(workspaceRoot: string, results: AuditResults): void {
+  const directory = join(workspaceRoot, '.codescout');
+  mkdirSync(directory, { recursive: true });
+  writeJsonAtomic(directory, PANEL_RESULTS_FILE, results);
 }
 
 export function writeAuditResultsFromCheckpoint(workspaceRoot: string, progress: AuditCheckpoint, total: number): void {
@@ -1414,8 +1470,7 @@ export function writeAuditResultsFromCheckpoint(workspaceRoot: string, progress:
   });
 }
 
-export function readAuditResults(workspaceRoot: string): AuditResults | undefined {
-  const path = join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
+function readResultsFile(path: string): AuditResults | undefined {
   if (!existsSync(path)) return undefined;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as AuditResults;
@@ -1427,15 +1482,35 @@ export function readAuditResults(workspaceRoot: string): AuditResults | undefine
       checkedFiles,
       total,
       model: parsed.model,
-      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
+      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
+      ...(typeof parsed.durationMs === 'number' && Number.isFinite(parsed.durationMs) && parsed.durationMs >= 0 ? { durationMs: parsed.durationMs } : {})
     };
   } catch {
     return undefined;
   }
 }
 
+export function readAuditResults(workspaceRoot: string): AuditResults | undefined {
+  return readResultsFile(join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE));
+}
+
+export function readPanelResults(workspaceRoot: string): AuditResults | undefined {
+  return readResultsFile(join(workspaceRoot, '.codescout', PANEL_RESULTS_FILE));
+}
+
 export function clearAuditResults(workspaceRoot: string): void {
   const path = join(workspaceRoot, '.codescout', AUDIT_RESULTS_FILE);
+  if (existsSync(path)) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // файл мог уже исчезнуть
+    }
+  }
+}
+
+export function clearPanelResults(workspaceRoot: string): void {
+  const path = join(workspaceRoot, '.codescout', PANEL_RESULTS_FILE);
   if (existsSync(path)) {
     try {
       unlinkSync(path);

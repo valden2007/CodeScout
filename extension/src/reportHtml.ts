@@ -33,7 +33,7 @@ export interface PanelUx {
   onboarding?: boolean;
   firstAudit?: boolean;
   progress?: { checked: number; total: number; etaSeconds?: number | null; pass?: number; totalPasses?: number };
-  summary?: { issues: number; files: number; seconds: number };
+  lastGood?: { issues: number; files: number; seconds: number; updatedAt: number; model: string; carried?: boolean };
 }
 
 export function formatEtaSeconds(total: number): string {
@@ -392,14 +392,22 @@ export function buildReportHtml(issues: ReviewIssue[], stats: ReportStats, isSca
   const showResume = Boolean(resumeView);
   const showStatus = showResume && statusKind !== 'error' ? '' : statusMessage;
   const clientDict = JSON.stringify(['actions.customReview', 'actions.customReviewCollapse', 'auto.line', 'auto.lineRetry', 'auto.attemptOf', 'auto.attempt', 'status.model404', 'form.pickOutside', 'form.pickNoWorkspace', 'progress.eta', 'progress.etaPending', 'progress.filesDone', 'progress.pass'].reduce((acc, k) => { acc[k] = T(k); return acc; }, {} as Record<string, string>));
-  const summaryCard = ux.summary ? `<div class="summary-card"><div class="summary-head">${icon('check')} <strong>${T('summary.title')}</strong></div><div class="summary-meta">${escapeHtml(T('summary.meta', { i: ux.summary.issues, f: ux.summary.files, t: formatEtaSeconds(ux.summary.seconds) }))}</div><div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon('output')}<span>${T('summary.open')}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon('refresh')}<span>${T('summary.again')}</span></button></div></div>` : '';
+   const lastGood = ux.lastGood;
+   const dateValue = lastGood ? new Date(lastGood.updatedAt) : undefined;
+   const date = dateValue && Number.isFinite(dateValue.getTime())
+     ? new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-US', { dateStyle: 'medium' }).format(dateValue)
+     : '';
+   const lastGoodBadge = lastGood?.carried && date
+     ? `<div class="summary-origin">${escapeHtml(T('summary.fullAudit', { date, model: lastGood.model }))}</div>`
+     : '';
+   const summaryCard = lastGood ? `<div class="summary-card"><div class="summary-head">${icon('check')} <strong>${T('summary.title')}</strong></div><div class="summary-meta">${escapeHtml(T('summary.meta', { i: lastGood.issues, f: lastGood.files, t: formatEtaSeconds(lastGood.seconds) }))}</div>${lastGoodBadge}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon('output')}<span>${T('summary.open')}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon('refresh')}<span>${T('summary.again')}</span></button></div></div>` : '';
   return `<!DOCTYPE html>
 <html lang="${lang}">
 ${headHtml(assets, nonce)}
 <body ${uiBodyAttrs(ui)}>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${T(welcomeReason === 'stale' ? 'banner.welcomeStale' : 'banner.welcomeNew')}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === 'stale' ? 'sync' : 'play')}<span>${T(welcomeReason === 'stale' ? 'banner.update' : 'banner.startAudit')}</span></button><button type="button" data-command="dismissWelcome">${T('banner.later')}</button></div></div></div></div>` : ''}
-    <div class="brand"><span class="brand-mark">${icon('search')}</span> ${T('brand.name')} ${issues.length > 0 ? `<button class="brand-report cs-btn" type="button" data-command="openFullReport" title="${T('brand.openFullReportTip')}" aria-label="${T('brand.openFullReportTip')}">${icon('notebook')}</button>` : ''}<button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T('brand.toggleLang')}">${icon('globe')}<span>${lang === 'en' ? 'EN' : 'RU'}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T('brand.settingsTip')}">${icon('settings-gear')}<span>${T('brand.settings')}</span></button></div>
+    <div class="brand"><span class="brand-mark">${icon('search')}</span> ${T('brand.name')} ${issues.length > 0 || ux.lastGood ? `<button class="brand-report cs-btn" type="button" data-command="openFullReport" title="${T('summary.open')}" aria-label="${T('summary.open')}">${icon('notebook')}</button>` : ''}<button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T('brand.toggleLang')}">${icon('globe')}<span>${lang === 'en' ? 'EN' : 'RU'}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T('brand.settingsTip')}">${icon('settings-gear')}<span>${T('brand.settings')}</span></button></div>
     <div class="key-status ${keyConfigured ? 'ready' : 'missing'}">${keyConfigured ? `${icon('pass')} ${escapeHtml(provider)} · ${escapeHtml(model.trim() || T('center.nowModelMissing'))} · ${escapeHtml(keyMask)} (${T('key.ready')})` : `${icon('error')} ${T('key.missing')}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon('key')}<span>${T('key.andModel')}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon('beaker')} ${T('testBadge')}</span>` : ''}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === 'error' && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ''}${escapeHtml(showStatus)}${statusKind === 'retry' ? '<span class="animated-dots">...</span>' : ''}${statusKind === 'error' && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon('lightbulb')} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ''}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon('sync')}<span>${T('err.retry')}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon('settings-gear')}<span>${T('err.openSettings')}</span></button></div></div>` : ''}${statusKind === 'error' && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon('sync')}<span>${T('status.model404')}</span></button>` : ''}${diagnosticDetails ? `<details class="diag-block"><summary>${T('diag.title')}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ''}</div>` : ''}</div>

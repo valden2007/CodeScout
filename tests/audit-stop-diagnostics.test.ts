@@ -235,18 +235,18 @@ describe('батч 26 e2e: стоп аудита по breaker и last-good', () 
   it('прогон с 0 проверенных не затирает находки; динамика считается против last-good', async () => {
     root = makeWorkspace(['a.ts', 'b.ts', 'c.ts']);
     state.workspaceRoot = root;
-    // прогон 1: a/b с находками, c падает
+    // прогон 1: полный last-good, две находки и один чистый файл
     globalThis.fetch = (async (url: string, init?: { body?: string }) => {
       if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
       const body = String(init?.body ?? '');
-      if (body.includes('src/c.ts')) throw new Error('upstream exploded');
+      if (body.includes('src/c.ts')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ issues: [], summary: 'ok' }) } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
       if (body.includes('src/a.ts')) return issueResponse('src/a.ts', 'ALPHA_DESC');
       return issueResponse('src/b.ts', 'BETA_DESC');
     }) as typeof fetch;
     const live = boot();
     await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
     await flush();
-    expect(readAuditResults(root)!.checkedFiles).toBe(2);
+    expect(readAuditResults(root)!.checkedFiles).toBe(3);
 
     // прогон 2 (заново): всё падает → 0 проверенных файлов
     globalThis.fetch = (async (url: string) => {
@@ -260,7 +260,7 @@ describe('батч 26 e2e: стоп аудита по breaker и last-good', () 
     const kept = readAuditResults(root);
     expect(kept).toBeDefined();
     expect(kept!.findings.map((f) => f.description).sort()).toEqual(['ALPHA_DESC', 'BETA_DESC']);
-    expect(kept!.checkedFiles).toBe(2);
+    expect(kept!.checkedFiles).toBe(3);
     expect(readFindingsHistory(root)!.findings.length).toBe(2);
     expect(state.outputLines.some((line) => line.includes('last-good результаты (2 находок) НЕ перезаписаны'))).toBe(true);
 
@@ -268,18 +268,23 @@ describe('батч 26 e2e: стоп аудита по breaker и last-good', () 
     const view = live();
     expect(view).toContain('🔁 осталось: 2');
     expect(view).toContain('✅ починено: 0');
-    expect(view).toContain('ALPHA_DESC');
-    expect(view).toContain('BETA_DESC');
+    // Текущий прогон пустой: прежние находки доступны из completion card,
+    // но не подменяют содержимое текущего отчёта.
+    expect(view).not.toContain('ALPHA_DESC');
+    expect(view).not.toContain('BETA_DESC');
     expect(view).toContain('Аудит остановлен: проверено 0 из 3 файлов');
     expect(view).toContain('находок 2');
-    // карточка «итог аудита» не показывается: проверено 0 файлов (кнопка openReport только в ней)
-    expect(view).not.toContain('data-command="openReport"');
+    expect(view).toContain('<div class="summary-card">');
+    expect(view).toContain('Полный аудит от');
+    expect(view).toContain('data-command="openReport"');
 
-    // reload: находки и баннер «2 находки» восстанавливаются из last-good
+    // reload: пустой текущий результат + last-good карточка и баннер «2 находки»
     const revived = boot();
     const reviveDeadline = Date.now() + 10000;
-    while (!revived().includes('ALPHA_DESC') && Date.now() < reviveDeadline) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
-    expect(revived()).toContain('ALPHA_DESC');
+    while (!revived().includes('<div class="summary-card">') && Date.now() < reviveDeadline) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+    expect(revived()).not.toContain('ALPHA_DESC');
+    expect(revived()).toContain('<div class="summary-card">');
+    expect(revived()).toContain('Полный аудит от');
     expect(revived()).toContain('Аудит остановлен: проверено 0 из 3 файлов');
     expect(revived()).toContain('находок 2');
   }, 120000);

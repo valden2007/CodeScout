@@ -699,7 +699,7 @@ var ru_default = {
   "brand.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
   "brand.settingsTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout",
   "brand.toggleLang": "\u0421\u043C\u0435\u043D\u0438\u0442\u044C \u044F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
-  "brand.openFullReportTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442",
+  "brand.openFullReportTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043E\u0442\u0447\u0451\u0442",
   "brand.langRu": "RU",
   "key.ready": "\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E",
   "key.missing": "\u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
@@ -773,6 +773,7 @@ var ru_default = {
   "summary.meta": "\u041D\u0430\u0445\u043E\u0434\u043E\u043A: {i} \xB7 \u0424\u0430\u0439\u043B\u043E\u0432: {f} \xB7 \u0412\u0440\u0435\u043C\u044F: {t}",
   "summary.open": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043E\u0442\u0447\u0451\u0442",
   "summary.again": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0441\u043D\u043E\u0432\u0430",
+  "summary.fullAudit": "\u041F\u043E\u043B\u043D\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u043E\u0442 {date} \xB7 {model}",
   "search.placeholder": "\u043F\u043E\u0438\u0441\u043A \u0444\u0430\u0439\u043B\u0430\u2026",
   "customBanner.label": "\u041A\u0430\u0441\u0442\u043E\u043C\u043D\u043E\u0435 \u0440\u0435\u0432\u044C\u044E:",
   "stats.issues": "{n} issues",
@@ -1202,7 +1203,7 @@ var en_default = {
   "brand.settings": "Settings",
   "brand.settingsTip": "Open CodeScout settings",
   "brand.toggleLang": "Switch interface language",
-  "brand.openFullReportTip": "Open full report",
+  "brand.openFullReportTip": "Open report",
   "brand.langRu": "EN",
   "key.ready": "protected",
   "key.missing": "Key not configured",
@@ -1276,6 +1277,7 @@ var en_default = {
   "summary.meta": "{i} findings \xB7 {f} files \xB7 {t} total",
   "summary.open": "Open report",
   "summary.again": "Run again",
+  "summary.fullAudit": "Full audit from {date} \xB7 {model}",
   "search.placeholder": "search file\u2026",
   "customBanner.label": "Custom review:",
   "stats.issues": "{n} issues",
@@ -2915,14 +2917,18 @@ function buildReportHtml(issues, stats, isScanning = false, emptyState = false, 
     acc[k] = T(k);
     return acc;
   }, {}));
-  const summaryCard = ux.summary ? `<div class="summary-card"><div class="summary-head">${icon("check")} <strong>${T("summary.title")}</strong></div><div class="summary-meta">${escapeHtml(T("summary.meta", { i: ux.summary.issues, f: ux.summary.files, t: formatEtaSeconds(ux.summary.seconds) }))}</div><div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon("output")}<span>${T("summary.open")}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon("refresh")}<span>${T("summary.again")}</span></button></div></div>` : "";
+  const lastGood = ux.lastGood;
+  const dateValue = lastGood ? new Date(lastGood.updatedAt) : void 0;
+  const date = dateValue && Number.isFinite(dateValue.getTime()) ? new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-US", { dateStyle: "medium" }).format(dateValue) : "";
+  const lastGoodBadge = lastGood?.carried && date ? `<div class="summary-origin">${escapeHtml(T("summary.fullAudit", { date, model: lastGood.model }))}</div>` : "";
+  const summaryCard = lastGood ? `<div class="summary-card"><div class="summary-head">${icon("check")} <strong>${T("summary.title")}</strong></div><div class="summary-meta">${escapeHtml(T("summary.meta", { i: lastGood.issues, f: lastGood.files, t: formatEtaSeconds(lastGood.seconds) }))}</div>${lastGoodBadge}<div class="welcome-actions"><button type="button" class="cs-btn" data-command="openReport">${icon("output")}<span>${T("summary.open")}</span></button><button type="button" class="cs-btn secondary" data-command="runAgain">${icon("refresh")}<span>${T("summary.again")}</span></button></div></div>` : "";
   return `<!DOCTYPE html>
 <html lang="${lang}">
 ${headHtml(assets, nonce)}
 <body ${uiBodyAttrs(ui)}>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${T(welcomeReason === "stale" ? "banner.welcomeStale" : "banner.welcomeNew")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === "stale" ? "sync" : "play")}<span>${T(welcomeReason === "stale" ? "banner.update" : "banner.startAudit")}</span></button><button type="button" data-command="dismissWelcome">${T("banner.later")}</button></div></div></div></div>` : ""}
-    <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} ${issues.length > 0 ? `<button class="brand-report cs-btn" type="button" data-command="openFullReport" title="${T("brand.openFullReportTip")}" aria-label="${T("brand.openFullReportTip")}">${icon("notebook")}</button>` : ""}<button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
+    <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} ${issues.length > 0 || ux.lastGood ? `<button class="brand-report cs-btn" type="button" data-command="openFullReport" title="${T("summary.open")}" aria-label="${T("summary.open")}">${icon("notebook")}</button>` : ""}<button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
@@ -3321,7 +3327,10 @@ var CodeScoutPanel = class {
   onboardingHidden = false;
   firstAuditDone;
   progressInfo;
-  auditSummary;
+  // Last-good — состояние отчёта, а не событие завершения. Сохраняется при
+  // рендерах текущего пустого diff и восстанавливается из audit-results.json.
+  lastGood;
+  lastGoodFindings = [];
   diagnosticDetails;
   errorInfo;
   auditDurations = [];
@@ -3580,8 +3589,14 @@ var CodeScoutPanel = class {
     this.firstAuditDone = done;
     this.render();
   }
-  showAuditSummary(summary) {
-    this.auditSummary = summary;
+  setLastGoodSummary(summary, findings = []) {
+    this.lastGood = summary ? { ...summary, model: summary.model ?? this.model, carried: summary.carried ?? false } : void 0;
+    this.lastGoodFindings = summary ? [...findings] : [];
+    this.render();
+  }
+  setLastGoodCarried(carried) {
+    if (!this.lastGood) return;
+    this.lastGood = { ...this.lastGood, carried };
     this.render();
   }
   recordFileDuration(seconds) {
@@ -3629,7 +3644,8 @@ var CodeScoutPanel = class {
     this.auditResume = void 0;
     this.autoResumeView = void 0;
     this.progressInfo = void 0;
-    this.auditSummary = void 0;
+    this.lastGood = void 0;
+    this.lastGoodFindings = [];
     this.auditDurations = [];
     this.failoverSleep = void 0;
     this.billingWall = void 0;
@@ -3643,7 +3659,7 @@ var CodeScoutPanel = class {
   // панель рисует находки с диска как обычный отчёт + resume-баннер.
   // Единственный источник правды о скане — хост; во время живого скана
   // рестору нечего делать (иначе он сбил бы скан-UI).
-  restoreAuditResults(issues, stats, resume) {
+  restoreAuditResults(issues, stats, resume, lastGood, lastGoodFindings = issues) {
     if (this.scanning) return;
     this.issues = issues;
     this.stats = stats;
@@ -3654,7 +3670,8 @@ var CodeScoutPanel = class {
     this.statusMessage = "";
     this.findingsDiff = void 0;
     this.customFocus = "";
-    this.auditSummary = void 0;
+    this.lastGood = lastGood ? { ...lastGood, carried: lastGood.carried ?? false } : void 0;
+    this.lastGoodFindings = lastGood ? [...lastGoodFindings] : [];
     this.auditResume = resume;
     this.errorInfo = void 0;
     this.render();
@@ -3685,7 +3702,6 @@ var CodeScoutPanel = class {
       this.billingWall = void 0;
       this.regionWall = void 0;
       this.progressInfo = void 0;
-      this.auditSummary = void 0;
       this.errorInfo = void 0;
       if (!keepAuditStats) this.auditDurations = [];
     }
@@ -3782,7 +3798,7 @@ var CodeScoutPanel = class {
   render() {
     if (this.reportTab) {
       try {
-        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false);
+        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false, true);
       } catch {
       }
     }
@@ -3791,20 +3807,29 @@ var CodeScoutPanel = class {
   // Общая сборка html отчёта для обоих surfaces: сайдбар (welcome-оверлей — его
   // родной дом) и редакторная вкладка codescout.report (28.11). Один и тот же
   // reportHtml.ts, те же настройки внешнего вида и язык.
-  composeHtml(webview, welcomeBanner) {
+  composeHtml(webview, welcomeBanner, useLastGood = false) {
     const assets = {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicon.css")).toString(),
       cspSource: webview.cspSource
     };
     const nonce = (0, import_node_crypto3.randomBytes)(16).toString("hex");
     const suppressedEntries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    const showLastGoodReport = useLastGood && this.lastGood?.carried === true;
+    const reportIssues = showLastGoodReport ? this.lastGoodFindings : this.issues;
+    const reportStats = showLastGoodReport && this.lastGood ? {
+      files: this.lastGood.files,
+      seconds: this.lastGood.seconds,
+      critical: reportIssues.filter((issue) => issue.severity === "critical" || issue.severity === "high").length,
+      medium: reportIssues.filter((issue) => issue.severity === "medium").length,
+      low: reportIssues.filter((issue) => issue.severity !== "critical" && issue.severity !== "high" && issue.severity !== "medium").length
+    } : this.stats;
     const ux = {
       onboarding: !this.keyConfigured && !this.onboardingHidden,
       firstAudit: this.keyConfigured && this.firstAuditDone === false,
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
-      summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
+      lastGood: this.lastGood ? { ...this.lastGood } : void 0
     };
-    return this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall);
+    return this.hasRun || this.scanning ? buildReportHtml(reportIssues, reportStats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, showLastGoodReport ? void 0 : this.findingsDiff, showLastGoodReport ? "" : this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall);
   }
   // ЗАДАЧА 3 (28.11): «Открыть отчёт» из карточки «Аудит завершён». ROOT CAUSE
   // «молчания» кнопки: обработчик codescout.openAuditReport делал только
@@ -4918,6 +4943,8 @@ function progressView(progress, breakerLimit = SKIP_BREAKER_DEFAULT_LIMIT) {
   };
 }
 var AUDIT_RESULTS_FILE = "audit-results.json";
+var LAST_GOOD_AUDIT_FILE = "last-good-audit.json";
+var PANEL_RESULTS_FILE = "panel-results.json";
 function writeJsonAtomic(directory, fileName, data) {
   const target = (0, import_node_path3.join)(directory, fileName);
   const temp = (0, import_node_path3.join)(directory, `${fileName}.${process.pid}.tmp`);
@@ -4925,10 +4952,49 @@ function writeJsonAtomic(directory, fileName, data) {
 `, "utf8");
   (0, import_node_fs4.renameSync)(temp, target);
 }
+function writeLastGoodAudit(workspaceRoot, audit) {
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  writeJsonAtomic(directory, LAST_GOOD_AUDIT_FILE, audit);
+}
+function readLastGoodAudit(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", LAST_GOOD_AUDIT_FILE);
+  if (!(0, import_node_fs4.existsSync)(path)) return void 0;
+  try {
+    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
+    if (!parsed || !Array.isArray(parsed.findings) || typeof parsed.model !== "string") return void 0;
+    const findings = parsed.findings.filter((entry) => entry && typeof entry.file === "string" && Number.isFinite(Number(entry.line)));
+    if (!findings.length) return void 0;
+    return {
+      findings,
+      files: Number.isFinite(parsed.files) ? Math.max(0, Number(parsed.files)) : 0,
+      seconds: Number.isFinite(parsed.seconds) ? Math.max(0, Number(parsed.seconds)) : 0,
+      provider: typeof parsed.provider === "string" ? parsed.provider : "",
+      model: parsed.model,
+      completedAt: Number.isFinite(parsed.completedAt) ? Number(parsed.completedAt) : 0
+    };
+  } catch {
+    return void 0;
+  }
+}
+function clearLastGoodAudit(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", LAST_GOOD_AUDIT_FILE);
+  if ((0, import_node_fs4.existsSync)(path)) {
+    try {
+      (0, import_node_fs4.unlinkSync)(path);
+    } catch {
+    }
+  }
+}
 function writeAuditResults(workspaceRoot, results) {
   const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
   (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
   writeJsonAtomic(directory, AUDIT_RESULTS_FILE, results);
+}
+function writePanelResults(workspaceRoot, results) {
+  const directory = (0, import_node_path3.join)(workspaceRoot, ".codescout");
+  (0, import_node_fs4.mkdirSync)(directory, { recursive: true });
+  writeJsonAtomic(directory, PANEL_RESULTS_FILE, results);
 }
 function writeAuditResultsFromCheckpoint(workspaceRoot, progress, total) {
   writeAuditResults(workspaceRoot, {
@@ -4939,8 +5005,7 @@ function writeAuditResultsFromCheckpoint(workspaceRoot, progress, total) {
     updatedAt: Date.now()
   });
 }
-function readAuditResults(workspaceRoot) {
-  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE);
+function readResultsFile(path) {
   if (!(0, import_node_fs4.existsSync)(path)) return void 0;
   try {
     const parsed = JSON.parse((0, import_node_fs4.readFileSync)(path, "utf8"));
@@ -4952,14 +5017,27 @@ function readAuditResults(workspaceRoot) {
       checkedFiles,
       total,
       model: parsed.model,
-      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0
+      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
+      ...typeof parsed.durationMs === "number" && Number.isFinite(parsed.durationMs) && parsed.durationMs >= 0 ? { durationMs: parsed.durationMs } : {}
     };
   } catch {
     return void 0;
   }
 }
+function readAuditResults(workspaceRoot) {
+  return readResultsFile((0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE));
+}
 function clearAuditResults(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE);
+  if ((0, import_node_fs4.existsSync)(path)) {
+    try {
+      (0, import_node_fs4.unlinkSync)(path);
+    } catch {
+    }
+  }
+}
+function clearPanelResults(workspaceRoot) {
+  const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", PANEL_RESULTS_FILE);
   if ((0, import_node_fs4.existsSync)(path)) {
     try {
       (0, import_node_fs4.unlinkSync)(path);
@@ -7791,6 +7869,8 @@ async function runSampleReview(context, output, panel) {
   output.clear();
   output.show(true);
   output.appendLine("CodeScout: running built-in self-test...");
+  const sampleWorkspaceRoot = getWorkspaceRoot();
+  if (sampleWorkspaceRoot) clearPanelResults(sampleWorkspaceRoot);
   panel.setScanning(true);
   try {
     const result = await reviewFiles(context, [SAMPLE_FILE], void 0, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
@@ -7799,6 +7879,7 @@ async function runSampleReview(context, output, panel) {
     }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(SYSTEM_PROMPT, currentReportLanguage()));
     const summary = sampleTestSummary(result.issues.length, currentReportLanguage());
     panel.update(result.issues, buildStats(result.issues, result.filesAnalyzed, result.durationMs), true, summary, result.issues.length === 0);
+    panel.setLastGoodSummary({ issues: result.issues.length, files: result.filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10, updatedAt: Date.now() }, result.issues);
     output.appendLine(`${summary}`);
     for (const issue of result.issues) output.appendLine(formatIssue(issue));
     void vscode4.window.showInformationMessage(`CodeScout self-test: ${result.issues.length} issues found`);
@@ -7910,6 +7991,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     if (activeAbortController === controller) activeAbortController = void 0;
     return { kind: "done" };
   }
+  clearPanelResults(workspaceRoot);
   output.appendLine(resume ? "CodeScout: resuming full project audit..." : "CodeScout: starting full project audit...");
   let progress;
   liveAuditCheckpoint = void 0;
@@ -8113,12 +8195,20 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
-    const lastGood = filesAnalyzed === 0 ? readAuditResults(workspaceRoot) : void 0;
+    const lastGoodAudit = filesAnalyzed === 0 ? readLastGoodAudit(workspaceRoot) : void 0;
+    const lastGoodResults = filesAnalyzed === 0 && !lastGoodAudit ? readAuditResults(workspaceRoot) : void 0;
+    const lastGood = lastGoodAudit ?? (lastGoodResults ? {
+      findings: lastGoodResults.findings,
+      files: lastGoodResults.checkedFiles,
+      seconds: (lastGoodResults.durationMs ?? 0) / 1e3,
+      model: lastGoodResults.model,
+      completedAt: lastGoodResults.updatedAt
+    } : void 0);
     const carriedIssues = filesAnalyzed === 0 && lastGood && lastGood.findings.length > 0 ? lastGood.findings : mergedIssues;
     if (filesAnalyzed > 0) {
       writeProjectContext(workspaceRoot, filesAnalyzed, mergedIssues, auditMeta);
       writeFindingsHistory(workspaceRoot, mergedIssues, "full-audit", auditMeta);
-      writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now() });
+      writeAuditResults(workspaceRoot, { findings: mergedIssues, checkedFiles: filesAnalyzed, total: planFiles.length, model: auditSelection.model, updatedAt: Date.now(), durationMs: result.durationMs });
     } else if (lastGood && lastGood.findings.length > 0) {
       output.appendLine(`\u2139\uFE0F \u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E 0 \u0444\u0430\u0439\u043B\u043E\u0432 \u2014 last-good \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442\u044B (${lastGood.findings.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A) \u041D\u0415 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B`);
     }
@@ -8131,10 +8221,21 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       liveAuditCheckpoint = void 0;
     }
     const findingsDiff = buildFindingsDiff(previousHistory, carriedIssues, currentReportLanguage(), new Set(state.checked.map((entry) => entry.file)));
-    const visibleIssues = filterSuppressed(carriedIssues, context.workspaceState);
+    const visibleIssues = filterSuppressed(mergedIssues, context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, filesAnalyzed, result.durationMs), false, "", false, findingsDiff);
     panel.setFirstAuditDone(true);
-    if (filesAnalyzed > 0) panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 });
+    if (filesAnalyzed > 0 && mergedIssues.length > 0 && result.skippedFiles === 0) {
+      const completedAt = Date.now();
+      const seconds = Math.round(result.durationMs / 100) / 10;
+      writeLastGoodAudit(workspaceRoot, { findings: mergedIssues, files: filesAnalyzed, seconds, provider: auditSelection.provider, model: auditSelection.model, completedAt });
+      panel.setLastGoodSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds, updatedAt: completedAt, model: auditSelection.model }, visibleIssues);
+    } else {
+      if (lastGood) {
+        const lastGoodIssues = filterSuppressed(lastGood.findings, context.workspaceState);
+        panel.setLastGoodSummary({ issues: lastGoodIssues.length, files: lastGood.files, seconds: lastGood.seconds, updatedAt: lastGood.completedAt, model: lastGood.model }, lastGoodIssues);
+      }
+      panel.setLastGoodCarried(true);
+    }
     const resumeView = result.skippedFiles > 0 ? progressView(state, auditBreakerLimit) : void 0;
     if (resumeView && filesAnalyzed === 0 && carriedIssues.length > 0) {
       resumeView.findings = carriedIssues.length;
@@ -8144,7 +8245,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     output.appendLine(filesAnalyzed > 0 ? `\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D: .codescout/context.json (${mergedIssues.length} findings)` : "\u2139\uFE0F \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442/\u0438\u0441\u0442\u043E\u0440\u0438\u044F \u043D\u0435 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E 0 \u0444\u0430\u0439\u043B\u043E\u0432 (last-good \u0446\u0435\u043B)");
     output.appendLine(findingsDiff ? `\u0414\u0438\u043D\u0430\u043C\u0438\u043A\u0430 \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u043F\u0440\u043E\u0448\u043B\u043E\u0433\u043E \u0430\u0443\u0434\u0438\u0442\u0430: ${findingsDiff.summary}` : "\u2139\uFE0F \u041F\u0435\u0440\u0432\u044B\u0439 \u0430\u0443\u0434\u0438\u0442 \u2014 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E, \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0437\u0430\u0432\u0435\u0434\u0435\u043D\u0430");
     output.appendLine(`\u0410\u0443\u0434\u0438\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D: \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E ${filesAnalyzed}, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${audit.skippedLarge.length + audit.skippedUnreadable.length + result.skippedFiles + audit.ignored.length + audit.skippedLimit}`);
-    dumpFindings(output, carriedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${carriedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
+    dumpFindings(output, mergedIssues, `\u0418\u0442\u043E\u0433 \u0430\u0443\u0434\u0438\u0442\u0430: ${mergedIssues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${filesAnalyzed}`);
     return resumeView ? { kind: "interrupted", view: resumeView } : { kind: "done" };
   } catch (error) {
     if (progress && workspaceRoot) {
@@ -8264,6 +8365,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       output.appendLine("\u0421\u0432\u043E\u0451 \u0440\u0435\u0432\u044C\u044E \u043D\u0435 \u0437\u0430\u043F\u0443\u0449\u0435\u043D\u043E: \u0444\u0430\u0439\u043B\u043E\u0432 \u0434\u043B\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.");
       return;
     }
+    clearPanelResults(workspaceRoot);
     if (collection.skippedLimit > 0) output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E ${collection.skippedLimit} \u0444\u0430\u0439\u043B\u043E\u0432 \u043F\u043E \u043B\u0438\u043C\u0438\u0442\u0443 (codescout.maxFiles=${maxFiles})`);
     const projectPrompt = buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot);
     const prompt = withReportLanguage(withFocusInstructions(projectPrompt.prompt, focus), currentReportLanguage());
@@ -8358,6 +8460,18 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
     const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
     panel.update(visibleIssues, stats);
+    panel.setLastGoodCarried(visibleIssues.length === 0);
+    if (workspaceRoot) {
+      const persistedLastGood = readLastGoodAudit(workspaceRoot);
+      writePanelResults(workspaceRoot, {
+        findings: result.issues,
+        checkedFiles: result.filesAnalyzed,
+        total: result.filesAnalyzed,
+        model: persistedLastGood?.model ?? "unknown",
+        updatedAt: Date.now(),
+        durationMs: result.durationMs
+      });
+    }
     await vscode4.commands.executeCommand("codescout.panel.focus");
     dumpFindings(output, result.issues, `\u0418\u0442\u043E\u0433 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u043A\u043E\u043C\u043C\u0438\u0442\u0430: ${result.issues.length} \u043D\u0430\u0445\u043E\u0434\u043E\u043A, \u043F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.filesAnalyzed}`);
     if (result.issues.length === 0) output.appendLine("No issues found.");
@@ -8736,6 +8850,8 @@ function activate(context) {
               }
               clearAuditProgress(root);
               clearAuditResults(root);
+              clearLastGoodAudit(root);
+              clearPanelResults(root);
               const contextPath = (0, import_node_path5.join)(root, CONTEXT_FILE);
               if ((0, import_node_fs6.existsSync)(contextPath)) (0, import_node_fs6.unlinkSync)(contextPath);
               panel.clearProjectContext();
@@ -9301,8 +9417,11 @@ function activate(context) {
       if (root) {
         clearAuditProgress(root);
         clearAuditResults(root);
+        clearLastGoodAudit(root);
+        clearPanelResults(root);
       }
       panel.setAuditResume(void 0);
+      panel.setLastGoodSummary(void 0);
       return runScan(() => runFullAudit(context, output, panel));
     }),
     vscode4.commands.registerCommand("codescout.customReview", (focus, scope, globs) => {
@@ -9542,6 +9661,20 @@ function activate(context) {
     const savedBreakerLimit = skipBreakerLimitFromSetting(vscode4.workspace.getConfiguration("codescout").get("skipBreakerLimit"));
     const savedProgress = progressView(savedCheckpoint, savedBreakerLimit);
     const savedResults = readAuditResults(workspaceRoot);
+    const persistedLastGood = readLastGoodAudit(workspaceRoot);
+    let lastGoodSummary;
+    let lastGoodFindings = [];
+    if (persistedLastGood) {
+      lastGoodFindings = filterSuppressed(persistedLastGood.findings, context.workspaceState);
+      lastGoodSummary = {
+        issues: lastGoodFindings.length,
+        files: persistedLastGood.files,
+        seconds: persistedLastGood.seconds,
+        updatedAt: persistedLastGood.completedAt,
+        model: persistedLastGood.model,
+        carried: true
+      };
+    }
     if (savedResults) {
       const complete = savedResults.checkedFiles >= savedResults.total;
       const resume = savedProgress ?? (complete ? void 0 : { done: savedResults.checkedFiles, total: savedResults.total, model: savedResults.model, startedAt: savedResults.updatedAt, findings: savedResults.findings.length });
@@ -9550,8 +9683,18 @@ function activate(context) {
       }
       const elapsedMs = savedCheckpoint && savedResults.updatedAt > savedCheckpoint.startedAt ? savedResults.updatedAt - savedCheckpoint.startedAt : 0;
       const visibleFindings = filterSuppressed(savedResults.findings, context.workspaceState);
-      panel.restoreAuditResults(visibleFindings, buildStats(visibleFindings, savedResults.checkedFiles, elapsedMs), resume);
+      const savedDurationMs = savedResults.durationMs ?? elapsedMs;
+      if (!lastGoodSummary && complete && savedResults.findings.length > 0) {
+        lastGoodFindings = visibleFindings;
+        lastGoodSummary = { issues: visibleFindings.length, files: savedResults.checkedFiles, seconds: Math.round(savedDurationMs / 100) / 10, updatedAt: savedResults.updatedAt, model: savedResults.model, carried: true };
+        writeLastGoodAudit(workspaceRoot, { findings: savedResults.findings, files: savedResults.checkedFiles, seconds: Math.round(savedDurationMs / 100) / 10, provider: projectContext?.auditMeta?.provider ?? selection.provider, model: savedResults.model, completedAt: savedResults.updatedAt });
+      }
+      const currentFindings = savedCheckpoint ? collectCheckpointFindings(savedCheckpoint) : visibleFindings;
+      const currentVisibleFindings = filterSuppressed(currentFindings, context.workspaceState);
+      const currentFiles = savedCheckpoint ? savedCheckpoint.checked.length : savedResults.checkedFiles;
+      panel.restoreAuditResults(currentVisibleFindings, buildStats(currentVisibleFindings, currentFiles, savedCheckpoint ? 0 : savedDurationMs), resume, lastGoodSummary, lastGoodFindings);
     } else if (savedProgress) panel.setAuditResume(savedProgress);
+    if (!savedResults && lastGoodSummary) panel.setLastGoodSummary(lastGoodSummary, lastGoodFindings);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
     else if (stale) panel.setWelcomeBanner(true, "stale");

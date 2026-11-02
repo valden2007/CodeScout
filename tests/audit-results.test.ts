@@ -175,7 +175,7 @@ describe('v1.4b-15 персистентные частичные результ�
     expect(extension).toContain('await vscode.window.showWarningMessage(t(\'restart.confirm\', lang), { modal: true }, t(\'restart.confirmBtn\', lang))');
     expect(extension).toContain('clearAuditResults(root)');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
-    expect(panel).toContain('restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined)');
+    expect(panel).toContain('restoreAuditResults(issues: ReviewIssue[], stats: ReportStats, resume: AuditResumeView | undefined, lastGood?: LastGoodSummary, lastGoodFindings: ReviewIssue[] = issues)');
   });
 
   it('баннер EN не содержит кириллицы и печатает findings count', async () => {

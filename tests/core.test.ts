@@ -2237,7 +2237,7 @@ describe('E1.3g auto-resume and E1.3h selective review', () => {
     expect(startup).toContain('panel.setAuditResume(savedProgress)');
     // Батч 14: рестарт рисует то же самое, но без подавленных находок.
     expect(startup).toContain('filterSuppressed(savedResults.findings, context.workspaceState)');
-    expect(startup).toContain('panel.restoreAuditResults(visibleFindings');
+    expect(startup).toContain('panel.restoreAuditResults(currentVisibleFindings');
     expect(startup).not.toContain('runFullAudit');
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
     expect(panel).toContain('setAutoResume(view: AutoResumeIndicator | undefined)');
@@ -3605,12 +3605,12 @@ describe('v1.4b-12 onboarding + ETA', () => {
   });
 
   it('summary card: N findings · M files · time + Open report / Run again', () => {
-    const html = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n5', undefined, 'ru', { summary: { issues: 7, files: 12, seconds: 75 } });
+    const html = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n5', undefined, 'ru', { lastGood: { issues: 7, files: 12, seconds: 75, updatedAt: 1, model: 'm' } });
     expect(html).toContain('Аудит завершён');
     expect(html).toContain('Находок: 7 · Файлов: 12 · Время: 1:15');
     expect(html).toContain('data-command="openReport"');
     expect(html).toContain('data-command="runAgain"');
-    const en = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n6', undefined, 'en', { summary: { issues: 7, files: 12, seconds: 75 } });
+    const en = buildReportHtml([], stats, false, false, '', 'success', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n6', undefined, 'en', { lastGood: { issues: 7, files: 12, seconds: 75, updatedAt: 1, model: 'm' } });
     expect(en).toContain('7 findings · 12 files · 1:15 total');
     expect(en).toContain('Open report');
     expect(en).not.toMatch(CYRILLIC);
@@ -3619,8 +3619,11 @@ describe('v1.4b-12 onboarding + ETA', () => {
     expect(panel).toContain("message.command === 'runAgain'");
     const extension = readFileSync('extension/src/extension.ts', 'utf8');
     expect(extension).toContain("registerCommand('codescout.openAuditReport'");
-    expect(extension).toContain('panel.showAuditSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds: Math.round(result.durationMs / 100) / 10 })');
+    expect(extension).toContain('panel.setLastGoodSummary({ issues: visibleIssues.length, files: filesAnalyzed, seconds, updatedAt: completedAt, model: auditSelection.model');
     expect(extension).toContain('panel.setFirstAuditDone(true)');
+    const empty = buildReportHtml([], stats, false, true, '', 'retry', 'k', true, 'g', 'm', false, '', false, 'new', undefined, '', undefined, undefined, false, 0, 0, undefined, 'n7', undefined, 'ru');
+    expect(empty).not.toContain('<div class="summary-card">');
+    expect(empty).toContain('CodeScout готов к работе');
   });
 });
 
