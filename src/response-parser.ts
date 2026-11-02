@@ -30,25 +30,77 @@ function parseProof(raw: unknown): string {
   return raw.trim().slice(0, PROOF_MAX);
 }
 
-// ── Микро-батч 28.5: анти-entity пост-фильтр ────────────────────────────────
+// ── Микро-батч 28.5 + 28.11 (задача 1): анти-entity пост-фильтр v2 ────────────
 // Транспорт иногда экранирует угловые скобки, и модель начинает «находить»
 // HTML-entities (&lt; &gt; &amp; =&gt; и т.п.) вместо реальных дефектов.
-// Семейство A — корректные entity-токены `&имя;` / `&#123;` (точная семаколка
-// обязательна: «a=1&b=2» в тексте не матчится). Находка отбрасывается, если
-// description/proof (а) содержит хотя бы один такой токен, (б) жалуется
-// словами про entity/экранирование/замену и (в) ПОСЛЕ вычеркивания токенов в
-// тексте почти не остаётся содержательных слов («преимущественно» — см.
-// порог). Настоящая находка, где entities лишь мелькают в цитате, живёт.
+// В 28.5 резали по «преимущественно» — доле entity-токенов среди остальных
+// слов. Краткие формулировки сильных моделей («Использование HTML-сущностей
+// (&lt; и &gt;) вместо символов < и > может привести к ошибкам компиляции»)
+// при этом пропускались: содержательных слов много, доля не считается.
+// v2: критерий — ПАТТЕРН жалобы, а не доля. Жалоба — entity-артефакт, если
+// в description есть один из паттернов:
+//  1) «replace/замен… <entity-токен> … with/на … <символ>» («=&gt; вместо =>»
+//     ловится паттерном 2);
+//  2) «<entity-токен> … вместо|instead of … символ/знак/<|>|=>»;
+//  3) фраза «HTML-сущности / HTML entities» … «вместо|instead of» … символ.
+// Направление важно: «replace < with &lt;» (реальный совет экранировать) не
+// матчится — артефакт требует заменить entity НА символ. Доля — только
+// дополнительный сигнал (семейство A из 28.5): если после вычеркивания
+// токенов почти ничего не осталось (слов ≤ токенов+2) и есть жалобная
+// лексика. Настоящая находка, где entity реально лежат в строке/шаблоне и
+// вокруг них живой текст, живёт.
 export const ENTITY_TOKEN_RE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d{1,8});/g;
 const ENTITY_COMPLAIN_RE = /html[\s-]?entit|сущност|encod|decod|escap|экранир|замен|replace|convert|артефакт|\bentities?\b/i;
+// Паттерн 1: «replace/замен… <entity> … with/на … символ» (и пассив:
+// «&gt; should be replaced with >»).
+const ENTITY_REPLACE_TO_SYMBOL_RE = /(?:replace|замен|\buse\b|использ)[\s\S]{0,60}?&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,30}?(?:with|на|→)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>|&(?![a-zA-Z#]))|&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,50}?(?:replace|замен)[a-zA-Zа-яёА-ЯЁ\-]{0,8}[\s\S]{0,16}?(?:with|на)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+// Паттерн 2: «<entity> … вместо|instead of … (символ/знак) … </>/=>».
+const ENTITY_VS_SYMBOL_RE = /&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,60}?(?:instead of|вместо)[\s\S]{0,30}?(?:symbols?|символ|знак)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+// Паттерн 3: фраза про HTML-сущности/HTML entities … вместо … символ.
+const HTML_ENTITIES_VS_SYMBOL_RE = /html[\s-]?(?:entities?\b|entit|сущност)[\s\S]{0,90}?(?:instead of|вместо)[\s\S]{0,30}?(?:symbols?|символ|знак)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+// «Сущности вместо < / >» — «вместо» сразу за токеном, без существительного.
+const ENTITY_INSTEAD_BARE_RE = /(?:&lt;|&gt;|=&gt;|&amp;|&quot;|&apos;)[\s\S]{0,40}?(?:instead of|вместо)[\s\S]{0,6}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
 
 export function isEntityArtifactComplaint(description: string, proof = ''): boolean {
   const text = `${description}\n${proof}`;
   const tokens = text.match(ENTITY_TOKEN_RE);
   if (!tokens || tokens.length === 0) return false;
+  // Паттерны сильны сами по себе — доля не порога, не смотрим.
+  if (ENTITY_REPLACE_TO_SYMBOL_RE.test(description)) return true;
+  if (ENTITY_VS_SYMBOL_RE.test(description)) return true;
+  if (HTML_ENTITIES_VS_SYMBOL_RE.test(description)) return true;
+  if (ENTITY_INSTEAD_BARE_RE.test(description)) return true;
+  // Дополнительный сигнал (семейство A): жалобная лексика + почти ничего,
+  // кроме токенов, не осталось.
   if (!ENTITY_COMPLAIN_RE.test(text)) return false;
   const words = text.replace(ENTITY_TOKEN_RE, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}_\-]{2,}/gu);
-  return (words ? words.length : 0) <= tokens.length * 3 + 2;
+  return (words ? words.length : 0) <= tokens.length + 2;
+}
+
+// ── Микро-батч 28.11 (задача 2): security-театр (семья B) ──────────────────────
+// Модели любят страшилки без угрозы: «импортируемый тип X может содержать
+// уязвимости», «провайдеры определены в коде — уязвимость», «логирование
+// ошибок может раскрыть» (не сказано ЧТО). Объект — импорт/тип/лог/список-
+// констант, ни CWE-класса, ни вектора, ни строки-доказательства.
+// Реальные security (зашитый ключ, execFileSync с пользовательским вводом,
+// prompt-injection через имя файла) несут конкретику в description/proof и
+// остаются живы: правило срабатывает ТОЛЬКО когда есть смутная формулировка
+// («может … уязвимость» / «X — уязвимость») и нет конкретики вообще.
+const SEC_THREAT_RE = /уязвим|vulnerab|эксплойт|exploit|раскрыт|раскрыва|expos|утечк|leak|компромет|compromis|атак|attack|threat|breach/i;
+const SEC_ABSTRACT_OBJECT_RE = /(?:импорт|импортир|import|тип\b|интерфейс|interface|класс\b|лог\b|логирова|logging|\blog\b|констант|список|\blist\b|набор\b|перечислен|enumeration|\benum\b|провайдер|provider|определ\w*\s+в\s+(?:исходном\s+)?коде|defined\s+in\s+(?:the\s+)?code|hardcoded\s+(?:list|provider|enum))/i;
+// Смутная модальная связка («может … уязвимости») или копулятивная
+// декларация («X — уязвимость»). Без неё жалоба обычно техническая.
+const SEC_VAGUE_CLAIM_RE = /(?:может|могут|возможен|вероятн\w*|потенциальн\w*|may|could|might|likely|potentially)[^\n]{0,40}?(?:уязвим|vulnerab|раскрыт|раскрыва|expos|утечк|leak|компромет|compromis|атак|attack|threat)|—\s*(?:это\s+)?(?:a\s+|an\s+)?(?:уязвим|vulnerab|threat|атак)|-\s*(?:a\s+)?(?:vulnerab|threat)/i;
+const SEC_CONCRETE_RE = /cwe[- ]?\d+|injection|инъекц|\bxss\b|\bcsrf\b|\bssrf\b|\bsqli?\b|traversal|deserial|\beval\b|\bexec\w*\b|\bspawn\b|child_process|process\.\w+|prompt[- ]?injection|hardcod|зашит|в\s+открытом\s+виде|plaintext|unencrypted|без\s+шифрования|innerHTML|document\.write|user[- ]input|user\s+(?:data|info|input)|данные\s+пользователя|пользовательск\w+\s+(?:ввод|данные|файл|имя|путь)|личн\w+\s+данн|\bpii\b|secret|api[ _-]?key|ключ|парол|password|credential|токен|\btoken\b|access[ _-]?token|privilege|эскалаци|переполн|overflow|race[ _-]?condition|exfiltrat|memory[ _-]?leak|resource[ _-]?leak|prototype\s+pollution|pollution|отписк|unsubscrib|не\s+вызыв|not\s+called|cleanup|dispos|\bpush\(|раст[её]т|grow\w*|утечк\w*\s+(?:памяти|memory|данных|ключей|секретов|паролей|токенов|пароль|data|secrets?|keys?)\w*/i;
+
+export function isSecurityTheaterComplaint(category: string, description: string, proof = ''): boolean {
+  if (category !== 'security' && category !== 'bug') return false;
+  if (!SEC_THREAT_RE.test(description)) return false;
+  if (!SEC_ABSTRACT_OBJECT_RE.test(description)) return false;
+  if (!SEC_VAGUE_CLAIM_RE.test(description)) return false;
+  // Конкретика (CWE/вектор/секрет/доказательная строка) в описании ИЛИ proof —
+  // это уже реальная находка, театр тут не уместен.
+  return !SEC_CONCRETE_RE.test(`${description}\n${proof}`);
 }
 
 function findBalancedJson(text: string): string | undefined {
@@ -146,6 +198,7 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
   const object = parsed as { issues?: unknown; summary?: unknown };
   const rawIssues = Array.isArray(object.issues) ? object.issues : [];
   let droppedEntityArtifacts = 0;
+  let droppedSecurityTheater = 0;
   const issues: ReviewIssue[] = rawIssues.flatMap((item): ReviewIssue[] => {
     if (!item || typeof item !== 'object') return [];
     const value = item as Record<string, unknown>;
@@ -159,13 +212,19 @@ export function parseReviewResponse(raw: string, filename: string): ReviewResult
     const suggestion = typeof value.suggestion === 'string' ? value.suggestion.trim() : undefined;
     const severity: ReviewSeverity = rawSeverity === 'critical' && confidence < CONFIDENCE_CRITICAL_MIN ? 'medium' : rawSeverity;
     const proof = parseProof(value.proof);
-    // Микро-батч 28.5: жалоба, состоящая преимущественно из HTML-entities, —
-    // артефакт передачи, не находка; режем здесь и считаем для Output.
+    // Микро-батч 28.5/28.11: жалоба по entity-паттерну — артефакт передачи,
+    // не находка; режем здесь и считаем для Output.
     if (isEntityArtifactComplaint(description, proof)) {
       droppedEntityArtifacts += 1;
       return [];
     }
+    // Микро-батч 28.11 (задача 2): security-театр — страшилка про импорт/тип/
+    // лог/список без CWE, вектора и доказательства. Тоже режем со счётчиком.
+    if (isSecurityTheaterComplaint(category, description, proof)) {
+      droppedSecurityTheater += 1;
+      return [];
+    }
     return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
-  return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1, droppedEntityArtifacts };
+  return { issues, summary: typeof object.summary === 'string' ? object.summary.trim() : '', filesAnalyzed: 1, droppedEntityArtifacts, droppedSecurityTheater };
 }

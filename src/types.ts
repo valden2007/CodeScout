@@ -55,6 +55,10 @@ export interface ReviewResult {
   // Микро-батч 28.5: сколько находок-жалоб на HTML-entities отбросил парсер
   // (пост-фильтр isEntityArtifactComplaint); печатается в Output.
   droppedEntityArtifacts?: number;
+  // Микро-батч 28.11: сколько security-театра (страшилок про импорт/тип/лог
+  // без CWE, вектора и доказательства) отбросил пост-фильтр
+  // isSecurityTheaterComplaint; печатается в Output.
+  droppedSecurityTheater?: number;
 }
 
 export interface LLMProvider {

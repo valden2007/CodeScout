@@ -944,5 +944,22 @@ pre-design now.
      (err.hint.context-wall, Output «🧱 context-wall: … деление N/3»,
      onContextWallSplit в AdaptiveChunkOptions). Billing-регресс 28.9 зелёный.
      Тесты: tests/batch28-10-context-wall.test.ts (7). Tests: 745.
+ 40. Микро-батч 28.11 (задачи 1-2): два precision-фильтра парсера.
+     a) entity-фильтр v2: isEntityArtifactComplaint ловит ПАТТЕРН жалобы, а не
+     долю токенов — краткие формулировки сильных моделей («Использование
+     HTML-сущностей (&lt; и &gt;) вместо символов < и >…»), «=&gt; вместо =>»,
+     пассив («&gt; should be replaced with >»), «use &lt; instead of <».
+     Направление важно: «< → &lt;» (реальное экранирование) не матчится.
+     Доля — только дополнительный сигнал (слов ≤ токенов+2 + жалобная лексика).
+     Настоящая находка, где entity реально лежат в строке/шаблоне, живёт.
+     b) security-театр (семья B): isSecurityTheaterComplaint режет security/bug
+     находки про импорт/тип/лог/список-констант со смутной формулировкой
+     («может содержать уязвимости», «X — уязвимость») БЕЗ CWE-класса, вектора и
+     конкретики в description/proof. Реальные security (зашитый ключ,
+     execFileSync с пользовательским вводом, prompt-injection через имя файла,
+     XSS/innerHTML, memory leak с механикой) живут. Счётчик
+     droppedSecurityTheater → ScanResult → Output «🧹 отброшено security-театра: N»
+     (logSecurityTheaterDrops в аудит/своё/дифф — как entity-счётчик 28.5).
+     Тесты: tests/batch28-11-filters.test.ts (9) + регресс 28.5/false-positive.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

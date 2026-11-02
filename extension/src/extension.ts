@@ -63,6 +63,8 @@ interface ScanResult {
   durationMs: number;
   // Микро-батч 28.5: сколько находок-«entity-артефактов» отбросил парсер.
   droppedEntityArtifacts?: number;
+  // Микро-батч 28.11: сколько security-театра отбросил парсер.
+  droppedSecurityTheater?: number;
 }
 
 interface ProviderSelection {
@@ -607,6 +609,14 @@ function logEntityDrops(output: vscode.OutputChannel, result: ScanResult): void 
   if (drops > 0) output.appendLine(`🧹 отброшено entity-артефактов: ${drops}`);
 }
 
+// Микро-батч 28.11 (задача 2): вторая precision-строка Output — security-театр
+// (страшилки «тип может содержать уязвимости» без CWE/вектора/доказательства),
+// отброшенные пост-фильтром isSecurityTheaterComplaint.
+function logSecurityTheaterDrops(output: vscode.OutputChannel, result: ScanResult): void {
+  const drops = result.droppedSecurityTheater ?? 0;
+  if (drops > 0) output.appendLine(`🧹 отброшено security-театра: ${drops}`);
+}
+
 // Батч 15: дедлайн инференса (codescout.requestTimeoutSeconds, 10-600,
 // дефолт 60с) применяется к модульному значению в llm-client — новый
 // параметр reviewFiles не нужен, зависшие чанки падают в категорию timeout.
@@ -675,6 +685,8 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
   let skippedFiles = 0;
   // Микро-батч 28.5: счётчик entity-артефактов, отброшенных парсером находок.
   let entityDrops = 0;
+  // Микро-батч 28.11: счётчик security-театра, отброшенного парсером.
+  let theaterDrops = 0;
   // Очередь вместо простого прохода: карантин перекладывает тяжёлый файл
   // в конец, чтобы лёгкие не ждали его 30 пауз.
   const queue = files.map((_file, index) => index);
@@ -724,6 +736,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
         const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
         const parsed = parseReviewResponse(raw, file.filename);
         entityDrops += parsed.droppedEntityArtifacts ?? 0;
+        theaterDrops += parsed.droppedSecurityTheater ?? 0;
         return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -918,7 +931,7 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
       onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops, droppedSecurityTheater: theaterDrops };
 }
 
 async function reviewWorkspace(context: vscode.ExtensionContext, lastCommit: boolean, onRetry: (event: RetryEvent, model: string) => void, onProgress?: (index: number, total: number, filename: string, elapsedMs: number) => void, onThinking?: (elapsedMs: number) => void, signal?: AbortSignal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown?: (seconds: number) => void, onFileSkipped?: (filename: string, error: unknown) => void): Promise<ScanResult> {
@@ -1269,6 +1282,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       }
     }, (filename) => importsContextLine(workspaceRoot, filename), auditPasses, (filename, pass, totalPasses) => { panel.setAuditPass(pass, totalPasses); output.appendLine(`🔄 круг ${pass}/${totalPasses}: файл ${filename}`); }, auditRateLimitPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { pauseByFile.set(filename, (pauseByFile.get(filename) ?? 0) + waitSeconds); recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), docsForFile, adaptive, () => skipBreakerReset(breakerState), auditQuota);
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     // Батч 25: находки с метками нахождателей + zone-мердж (±3) — догон
     // другим провайдером не дублирует то, что уже лежит в чекпоинте.
     const mergedIssues = collectCheckpointFindings(state);
@@ -1457,6 +1471,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
     const result = await reviewFiles(context, collection.files, workspaceRoot, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.custom', lang), elapsedMs); output.appendLine(`🎯 Своё ревью: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, prompt, false, (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))), undefined, (filename) => importsContextLine(workspaceRoot, filename), 1, undefined, customPauses, (filename, waitSeconds, pauseNumber, maxPauses) => { recordRateLimitHit(); const hits = rateLimitHitsLast5min(); output.appendLine(`⏸ rate-limit: пауза ${waitSeconds}с, ретри файл ${filename} (пауза ${pauseNumber}/${maxPauses}) · 429 за 5 мин: ${hits}${hits > 10 ? ' ⚠️ агрегатор банит надолго — нужен часовой отдых' : ''}`); }, undefined, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), undefined, customAdaptive);
     // Батч 14: скрытые находки не попадают в панель (пост-обработка).
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, '', false, undefined, focus);
     await vscode.commands.executeCommand('codescout.panel.focus');
@@ -1523,6 +1538,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
       output.appendLine(`⚠️ Пропущено файлов: ${result.skippedFiles} (ошибки или rate-limit) — см. строки «Пропущен файл» выше.`);
     }
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     // Батч 14: пост-обработка перед передачей в вебвью — скрытые (FP) находки
     // не попадают в панель; Output-лог остаётся полным (сырые данные).
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
