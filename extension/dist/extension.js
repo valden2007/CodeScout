@@ -45,6 +45,7 @@ __export(extension_exports, {
   rateLimitHitsLast5min: () => rateLimitHitsLast5min,
   readBaseUrlInfo: () => readBaseUrlInfo,
   recordRateLimitHit: () => recordRateLimitHit,
+  regionDiagnosisLines: () => regionDiagnosisLines,
   resetRateLimitHits: () => resetRateLimitHits,
   resolveOnboardingSelection: () => resolveOnboardingSelection,
   reviewFiles: () => reviewFiles
@@ -629,7 +630,7 @@ var OpenAICompatibleProvider = class {
         }
         if (!retryableError) {
           if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
-            await this.failover.onAuthError(error.status);
+            await this.failover.onAuthError(error.status, `${error.message} ${error.details}`);
           }
           if (this.failover && error instanceof ProviderHttpError && error.status === 402) {
             const decision = await this.failover.onRateLimit(void 0, "billing", error.details || error.message);
@@ -698,6 +699,7 @@ var ru_default = {
   "brand.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
   "brand.settingsTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 CodeScout",
   "brand.toggleLang": "\u0421\u043C\u0435\u043D\u0438\u0442\u044C \u044F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
+  "brand.openFullReportTip": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043F\u043E\u043B\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442",
   "brand.langRu": "RU",
   "key.ready": "\u0437\u0430\u0449\u0438\u0449\u0451\u043D\u043D\u043E",
   "key.missing": "\u041A\u043B\u044E\u0447 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D",
@@ -1183,6 +1185,9 @@ var ru_default = {
   "err.hint.region": "\u042D\u0442\u043E \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u043E\u0441\u0442\u0438/\u0440\u0435\u0433\u0438\u043E\u043D\u0430 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430, \u043D\u0435 \u043A\u0432\u043E\u0442\u0430 \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C/\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0438\u043B\u0438 \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 Global \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430.",
   "keychain.badgeBilling": "\u0442\u0430\u0440\u0438\u0444",
   "keychain.bannerBilling": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442",
+  "keychain.bannerRegion": "\u0413\u0435\u043E-\u0431\u043B\u043E\u043A: \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u043C\u043E\u0434\u0435\u043B\u0438",
+  "keychain.regionHint": "\u0412\u0435\u043D\u0434\u043E\u0440 \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435 \u043E\u0431\u0441\u043B\u0443\u0436\u0438\u0432\u0430\u0435\u0442 \u0432\u0430\u0448 \u0440\u0435\u0433\u0438\u043E\u043D; \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0432\u0435\u043D\u0434\u043E\u0440\u0430.",
+  "keychain.regionLine": "\u0433\u0435\u043E-\u0431\u043B\u043E\u043A: {profile}/{model} \u2014 \u0432\u0435\u043D\u0434\u043E\u0440 \u043C\u043E\u0434\u0435\u043B\u0438 \u043D\u0435 \u043E\u0431\u0441\u043B\u0443\u0436\u0438\u0432\u0430\u0435\u0442 \u0432\u0430\u0448 \u0440\u0435\u0433\u0438\u043E\u043D; \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0432\u0435\u043D\u0434\u043E\u0440\u0430",
   "keychain.billingHint": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0438\u043B\u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441. \u0421\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442.",
   "keychain.diagBilling": "{label} \u2014 \u0441\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430",
   "keychain.diagAsleep": "{label} \u2014 \u0441\u043F\u0438\u0442 {s}\u0441",
@@ -1197,6 +1202,7 @@ var en_default = {
   "brand.settings": "Settings",
   "brand.settingsTip": "Open CodeScout settings",
   "brand.toggleLang": "Switch interface language",
+  "brand.openFullReportTip": "Open full report",
   "brand.langRu": "EN",
   "key.ready": "protected",
   "key.missing": "Key not configured",
@@ -1682,6 +1688,9 @@ var en_default = {
   "err.hint.region": "This is the provider's privacy/region setting, not a quota \u2014 switch the model/provider or enable Global regions in the account console.",
   "keychain.badgeBilling": "tier",
   "keychain.bannerBilling": "Billing wall: no live keys left",
+  "keychain.bannerRegion": "Geo block: no available model profiles",
+  "keychain.regionHint": "The model vendor does not serve your region; choose a model from another vendor.",
+  "keychain.regionLine": "geo block: {profile}/{model} \u2014 the model vendor does not serve your region; choose a model from another vendor",
   "keychain.billingHint": "Model/tier not covered \u2014 change the profile model or check the balance. Sleeping will not help.",
   "keychain.diagBilling": "{label} \u2014 billing wall",
   "keychain.diagAsleep": "{label} \u2014 asleep {s}s",
@@ -1735,7 +1744,7 @@ function contextWallHit(status, blob) {
   if (status === 400 || status === void 0) return CONTEXT_WALL_TEXT_RE.test(blob);
   return false;
 }
-var REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
+var REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography|country)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
 function categorizeError(error) {
   if (error instanceof RateLimitError) {
     if (BILLING_TEXT_RE.test(messageOf(error))) return "billing";
@@ -2729,8 +2738,10 @@ body { margin: 0; padding: var(--cs-space-4) 14px 24px; color: var(--cs-fg); bac
 .brand { display: flex; align-items: center; gap: var(--cs-space-2); font-size: var(--cs-font-4); font-weight: 700; letter-spacing: -0.2px; }
 .brand-settings { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 400; text-align: center; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
 .brand-lang { flex: 0 0 auto; width: auto; margin-left: auto; padding: 2px var(--cs-space-2); font-size: var(--cs-font-1); font-weight: 400; text-align: center; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
+.brand-report { flex: 0 0 auto; width: auto; margin-left: auto; padding: 3px 6px; color: var(--cs-btn2-fg); background: var(--cs-btn2-bg); }
 .brand-lang:hover { background: var(--cs-btn2-hover); }
-.brand-settings + .brand-lang, .brand-lang + .brand-settings { margin-left: var(--cs-space-2); }
+.brand-report:hover { background: var(--cs-btn2-hover); }
+.brand-report + .brand-lang, .brand-report + .brand-settings, .brand-lang + .brand-settings, .brand-lang + .brand-report, .brand-settings + .brand-lang, .brand-settings + .brand-report { margin-left: var(--cs-space-2); }
 .brand-settings:hover { background: var(--cs-btn2-hover); }
 .brand-mark { color: var(--cs-accent); display: inline-flex; }
 .cs-btn { display: inline-flex; align-items: center; gap: var(--cs-space-2); }
@@ -2869,7 +2880,7 @@ pre { margin: 9px 0; padding: var(--cs-space-2); overflow-x: auto; border: 1px s
 </style>
 </head>`;
 }
-function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo, suppressed, failoverSleep, billingWall) {
+function buildReportHtml(issues, stats, isScanning = false, emptyState = false, statusMessage = "", statusKind = "retry", keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", testMode = false, progressMessage = "", welcomeBanner = false, welcomeReason = "new", findingsDiff, customFocus = "", auditResume, autoResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, diagnosticDetails = "", errorInfo, suppressed, failoverSleep, billingWall, regionWall) {
   const T = (key, vars) => t(key, lang, vars);
   const ui = normalizeUiPrefs(prefs);
   const sorted = [...issues].sort((a, b) => {
@@ -2911,7 +2922,7 @@ ${headHtml(assets, nonce)}
 <body ${uiBodyAttrs(ui)}>
   <header class="header">
     ${welcomeBanner ? `<div class="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title" tabindex="0" data-command="dismissWelcome"><div class="welcome-card"><div class="welcome-banner"><strong id="welcome-title">${T(welcomeReason === "stale" ? "banner.welcomeStale" : "banner.welcomeNew")}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="startFullAudit">${icon(welcomeReason === "stale" ? "sync" : "play")}<span>${T(welcomeReason === "stale" ? "banner.update" : "banner.startAudit")}</span></button><button type="button" data-command="dismissWelcome">${T("banner.later")}</button></div></div></div></div>` : ""}
-    <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} <button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
+    <div class="brand"><span class="brand-mark">${icon("search")}</span> ${T("brand.name")} ${issues.length > 0 ? `<button class="brand-report cs-btn" type="button" data-command="openFullReport" title="${T("brand.openFullReportTip")}" aria-label="${T("brand.openFullReportTip")}">${icon("notebook")}</button>` : ""}<button class="brand-lang cs-btn" type="button" data-command="toggleLanguage" title="${T("brand.toggleLang")}">${icon("globe")}<span>${lang === "en" ? "EN" : "RU"}</span></button><button class="brand-settings cs-btn" type="button" data-command="openSettingsPage" title="${T("brand.settingsTip")}">${icon("settings-gear")}<span>${T("brand.settings")}</span></button></div>
     <div class="key-status ${keyConfigured ? "ready" : "missing"}">${keyConfigured ? `${icon("pass")} ${escapeHtml(provider)} \xB7 ${escapeHtml(model.trim() || T("center.nowModelMissing"))} \xB7 ${escapeHtml(keyMask)} (${T("key.ready")})` : `${icon("error")} ${T("key.missing")}`} <button type="button" class="cs-btn" data-command="openSettingsPage" data-anchor="sec-key">${icon("key")}<span>${T("key.andModel")}</span></button></div>
     ${testMode ? `<span class="test-badge">${icon("beaker")} ${T("testBadge")}</span>` : ""}
     <div id="statusSlot">${showStatus ? `<div class="status-banner ${statusKind}">${statusKind === "error" && errorInfo?.title ? `<strong>${escapeHtml(errorInfo.title)}</strong> ` : ""}${escapeHtml(showStatus)}${statusKind === "retry" ? '<span class="animated-dots">...</span>' : ""}${statusKind === "error" && errorInfo ? `<div class="err-card-extra">${errorInfo.hint ? `<div class="err-hint">${icon("lightbulb")} <span>${escapeHtml(errorInfo.hint)}</span></div>` : ""}<div class="err-actions"><button type="button" class="cs-btn" data-command="retryScan">${icon("sync")}<span>${T("err.retry")}</span></button><button type="button" class="cs-btn secondary" data-command="openSettingsPage">${icon("settings-gear")}<span>${T("err.openSettings")}</span></button></div></div>` : ""}${statusKind === "error" && /404:|HTTP[^\n]*404|не найдены/i.test(showStatus) ? `<button type="button" class="cs-btn" data-command="chooseModel">${icon("sync")}<span>${T("status.model404")}</span></button>` : ""}${diagnosticDetails ? `<details class="diag-block"><summary>${T("diag.title")}</summary><pre>${escapeHtml(diagnosticDetails)}</pre></details>` : ""}</div>` : ""}</div>
@@ -2919,6 +2930,7 @@ ${headHtml(assets, nonce)}
     ${auditResume?.scopeUpdate ? `<div class="audit-resume scope-update"><strong>${icon("warning")} ${T("resume.scopeUpdate", { n: auditResume.scopeUpdate.files, m: auditResume.scopeUpdate.findings })}</strong></div>` : ""}
     ${!isScanning && failoverSleep ? `<div class="audit-resume failover"><strong>${icon("clock")} ${T("keychain.bannerAllSleep", { label: escapeHtml(failoverSleep.wakeLabel), s: failoverSleep.wakeSeconds })}</strong><div class="welcome-actions"><button type="button" class="cs-btn" data-command="failoverWaitResume">${icon("play")}<span>${T("keychain.bannerWaitBtn")}</span></button><button type="button" class="cs-btn secondary" data-command="failoverDismiss">${icon("debug-stop")}<span>${T("keychain.bannerStopBtn")}</span></button></div></div>` : ""}
     ${!isScanning && billingWall ? `<div class="audit-resume billing"><strong>${icon("credit-card")} ${T("keychain.bannerBilling")}</strong><ul class="billing-diag">${billingWall.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>${billingWall.tail ? `<div class="resume-breaker">${escapeHtml(billingWall.tail)}</div>` : ""}<div class="err-hint">${icon("lightbulb")} <span>${T("keychain.billingHint")}</span></div></div>` : ""}
+    ${!isScanning && regionWall ? `<div class="audit-resume billing region-wall"><strong>${icon("globe")} ${T("keychain.bannerRegion")}</strong><ul class="billing-diag">${regionWall.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul><div class="err-hint">${icon("lightbulb")} <span>${T("keychain.regionHint")}</span></div></div>` : ""}
     <div class="actions">
       <button type="button" class="cs-btn" data-command="scanLastCommit" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("git-commit")}<span>${T("actions.scanLastCommit")}</span></button>
       <button type="button" class="cs-btn" data-command="scanUncommitted" ${isScanning ? "disabled" : ""}>${isScanning ? `<span class="spinner">${icon("loading")}</span>` : icon("diff")}<span>${T("actions.scanUncommitted")}</span></button>
@@ -3185,8 +3197,8 @@ ${headHtml(assets, nonce)}
 </body>
 </html>`;
 }
-function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, suppressed, failoverSleep, billingWall) {
-  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, "", void 0, suppressed, failoverSleep, billingWall);
+function buildEmptyReportHtml(keyMask = "", keyConfigured = false, provider = "gemini", model = "gemini-1.5-flash", welcomeBanner = false, welcomeReason = "new", auditResume, autoResumeEnabled2 = false, autoResumeMaxAttempts = 0, autoResumeMaxMinutes = 0, assets, nonce = "", prefs, lang = "ru", ux = {}, suppressed, failoverSleep, billingWall, regionWall) {
+  return buildReportHtml([], { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 }, false, true, "", "retry", keyMask, keyConfigured, provider, model, false, "", welcomeBanner, welcomeReason, void 0, "", auditResume, void 0, autoResumeEnabled2, autoResumeMaxAttempts, autoResumeMaxMinutes, assets, nonce, prefs, lang, ux, "", void 0, suppressed, failoverSleep, billingWall, regionWall);
 }
 
 // src/reportIssue.ts
@@ -3316,6 +3328,7 @@ var CodeScoutPanel = class {
   failoverSleep;
   // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
   billingWall;
+  regionWall;
   // ЗАДАЧА 3 (28.11): вкладка полного отчёта в области редактора (reportHtml.ts).
   reportTab;
   workspaceState;
@@ -3450,6 +3463,8 @@ var CodeScoutPanel = class {
       void vscode.commands.executeCommand("codescout.dismissOnboarding");
     } else if (message.command === "openReport") {
       void vscode.commands.executeCommand("codescout.openAuditReport");
+    } else if (message.command === "openFullReport") {
+      void vscode.commands.executeCommand("codescout.openFullReport");
     } else if (message.command === "runAgain") {
       void vscode.commands.executeCommand("codescout.scanFull");
     } else if (message.command === "reportIssue") {
@@ -3598,6 +3613,10 @@ var CodeScoutPanel = class {
     this.billingWall = view;
     this.render();
   }
+  setRegionWall(view) {
+    this.regionWall = view;
+    this.render();
+  }
   clearProjectContext() {
     this.issues = [];
     this.stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
@@ -3614,6 +3633,7 @@ var CodeScoutPanel = class {
     this.auditDurations = [];
     this.failoverSleep = void 0;
     this.billingWall = void 0;
+    this.regionWall = void 0;
     this.firstAuditDone = false;
     this.welcomeBanner = false;
     this.errorInfo = void 0;
@@ -3663,6 +3683,7 @@ var CodeScoutPanel = class {
       this.autoResumeView = void 0;
       this.failoverSleep = void 0;
       this.billingWall = void 0;
+      this.regionWall = void 0;
       this.progressInfo = void 0;
       this.auditSummary = void 0;
       this.errorInfo = void 0;
@@ -3783,7 +3804,7 @@ var CodeScoutPanel = class {
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    return this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+    return this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall);
   }
   // ЗАДАЧА 3 (28.11): «Открыть отчёт» из карточки «Аудит завершён». ROOT CAUSE
   // «молчания» кнопки: обработчик codescout.openAuditReport делал только
@@ -5541,6 +5562,7 @@ function resetRuntime() {
 var scanRuntime = { cycle: 0, allowWaitOnce: false, currentId: "", currentKeyId: "" };
 function beginScan(profileId, keyId = DEFAULT_KEY_ID) {
   scanRuntime = { cycle: 0, allowWaitOnce: scanRuntime.allowWaitOnce, currentId: profileId, currentKeyId: keyId };
+  for (const state of runtime.values()) state.regionBlocked = false;
 }
 function scanCurrent() {
   return { profileId: scanRuntime.currentId, keyId: scanRuntime.currentKeyId };
@@ -5575,6 +5597,14 @@ function markKeyBroken(profileId, keyId) {
 function markKeyBillingBlocked(profileId, keyId) {
   stateOf(keyRuntimeId(profileId, keyId)).billingBlocked = true;
 }
+function markProfileRegionBlocked(profile) {
+  for (const key of profile.keys) {
+    if (key.enabled) stateOf(keyRuntimeId(profile.id, key.id)).regionBlocked = true;
+  }
+}
+function isKeyRegionBlocked(profileId, keyId) {
+  return runtime.get(keyRuntimeId(profileId, keyId))?.regionBlocked === true;
+}
 function isKeyBillingBlocked(profileId, keyId) {
   return runtime.get(keyRuntimeId(profileId, keyId))?.billingBlocked === true;
 }
@@ -5599,13 +5629,13 @@ function runtimeSnapshot(profiles = readProfiles(), now = Date.now()) {
       const state = runtime.get(keyRuntimeId(profile.id, key.id));
       if (!state) continue;
       const sleepSeconds = Math.max(0, Math.ceil((state.sleepUntil - now) / 1e3));
-      if (state.broken || state.billingBlocked || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds, billing: state.billingBlocked };
+      if (state.broken || state.billingBlocked || state.regionBlocked || sleepSeconds > 0) snapshot[keyRuntimeId(profile.id, key.id)] = { broken: state.broken, sleepSeconds, billing: state.billingBlocked, region: state.regionBlocked };
     }
   }
   return snapshot;
 }
 function hasAwakeKey(profiles = readProfiles(), now = Date.now()) {
-  return profiles.some((profile) => profile.keys.some((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now)));
+  return profiles.some((profile) => profile.keys.some((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyRegionBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now)));
 }
 function diagnoseKeys(profiles = readProfiles(), now = Date.now()) {
   const out = [];
@@ -5615,6 +5645,7 @@ function diagnoseKeys(profiles = readProfiles(), now = Date.now()) {
       const sleepSeconds = Math.max(0, Math.ceil(((state?.sleepUntil ?? 0) - now) / 1e3));
       let diagnosis = "awake";
       if (!key.enabled) diagnosis = "disabled";
+      else if (state?.regionBlocked) diagnosis = "region";
       else if (state?.billingBlocked) diagnosis = "billing";
       else if (state?.broken) diagnosis = "broken";
       else if (sleepSeconds > 0) diagnosis = "asleep";
@@ -5627,25 +5658,26 @@ function keyFullName(profile, key) {
   return `${profile.label}/${key.label}`;
 }
 function awakeKeys(profile, currentKeyId, now) {
-  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
+  return profile.keys.filter((key) => key.enabled && key.id !== currentKeyId && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyRegionBlocked(profile.id, key.id) && !isKeyAsleep(profile.id, key.id, now));
 }
 function decideFailover(ctx, options, waitSeconds, now, trigger = "rate_limit") {
   const billing = trigger === "billing";
-  const sleepSeconds = ctx.current.profileId ? billing ? (markKeyBillingBlocked(ctx.current.profileId, ctx.current.keyId), 0) : markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
   const chain = ctx.profiles;
   const currentIndex = chain.findIndex((profile) => profile.id === ctx.current.profileId);
   const currentProfile = currentIndex >= 0 ? chain[currentIndex] : void 0;
+  const region = trigger === "region";
+  const sleepSeconds = region ? currentProfile ? (markProfileRegionBlocked(currentProfile), 0) : 0 : ctx.current.profileId ? billing ? (markKeyBillingBlocked(ctx.current.profileId, ctx.current.keyId), 0) : markKeyRateLimited(ctx.current.profileId, ctx.current.keyId, now, waitSeconds) : 0;
   const currentKey = currentProfile?.keys.find((key) => key.id === ctx.current.keyId);
   const fromLabel = currentProfile ? keyFullName(currentProfile, currentKey ?? { id: ctx.current.keyId, label: ctx.current.keyId, secretId: "", enabled: true }) : ctx.current.profileId || "";
   let cycle = ctx.cycle;
-  if (currentProfile) {
+  if (currentProfile && !region) {
     const enabled = currentProfile.keys.filter((key) => key.enabled);
     const keyIndex = enabled.findIndex((key) => key.id === ctx.current.keyId);
     for (let step = 1; step < enabled.length; step += 1) {
       const startIndex = keyIndex >= 0 ? keyIndex : enabled.length - 1;
       const candidate = enabled[(startIndex + step) % enabled.length];
       if (!candidate || candidate.id === ctx.current.keyId) continue;
-      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
+      if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyRegionBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
       return {
         decision: { kind: "switch", profile: currentProfile, key: candidate, fromLabel, sleepSeconds, cycle, profileChanged: false },
         cycle,
@@ -5668,6 +5700,10 @@ function decideFailover(ctx, options, waitSeconds, now, trigger = "rate_limit") 
       allowWaitOnce: ctx.allowWaitOnce
     };
   }
+  const regionBlockedCount = chain.reduce((total, profile) => total + profile.keys.filter((key) => key.enabled && isKeyRegionBlocked(profile.id, key.id)).length, 0);
+  if (regionBlockedCount > 0) {
+    return { decision: { kind: "stop", reason: "regionWall", waitMs: 0, wakeLabel: "" }, cycle, allowWaitOnce: ctx.allowWaitOnce };
+  }
   const blockedCount = chain.reduce((total, profile) => total + profile.keys.filter((key) => key.enabled && (isKeyBillingBlocked(profile.id, key.id) || isKeyBroken(profile.id, key.id))).length, 0);
   if (billing || blockedCount > 0) {
     const sleepers2 = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
@@ -5676,7 +5712,7 @@ function decideFailover(ctx, options, waitSeconds, now, trigger = "rate_limit") 
     }
     return { decision: { kind: "stop", reason: "billingWall", waitMs: sleepWaitMs(chain, now), wakeLabel: wakeLabelFor(chain, now) }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
-  const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
+  const sleepers = chain.flatMap((profile) => profile.keys.filter((key) => key.enabled && !isKeyBroken(profile.id, key.id) && !isKeyBillingBlocked(profile.id, key.id) && !isKeyRegionBlocked(profile.id, key.id) && isKeyAsleep(profile.id, key.id, now)).map((key) => ({ profile, key })));
   if (sleepers.length === 0) {
     return { decision: { kind: "stop", reason: "noneLeft", waitMs: 0, wakeLabel: "" }, cycle, allowWaitOnce: ctx.allowWaitOnce };
   }
@@ -7320,7 +7356,6 @@ async function buildFailoverHooks(context, selection) {
   const profiles = readProfiles();
   if (profiles.length === 0) return void 0;
   if (!hasEnabledKey(profiles)) return void 0;
-  if (!failoverEnabled()) return void 0;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
   const switchTo = async (profile, key) => {
@@ -7330,8 +7365,10 @@ async function buildFailoverHooks(context, selection) {
   };
   return {
     async onRateLimit(waitSeconds, reason, detailTail) {
-      const trigger = reason === "quota" ? "quota" : reason === "billing" ? "billing" : "429";
+      if (reason !== "region" && !failoverEnabled()) return void 0;
+      const trigger = reason === "quota" ? "quota" : reason === "billing" ? "billing" : reason === "region" ? "region" : "429";
       const billing = reason === "billing";
+      const region = reason === "region";
       if (billing) {
         const current = scanCurrent();
         if (current.profileId) {
@@ -7339,17 +7376,17 @@ async function buildFailoverHooks(context, selection) {
           keychainLog(`\u{1F4B3} billing: \u043A\u043B\u044E\u0447 ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} \u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430 (${(detailTail ?? "").slice(0, 80)}) \u2014 \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442`);
         }
       }
-      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? "billing" : reason === "quota" ? "quota" : "rate_limit");
+      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? "billing" : region ? "region" : reason === "quota" ? "quota" : "rate_limit");
       if (decision.kind === "switch") {
         if (!await readKeySecret(context.secrets, decision.profile, decision.key)) {
           markKeyBroken(decision.profile.id, decision.key.id);
           keychainLog(`\u{1F511} failover: \u043A\u043B\u044E\u0447 \xAB${decision.key.label}\xBB \u043F\u0440\u043E\u0444\u0438\u043B\u044F \xAB${decision.profile.label}\xBB \u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430 \u2014 \u043F\u043E\u043C\u0435\u0447\u0435\u043D broken`);
-          decision = runFailover(void 0, options(), Date.now(), billing ? "billing" : reason === "quota" ? "quota" : "rate_limit");
+          decision = runFailover(void 0, options(), Date.now(), billing ? "billing" : region ? "region" : reason === "quota" ? "quota" : "rate_limit");
         }
         if (decision.kind === "switch") {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return void 0;
-          keychainLog(`\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? "\u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430" : `\u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441`}), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
+          keychainLog(region ? `\u{1F30D} region: ${decision.fromLabel} \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043D \u043F\u043E \u0440\u0435\u0433\u0438\u043E\u043D\u0443 \u2192 ${decision.profile.label}/${decision.profile.model?.trim() || defaultModel(decision.profile.provider)}; \u0442\u043E\u0442 \u0436\u0435 \u0444\u0430\u0439\u043B \u0431\u0443\u0434\u0435\u0442 \u043F\u043E\u0432\u0442\u043E\u0440\u0451\u043D` : `\u{1F511} failover: ${decision.fromLabel} \u2192 ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? "\u0443 \u0441\u0442\u0435\u043D\u044B \u0442\u0430\u0440\u0438\u0444\u0430" : `\u0441\u043F\u0438\u0442 ${decision.sleepSeconds}\u0441`}), \u0446\u0438\u043A\u043B ${decision.cycle}${decision.profileChanged ? "" : " (\u043A\u043B\u044E\u0447 \u0432\u043D\u0443\u0442\u0440\u0438 \u043F\u0440\u043E\u0444\u0438\u043B\u044F)"}`);
           return low;
         }
       }
@@ -7365,16 +7402,20 @@ async function buildFailoverHooks(context, selection) {
           keychainLog("\u{1F511} failover: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0432\u0441\u0435 broken/\u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u044B/\u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u0430) \u2014 \u0441\u0442\u043E\u043F");
         } else if (decision.reason === "billingWall") {
           keychainLog("\u{1F6D1} billing: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442 (\u0441\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430 + \u0441\u043E\u043D/\u0441\u043B\u043E\u043C\u0430\u043D\u043D\u044B\u0435) \u2014 \u043D\u0435\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u044B\u0439 \u0441\u0442\u043E\u043F, \u0441\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442");
+        } else if (decision.reason === "regionWall") {
+          keychainLog("\u{1F6D1} region: \u0436\u0438\u0432\u044B\u0445 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0434\u043B\u044F \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0432\u0435\u043D\u0434\u043E\u0440\u0430 \u043D\u0435 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D");
         } else if (decision.reason === "maxCycles") {
           keychainLog(`\u{1F511} failover: \u043F\u043E\u0442\u043E\u043B\u043E\u043A \u0446\u0438\u043A\u043B\u043E\u0432 ${failoverMaxCycles()} \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D \u2014 \u0441\u0442\u043E\u043F, \u043D\u0443\u0436\u0435\u043D \u0447\u0435\u043B\u043E\u0432\u0435\u043A`);
         } else {
           keychainLog("\u23F3 \u0432\u0441\u0435 \u043A\u043B\u044E\u0447\u0438 \u0441\u043F\u044F\u0442, \u0430\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u2014 \u0441\u0442\u043E\u043F, \u0436\u0434\u0451\u043C \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430");
         }
-        return { action: "stop", waitMs: decision.waitMs, wakeLabel: decision.wakeLabel };
+        return { action: "stop", waitMs: decision.waitMs, wakeLabel: decision.wakeLabel, stopReason: decision.reason };
       }
       return void 0;
     },
-    async onAuthError() {
+    async onAuthError(status, detail = "") {
+      if (categorizeError(new ProviderHttpError(status, detail, detail)) === "region") return;
+      if (!failoverEnabled()) return;
       const current = scanCurrent();
       if (!current.profileId) return;
       markKeyBroken(current.profileId, current.keyId);
@@ -7482,9 +7523,26 @@ function billingDiagnosisLines(lang) {
   }
   return [...groups.entries()].map(([profile, keys]) => `${profile}: ${keys.join(", ")}`);
 }
+var RegionBlockWallError = class extends Error {
+  constructor() {
+    super("No live key profile from another model vendor is available for this region");
+    this.name = "RegionBlockWallError";
+  }
+};
+function regionDiagnosisLines(lang) {
+  const blockedProfiles = new Set(diagnoseKeys().filter((entry) => entry.state === "region").map((entry) => entry.profileId));
+  return readProfiles().filter((profile) => blockedProfiles.has(profile.id)).map((profile) => t("keychain.regionLine", lang, {
+    profile: profile.label,
+    model: profile.model?.trim() || defaultModel(profile.provider)
+  }));
+}
 function handleBillingWall(panel, error) {
   panel.setScanning(false);
   panel.setBillingWall({ lines: billingDiagnosisLines(currentReportLanguage()), tail: error.tail.slice(0, 80) });
+}
+function handleRegionBlockWall(panel) {
+  panel.setScanning(false);
+  panel.setRegionWall({ lines: regionDiagnosisLines(currentReportLanguage()) });
 }
 function logEntityDrops(output, result) {
   const drops = result.droppedEntityArtifacts ?? 0;
@@ -7629,6 +7687,18 @@ ${docPick.section}` : systemPrompt;
           if (readProfiles().length > 0 && hasEnabledKey(readProfiles()) && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
           break;
         }
+        if (categorizeError(error) === "region") {
+          const tail = scrubErrorSecrets(error instanceof Error ? error.message : String(error)).slice(0, 80);
+          if (failover) {
+            const decision = await failover.onRateLimit(void 0, "region", tail);
+            if (decision?.action === "switch") {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision?.action === "stop" && decision.stopReason === "regionWall") throw new RegionBlockWallError();
+          }
+        }
         if (!(error instanceof AllProfilesAsleepError) && categorizeError(error) === "quota") {
           if (failover) {
             const quotaWait = error instanceof RateLimitError ? error.waitSeconds : void 0;
@@ -7743,6 +7813,10 @@ async function runSampleReview(context, output, panel) {
     }
     if (error instanceof BillingWallError) {
       handleBillingWall(panel, error);
+      return;
+    }
+    if (error instanceof RegionBlockWallError) {
+      handleRegionBlockWall(panel);
       return;
     }
     await reportScanFailure(context, output, panel, error, "Self-test error");
@@ -8108,6 +8182,14 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       handleBillingWall(panel, error);
       return { kind: "interrupted", view: resumeView };
     }
+    if (error instanceof RegionBlockWallError) {
+      autoResumeCancelled = true;
+      output.appendLine("\u{1F6D1} region: \u0436\u0438\u0432\u044B\u0445 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u0441 \u043C\u043E\u0434\u0435\u043B\u044C\u044E \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0432\u0435\u043D\u0434\u043E\u0440\u0430 \u043D\u0435\u0442 \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D");
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      handleRegionBlockWall(panel);
+      return { kind: "interrupted", view: resumeView };
+    }
     if (error instanceof QuotaExhaustedError) {
       autoResumeCancelled = true;
       output.appendLine(`\u{1F6D1} \u041A\u0432\u043E\u0442\u0430 \u0438\u0441\u0447\u0435\u0440\u043F\u0430\u043D\u0430: ${error.pausedCycles} \u0446\u0438\u043A\u043B(\u043E\u0432) \u043F\u0430\u0443\u0437\u044B \u2014 \u0430\u0443\u0434\u0438\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D, \u0434\u043E\u0433\u043E\u043D \u043A\u043D\u043E\u043F\u043A\u0430\u043C\u0438 \u043D\u0438\u0436\u0435 (codescout.quotaPauseMaxCycles)`);
@@ -8213,6 +8295,10 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       handleBillingWall(panel, error);
       return;
     }
+    if (error instanceof RegionBlockWallError) {
+      handleRegionBlockWall(panel);
+      return;
+    }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = void 0;
@@ -8292,6 +8378,10 @@ async function runReview(context, lastCommit, output, panel, signal) {
     }
     if (error instanceof BillingWallError) {
       handleBillingWall(panel, error);
+      return;
+    }
+    if (error instanceof RegionBlockWallError) {
+      handleRegionBlockWall(panel);
       return;
     }
     await reportScanFailure(context, output, panel, error);
@@ -8571,6 +8661,7 @@ function activate(context) {
       output.show(true);
       panel.openReportTab();
     }),
+    vscode4.commands.registerCommand("codescout.openFullReport", () => panel.openReportTab()),
     vscode4.commands.registerCommand("codescout.reportIssue", async () => {
       const confirmLang = currentReportLanguage();
       const answer = await vscode4.window.showWarningMessage(t("issue.logsWarn", confirmLang), { modal: true }, t("issue.logsWarnBtn", confirmLang));
@@ -9489,6 +9580,7 @@ function deactivate() {
   rateLimitHitsLast5min,
   readBaseUrlInfo,
   recordRateLimitHit,
+  regionDiagnosisLines,
   resetRateLimitHits,
   resolveOnboardingSelection,
   reviewFiles

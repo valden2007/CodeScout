@@ -102,7 +102,7 @@ function contextWallHit(status: number | undefined, blob: string): boolean {
 // available». Проверяется ДО контекст-стены, тарифа и unknown-эвристик: в
 // этих текстах бывают слова «not available»/«model», но смысл — настройка
 // аккаунта: ни сон, ни деление чанка не помогут.
-const REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
+const REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography|country)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
 
 export function categorizeError(error: unknown): ErrorCategory {
   if (error instanceof RateLimitError) {

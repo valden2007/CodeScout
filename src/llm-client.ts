@@ -86,6 +86,7 @@ export interface FailoverStopResult {
   action: 'stop';
   waitMs: number;
   wakeLabel: string;
+  stopReason?: string;
 }
 
 export type FailoverSwitchDecision = FailoverSwitchResult | FailoverWaitResult | FailoverStopResult;
@@ -99,10 +100,10 @@ export interface FailoverHooks {
   // ключ billing-blocked (НЕ сон), выводится из ротации как broken; switch —
   // следующий живой ключ, stop/wait — BillingWallError (баннер-список).
   // detailTail — хвост сообщения провайдера для Output («💳 … (<хвост>)»).
-  onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing', detailTail?: string): Promise<FailoverSwitchDecision | undefined>;
+  onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing' | 'region', detailTail?: string): Promise<FailoverSwitchDecision | undefined>;
   // 401/403: пометить профиль broken. Возврат не используется — переключение
   // по auth-ошибке запрещено контрактом.
-  onAuthError(status: number): Promise<void>;
+  onAuthError(status: number, detail?: string): Promise<void>;
 }
 
 export function abortError(): Error {
@@ -379,7 +380,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           // Батч 27: 401/403 — помечаем профиль broken (автопереход запрещён,
           // ошибка летит наверх как раньше).
           if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
-            await this.failover.onAuthError(error.status);
+            await this.failover.onAuthError(error.status, `${error.message} ${error.details}`);
           }
           // МИКРО-БАТЧ 28.4/28.9: HTTP 402 — СТЕНА ТАРИФА (billing). При
           // включённом failover спрашиваем keychain: ключ помечается

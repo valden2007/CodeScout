@@ -48,6 +48,7 @@ describe('микробатч 28.11 задача 4: region-категория', (
 
   it('текстовые варианты стены ловятся; ProviderHttpError 403/404 с region-текстом — тоже region', () => {
     expect(categorizeError(new Error('HTTP 403 PERMISSION_DENIED: Publisher model is not available in region; check privacy settings'))).toBe('region');
+    expect(categorizeError(new ProviderHttpError(403, '403: This model is not available in your country', ''))).toBe('region');
     expect(categorizeError(new Error('model not available in your region'))).toBe('region');
     expect(categorizeError(new ProviderHttpError(404, '404: unavailable in your region', ''))).toBe('region');
     expect(categorizeError(new ProviderHttpError(403, 'PERMISSION_DENIED', "Global regions aren't enabled for this project"))).toBe('region');
@@ -80,7 +81,7 @@ describe('микробатч 28.11 задача 4: region-категория', (
     expect(skipReasonLine('src/a.ts', reason)).toContain('причина: region');
   });
 
-  it('e2e: мок «Global regions» (403) — стоп по breaker и баннер с ТОЧНОЙ подсказкой, не unknown', async () => {
+  it('e2e: один профиль с мок «Global regions» (403) — гео-баннер вместо общего breaker', async () => {
     state.reset();
     const root = mkdtempSync(join(tmpdir(), 'cs-b2811region-'));
     mkdirSync(join(root, 'src'));
@@ -115,24 +116,20 @@ describe('микробатч 28.11 задача 4: region-категория', (
     await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
     await flush();
 
-    // breaker (лимит 4 подряд) считает region как unknown-подобную — стоп на 4-м
-    expect(chatCalls).toBe(4);
+    // 28.13: профиль помечается на прогон и немедленно останавливается без
+    // pointless-скипов, когда модели другого вендора в кейчейне нет.
+    expect(chatCalls).toBe(1);
     const skipLines = state.outputLines.filter((line) => line.includes('⚠️ Пропущен файл:'));
-    expect(skipLines.length).toBe(4);
-    for (const line of skipLines) {
-      expect(line).toContain('причина: region');
-      expect(line).toContain('HTTP 403');
-    }
+    expect(skipLines).toHaveLength(0);
 
-    // баннер даёт точную подсказку region, а не generic unknown
-    expect(viewHtml).toContain('Сработал предохранитель');
-    expect(viewHtml).toContain('region');
-    expect(viewHtml).toContain(t('err.hint.region', 'ru'));
-    expect(viewHtml).not.toContain(t('err.hint.unknown', 'ru'));
-    expect(viewHtml).toContain('data-command="resumeAudit"');
+    // Гео-баннер показывает модель и предлагает сменить вендора; юнит-тесты
+    // выше продолжают фиксировать категорию и её точную подсказку 28.11.
+    expect(viewHtml).toContain('Гео-блок');
+    expect(viewHtml).toContain('gemini-1.5-flash');
+    expect(viewHtml).toContain('выберите модель другого вендора');
 
     const cp = readAuditProgress(root)!;
-    expect(cp.skippedFiles?.[0]?.category).toBe('region');
+    expect(cp.skippedFiles ?? []).toHaveLength(0);
     globalThis.fetch = realFetch;
     rmSync(root, { recursive: true, force: true });
   }, 120000);

@@ -368,7 +368,6 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
   // МИКРО-БАТЧ 28.10: все ключи выключены (простой режим) — ротировать нечего:
   // legacy-стек живёт своей лестницей 429 без keychain-хуков.
   if (!hasEnabledKey(profiles)) return undefined;
-  if (!failoverEnabled()) return undefined;
   const lang = currentReportLanguage();
   const options = () => ({ autonomous: autoResumeEnabled(), maxCycles: failoverMaxCycles() });
   const switchTo = async (profile: KeychainProfile, key: { id: string; label: string; secretId: string; enabled: boolean }): Promise<FailoverSwitchDecision | undefined> => {
@@ -377,13 +376,17 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
     return { action: 'switch', apiKey: keySecret, baseUrl: resolveBaseUrl(profile.provider, selection.baseUrl, profile.baseUrl), model: profile.model?.trim() || defaultModel(profile.provider) };
   };
   return {
-    async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing', detailTail?: string): Promise<FailoverSwitchDecision | undefined> {
+    async onRateLimit(waitSeconds: number | undefined, reason?: 'rate_limit' | 'quota' | 'billing' | 'region', detailTail?: string): Promise<FailoverSwitchDecision | undefined> {
+      // Гео-ограничение не является rate-limit: ротация профиля с другой
+      // моделью разрешена независимо от настройки failover.enabled.
+      if (reason !== 'region' && !failoverEnabled()) return undefined;
       // Микро-батч 28.4/28.5: reason='quota' (429 с retry-after/reset — окно)
       // — тот же решатель (усыпить ключ и ротировать); в Output «quota».
       // МИКРО-БАТЧ 28.9: reason='billing' — стена тарифа: ключ billing-blocked
       // (НЕ усыпляется!), ротация к живым; живых нет → stop без циклов сна.
-      const trigger = reason === 'quota' ? 'quota' : reason === 'billing' ? 'billing' : '429';
+      const trigger = reason === 'quota' ? 'quota' : reason === 'billing' ? 'billing' : reason === 'region' ? 'region' : '429';
       const billing = reason === 'billing';
+      const region = reason === 'region';
       if (billing) {
         const current = scanCurrent();
         if (current.profileId) {
@@ -391,7 +394,7 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
           keychainLog(`💳 billing: ключ ${profileLabel(current.profileId)}/${keyLabelFor(current.profileId, current.keyId)} у стены тарифа (${(detailTail ?? '').slice(0, 80)}) — сон не поможет`);
         }
       }
-      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? 'billing' : reason === 'quota' ? 'quota' : 'rate_limit');
+      let decision = runFailover(waitSeconds, options(), Date.now(), billing ? 'billing' : region ? 'region' : reason === 'quota' ? 'quota' : 'rate_limit');
       if (decision.kind === 'switch') {
         // ключ без секрета не годится: broken и шаг дальше по цепочке
         if (!(await readKeySecret(context.secrets, decision.profile, decision.key))) {
@@ -400,12 +403,14 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
           // МИКРО-БАТЧ 28.9: триггер прокидываем в решатель: billing метит
           // ключ billing-blocked (без сна), quota/rate_limit — усыпляют как в
           // 28.6/28.7. Хук выше тоже зовёт runFailover с тем же триггером.
-          decision = runFailover(undefined, options(), Date.now(), billing ? 'billing' : reason === 'quota' ? 'quota' : 'rate_limit');
+          decision = runFailover(undefined, options(), Date.now(), billing ? 'billing' : region ? 'region' : reason === 'quota' ? 'quota' : 'rate_limit');
         }
         if (decision.kind === 'switch') {
           const low = await switchTo(decision.profile, decision.key);
           if (!low) return undefined;
-          keychainLog(`🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? 'у стены тарифа' : `спит ${decision.sleepSeconds}с`}), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
+          keychainLog(region
+            ? `🌍 region: ${decision.fromLabel} заблокирован по региону → ${decision.profile.label}/${decision.profile.model?.trim() || defaultModel(decision.profile.provider)}; тот же файл будет повторён`
+            : `🔑 failover: ${decision.fromLabel} → ${decision.profile.label}/${decision.key.label} (${trigger}; ${decision.fromLabel} ${billing ? 'у стены тарифа' : `спит ${decision.sleepSeconds}с`}), цикл ${decision.cycle}${decision.profileChanged ? '' : ' (ключ внутри профиля)'}`);
           return low;
         }
       }
@@ -415,7 +420,7 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
         return { action: 'stop', waitMs: 0, wakeLabel: decision.wakeLabel };
       }
       if (decision.kind === 'wait') {
-        keychainLog(`⏳ все ключи спят, пробуждение: ${decision.wakeLabel} через ${Math.ceil(decision.waitMs / 1000)}с, цикл ${decision.cycle}`);
+          keychainLog(`⏳ все ключи спят, пробуждение: ${decision.wakeLabel} через ${Math.ceil(decision.waitMs / 1000)}с, цикл ${decision.cycle}`);
         return { action: 'wait', waitMs: decision.waitMs };
       }
       if (decision.kind === 'stop') {
@@ -423,16 +428,20 @@ async function buildFailoverHooks(context: vscode.ExtensionContext, selection: P
           keychainLog('🔑 failover: живых ключей нет (все broken/выключены/без секрета) — стоп');
         } else if (decision.reason === 'billingWall') {
           keychainLog('🛑 billing: живых ключей нет (стена тарифа + сон/сломанные) — немедленный стоп, сон не поможет');
+        } else if (decision.reason === 'regionWall') {
+          keychainLog('🛑 region: живых профилей для другого вендора не осталось — аудит остановлен');
         } else if (decision.reason === 'maxCycles') {
           keychainLog(`🔑 failover: потолок циклов ${failoverMaxCycles()} исчерпан — стоп, нужен человек`);
         } else {
           keychainLog('⏳ все ключи спят, автономный режим выключен — стоп, ждём человека');
         }
-        return { action: 'stop', waitMs: decision.waitMs, wakeLabel: decision.wakeLabel };
+        return { action: 'stop', waitMs: decision.waitMs, wakeLabel: decision.wakeLabel, stopReason: decision.reason };
       }
       return undefined;
     },
-    async onAuthError(): Promise<void> {
+    async onAuthError(status, detail = ''): Promise<void> {
+      if (categorizeError(new ProviderHttpError(status, detail, detail)) === 'region') return;
+      if (!failoverEnabled()) return;
       const current = scanCurrent();
       if (!current.profileId) return;
       markKeyBroken(current.profileId, current.keyId);
@@ -606,11 +615,33 @@ export function billingDiagnosisLines(lang: Lang): string[] {
   return [...groups.entries()].map(([profile, keys]) => `${profile}: ${keys.join(', ')}`);
 }
 
+class RegionBlockWallError extends Error {
+  constructor() {
+    super('No live key profile from another model vendor is available for this region');
+    this.name = 'RegionBlockWallError';
+  }
+}
+
+export function regionDiagnosisLines(lang: Lang): string[] {
+  const blockedProfiles = new Set(diagnoseKeys().filter((entry) => entry.state === 'region').map((entry) => entry.profileId));
+  return readProfiles()
+    .filter((profile) => blockedProfiles.has(profile.id))
+    .map((profile) => t('keychain.regionLine', lang, {
+      profile: profile.label,
+      model: profile.model?.trim() || defaultModel(profile.provider)
+    }));
+}
+
 // Баннер «стена тарифа» вместо красной модалки: сон не поможет, решает
 // человек (баланс/смена модели). Кнопки догона рисует resume-баннер выше.
 function handleBillingWall(panel: CodeScoutPanel, error: BillingWallError): void {
   panel.setScanning(false);
   panel.setBillingWall({ lines: billingDiagnosisLines(currentReportLanguage()), tail: error.tail.slice(0, 80) });
+}
+
+function handleRegionBlockWall(panel: CodeScoutPanel): void {
+  panel.setScanning(false);
+  panel.setRegionWall({ lines: regionDiagnosisLines(currentReportLanguage()) });
 }
 
 // Микро-батч 28.5: счётчик отброшенных entity-артефактов — одна RU-строка в
@@ -841,6 +872,21 @@ export async function reviewFiles(context: vscode.ExtensionContext, files: Array
           if (readProfiles().length > 0 && hasEnabledKey(readProfiles()) && !hasAwakeKey(readProfiles())) throw new BillingWallError(tail);
           break;
         }
+        // Гео-блок не лечится сном и не относится к ключу как credential:
+        // исключаем текущую модель на этот прогон, переключаем профиль другого
+        // вендора и повторяем тот же файл без скипа.
+        if (categorizeError(error) === 'region') {
+          const tail = scrubErrorSecrets(error instanceof Error ? error.message : String(error)).slice(0, 80);
+          if (failover) {
+            const decision = await failover.onRateLimit(undefined, 'region', tail);
+            if (decision?.action === 'switch') {
+              provider = makeProvider(decision.apiKey, decision.model, decision.baseUrl);
+              onQuotaRotation?.();
+              continue;
+            }
+            if (decision?.action === 'stop' && decision.stopReason === 'regionWall') throw new RegionBlockWallError();
+          }
+        }
         // Микро-батч 28.5: скип файла с категорией quota доезжает до
         // failover-хука: решатель keychain усыпляет текущий ключ и ротирует
         // (switch/wait — ТОТ ЖЕ файл повторяется другими кредами/после сна).
@@ -986,6 +1032,7 @@ async function runSampleReview(context: vscode.ExtensionContext, output: vscode.
       if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
       // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
       if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
+      if (error instanceof RegionBlockWallError) { handleRegionBlockWall(panel); return; }
     await reportScanFailure(context, output, panel, error, 'Self-test error');
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -1396,6 +1443,14 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
       handleBillingWall(panel, error);
       return { kind: 'interrupted', view: resumeView };
     }
+    if (error instanceof RegionBlockWallError) {
+      autoResumeCancelled = true;
+      output.appendLine('🛑 region: живых профилей с моделью другого вендора нет — аудит остановлен');
+      panel.setScanning(false);
+      if (resumeView) panel.setAuditResume(resumeView);
+      handleRegionBlockWall(panel);
+      return { kind: 'interrupted', view: resumeView };
+    }
     // Микро-батч 28.6: quota-паузы дошли до потолка циклов (или пользователь
     // нажал «Стоп» на баннере санкции) — финальный баннер «Квота исчерпана»
     // с кнопками догона; красной модалки нет, чекпоинт цел (он писан перед
@@ -1494,6 +1549,7 @@ async function runCustomReview(context: vscode.ExtensionContext, output: vscode.
       if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
       // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
       if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
+      if (error instanceof RegionBlockWallError) { handleRegionBlockWall(panel); return; }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -1574,6 +1630,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
       if (error instanceof AllProfilesAsleepError) { handleAllProfilesAsleep(panel, error); return; }
       // МИКРО-БАТЧ 28.9: billing-стена — баннер-список вместо красной модалки.
       if (error instanceof BillingWallError) { handleBillingWall(panel, error); return; }
+      if (error instanceof RegionBlockWallError) { handleRegionBlockWall(panel); return; }
     await reportScanFailure(context, output, panel, error);
   } finally {
     if (activeAbortController === controller) activeAbortController = undefined;
@@ -1977,6 +2034,7 @@ export function activate(context: vscode.ExtensionContext): void {
       output.show(true);
       panel.openReportTab();
     }),
+    vscode.commands.registerCommand('codescout.openFullReport', () => panel.openReportTab()),
     vscode.commands.registerCommand('codescout.reportIssue', async () => {
       // Батч 17.5 (Privacy): логи аудита уезжают в публичный Issue — сначала
       // модальное предупреждение с явным согласием, без «слепой» отправки.
