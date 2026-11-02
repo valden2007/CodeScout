@@ -5027,6 +5027,9 @@ function readResultsFile(path) {
 function readAuditResults(workspaceRoot) {
   return readResultsFile((0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE));
 }
+function readPanelResults(workspaceRoot) {
+  return readResultsFile((0, import_node_path3.join)(workspaceRoot, ".codescout", PANEL_RESULTS_FILE));
+}
 function clearAuditResults(workspaceRoot) {
   const path = (0, import_node_path3.join)(workspaceRoot, ".codescout", AUDIT_RESULTS_FILE);
   if ((0, import_node_fs4.existsSync)(path)) {
@@ -9661,6 +9664,8 @@ function activate(context) {
     const savedBreakerLimit = skipBreakerLimitFromSetting(vscode4.workspace.getConfiguration("codescout").get("skipBreakerLimit"));
     const savedProgress = progressView(savedCheckpoint, savedBreakerLimit);
     const savedResults = readAuditResults(workspaceRoot);
+    const savedPanelResults = readPanelResults(workspaceRoot);
+    const hasNewerPanelResults = Boolean(savedPanelResults && !savedCheckpoint && (!savedResults || savedPanelResults.updatedAt > savedResults.updatedAt));
     const persistedLastGood = readLastGoodAudit(workspaceRoot);
     let lastGoodSummary;
     let lastGoodFindings = [];
@@ -9672,7 +9677,7 @@ function activate(context) {
         seconds: persistedLastGood.seconds,
         updatedAt: persistedLastGood.completedAt,
         model: persistedLastGood.model,
-        carried: true
+        carried: false
       };
     }
     if (savedResults) {
@@ -9686,14 +9691,20 @@ function activate(context) {
       const savedDurationMs = savedResults.durationMs ?? elapsedMs;
       if (!lastGoodSummary && complete && savedResults.findings.length > 0) {
         lastGoodFindings = visibleFindings;
-        lastGoodSummary = { issues: visibleFindings.length, files: savedResults.checkedFiles, seconds: Math.round(savedDurationMs / 100) / 10, updatedAt: savedResults.updatedAt, model: savedResults.model, carried: true };
+        lastGoodSummary = { issues: visibleFindings.length, files: savedResults.checkedFiles, seconds: Math.round(savedDurationMs / 100) / 10, updatedAt: savedResults.updatedAt, model: savedResults.model };
         writeLastGoodAudit(workspaceRoot, { findings: savedResults.findings, files: savedResults.checkedFiles, seconds: Math.round(savedDurationMs / 100) / 10, provider: projectContext?.auditMeta?.provider ?? selection.provider, model: savedResults.model, completedAt: savedResults.updatedAt });
       }
       const currentFindings = savedCheckpoint ? collectCheckpointFindings(savedCheckpoint) : visibleFindings;
       const currentVisibleFindings = filterSuppressed(currentFindings, context.workspaceState);
       const currentFiles = savedCheckpoint ? savedCheckpoint.checked.length : savedResults.checkedFiles;
+      if (lastGoodSummary) lastGoodSummary = { ...lastGoodSummary, carried: currentFindings.length === 0 };
       panel.restoreAuditResults(currentVisibleFindings, buildStats(currentVisibleFindings, currentFiles, savedCheckpoint ? 0 : savedDurationMs), resume, lastGoodSummary, lastGoodFindings);
     } else if (savedProgress) panel.setAuditResume(savedProgress);
+    if (hasNewerPanelResults && savedPanelResults) {
+      const currentFindings = filterSuppressed(savedPanelResults.findings, context.workspaceState);
+      if (lastGoodSummary) lastGoodSummary = { ...lastGoodSummary, carried: savedPanelResults.findings.length === 0 };
+      panel.restoreAuditResults(currentFindings, buildStats(currentFindings, savedPanelResults.checkedFiles, savedPanelResults.durationMs ?? 0), void 0, lastGoodSummary, lastGoodFindings);
+    }
     if (!savedResults && lastGoodSummary) panel.setLastGoodSummary(lastGoodSummary, lastGoodFindings);
     if (!auditBannerEnabled()) return;
     if (!projectContext && !choiceStored) panel.setWelcomeBanner(true, "new");
