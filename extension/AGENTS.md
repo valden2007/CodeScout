@@ -27,6 +27,7 @@ CodeScout — AI code reviewer with THREE interfaces:
 - cd extension && npm run package (builds .vsix)
 
 ## Work rules
+- Каждый батч читает `docs/CARRYOVER.md` в начале и обновляет его в конце отчёта.
 - Follow the task's requested commit groups; multiple related commits per task are allowed. Push after the required checks pass.
 - Commit messages: follow the task's required format; otherwise use lowercase English Conventional Commits (e.g. "fix(security): validate workspace base URL").
 - After ANY change: npm test + typecheck must pass

@@ -6,4 +6,6 @@ coverage/
 !.env.example
 .DS_Store
 extension/*.vsix
+rebuild.ps1
+extension/src/dist/
 .codescout/
