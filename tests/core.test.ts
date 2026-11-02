@@ -306,7 +306,7 @@ describe('E5.6 provider auto-detection', () => {
 
 describe('E5.5 endpoint URLs', () => {
   it('builds the exact OpenAI-compatible URL for every built-in provider', () => {
-    expect(completionUrl(resolveBaseUrl('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions');
+    expect(completionUrl(resolveBaseUrl('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
     expect(completionUrl(resolveBaseUrl('groq'))).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect(completionUrl(resolveBaseUrl('openrouter'))).toBe('https://openrouter.ai/api/v1/chat/completions');
   });
@@ -714,18 +714,18 @@ describe('батч 20a п.2: умный мок Gemini', () => {
   it('успех: возвращаем распарсенные живые модели, предупреждений нет', async () => {
     const warnings: string[] = [];
     let requested = '';
-    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'AIza-test', (async (url: string | URL | undefined) => {
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai', 'AIza-test', (async (url: string | URL | undefined) => {
       requested = String(url);
       return new Response(JSON.stringify({ data: [{ id: 'gemini-2.5-pro' }, { id: 'gemini-1.5-flash' }] }), { status: 200 });
     }) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m));
-    expect(requested).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1/models');
+    expect(requested).toBe('https://generativelanguage.googleapis.com/v1beta/openai/models');
     expect(models).toEqual(['gemini-2.5-pro', 'gemini-1.5-flash']);
     expect(warnings).toEqual([]);
   });
 
   it('404: адаптер без роота /models — статика + warning с HTTP-статусом', async () => {
     const warnings: string[] = [];
-    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai/v1', 'k', (async () => new Response('', { status: 404 })) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m));
+    const models = await fetchLiveModels('https://generativelanguage.googleapis.com/v1beta/openai', 'k', (async () => new Response('', { status: 404 })) as unknown as typeof fetch, 5000, 'gemini', (m) => warnings.push(m));
     expect(models).toEqual(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']);
     expect(warnings.join('\n')).toContain('404');
   });
@@ -2607,8 +2607,8 @@ describe('G7 fix batch security and robustness', () => {
     const dns = await import('node:dns/promises');
     const { defaultDocFetcher } = await import('../extension/src/projectAudit');
     const lookup = vi.spyOn(dns, 'lookup')
-      .mockResolvedValueOnce({ address: '8.8.8.8', family: 4 } as any)
-      .mockResolvedValue({ address: '127.0.0.1', family: 4 } as any);
+      .mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }] as any)
+      .mockResolvedValue([{ address: '8.8.8.8', family: 4 }, { address: '127.0.0.1', family: 4 }] as any);
     const destroy = vi.spyOn(https.Agent.prototype, 'destroy');
     vi.mocked(https.request).mockImplementation((url: any, options: any, cb: any) => {
       expect(String(url)).toBe('https://docs.example.com:8443/page');

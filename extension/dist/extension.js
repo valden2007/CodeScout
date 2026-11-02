@@ -38,19 +38,22 @@ __export(extension_exports, {
   RATE_LIMIT_PAUSE_LADDER: () => RATE_LIMIT_PAUSE_LADDER,
   activate: () => activate,
   billingDiagnosisLines: () => billingDiagnosisLines,
+  combineReviewSignals: () => combineReviewSignals,
   deactivate: () => deactivate,
   fileCooldownSecondsFromSetting: () => fileCooldownSecondsFromSetting,
   migrateApiKeyFromSettings: () => migrateApiKeyFromSettings,
   rateLimitHitsLast5min: () => rateLimitHitsLast5min,
+  readBaseUrlInfo: () => readBaseUrlInfo,
   recordRateLimitHit: () => recordRateLimitHit,
   resetRateLimitHits: () => resetRateLimitHits,
+  resolveOnboardingSelection: () => resolveOnboardingSelection,
   reviewFiles: () => reviewFiles
 });
 module.exports = __toCommonJS(extension_exports);
 var vscode4 = __toESM(require("vscode"));
-var import_node_fs5 = require("node:fs");
+var import_node_fs6 = require("node:fs");
 var import_node_crypto7 = require("node:crypto");
-var import_node_path4 = require("node:path");
+var import_node_path5 = require("node:path");
 
 // ../src/llm-client.ts
 var import_node_crypto = require("node:crypto");
@@ -245,10 +248,9 @@ var PROVIDERS = {
     keyUrl: "https://opencode.ai/auth"
   },
   gemini: {
-    // Батч 18.5: OpenAI-совместимый эндпоинт Google живёт на /v1beta/openai/v1 —
-    // с этим суффиксом клиентские пути {base}/models и {base}/chat/completions
-    // попадают в реальные роуты и автозагрузка списка моделей работает.
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/v1",
+    // OpenAI-совместимый endpoint Google уже содержит /openai; клиент сам
+    // добавляет /models и /chat/completions, поэтому дополнительный /v1 лишний.
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envKey: "GEMINI_API_KEY",
     // Батч 18: 2.5 может отсутствовать в free-tier — дефолт 1.5-flash.
     defaultModel: "gemini-1.5-flash",
@@ -452,7 +454,7 @@ function isRetryableError(error) {
   if (error instanceof ProviderHttpError) {
     return error.status === 502 || error.status === 503 || error.status === 504;
   }
-  if (isAbortError(error)) return true;
+  if (isAbortError(error)) return false;
   const raw = error instanceof Error ? error.message : String(error);
   return /ECONNRESET|ECONNREFUSED|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
 }
@@ -621,8 +623,7 @@ var OpenAICompatibleProvider = class {
         if (timedOut && !this.signal?.aborted) {
           retryableError = new RequestTimeoutError(timeoutMs);
         } else if (isAbortError(error)) {
-          if (this.signal?.aborted) throw error;
-          retryableError = new RequestTimeoutError(timeoutMs);
+          throw error;
         } else if (isRetryableError(error)) {
           retryableError = error instanceof Error ? error : new Error(String(error));
         }
@@ -1932,7 +1933,7 @@ In the previous pass on this file you already found: ${hardenUntrusted(rawPass)}
 \u0412 \u043F\u0440\u043E\u0448\u043B\u044B\u0439 \u043A\u0440\u0443\u0433 \u043F\u043E \u044D\u0442\u043E\u043C\u0443 \u0444\u0430\u0439\u043B\u0443 \u0442\u044B \u0443\u0436\u0435 \u043D\u0430\u0448\u0451\u043B: ${hardenUntrusted(rawPass)}. \u0418\u0449\u0438, \u0447\u0442\u043E \u041F\u0420\u041E\u041F\u0423\u0421\u0422\u0418\u041B, \u043D\u0435 \u043F\u043E\u0432\u0442\u043E\u0440\u044F\u0439 \u0438\u0445.` : "";
   return `Review the following changed file from a pull request. The number before each added or context line is the absolute line number in the new file. Use that number exactly for issue.line and copy the relevant code exactly into issue.code.
 
-File: ${neutralizeFences(oneLine(file.filename))}
+File: ${hardenUntrusted(controlSafe(oneLine(file.filename)))}
 Status: ${oneLine(file.status)}
 Added lines: ${file.additions}; deleted lines: ${file.deletions}${importsSection}${passSection}
 
@@ -2032,7 +2033,31 @@ function stripMarkdownFences(text) {
   return (fenced ? fenced[1] : text).trim();
 }
 function stripTrailingCommas(text) {
-  return text.replace(/,(\s*[\]}])/g, "$1");
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      output += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === ",") {
+      let next = index + 1;
+      while (/\s/.test(text[next] ?? "") && next < text.length) next += 1;
+      if (text[next] === "]" || text[next] === "}") continue;
+    }
+    output += char;
+  }
+  return output;
 }
 var RAW_TAIL_LIMIT = 200;
 function tryParseJson(raw) {
@@ -3330,9 +3355,11 @@ var CodeScoutPanel = class {
   }
   unsuppressLocal(fingerprint) {
     if (this.workspaceState) unsuppress(this.workspaceState, fingerprint);
-    const cached = this.suppressedCache.get(fingerprint);
-    this.suppressedCache.delete(fingerprint);
-    if (cached) {
+    const entries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    for (const [cachedFingerprint, cached] of this.suppressedCache) {
+      if (isSuppressed(cached, entries)) continue;
+      this.suppressedCache.delete(cachedFingerprint);
+      if (this.issues.some((issue) => this.fingerprintOf(issue) === cachedFingerprint)) continue;
       this.issues.push(cached);
       this.shiftStats([cached], 1);
     }
@@ -4115,9 +4142,16 @@ async function pinnedAgentFor(url, signal) {
   if (!(0, import_node_net.isIP)(address)) {
     try {
       const { lookup } = await import("node:dns/promises");
-      address = (await lookup(parsed.hostname)).address;
+      const addresses = await lookup(parsed.hostname, { all: true, verbatim: true });
+      if (!addresses.length) throw new Error("DNS returned no addresses");
+      for (const candidate of addresses) {
+        if (candidate.family !== 4 || (0, import_node_net.isIP)(candidate.address) !== 4 || isBlockedDocHost(candidate.address)) {
+          throw new Error(`blocked address ${candidate.address}`);
+        }
+      }
+      address = addresses[0].address;
     } catch {
-      throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0440\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u0445\u043E\u0441\u0442 ${parsed.hostname} (fail-closed)`);
+      throw new Error(`SSRF-\u0431\u043B\u043E\u043A: \u043D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E \u0440\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u0445\u043E\u0441\u0442 ${parsed.hostname} (fail-closed)`);
     }
   }
   signal.throwIfAborted();
@@ -4350,16 +4384,18 @@ function isIgnoredAuditPath(path, patterns = []) {
   if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS2.has(part) || part.startsWith("."))) return true;
   const normalized = path.replaceAll("\\", "/");
   const segments = normalized.split("/").filter((segment) => segment.length > 0);
-  for (const pattern of patterns) {
+  for (const rawPattern of patterns) {
+    const anchored = rawPattern.startsWith("/");
+    const pattern = rawPattern.replace(/^\/+/, "");
     if (pattern.endsWith("/")) {
       const dir = pattern.slice(0, -1);
-      if (dir.includes("/")) {
+      if (anchored || dir.includes("/")) {
         const joined = segments.join("/");
         if (joined === dir || joined.startsWith(dir + "/")) return true;
       } else if (segments.includes(dir)) return true;
       continue;
     }
-    if (pattern.includes("/")) {
+    if (anchored || pattern.includes("/")) {
       if (globToRegExp(pattern).test(segments.join("/"))) return true;
       continue;
     }
@@ -4910,13 +4946,34 @@ function clearAuditResults(workspaceRoot) {
     }
   }
 }
+function realPathWithMissingTail(path) {
+  let current = (0, import_node_path3.resolve)(path);
+  const missing = [];
+  for (; ; ) {
+    try {
+      const real = (0, import_node_fs4.realpathSync)(current);
+      return missing.length ? (0, import_node_path3.resolve)(real, ...missing) : real;
+    } catch {
+      const parent = (0, import_node_path3.dirname)(current);
+      if (parent === current) throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0440\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043F\u0443\u0442\u044C \u0430\u0443\u0434\u0438\u0442\u0430: ${path}`);
+      missing.unshift(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
+}
 function resolveAuditFile(workspaceRoot, filename) {
-  const absolute = (0, import_node_path3.resolve)(workspaceRoot, filename);
-  const relativePath = (0, import_node_path3.relative)(workspaceRoot, absolute);
-  if (!relativePath || relativePath.startsWith("..") || (0, import_node_path3.isAbsolute)(relativePath)) {
+  const realRoot = (0, import_node_fs4.realpathSync)((0, import_node_path3.resolve)(workspaceRoot));
+  const absolute = (0, import_node_path3.resolve)(realRoot, filename);
+  const lexicalRelative = (0, import_node_path3.relative)(realRoot, absolute);
+  if (!lexicalRelative || lexicalRelative === ".." || lexicalRelative.startsWith(`..${import_node_path3.sep}`) || (0, import_node_path3.isAbsolute)(lexicalRelative)) {
     throw new Error(`\u0424\u0430\u0439\u043B \u0432\u043D\u0435 \u043F\u0430\u043F\u043A\u0438 \u0430\u0443\u0434\u0438\u0442\u0430: ${filename}`);
   }
-  return absolute;
+  const realCandidate = realPathWithMissingTail(absolute);
+  const realRelative = (0, import_node_path3.relative)(realRoot, realCandidate);
+  if (!realRelative || realRelative === ".." || realRelative.startsWith(`..${import_node_path3.sep}`) || (0, import_node_path3.isAbsolute)(realRelative)) {
+    throw new Error(`\u0424\u0430\u0439\u043B \u0432\u043D\u0435 \u043F\u0430\u043F\u043A\u0438 \u0430\u0443\u0434\u0438\u0442\u0430: ${filename}`);
+  }
+  return realCandidate;
 }
 var IMPORT_PATTERNS = [
   /(?:^|\n)\s*import\s+(?:type\s+)?(?:[^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/g,
@@ -4957,6 +5014,8 @@ function importsContextLine(workspaceRoot, filename, maxImports = 10) {
 // src/auditResume.ts
 var import_node_child_process2 = require("node:child_process");
 var import_node_crypto5 = require("node:crypto");
+var import_node_fs5 = require("node:fs");
+var import_node_path4 = require("node:path");
 var vscode2 = __toESM(require("vscode"));
 var GIT_HEAD_PROBE_TIMEOUT_MS = 5e3;
 function pathKey(value) {
@@ -4976,11 +5035,18 @@ function getGitHead(workspaceRoot) {
     return "";
   }
 }
-function computeScopeHash(head, files) {
+function computeScopeHash(head, files, workspaceRoot = process.cwd()) {
   const list = [...new Set(files.map((file) => file.replace(/\\/g, "/")))].sort();
+  const contentHashes = list.map((file) => {
+    try {
+      return `${file}\0${(0, import_node_crypto5.createHash)("sha256").update((0, import_node_fs5.readFileSync)((0, import_node_path4.join)(workspaceRoot, file))).digest("hex")}`;
+    } catch {
+      return `${file}\0missing`;
+    }
+  });
   return (0, import_node_crypto5.createHash)("sha256").update(`head:${head}
 files:
-${list.join("\n")}
+${contentHashes.join("\n")}
 `, "utf8").digest("hex").slice(0, 16);
 }
 function checkpointScopeVerdict(progress, currentHash) {
@@ -5250,8 +5316,8 @@ async function removeKey(secrets, profileId, keyId) {
   if (!key) return { ok: false, reason: "unknown" };
   if (target.keys.length <= 1) return { ok: false, reason: "lastKey" };
   const next = profiles.map((profile) => profile.id !== profileId ? profile : { ...profile, keys: profile.keys.filter((candidate) => candidate.id !== keyId) });
-  await secrets.delete(key.secretId);
   await writeProfiles(next);
+  await secrets.delete(key.secretId);
   deleteRuntimeForKey(profileId, keyId);
   return { ok: true, profile: next.find((profile) => profile.id === profileId) };
 }
@@ -5442,6 +5508,7 @@ async function migrateProfilesToMultiKey(context) {
   }
   let changed = false;
   const next = [];
+  const legacySecretsToDelete = [];
   for (const item of normalizeProfiles(raw)) {
     const rawEntry = raw.find((candidate) => candidate && typeof candidate === "object" && candidate.id === item.id);
     const hadKeys = Array.isArray(rawEntry?.keys) && (rawEntry?.keys).length > 0;
@@ -5453,12 +5520,13 @@ async function migrateProfilesToMultiKey(context) {
     const oldSecret = (await context.secrets.get(secretKeyForProfile(item.id)))?.trim();
     if (oldSecret) {
       await storeKeySecret(context.secrets, key, oldSecret);
-      await context.secrets.delete(secretKeyForProfile(item.id));
+      legacySecretsToDelete.push(secretKeyForProfile(item.id));
     }
     next.push({ ...item, keys: [key] });
     changed = true;
   }
   await writeProfiles(next);
+  for (const secretId of legacySecretsToDelete) await context.secrets.delete(secretId);
   await context.secrets.store(KEYCHAIN_KEYS_MIGRATED_FLAG, "true");
   return changed;
 }
@@ -5574,7 +5642,8 @@ function decideFailover(ctx, options, waitSeconds, now, trigger = "rate_limit") 
     const enabled = currentProfile.keys.filter((key) => key.enabled);
     const keyIndex = enabled.findIndex((key) => key.id === ctx.current.keyId);
     for (let step = 1; step < enabled.length; step += 1) {
-      const candidate = enabled[((keyIndex >= 0 ? keyIndex : 0) + step + enabled.length) % enabled.length];
+      const startIndex = keyIndex >= 0 ? keyIndex : enabled.length - 1;
+      const candidate = enabled[(startIndex + step) % enabled.length];
       if (!candidate || candidate.id === ctx.current.keyId) continue;
       if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
       return {
@@ -7157,9 +7226,17 @@ function readBaseUrlInfo(config) {
   const envBaseUrl = process.env.CODESCOUT_BASE_URL?.trim() || "";
   const inspected = config.inspect("baseUrl");
   const workspaceValue = typeof inspected?.workspaceValue === "string" ? inspected.workspaceValue.trim() : "";
+  const workspaceFolderValue = typeof inspected?.workspaceFolderValue === "string" ? inspected.workspaceFolderValue.trim() : "";
   const effective = config.get("baseUrl")?.trim() || "";
-  const fromWorkspace = Boolean(workspaceValue && effective === workspaceValue);
+  const fromWorkspace = Boolean(workspaceValue && effective === workspaceValue || workspaceFolderValue && effective === workspaceFolderValue);
   return { baseUrl: effective || envBaseUrl, fromWorkspace };
+}
+function resolveOnboardingSelection(providerName, key) {
+  const auto = detectProvider(key);
+  return providerName !== "custom" && auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
+}
+function combineReviewSignals(internalSignal, externalSignal) {
+  return externalSignal ? AbortSignal.any([externalSignal, internalSignal]) : internalSignal;
 }
 async function confirmWorkspaceBaseUrl(context, baseUrl) {
   const trusted = await context.globalState.get(TRUSTED_BASE_URLS_KEY) ?? [];
@@ -7815,7 +7892,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
     const docsForFile = (docs.sections?.length ?? 0) > 0 ? makeDocsResolver(docs.sections ?? [], docBudgetBytes, (message) => output.appendLine(message)) : void 0;
     if (projectPrompt.rulesLoaded) output.appendLine("\u{1F4DA} \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430");
     else output.appendLine("\u2139\uFE0F \u041F\u0440\u0430\u0432\u0438\u043B \u043D\u0435\u0442 \u2014 \u0434\u0435\u0444\u043E\u043B\u0442");
-    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles);
+    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles, workspaceRoot);
     let initial = { startedAt: Date.now(), model: auditSelection.model, provider: auditSelection.provider, scopeHash: currentScopeHash, state: "running", checked: [], remaining: planFiles };
     if (resume) {
       const saved = readAuditProgress(workspaceRoot);
@@ -8155,12 +8232,12 @@ async function runSelectionReview(context, output, panel, uri) {
   const target = uri.fsPath;
   let isDirectory = false;
   try {
-    isDirectory = (0, import_node_fs5.statSync)(target).isDirectory();
+    isDirectory = (0, import_node_fs6.statSync)(target).isDirectory();
   } catch {
     void vscode4.window.showErrorMessage(t("panel.errPathUnreadable", lang, { path: target }));
     return;
   }
-  const rel = (0, import_node_path4.relative)(workspaceRoot, (0, import_node_path4.resolve)(target)).replaceAll("\\", "/");
+  const rel = (0, import_node_path5.relative)(workspaceRoot, (0, import_node_path5.resolve)(target)).replaceAll("\\", "/");
   if (!rel || rel.startsWith("..")) {
     void vscode4.window.showErrorMessage(t("panel.errPathOutside", lang));
     return;
@@ -8174,6 +8251,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
+  const reviewSignal = combineReviewSignals(controller.signal, signal);
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? "CodeScout: reviewing last commit..." : "CodeScout: reviewing uncommitted changes...");
@@ -8185,7 +8263,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
     const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => {
       panel.setProgress(index, total, filename, t("progress.file.check", currentReportLanguage()), elapsedMs);
       output.appendLine(`\u{1F50E} \u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E: \u0444\u0430\u0439\u043B ${index}/${total}: ${filename} \xB7 \u23F1 ${Math.floor(elapsedMs / 1e3)}\u0441`);
-    }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
+    }, (elapsedMs) => panel.setModelThinking(elapsedMs), reviewSignal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
     if (result.skippedFiles > 0) {
       output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.skippedFiles} (\u043E\u0448\u0438\u0431\u043A\u0438 \u0438\u043B\u0438 rate-limit) \u2014 \u0441\u043C. \u0441\u0442\u0440\u043E\u043A\u0438 \xAB\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B\xBB \u0432\u044B\u0448\u0435.`);
     }
@@ -8224,11 +8302,11 @@ async function runReview(context, lastCommit, output, panel, signal) {
 var RULES_TEMPLATE = "# \u041F\u0440\u0430\u0432\u0438\u043B\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 CodeScout\n\n\u041C\u043E\u0434\u0435\u043B\u044C \u043F\u043E\u0434\u043C\u0435\u0448\u0438\u0432\u0430\u0435\u0442 \u044D\u0442\u043E\u0442 \u0444\u0430\u0439\u043B \u0432 \u043A\u0430\u0436\u0434\u044B\u0439 \u043F\u0440\u043E\u043C\u0442 \u0440\u0435\u0432\u044C\u044E.\n\n## \u041F\u0440\u0438\u043C\u0435\u0440\u044B\n- \u041D\u0435 \u0444\u043B\u0430\u0433\u0430\u0442\u044C tenant-scoped \u0447\u0442\u0435\u043D\u0438\u044F \u0447\u0435\u0440\u0435\u0437 Prisma.\n- \u0412\u0441\u0435 \u0432\u043D\u0435\u0448\u043D\u0438\u0435 HTTP-\u0432\u044B\u0437\u043E\u0432\u044B \u2014 \u0441 \u0442\u0430\u0439\u043C\u0430\u0443\u0442\u043E\u043C \u0438 \u0440\u0435\u0442\u0440\u0430\u044F\u043C\u0438.\n- \u041C\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u0411\u0414 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0435\u0440\u0435\u0437 \u043F\u0430\u043F\u043A\u0443 prisma/migrations.\n";
 async function openOrCreateRules(workspaceRoot) {
   if (!workspaceRoot) throw new Error(t("rules.errNoWorkspace", currentReportLanguage()));
-  const directory = (0, import_node_path4.join)(workspaceRoot, ".codescout");
-  const rulesPath = (0, import_node_path4.join)(directory, "rules.md");
-  if (!(0, import_node_fs5.existsSync)(rulesPath)) {
-    (0, import_node_fs5.mkdirSync)(directory, { recursive: true });
-    (0, import_node_fs5.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
+  const directory = (0, import_node_path5.join)(workspaceRoot, ".codescout");
+  const rulesPath = (0, import_node_path5.join)(directory, "rules.md");
+  if (!(0, import_node_fs6.existsSync)(rulesPath)) {
+    (0, import_node_fs6.mkdirSync)(directory, { recursive: true });
+    (0, import_node_fs6.writeFileSync)(rulesPath, RULES_TEMPLATE, "utf8");
   }
   const document = await vscode4.workspace.openTextDocument(vscode4.Uri.file(rulesPath));
   await vscode4.window.showTextDocument(document, { preview: false });
@@ -8481,7 +8559,7 @@ function activate(context) {
   });
   panel.setOnboardingHidden(context.globalState.get("codescout.onboardingDismissed") === true);
   const activateRoot = getWorkspaceRoot();
-  panel.setFirstAuditDone(activateRoot ? (0, import_node_fs5.existsSync)((0, import_node_path4.join)(activateRoot, CONTEXT_FILE)) : void 0);
+  panel.setFirstAuditDone(activateRoot ? (0, import_node_fs6.existsSync)((0, import_node_path5.join)(activateRoot, CONTEXT_FILE)) : void 0);
   context.subscriptions.push(
     vscode4.window.registerWebviewViewProvider("codescout.panel", panel),
     vscode4.commands.registerCommand("codescout.openSettings", () => vscode4.commands.executeCommand("workbench.action.openSettings", "codescout")),
@@ -8567,8 +8645,8 @@ function activate(context) {
               }
               clearAuditProgress(root);
               clearAuditResults(root);
-              const contextPath = (0, import_node_path4.join)(root, CONTEXT_FILE);
-              if ((0, import_node_fs5.existsSync)(contextPath)) (0, import_node_fs5.unlinkSync)(contextPath);
+              const contextPath = (0, import_node_path5.join)(root, CONTEXT_FILE);
+              if ((0, import_node_fs6.existsSync)(contextPath)) (0, import_node_fs6.unlinkSync)(contextPath);
               panel.clearProjectContext();
               await render(t("project.contextCleared", lang));
               return;
@@ -8583,12 +8661,12 @@ function activate(context) {
               const globs = [];
               const outside = [];
               for (const uri of picked ?? []) {
-                const rel = (0, import_node_path4.relative)(workspaceRoot, (0, import_node_path4.resolve)(uri.fsPath)).replaceAll("\\", "/");
-                if (!rel || rel.startsWith("..") || (0, import_node_path4.isAbsolute)(rel)) {
+                const rel = (0, import_node_path5.relative)(workspaceRoot, (0, import_node_path5.resolve)(uri.fsPath)).replaceAll("\\", "/");
+                if (!rel || rel.startsWith("..") || (0, import_node_path5.isAbsolute)(rel)) {
                   outside.push(uri.fsPath);
                   continue;
                 }
-                globs.push(uri.fsPath === (0, import_node_path4.resolve)(workspaceRoot) || await fileIsDirectory(uri) ? `${rel}/**` : rel);
+                globs.push(uri.fsPath === (0, import_node_path5.resolve)(workspaceRoot) || await fileIsDirectory(uri) ? `${rel}/**` : rel);
               }
               await settingsPanel?.webview.postMessage({ type: "scopePickResult", globs, outside });
               return;
@@ -9156,11 +9234,11 @@ function activate(context) {
       await context.globalState.update("codescout.onboardingDismissed", void 0);
       panel.setOnboardingHidden(false);
       const workspaceRoot = getWorkspaceRoot();
-      if (workspaceRoot && (0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE))) {
+      if (workspaceRoot && (0, import_node_fs6.existsSync)((0, import_node_path5.join)(workspaceRoot, CONTEXT_FILE))) {
         const answer = await vscode4.window.showWarningMessage(t("onboarding.resetConfirm", currentReportLanguage()), { modal: true }, t("common.delete", currentReportLanguage()));
-        if (answer === t("common.delete", currentReportLanguage())) (0, import_node_fs5.unlinkSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE));
+        if (answer === t("common.delete", currentReportLanguage())) (0, import_node_fs6.unlinkSync)((0, import_node_path5.join)(workspaceRoot, CONTEXT_FILE));
       }
-      if (workspaceRoot) panel.setFirstAuditDone((0, import_node_fs5.existsSync)((0, import_node_path4.join)(workspaceRoot, CONTEXT_FILE)));
+      if (workspaceRoot) panel.setFirstAuditDone((0, import_node_fs6.existsSync)((0, import_node_path5.join)(workspaceRoot, CONTEXT_FILE)));
       if (workspaceRoot) panel.setWelcomeBanner(true, "new");
       void vscode4.window.showInformationMessage(t("onboarding.resetDone", currentReportLanguage()));
     }),
@@ -9290,8 +9368,7 @@ function activate(context) {
         return;
       }
       const trimmed = key.trim();
-      const auto = detectProvider(trimmed);
-      const det = auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
+      const det = resolveOnboardingSelection(providerName, trimmed);
       let baseUrl = "";
       if (providerName === "custom") {
         baseUrl = (await vscode4.window.showInputBox({ prompt: t("wizard.urlPrompt", lang), value: "http://localhost:11434/v1", ignoreFocusOut: true }))?.trim() || "";
@@ -9405,12 +9482,15 @@ function deactivate() {
   RATE_LIMIT_PAUSE_LADDER,
   activate,
   billingDiagnosisLines,
+  combineReviewSignals,
   deactivate,
   fileCooldownSecondsFromSetting,
   migrateApiKeyFromSettings,
   rateLimitHitsLast5min,
+  readBaseUrlInfo,
   recordRateLimitHit,
   resetRateLimitHits,
+  resolveOnboardingSelection,
   reviewFiles
 });
 //# sourceMappingURL=extension.js.map

@@ -154,9 +154,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
 
   private unsuppressLocal(fingerprint: string): void {
     if (this.workspaceState) unsuppress(this.workspaceState, fingerprint);
-    const cached = this.suppressedCache.get(fingerprint);
-    this.suppressedCache.delete(fingerprint);
-    if (cached) {
+    const entries = this.workspaceState ? getSuppressed(this.workspaceState) : [];
+    for (const [cachedFingerprint, cached] of this.suppressedCache) {
+      if (isSuppressed(cached, entries)) continue;
+      this.suppressedCache.delete(cachedFingerprint);
+      if (this.issues.some((issue) => this.fingerprintOf(issue) === cachedFingerprint)) continue;
       this.issues.push(cached);
       this.shiftStats([cached], 1);
     }

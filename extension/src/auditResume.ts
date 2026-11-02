@@ -5,6 +5,8 @@
 // только подключает эти функции — сам файл не раздувается.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { defaultModel, fetchLiveModelsCached, isLocalBaseUrl, MODELS_FETCH_TIMEOUT_MS, PROVIDER_ORDER, resolveBaseUrl, sanitizeApiKey, type ProviderName } from '../../src/providers';
 import { t, type Lang } from '../../src/i18n';
@@ -35,12 +37,18 @@ export function getGitHead(workspaceRoot: string): string {
   }
 }
 
-// scopeHash = git HEAD + отсортированный дедуплицированный список файлов
-// плана аудита. Один и тот же план + тот же HEAD → тот же hash; любой
-// сдвиг (новый файл, удаление, коммит) → другой hash.
-export function computeScopeHash(head: string, files: readonly string[]): string {
+// scopeHash = git HEAD + отсортированный список файлов и хэши их содержимого.
+// Изменения незакоммиченных файлов тоже меняют scope, а не только новый HEAD.
+export function computeScopeHash(head: string, files: readonly string[], workspaceRoot = process.cwd()): string {
   const list = [...new Set(files.map((file) => file.replace(/\\/g, '/')))].sort();
-  return createHash('sha256').update(`head:${head}\nfiles:\n${list.join('\n')}\n`, 'utf8').digest('hex').slice(0, 16);
+  const contentHashes = list.map((file) => {
+    try {
+      return `${file}\0${createHash('sha256').update(readFileSync(join(workspaceRoot, file))).digest('hex')}`;
+    } catch {
+      return `${file}\0missing`;
+    }
+  });
+  return createHash('sha256').update(`head:${head}\nfiles:\n${contentHashes.join('\n')}\n`, 'utf8').digest('hex').slice(0, 16);
 }
 
 export type ScopeVerdict = 'ok' | 'changed' | 'untracked';

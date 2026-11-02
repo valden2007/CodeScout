@@ -169,7 +169,7 @@ describe('батч 28 e2e: умный догон после смены скоу�
       startedAt: Date.now() - 1000,
       model: 'gemini-1.5-flash',
       provider: 'gemini',
-      scopeHash: computeScopeHash(getGitHead(root), plan),
+      scopeHash: computeScopeHash(getGitHead(root), plan, root),
       state: 'cancelled',
       checked: [
         { file: 'src/a.ts', issues: [checkpointIssue('src/a.ts', 1, 'ALPHA_DESC')], provider: 'gemini', model: 'gemini-1.5-flash', ts: 1, hash: hashAuditFile(root, 'src/a.ts') },
@@ -273,7 +273,7 @@ describe('батч 28 e2e: умный догон после смены скоу�
       startedAt: Date.now() - 1000,
       model: 'gemini-1.5-flash',
       provider: 'gemini',
-      scopeHash: computeScopeHash(getGitHead(root), plan),
+      scopeHash: computeScopeHash(getGitHead(root), plan, root),
       state: 'cancelled',
       checked: [{ file: 'src/a.ts', issues: [checkpointIssue('src/a.ts', 1, 'ALPHA_DESC')], provider: 'gemini', model: 'gemini-1.5-flash', ts: 1 }],
       remaining: ['src/b.ts', 'src/c.ts']

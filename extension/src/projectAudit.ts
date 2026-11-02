@@ -406,12 +406,19 @@ async function pinnedAgentFor(url: string, signal: AbortSignal): Promise<https.A
   if (isBlockedDocHost(parsed.hostname)) throw new Error('SSRF-блок: локальный или metadata-адрес');
   let address = parsed.hostname;
   if (!isIP(address)) {
-  try {
-    const { lookup } = await import('node:dns/promises');
-    address = (await lookup(parsed.hostname)).address;
-  } catch {
-    throw new Error(`SSRF-блок: не удалось разрешить хост ${parsed.hostname} (fail-closed)`);
-  }
+    try {
+      const { lookup } = await import('node:dns/promises');
+      const addresses = await lookup(parsed.hostname, { all: true, verbatim: true });
+      if (!addresses.length) throw new Error('DNS returned no addresses');
+      for (const candidate of addresses) {
+        if (candidate.family !== 4 || isIP(candidate.address) !== 4 || isBlockedDocHost(candidate.address)) {
+          throw new Error(`blocked address ${candidate.address}`);
+        }
+      }
+      address = addresses[0].address;
+    } catch {
+      throw new Error(`SSRF-блок: не удалось безопасно разрешить хост ${parsed.hostname} (fail-closed)`);
+    }
   }
   signal.throwIfAborted();
   if (isIP(address) !== 4 || isBlockedDocHost(address)) throw new Error(`SSRF-блок: домен резолвится в ${address}`);

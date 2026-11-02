@@ -100,7 +100,7 @@ describe('батч 16: zero-config OpenCode Go', () => {
 
   it('батч 18: дефолтная модель Gemini — gemini-1.5-flash (free-tier), не 2.5', () => {
     expect(defaultModel('gemini')).toBe('gemini-1.5-flash');
-    expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai/v1');
+    expect(resolveBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
     expect(extManifest().contributes.configuration.properties['codescout.model'].default).toBe('gemini-1.5-flash');
     expect(extManifest().contributes.configuration.properties['codescout.provider'].enum).toEqual(['custom', 'openai', 'anthropic', 'opencode', 'gemini', 'groq', 'openrouter', 'github', 'deepseek', 'together', 'sambanova', 'siliconflow', 'nvidia', 'hyperbolic', 'cerebras', 'zai']);
   });

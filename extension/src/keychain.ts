@@ -827,7 +827,8 @@ export function decideFailover(ctx: FailoverContext, options: FailoverOptions, w
     const enabled = currentProfile.keys.filter((key) => key.enabled);
     const keyIndex = enabled.findIndex((key) => key.id === ctx.current.keyId);
     for (let step = 1; step < enabled.length; step += 1) {
-      const candidate = enabled[((keyIndex >= 0 ? keyIndex : 0) + step + enabled.length) % enabled.length];
+      const startIndex = keyIndex >= 0 ? keyIndex : enabled.length - 1;
+      const candidate = enabled[(startIndex + step) % enabled.length];
       if (!candidate || candidate.id === ctx.current.keyId) continue;
       if (isKeyBroken(currentProfile.id, candidate.id) || isKeyBillingBlocked(currentProfile.id, candidate.id) || isKeyAsleep(currentProfile.id, candidate.id, now)) continue;
       return {

@@ -80,7 +80,7 @@ async function waitFor(check: () => boolean, timeoutMs = 20000, stepMs = 50): Pr
 }
 
 function planHash(root: string, files: string[]): string {
-  return computeScopeHash(getGitHead(root), files);
+  return computeScopeHash(getGitHead(root), files, root);
 }
 
 describe('Батч 25 cross-provider resume', () => {

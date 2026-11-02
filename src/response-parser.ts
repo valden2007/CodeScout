@@ -145,13 +145,34 @@ function stripMarkdownFences(text: string): string {
   return (fenced ? fenced[1] : text).trim();
 }
 
-// Батч 20a: санитайз висячих запятых — «[1,2,]» и «{"a":1,}» лечатся regex
-// `,\s*([\]}]) → $1`. Применяется ВТОРЫМ проходом на кандидате, который уже
-// не парсится как есть: валидный JSON со строкой вида "wait, }" не портится
-// (первым всегда пробуем оригинал, sanitized-вариант подхватывается только
-// когда сырой кандидат упал).
+// Батч 20a: удаляем висячие запятые только вне JSON-строк. Regex портил
+// содержимое строки, если после запятой в ней встречалась закрывающая скобка.
 export function stripTrailingCommas(text: string): string {
-  return text.replace(/,(\s*[\]}])/g, '$1');
+  let output = '';
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      output += char;
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === ',') {
+      let next = index + 1;
+      while (/\s/.test(text[next] ?? '') && next < text.length) next += 1;
+      if (text[next] === ']' || text[next] === '}') continue;
+    }
+    output += char;
+  }
+  return output;
 }
 
 const RAW_TAIL_LIMIT = 200;

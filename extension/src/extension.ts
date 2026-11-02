@@ -1145,7 +1145,7 @@ async function runFullAuditOnce(context: vscode.ExtensionContext, output: vscode
     // Батч 25: scopeHash = git HEAD + план файлов аудита. Догон разрешён
     // ЛЮБЫМ провайдером/моделью (tags в чекпоинте), но только на неизменном
     // скоупе; старый чекпоинт без hash = 'untracked' — не блокируем.
-    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles);
+    const currentScopeHash = computeScopeHash(getGitHead(workspaceRoot), planFiles, workspaceRoot);
     let initial: AuditCheckpoint = { startedAt: Date.now(), model: auditSelection.model, provider: auditSelection.provider, scopeHash: currentScopeHash, state: 'running', checked: [], remaining: planFiles };
     if (resume) {
       const saved = readAuditProgress(workspaceRoot);
