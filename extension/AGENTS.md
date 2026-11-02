@@ -961,5 +961,18 @@ pre-design now.
      droppedSecurityTheater → ScanResult → Output «🧹 отброшено security-театра: N»
      (logSecurityTheaterDrops в аудит/своё/дифф — как entity-счётчик 28.5).
      Тесты: tests/batch28-11-filters.test.ts (9) + регресс 28.5/false-positive.
+     c) Кнопка «Открыть отчёт» (задача 3): ROOT CAUSE «молчания» в режиме
+     «Аудит завершён» — обработчик codescout.openAuditReport делал только
+     output.show() + await focus на ТОТ ЖЕ сайдбар, где живёт кнопка: новой
+     видимой поверхности клик не создавал, а отказ focus-команды улетал молча
+     в unhandled rejection. Теперь panel.openReportTab() создаёт/переиспользует
+     WebviewPanel «codescout.report» (editor column one) с полным reportHtml.ts
+     (находки, группировка, proof, динамика), reveal() показывает, Output
+     остаётся текстовым дампом. Сообщения вкладки маршрутируются тем же
+     routeMessage, что и сайдбар (регресс интерактива 28.1): клик из вкладки
+     доходит до хост-команд; render() синхронизирует оба surfaces (полоска
+     динамики второго аудита попадает во вкладку). Заголовок вкладки —
+     i18n-ключ title.report (ru+en). Тесты: tests/batch28-11-report-button.test.ts (3)
+     + регресс globe; в стуб добавлены учёт reveal/show и Output.show.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

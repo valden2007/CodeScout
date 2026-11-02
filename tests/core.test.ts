@@ -933,13 +933,20 @@ describe('E1.2b incremental panel render', () => {
   const stats = { files: 1, seconds: 1, critical: 0, medium: 0, low: 0 };
   it('live ticks go through postMessage, html is assigned only in render()', () => {
     const panel = readFileSync('extension/src/panel.ts', 'utf8');
+    // Контракт: никаких scattered-присваиваний — html пишется ТОЛЬКО из
+    // render(). С 28.11 render() обслуживает ДВА surfaces (сайдбар + вкладка
+    // полного отчёта codescout.report), поэтому точек ровно две, обе в render().
+    const assignLines = panel.split('\n').filter((line) => line.includes('webview.html ='));
+    expect(assignLines).toHaveLength(2);
     const live = panel.slice(panel.indexOf('setProgress('), panel.indexOf('setCancelled('));
     expect(live).toContain("safePost(webview, { type: 'progress', text: this.progressMessage");
     expect(live).toContain("safePost(webview, { type: 'status', message: this.statusMessage");
     expect(panel).not.toContain('void webview.postMessage(');
     expect(panel).toContain('webviewView.onDidDispose');
     expect(panel).toContain('Promise.resolve(webview.postMessage(message)).then(undefined, () => undefined)');
-    expect(panel.match(/webview\.html/g) ?? []).toHaveLength(1);
+    // оба surfaces подписаны на единую маршрутизацию (28.11)
+    expect(panel).toContain('this.routeMessage(message, webviewView.webview)');
+    expect(panel).toContain('this.routeMessage(message, tab.webview)');
   });
 
   it('webview patches #progressLine and #statusSlot in place from messages', () => {

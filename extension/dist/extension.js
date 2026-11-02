@@ -815,6 +815,7 @@ var ru_default = {
   "subtab.basic": "\u0411\u0430\u0437\u043E\u0432\u044B\u0435",
   "subtab.custom": "\u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F",
   "title.center": "CodeScout: \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+  "title.report": "CodeScout: \u041F\u043E\u043B\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442",
   "center.provider": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440",
   "center.apiKeyLabel": "API-\u043A\u043B\u044E\u0447 ( SecretStorage )",
   "center.keyKeep": "\u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 = \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
@@ -1310,6 +1311,7 @@ var en_default = {
   "subtab.basic": "Basic",
   "subtab.custom": "Customization",
   "title.center": "CodeScout: Settings",
+  "title.report": "CodeScout: Full report",
   "center.provider": "Provider",
   "center.apiKeyLabel": "API key ( SecretStorage )",
   "center.keyKeep": "empty field = keep the current key",
@@ -1952,14 +1954,34 @@ function parseProof(raw) {
 }
 var ENTITY_TOKEN_RE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d{1,8});/g;
 var ENTITY_COMPLAIN_RE = /html[\s-]?entit|сущност|encod|decod|escap|экранир|замен|replace|convert|артефакт|\bentities?\b/i;
+var ENTITY_REPLACE_TO_SYMBOL_RE = /(?:replace|замен|\buse\b|использ)[\s\S]{0,60}?&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,30}?(?:with|на|→)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>|&(?![a-zA-Z#]))|&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,50}?(?:replace|замен)[a-zA-Zа-яёА-ЯЁ\-]{0,8}[\s\S]{0,16}?(?:with|на)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+var ENTITY_VS_SYMBOL_RE = /&(?:lt|gt|amp|quot|apos|#\d{1,8});[\s\S]{0,60}?(?:instead of|вместо)[\s\S]{0,30}?(?:symbols?|символ|знак)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+var HTML_ENTITIES_VS_SYMBOL_RE = /html[\s-]?(?:entities?\b|entit|сущност)[\s\S]{0,90}?(?:instead of|вместо)[\s\S]{0,30}?(?:symbols?|символ|знак)[\s\S]{0,8}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
+var ENTITY_INSTEAD_BARE_RE = /(?:&lt;|&gt;|=&gt;|&amp;|&quot;|&apos;)[\s\S]{0,40}?(?:instead of|вместо)[\s\S]{0,6}?(?:<(?![a-zA-Z/!])|(?<![\w&;])>|=>)/i;
 function isEntityArtifactComplaint(description, proof = "") {
   const text = `${description}
 ${proof}`;
   const tokens = text.match(ENTITY_TOKEN_RE);
   if (!tokens || tokens.length === 0) return false;
+  if (ENTITY_REPLACE_TO_SYMBOL_RE.test(description)) return true;
+  if (ENTITY_VS_SYMBOL_RE.test(description)) return true;
+  if (HTML_ENTITIES_VS_SYMBOL_RE.test(description)) return true;
+  if (ENTITY_INSTEAD_BARE_RE.test(description)) return true;
   if (!ENTITY_COMPLAIN_RE.test(text)) return false;
   const words = text.replace(ENTITY_TOKEN_RE, " ").match(/[\p{L}\p{N}][\p{L}\p{N}_\-]{2,}/gu);
-  return (words ? words.length : 0) <= tokens.length * 3 + 2;
+  return (words ? words.length : 0) <= tokens.length + 2;
+}
+var SEC_THREAT_RE = /уязвим|vulnerab|эксплойт|exploit|раскрыт|раскрыва|expos|утечк|leak|компромет|compromis|атак|attack|threat|breach/i;
+var SEC_ABSTRACT_OBJECT_RE = /(?:импорт|импортир|import|тип\b|интерфейс|interface|класс\b|лог\b|логирова|logging|\blog\b|констант|список|\blist\b|набор\b|перечислен|enumeration|\benum\b|провайдер|provider|определ\w*\s+в\s+(?:исходном\s+)?коде|defined\s+in\s+(?:the\s+)?code|hardcoded\s+(?:list|provider|enum))/i;
+var SEC_VAGUE_CLAIM_RE = /(?:может|могут|возможен|вероятн\w*|потенциальн\w*|may|could|might|likely|potentially)[^\n]{0,40}?(?:уязвим|vulnerab|раскрыт|раскрыва|expos|утечк|leak|компромет|compromis|атак|attack|threat)|—\s*(?:это\s+)?(?:a\s+|an\s+)?(?:уязвим|vulnerab|threat|атак)|-\s*(?:a\s+)?(?:vulnerab|threat)/i;
+var SEC_CONCRETE_RE = /cwe[- ]?\d+|injection|инъекц|\bxss\b|\bcsrf\b|\bssrf\b|\bsqli?\b|traversal|deserial|\beval\b|\bexec\w*\b|\bspawn\b|child_process|process\.\w+|prompt[- ]?injection|hardcod|зашит|в\s+открытом\s+виде|plaintext|unencrypted|без\s+шифрования|innerHTML|document\.write|user[- ]input|user\s+(?:data|info|input)|данные\s+пользователя|пользовательск\w+\s+(?:ввод|данные|файл|имя|путь)|личн\w+\s+данн|\bpii\b|secret|api[ _-]?key|ключ|парол|password|credential|токен|\btoken\b|access[ _-]?token|privilege|эскалаци|переполн|overflow|race[ _-]?condition|exfiltrat|memory[ _-]?leak|resource[ _-]?leak|prototype\s+pollution|pollution|отписк|unsubscrib|не\s+вызыв|not\s+called|cleanup|dispos|\bpush\(|раст[её]т|grow\w*|утечк\w*\s+(?:памяти|memory|данных|ключей|секретов|паролей|токенов|пароль|data|secrets?|keys?)\w*/i;
+function isSecurityTheaterComplaint(category, description, proof = "") {
+  if (category !== "security" && category !== "bug") return false;
+  if (!SEC_THREAT_RE.test(description)) return false;
+  if (!SEC_ABSTRACT_OBJECT_RE.test(description)) return false;
+  if (!SEC_VAGUE_CLAIM_RE.test(description)) return false;
+  return !SEC_CONCRETE_RE.test(`${description}
+${proof}`);
 }
 function findBalancedJson(text) {
   const start = text.search(/[[{]/);
@@ -2043,6 +2065,7 @@ function parseReviewResponse(raw, filename) {
   const object = parsed;
   const rawIssues = Array.isArray(object.issues) ? object.issues : [];
   let droppedEntityArtifacts = 0;
+  let droppedSecurityTheater = 0;
   const issues = rawIssues.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const value = item;
@@ -2060,9 +2083,13 @@ function parseReviewResponse(raw, filename) {
       droppedEntityArtifacts += 1;
       return [];
     }
+    if (isSecurityTheaterComplaint(category, description, proof)) {
+      droppedSecurityTheater += 1;
+      return [];
+    }
     return [{ file: filename, line, category, severity, description, code, suggestion, confidence, proof }];
   });
-  return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1, droppedEntityArtifacts };
+  return { issues, summary: typeof object.summary === "string" ? object.summary.trim() : "", filesAnalyzed: 1, droppedEntityArtifacts, droppedSecurityTheater };
 }
 
 // ../src/line-correction.ts
@@ -3255,6 +3282,8 @@ var CodeScoutPanel = class {
   failoverSleep;
   // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
   billingWall;
+  // ЗАДАЧА 3 (28.11): вкладка полного отчёта в области редактора (reportHtml.ts).
+  reportTab;
   workspaceState;
   onWelcomeStart;
   onWelcomeDismiss;
@@ -3337,123 +3366,128 @@ var CodeScoutPanel = class {
       this.refreshAutoResumeSettings();
       this.render();
     });
-    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message) => {
-      if (!message || typeof message !== "object") return;
-      if (message.command === "scanLastCommit") {
-        void vscode.commands.executeCommand("codescout.scanLastCommit");
-      } else if (message.command === "scanUncommitted") {
-        void vscode.commands.executeCommand("codescout.scanUncommitted");
-      } else if (message.command === "scanFull" || message.command === "startFullAudit") {
-        this.onWelcomeStart?.();
-        this.welcomeBanner = false;
-        this.render();
-        void vscode.commands.executeCommand("codescout.scanFull");
-      } else if (message.command === "dismissWelcome") {
-        this.onWelcomeDismiss?.();
-        this.welcomeBanner = false;
-        this.render();
-      } else if (message.command === "resumeAudit") {
-        void vscode.commands.executeCommand("codescout.resumeAudit");
-      } else if (message.command === "resumeAuditOther") {
-        void vscode.commands.executeCommand("codescout.resumeAuditOther");
-      } else if (message.command === "failoverWaitResume") {
-        void vscode.commands.executeCommand("codescout.failoverWaitResume");
-      } else if (message.command === "failoverDismiss") {
-        this.failoverSleep = void 0;
-        this.billingWall = void 0;
-        this.render();
-      } else if (message.command === "switchKeyProfile") {
-        void vscode.commands.executeCommand("codescout.switchKeyProfile");
-      } else if (message.command === "restartAudit") {
-        void vscode.commands.executeCommand("codescout.restartAudit");
-      } else if (message.command === "setApiKey") {
-        void vscode.commands.executeCommand("codescout.setApiKey");
-      } else if (message.command === "openSettings") {
-        void vscode.commands.executeCommand("codescout.openSettings");
-      } else if (message.command === "openSettingsPage") {
-        void vscode.commands.executeCommand("codescout.openSettingsPage", message.anchor ?? "");
-      } else if (message.command === "toggleLanguage") {
-        void vscode.commands.executeCommand("codescout.toggleLanguage");
-      } else if (message.command === "dismissOnboarding") {
-        void vscode.commands.executeCommand("codescout.dismissOnboarding");
-      } else if (message.command === "openReport") {
-        void vscode.commands.executeCommand("codescout.openAuditReport");
-      } else if (message.command === "runAgain") {
-        void vscode.commands.executeCommand("codescout.scanFull");
-      } else if (message.command === "reportIssue") {
-        void vscode.commands.executeCommand("codescout.reportIssue");
-      } else if (message.command === "customReview") {
-        void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
-      } else if (message.command === "clearApiKey") {
-        void vscode.commands.executeCommand("codescout.clearApiKey");
-      } else if (message.command === "chooseModel") {
-        void vscode.commands.executeCommand("codescout.chooseModel");
-      } else if (message.command === "rerunWithModel") {
-        void vscode.commands.executeCommand("codescout.rerunWithModel");
-      } else if (message.command === "onboardCloud") {
-        void vscode.commands.executeCommand("codescout.onboardCloud");
-      } else if (message.command === "onboardLocal") {
-        void vscode.commands.executeCommand("codescout.onboardLocal");
-      } else if (message.command === "onboardSkip") {
-        void vscode.commands.executeCommand("codescout.onboardSkip");
-      } else if (message.command === "openKeyLink") {
-        void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
-      } else if (message.command === "openLink") {
-        const url = typeof message.url === "string" ? message.url.trim() : "";
-        if (isContactUrlAllowed(url)) void vscode.env.openExternal(vscode.Uri.parse(url));
-      } else if (message.command === "testSample") {
-        void vscode.commands.executeCommand("codescout.testSample");
-      } else if (message.command === "cancelScan") {
-        void vscode.commands.executeCommand("codescout.cancelScan");
-      } else if (message.command === "retryScan") {
-        void vscode.commands.executeCommand("codescout.retryScan");
-      } else if (message.command === "suppressFinding") {
-        const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
-        if (fingerprint) this.suppressLocal(fingerprint);
-      } else if (message.command === "unsuppressFinding") {
-        const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
-        if (fingerprint) this.unsuppressLocal(fingerprint);
-      } else if (message.command === "pickScope") {
-        void this.handlePickScope();
-      } else if (message.command === "openFile" && message.file && message.line !== void 0) {
-        if (!isWorkspaceRelativePath(message.file)) {
-          void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
-          return;
-        }
-        const requestedUri = vscode.Uri.file((0, import_node_path2.resolve)(message.file));
-        const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
-        if (!root) {
-          void vscode.window.showErrorMessage(t("panel.errOpenFileNoWorkspace", this.language));
-          return;
-        }
-        const candidate = (0, import_node_path2.resolve)(root.uri.fsPath, message.file);
-        const realRoot = realExistingPath(root.uri.fsPath);
-        const realCandidate = realExistingPath(candidate);
-        const inside = (0, import_node_path2.relative)(realRoot, realCandidate);
-        const outsideWorkspace = inside === "" || inside.startsWith("..") || (0, import_node_path2.isAbsolute)(inside) || !pathInsideRoot(realRoot, realCandidate);
-        if (outsideWorkspace) {
-          void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
-          return;
-        }
-        const fileUri = vscode.Uri.file(realCandidate);
-        void vscode.workspace.openTextDocument(fileUri).then((document) => {
-          const rawLine = parseInt(String(message.line), 10);
-          const line = Number.isInteger(rawLine) && rawLine >= 1 ? rawLine - 1 : 0;
-          const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
-          return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
-            const range = new vscode.Range(position, position);
-            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-            editor.selection = new vscode.Selection(position, position);
-          });
-        }, () => {
-          void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file ?? "" }));
-        });
-      }
-    }, void 0, []);
+    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message) => this.routeMessage(message, webviewView.webview), void 0, []);
     this.render();
   }
-  async handlePickScope() {
-    const webview = this.view?.webview;
+  // ЗАДАЧА 3 (28.11): маршрутизация сообщений вебвью — единый обработчик для
+  // сайдбара и вкладки полного отчёта (codescout.report). Клик внутри вкладки
+  // живёт ровно как клик в панели (регресс интерактива 28.1), whitelist'а нет —
+  // unknown-команда просто не матчится ни одной веткой.
+  routeMessage(message, source) {
+    if (!message || typeof message !== "object") return;
+    if (message.command === "scanLastCommit") {
+      void vscode.commands.executeCommand("codescout.scanLastCommit");
+    } else if (message.command === "scanUncommitted") {
+      void vscode.commands.executeCommand("codescout.scanUncommitted");
+    } else if (message.command === "scanFull" || message.command === "startFullAudit") {
+      this.onWelcomeStart?.();
+      this.welcomeBanner = false;
+      this.render();
+      void vscode.commands.executeCommand("codescout.scanFull");
+    } else if (message.command === "dismissWelcome") {
+      this.onWelcomeDismiss?.();
+      this.welcomeBanner = false;
+      this.render();
+    } else if (message.command === "resumeAudit") {
+      void vscode.commands.executeCommand("codescout.resumeAudit");
+    } else if (message.command === "resumeAuditOther") {
+      void vscode.commands.executeCommand("codescout.resumeAuditOther");
+    } else if (message.command === "failoverWaitResume") {
+      void vscode.commands.executeCommand("codescout.failoverWaitResume");
+    } else if (message.command === "failoverDismiss") {
+      this.failoverSleep = void 0;
+      this.billingWall = void 0;
+      this.render();
+    } else if (message.command === "switchKeyProfile") {
+      void vscode.commands.executeCommand("codescout.switchKeyProfile");
+    } else if (message.command === "restartAudit") {
+      void vscode.commands.executeCommand("codescout.restartAudit");
+    } else if (message.command === "setApiKey") {
+      void vscode.commands.executeCommand("codescout.setApiKey");
+    } else if (message.command === "openSettings") {
+      void vscode.commands.executeCommand("codescout.openSettings");
+    } else if (message.command === "openSettingsPage") {
+      void vscode.commands.executeCommand("codescout.openSettingsPage", message.anchor ?? "");
+    } else if (message.command === "toggleLanguage") {
+      void vscode.commands.executeCommand("codescout.toggleLanguage");
+    } else if (message.command === "dismissOnboarding") {
+      void vscode.commands.executeCommand("codescout.dismissOnboarding");
+    } else if (message.command === "openReport") {
+      void vscode.commands.executeCommand("codescout.openAuditReport");
+    } else if (message.command === "runAgain") {
+      void vscode.commands.executeCommand("codescout.scanFull");
+    } else if (message.command === "reportIssue") {
+      void vscode.commands.executeCommand("codescout.reportIssue");
+    } else if (message.command === "customReview") {
+      void vscode.commands.executeCommand("codescout.customReview", message.focus ?? "", message.scope ?? "all", message.globs ?? "");
+    } else if (message.command === "clearApiKey") {
+      void vscode.commands.executeCommand("codescout.clearApiKey");
+    } else if (message.command === "chooseModel") {
+      void vscode.commands.executeCommand("codescout.chooseModel");
+    } else if (message.command === "rerunWithModel") {
+      void vscode.commands.executeCommand("codescout.rerunWithModel");
+    } else if (message.command === "onboardCloud") {
+      void vscode.commands.executeCommand("codescout.onboardCloud");
+    } else if (message.command === "onboardLocal") {
+      void vscode.commands.executeCommand("codescout.onboardLocal");
+    } else if (message.command === "onboardSkip") {
+      void vscode.commands.executeCommand("codescout.onboardSkip");
+    } else if (message.command === "openKeyLink") {
+      void vscode.env.openExternal(vscode.Uri.parse("https://aistudio.google.com/apikey"));
+    } else if (message.command === "openLink") {
+      const url = typeof message.url === "string" ? message.url.trim() : "";
+      if (isContactUrlAllowed(url)) void vscode.env.openExternal(vscode.Uri.parse(url));
+    } else if (message.command === "testSample") {
+      void vscode.commands.executeCommand("codescout.testSample");
+    } else if (message.command === "cancelScan") {
+      void vscode.commands.executeCommand("codescout.cancelScan");
+    } else if (message.command === "retryScan") {
+      void vscode.commands.executeCommand("codescout.retryScan");
+    } else if (message.command === "suppressFinding") {
+      const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
+      if (fingerprint) this.suppressLocal(fingerprint);
+    } else if (message.command === "unsuppressFinding") {
+      const fingerprint = typeof message.fingerprint === "string" ? message.fingerprint.trim() : "";
+      if (fingerprint) this.unsuppressLocal(fingerprint);
+    } else if (message.command === "pickScope") {
+      void this.handlePickScope(source);
+    } else if (message.command === "openFile" && message.file && message.line !== void 0) {
+      if (!isWorkspaceRelativePath(message.file)) {
+        void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
+        return;
+      }
+      const requestedUri = vscode.Uri.file((0, import_node_path2.resolve)(message.file));
+      const root = vscode.workspace.getWorkspaceFolder(requestedUri) ?? vscode.workspace.workspaceFolders?.[0];
+      if (!root) {
+        void vscode.window.showErrorMessage(t("panel.errOpenFileNoWorkspace", this.language));
+        return;
+      }
+      const candidate = (0, import_node_path2.resolve)(root.uri.fsPath, message.file);
+      const realRoot = realExistingPath(root.uri.fsPath);
+      const realCandidate = realExistingPath(candidate);
+      const inside = (0, import_node_path2.relative)(realRoot, realCandidate);
+      const outsideWorkspace = inside === "" || inside.startsWith("..") || (0, import_node_path2.isAbsolute)(inside) || !pathInsideRoot(realRoot, realCandidate);
+      if (outsideWorkspace) {
+        void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file }));
+        return;
+      }
+      const fileUri = vscode.Uri.file(realCandidate);
+      void vscode.workspace.openTextDocument(fileUri).then((document) => {
+        const rawLine = parseInt(String(message.line), 10);
+        const line = Number.isInteger(rawLine) && rawLine >= 1 ? rawLine - 1 : 0;
+        const position = new vscode.Position(Math.min(line, Math.max(0, document.lineCount - 1)), 0);
+        return vscode.window.showTextDocument(document, { preview: false }).then((editor) => {
+          const range = new vscode.Range(position, position);
+          editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+          editor.selection = new vscode.Selection(position, position);
+        });
+      }, () => {
+        void vscode.window.showErrorMessage(t("panel.errFileNotFound", this.language, { file: message.file ?? "" }));
+      });
+    }
+  }
+  async handlePickScope(source) {
+    const webview = source ?? this.view?.webview;
     if (!webview) return;
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) {
@@ -3689,8 +3723,18 @@ var CodeScoutPanel = class {
     this.render();
   }
   render() {
-    if (!this.view) return;
-    const webview = this.view.webview;
+    if (this.reportTab) {
+      try {
+        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false);
+      } catch {
+      }
+    }
+    if (this.view) this.view.webview.html = this.composeHtml(this.view.webview, this.welcomeBanner);
+  }
+  // Общая сборка html отчёта для обоих surfaces: сайдбар (welcome-оверлей — его
+  // родной дом) и редакторная вкладка codescout.report (28.11). Один и тот же
+  // reportHtml.ts, те же настройки внешнего вида и язык.
+  composeHtml(webview, welcomeBanner) {
     const assets = {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicon.css")).toString(),
       cspSource: webview.cspSource
@@ -3703,7 +3747,31 @@ var CodeScoutPanel = class {
       progress: this.progressInfo ? { ...this.progressInfo } : void 0,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : void 0
     };
-    this.view.webview.html = this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+    return this.hasRun || this.scanning ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall) : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+  }
+  // ЗАДАЧА 3 (28.11): «Открыть отчёт» из карточки «Аудит завершён». ROOT CAUSE
+  // «молчания» кнопки: обработчик codescout.openAuditReport делал только
+  // output.show() + focus на тот же сайдбар, где и живёт кнопка, — новой
+  // видимой поверхности не было; а await focus-команды без try/catch ронял
+  // обработчик молча (unhandled rejection в void-ветке). Теперь клик
+  // открывает webview полного отчёта в области редактора.
+  openReportTab() {
+    const disposed = this.reportTab?.disposed === true;
+    if (!this.reportTab || disposed) {
+      const tab = vscode.window.createWebviewPanel("codescout.report", t("title.report", this.language), vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [this.extensionUri] });
+      tab.webview.onDidReceiveMessage((message) => this.routeMessage(message, tab.webview));
+      tab.onDidDispose(() => {
+        if (this.reportTab === tab) this.reportTab = void 0;
+      });
+      this.reportTab = tab;
+      try {
+        this.render();
+      } catch {
+      }
+    } else {
+      this.reportTab.title = t("title.report", this.language);
+    }
+    this.reportTab.reveal(void 0, true);
   }
 };
 
@@ -7336,6 +7404,10 @@ function logEntityDrops(output, result) {
   const drops = result.droppedEntityArtifacts ?? 0;
   if (drops > 0) output.appendLine(`\u{1F9F9} \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E entity-\u0430\u0440\u0442\u0435\u0444\u0430\u043A\u0442\u043E\u0432: ${drops}`);
 }
+function logSecurityTheaterDrops(output, result) {
+  const drops = result.droppedSecurityTheater ?? 0;
+  if (drops > 0) output.appendLine(`\u{1F9F9} \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E security-\u0442\u0435\u0430\u0442\u0440\u0430: ${drops}`);
+}
 function applyRequestTimeoutSetting() {
   const seconds = requestTimeoutSecondsFromSetting(vscode4.workspace.getConfiguration("codescout").get("requestTimeoutSeconds"));
   setDefaultRequestTimeoutMs(seconds * 1e3);
@@ -7360,6 +7432,7 @@ async function reviewFiles(context, files, workspaceRoot, onRetry, onProgress, o
   const issues = [];
   let skippedFiles = 0;
   let entityDrops = 0;
+  let theaterDrops = 0;
   const queue = files.map((_file, index) => index);
   const ladderCycles = /* @__PURE__ */ new Map();
   let processedCount = 0;
@@ -7402,6 +7475,7 @@ ${docPick.section}` : systemPrompt;
         const raw = await provider.review(fileSystemPrompt, buildReviewPrompt(file, chunk, importsLine, passLine, promptLang));
         const parsed = parseReviewResponse(raw, file.filename);
         entityDrops += parsed.droppedEntityArtifacts ?? 0;
+        theaterDrops += parsed.droppedSecurityTheater ?? 0;
         return parsed.issues;
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -7542,7 +7616,7 @@ ${docPick.section}` : systemPrompt;
       onFileSkipped?.(file.filename, lastError);
     }
   }
-  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops };
+  return { issues, filesAnalyzed: files.length - skippedFiles, skippedFiles, durationMs: Date.now() - startedAt, droppedEntityArtifacts: entityDrops, droppedSecurityTheater: theaterDrops };
 }
 async function reviewWorkspace(context, lastCommit, onRetry, onProgress, onThinking, signal, systemPrompt = SYSTEM_PROMPT, fileCooldown = 0, onFileCooldown, onFileSkipped) {
   const workspaceRoot = getWorkspaceRoot();
@@ -7875,6 +7949,7 @@ async function runFullAuditOnce(context, output, panel, resume = false) {
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
     }, void 0, currentReportLanguage(), effectiveFileCooldownSeconds(auditPasses), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), docsForFile, adaptive, () => skipBreakerReset(breakerState), auditQuota);
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     const mergedIssues = collectCheckpointFindings(state);
     const filesAnalyzed = state.checked.length;
     const auditMeta = { provider: auditSelection.provider, model: auditSelection.model, timestamp: Date.now() };
@@ -8033,6 +8108,7 @@ async function runCustomReview(context, output, panel, focusArg, scopeArg, globs
       output.appendLine(`\u23F8 rate-limit: \u043F\u0430\u0443\u0437\u0430 ${waitSeconds}\u0441, \u0440\u0435\u0442\u0440\u0438 \u0444\u0430\u0439\u043B ${filename} (\u043F\u0430\u0443\u0437\u0430 ${pauseNumber}/${maxPauses}) \xB7 429 \u0437\u0430 5 \u043C\u0438\u043D: ${hits}${hits > 10 ? " \u26A0\uFE0F \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440 \u0431\u0430\u043D\u0438\u0442 \u043D\u0430\u0434\u043E\u043B\u0433\u043E \u2014 \u043D\u0443\u0436\u0435\u043D \u0447\u0430\u0441\u043E\u0432\u043E\u0439 \u043E\u0442\u0434\u044B\u0445" : ""}`);
     }, void 0, lang, effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`\u23F8 cooldown ${seconds}\u0441 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0444\u0430\u0439\u043B\u043E\u043C`), void 0, customAdaptive);
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     const visibleIssues = filterSuppressed(dedupeIssues(result.issues), context.workspaceState);
     panel.update(visibleIssues, buildStats(visibleIssues, result.filesAnalyzed, result.durationMs), false, "", false, void 0, focus);
     await vscode4.commands.executeCommand("codescout.panel.focus");
@@ -8105,6 +8181,7 @@ async function runReview(context, lastCommit, output, panel, signal) {
       output.appendLine(`\u26A0\uFE0F \u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E \u0444\u0430\u0439\u043B\u043E\u0432: ${result.skippedFiles} (\u043E\u0448\u0438\u0431\u043A\u0438 \u0438\u043B\u0438 rate-limit) \u2014 \u0441\u043C. \u0441\u0442\u0440\u043E\u043A\u0438 \xAB\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D \u0444\u0430\u0439\u043B\xBB \u0432\u044B\u0448\u0435.`);
     }
     logEntityDrops(output, result);
+    logSecurityTheaterDrops(output, result);
     const visibleIssues = filterSuppressed(result.issues, context.workspaceState);
     const stats = buildStats(visibleIssues, result.filesAnalyzed, result.durationMs);
     panel.update(visibleIssues, stats);
@@ -8403,9 +8480,9 @@ function activate(context) {
       await context.globalState.update("codescout.onboardingDismissed", true);
       panel.setOnboardingHidden(true);
     }),
-    vscode4.commands.registerCommand("codescout.openAuditReport", async () => {
+    vscode4.commands.registerCommand("codescout.openAuditReport", () => {
       output.show(true);
-      await vscode4.commands.executeCommand("codescout.panel.focus");
+      panel.openReportTab();
     }),
     vscode4.commands.registerCommand("codescout.reportIssue", async () => {
       const confirmLang = currentReportLanguage();

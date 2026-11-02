@@ -121,6 +121,7 @@
   "subtab.basic": "Basic",
   "subtab.custom": "Customization",
   "title.center": "CodeScout: Settings",
+  "title.report": "CodeScout: Full report",
   "center.provider": "Provider",
   "center.apiKeyLabel": "API key ( SecretStorage )",
   "center.keyKeep": "empty field = keep the current key",

@@ -34,6 +34,10 @@ class StubState {
   // Микро-батч 28.6: учёт showWarningMessage (баннер санкции quota-паузы —
   // ровно один на прогон) — ответы всё так же из очереди warningAnswers.
   warningCalls: unknown[][] = [];
+  // ЗАДАЧА 3 (28.11): счётчики видимости — reveal()/show() webview-панелей и
+  // show() Output-канала (клик «Открыть отчёт» обязан показать поверхность).
+  panelReveals = 0;
+  outputShows = 0;
 
   reset(): void {
     this.config.clear();
@@ -59,6 +63,8 @@ class StubState {
     this.quickPickCalls = [];
     this.inputBoxCalls = [];
     this.warningCalls = [];
+    this.panelReveals = 0;
+    this.outputShows = 0;
   }
 
   set(sectionKey: string, value: unknown): void {
@@ -128,7 +134,7 @@ export const commands = {
 export const window = {
   activeTextEditor: undefined as unknown,
   createOutputChannel(): unknown {
-    return { appendLine: (line: string) => state.outputLines.push(line), clear: () => {}, show: () => {}, dispose: () => {} };
+    return { appendLine: (line: string) => state.outputLines.push(line), clear: () => {}, show: () => { state.outputShows += 1; }, dispose: () => {} };
   },
   registerWebviewViewProvider(viewId: string, provider: unknown): Disposable {
     state.providers.set(viewId, provider);
@@ -162,9 +168,12 @@ export class StubWebviewPanel {
   webview = new StubWebview();
   title = '';
   disposed = false;
+  // ЗАДАЧА 3 (28.11): учёт показа вкладки — reveal()/show() из кода хоста.
+  revealCalls = 0;
   constructor(public viewType: string, title: string) { this.title = title; }
   onDidDispose(): Disposable { return noopDisposable(); }
-  reveal(): void {}
+  reveal(): void { this.revealCalls += 1; state.panelReveals += 1; }
+  show(): void { this.revealCalls += 1; state.panelReveals += 1; }
   dispose(): void { this.disposed = true; }
 }
 

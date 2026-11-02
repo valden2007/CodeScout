@@ -107,6 +107,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private failoverSleep?: FailoverSleepView;
   // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
   private billingWall?: BillingWallView;
+  // ЗАДАЧА 3 (28.11): вкладка полного отчёта в области редактора (reportHtml.ts).
+  private reportTab?: vscode.WebviewPanel;
   private workspaceState?: vscode.Memento;
   private onWelcomeStart?: () => void;
   private onWelcomeDismiss?: () => void;
@@ -200,7 +202,15 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.refreshAutoResumeSettings();
       this.render();
     });
-    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => {
+    this.messageSubscription = webviewView.webview.onDidReceiveMessage((message: ScanMessage) => this.routeMessage(message, webviewView.webview), undefined, []);
+    this.render();
+  }
+
+  // ЗАДАЧА 3 (28.11): маршрутизация сообщений вебвью — единый обработчик для
+  // сайдбара и вкладки полного отчёта (codescout.report). Клик внутри вкладки
+  // живёт ровно как клик в панели (регресс интерактива 28.1), whitelist'а нет —
+  // unknown-команда просто не матчится ни одной веткой.
+  private routeMessage(message: ScanMessage, source?: vscode.Webview): void {
       if (!message || typeof message !== 'object') return;
       if (message.command === 'scanLastCommit') {
         void vscode.commands.executeCommand('codescout.scanLastCommit');
@@ -286,7 +296,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         const fingerprint = typeof message.fingerprint === 'string' ? message.fingerprint.trim() : '';
         if (fingerprint) this.unsuppressLocal(fingerprint);
       } else if (message.command === 'pickScope') {
-        void this.handlePickScope();
+        void this.handlePickScope(source);
       } else if (message.command === 'openFile' && message.file && message.line !== undefined) {
         if (!isWorkspaceRelativePath(message.file)) {
           void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file }));
@@ -322,12 +332,10 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
           void vscode.window.showErrorMessage(t('panel.errFileNotFound', this.language, { file: message.file ?? '' }));
         });
       }
-    }, undefined, []);
-    this.render();
   }
 
-  private async handlePickScope(): Promise<void> {
-    const webview = this.view?.webview;
+  private async handlePickScope(source?: vscode.Webview): Promise<void> {
+    const webview = source ?? this.view?.webview;
     if (!webview) return;
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) {
@@ -586,8 +594,24 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   }
 
   private render(): void {
-    if (!this.view) return;
-    const webview = this.view.webview;
+    // ЗАДАЧА 3 (28.11): вкладка полного отчёта обновляется синхронно с панелью —
+    // находки, группировка, proof и динамика «новых/починено/осталось» видны и в
+    // ней. Рендер вкладки изолирован try/catch и идёт ПЕРВЫМ: битый сайдбар не
+    // должен лишать пользователя уже открытого отчёта (деградация 28.1).
+    if (this.reportTab) {
+      try {
+        this.reportTab.webview.html = this.composeHtml(this.reportTab.webview, false);
+      } catch {
+        // вкладка догонит следующий update()/render()
+      }
+    }
+    if (this.view) this.view.webview.html = this.composeHtml(this.view.webview, this.welcomeBanner);
+  }
+
+  // Общая сборка html отчёта для обоих surfaces: сайдбар (welcome-оверлей — его
+  // родной дом) и редакторная вкладка codescout.report (28.11). Один и тот же
+  // reportHtml.ts, те же настройки внешнего вида и язык.
+  private composeHtml(webview: Pick<vscode.Webview, 'asWebviewUri' | 'cspSource'>, welcomeBanner: boolean): string {
     const assets: WebviewAssets = {
       codiconCss: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'codicon.css')).toString(),
       cspSource: webview.cspSource
@@ -600,8 +624,36 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       progress: this.progressInfo ? { ...this.progressInfo } : undefined,
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
-    this.view.webview.html = this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, this.welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, this.welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+    return this.hasRun || this.scanning
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+  }
+
+  // ЗАДАЧА 3 (28.11): «Открыть отчёт» из карточки «Аудит завершён». ROOT CAUSE
+  // «молчания» кнопки: обработчик codescout.openAuditReport делал только
+  // output.show() + focus на тот же сайдбар, где и живёт кнопка, — новой
+  // видимой поверхности не было; а await focus-команды без try/catch ронял
+  // обработчик молча (unhandled rejection в void-ветке). Теперь клик
+  // открывает webview полного отчёта в области редактора.
+  openReportTab(): void {
+    const disposed = (this.reportTab as unknown as { disposed?: boolean } | undefined)?.disposed === true;
+    if (!this.reportTab || disposed) {
+      const tab = vscode.window.createWebviewPanel('codescout.report', t('title.report', this.language), vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [this.extensionUri] });
+      tab.webview.onDidReceiveMessage((message: ScanMessage) => this.routeMessage(message, tab.webview));
+      tab.onDidDispose(() => {
+        if (this.reportTab === tab) this.reportTab = undefined;
+      });
+      this.reportTab = tab;
+      // первичная отрисовка — через render(): единая точка записи webview.html
+      // на оба surfaces (контракт E1.2b); throw рендера не отменяет reveal ниже
+      try {
+        this.render();
+      } catch {
+        // 28.1-деградация: показ вкладки важнее битого рендера — догонит апдейт
+      }
+    } else {
+      this.reportTab.title = t('title.report', this.language);
+    }
+    this.reportTab.reveal(undefined, true);
   }
 }

@@ -121,6 +121,7 @@
   "subtab.basic": "Базовые",
   "subtab.custom": "Кастомизация",
   "title.center": "CodeScout: Настройки",
+  "title.report": "CodeScout: Полный отчёт",
   "center.provider": "Провайдер",
   "center.apiKeyLabel": "API-ключ ( SecretStorage )",
   "center.keyKeep": "пустое поле = оставить текущий ключ",

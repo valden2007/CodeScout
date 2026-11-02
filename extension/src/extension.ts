@@ -1954,9 +1954,15 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.globalState.update('codescout.onboardingDismissed', true);
       panel.setOnboardingHidden(true);
     }),
-    vscode.commands.registerCommand('codescout.openAuditReport', async () => {
+    vscode.commands.registerCommand('codescout.openAuditReport', () => {
+      // ЗАДАЧА 3 (28.11): ROOT CAUSE «молчания» кнопки в режиме «Аудит завершён» —
+      // обработчик делал только output.show() + await focus на тот же сайдбар, где
+      // живёт кнопка: новой видимой поверхности клик не создавал, а отказ
+      // focus-команды улетал в void как unhandled rejection («throw до panel.show»).
+      // Теперь клик открывает webview полного отчёта (reportHtml.ts: находки,
+      // группировка, proof, динамика); Output остаётся текстовым дампом.
       output.show(true);
-      await vscode.commands.executeCommand('codescout.panel.focus');
+      panel.openReportTab();
     }),
     vscode.commands.registerCommand('codescout.reportIssue', async () => {
       // Батч 17.5 (Privacy): логи аудита уезжают в публичный Issue — сначала
