@@ -126,6 +126,10 @@
         "title": "CodeScout: ключ и модель"
       },
       {
+        "command": "codescout.openFullReport",
+        "title": "CodeScout: Open Full Report"
+      },
+      {
         "command": "codescout.switchKeyProfile",
         "title": "CodeScout: переключить профиль ключа"
       },

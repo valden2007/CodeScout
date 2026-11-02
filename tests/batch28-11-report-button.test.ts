@@ -91,6 +91,8 @@ describe('микробатч 28.11 задача 3: вкладка полного
     // режим «Аудит завершён»: карточка итога с кнопкой openReport есть в панели
     expect(html()).toContain('Аудит завершён');
     expect(html()).toContain('data-command="openReport"');
+    expect(html()).toContain('data-command="openFullReport"');
+    expect(html()).toContain('title="Открыть полный отчёт"');
     // сам webview-скрипт шлёт data-command как команду хосту (контракт 28.1)
     expect(html()).toContain("vscode.postMessage({ command: element.dataset.command");
 
@@ -173,4 +175,44 @@ describe('микробатч 28.11 задача 3: вкладка полного
     expect(extensionSource).toContain('panel.openReportTab()');
     expect(extensionSource).toContain("output.show(true)");
   });
+
+  it('после reload last-good кнопка остаётся, событие завершения не дублируется; palette открывает вкладку', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return response('PERSISTED_REPORT_FINDING');
+    }) as typeof fetch;
+    bootPanel();
+    await flush();
+    await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
+    await flush();
+
+    const revived = bootPanel();
+    await flush();
+    expect(revived.html()).toContain('PERSISTED_REPORT_FINDING');
+    expect(revived.html()).toContain('data-command="openFullReport"');
+    expect(revived.html()).not.toContain('<div class="summary-card">');
+
+    await (state.commands.get('codescout.openFullReport') as () => Promise<unknown>)();
+    await flush();
+    expect(state.panels.filter((p) => p.viewType === 'codescout.report')).toHaveLength(1);
+    expect(state.panels[0]!.webview.html).toContain('PERSISTED_REPORT_FINDING');
+    const panelsBefore = state.panels.length;
+    await (state.commands.get('codescout.openFullReport') as () => Promise<unknown>)();
+    expect(state.panels.filter((p) => p.viewType === 'codescout.report')).toHaveLength(1);
+    expect(state.panels).toHaveLength(panelsBefore);
+    const manifest = JSON.parse(readFileSync('extension/package.json', 'utf8')) as { contributes: { commands: Array<{ command: string; title: string }> } };
+    expect(manifest.contributes.commands).toContainEqual({ command: 'codescout.openFullReport', title: 'CodeScout: Open Full Report' });
+  }, 120000);
+
+  it('пустой отчёт не показывает постоянную кнопку полного отчёта', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/models')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return response('');
+    }) as typeof fetch;
+    const panel = bootPanel();
+    await flush();
+    await (state.commands.get('codescout.scanFull') as () => Promise<unknown>)();
+    await flush();
+    expect(panel.html()).not.toContain('data-command="openFullReport"');
+  }, 120000);
 });

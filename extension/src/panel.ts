@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { ReviewIssue } from '../../src/types';
 import { RetryEvent } from '../../src/llm-client';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx, type FailoverSleepView, type BillingWallView } from './reportHtml';
+import { buildEmptyReportHtml, buildReportHtml, ReportStats, AutoResumeIndicator, type ScanErrorInfo, type WebviewAssets, type PanelUx, type FailoverSleepView, type BillingWallView, type RegionWallView } from './reportHtml';
 import { computeFingerprint, getSuppressed, isSuppressed, suppress, unsuppress } from './findingsStore';
 import { isContactUrlAllowed } from './reportIssue';
 import { DEFAULT_UI_PREFS, normalizeUiPrefs, type UiPrefs } from './uiPrefs';
@@ -107,6 +107,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
   private failoverSleep?: FailoverSleepView;
   // МИКРО-БАТЧ 28.9: баннер «стена тарифа» — список диагнозов, без циклов сна.
   private billingWall?: BillingWallView;
+  private regionWall?: RegionWallView;
   // ЗАДАЧА 3 (28.11): вкладка полного отчёта в области редактора (reportHtml.ts).
   private reportTab?: vscode.WebviewPanel;
   private workspaceState?: vscode.Memento;
@@ -256,6 +257,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('codescout.dismissOnboarding');
       } else if (message.command === 'openReport') {
         void vscode.commands.executeCommand('codescout.openAuditReport');
+      } else if (message.command === 'openFullReport') {
+        void vscode.commands.executeCommand('codescout.openFullReport');
       } else if (message.command === 'runAgain') {
         void vscode.commands.executeCommand('codescout.scanFull');
       } else if (message.command === 'reportIssue') {
@@ -422,6 +425,11 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  setRegionWall(view: RegionWallView | undefined): void {
+    this.regionWall = view;
+    this.render();
+  }
+
   clearProjectContext(): void {
     this.issues = [];
     this.stats = { files: 0, seconds: 0, critical: 0, medium: 0, low: 0 };
@@ -438,6 +446,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
     this.auditDurations = [];
     this.failoverSleep = undefined;
     this.billingWall = undefined;
+    this.regionWall = undefined;
     this.firstAuditDone = false;
     this.welcomeBanner = false;
     this.errorInfo = undefined;
@@ -490,6 +499,7 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       this.autoResumeView = undefined;
       this.failoverSleep = undefined;
       this.billingWall = undefined;
+      this.regionWall = undefined;
       this.progressInfo = undefined;
       this.auditSummary = undefined;
       this.errorInfo = undefined;
@@ -627,8 +637,8 @@ export class CodeScoutPanel implements vscode.WebviewViewProvider {
       summary: !this.scanning && this.auditSummary ? { ...this.auditSummary } : undefined
     };
     return this.hasRun || this.scanning
-      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall)
-      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall);
+      ? buildReportHtml(this.issues, this.stats, this.scanning, !this.hasRun, this.statusMessage, this.statusKind, this.keyMask, this.keyConfigured, this.provider, this.model, this.testMode, this.progressMessage, welcomeBanner, this.welcomeReason, this.findingsDiff, this.customFocus, this.auditResume, this.autoResumeView, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, this.diagnosticDetails, this.errorInfo, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall)
+      : buildEmptyReportHtml(this.keyMask, this.keyConfigured, this.provider, this.model, welcomeBanner, this.welcomeReason, this.auditResume, this.autoResumeEnabled, this.autoResumeMaxAttempts, this.autoResumeMaxMinutes, assets, nonce, this.uiPrefs, this.language, ux, suppressedEntries, this.failoverSleep, this.billingWall, this.regionWall);
   }
 
   // ЗАДАЧА 3 (28.11): «Открыть отчёт» из карточки «Аудит завершён». ROOT CAUSE
