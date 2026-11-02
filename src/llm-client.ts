@@ -121,7 +121,7 @@ export function isRetryableError(error: unknown): boolean {
   if (error instanceof ProviderHttpError) {
     return error.status === 502 || error.status === 503 || error.status === 504;
   }
-  if (isAbortError(error)) return true;
+  if (isAbortError(error)) return false;
   const raw = error instanceof Error ? error.message : String(error);
   return /ECONNRESET|ECONNREFUSED|ECONNABORTED|ENOTFOUND|ENETDOWN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|network|no such host|Could not connect/i.test(raw);
 }
@@ -369,10 +369,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
         if (timedOut && !this.signal?.aborted) {
           retryableError = new RequestTimeoutError(timeoutMs);
         } else if (isAbortError(error)) {
-          // Пользовательский abort (Cancel) — не ретраим
-          if (this.signal?.aborted) throw error;
-          // AbortError от fetcher (сетевой таймаут/обрыв) — ретраим
-          retryableError = new RequestTimeoutError(timeoutMs);
+          // Отмена как пользователя, так и самого fetcher не должна запускать
+          // повтор. Таймаут дедлайна выше отдельно становится RequestTimeoutError.
+          throw error;
         } else if (isRetryableError(error)) {
           retryableError = error instanceof Error ? error : new Error(String(error));
         }

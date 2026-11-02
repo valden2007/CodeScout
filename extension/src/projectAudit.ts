@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, mkdirSync, renameSync, realpathSync } from 'node:fs';
+import { dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as https from 'node:https';
 import * as http from 'node:http';
@@ -619,16 +619,18 @@ export function isIgnoredAuditPath(path: string, patterns: string[] = []): boole
   if (path.split(/[/\\\\]/).some((part) => IGNORED_DIRS.has(part) || part.startsWith('.'))) return true;
   const normalized = path.replaceAll('\\', '/');
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
-  for (const pattern of patterns) {
+  for (const rawPattern of patterns) {
+    const anchored = rawPattern.startsWith('/');
+    const pattern = rawPattern.replace(/^\/+/, '');
     if (pattern.endsWith('/')) {
       const dir = pattern.slice(0, -1);
-      if (dir.includes('/')) {
+      if (anchored || dir.includes('/')) {
         const joined = segments.join('/');
         if (joined === dir || joined.startsWith(dir + '/')) return true;
       } else if (segments.includes(dir)) return true;
       continue;
     }
-    if (pattern.includes('/')) {
+    if (anchored || pattern.includes('/')) {
       if (globToRegExp(pattern).test(segments.join('/'))) return true;
       continue;
     }
@@ -1436,13 +1438,35 @@ export function clearAuditResults(workspaceRoot: string): void {
   }
 }
 
+function realPathWithMissingTail(path: string): string {
+  let current = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      const real = realpathSync(current);
+      return missing.length ? resolve(real, ...missing) : real;
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) throw new Error(`Не удалось разрешить путь аудита: ${path}`);
+      missing.unshift(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
+}
+
 export function resolveAuditFile(workspaceRoot: string, filename: string): string {
-  const absolute = resolve(workspaceRoot, filename);
-  const relativePath = relative(workspaceRoot, absolute);
-  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+  const realRoot = realpathSync(resolve(workspaceRoot));
+  const absolute = resolve(realRoot, filename);
+  const lexicalRelative = relative(realRoot, absolute);
+  if (!lexicalRelative || lexicalRelative === '..' || lexicalRelative.startsWith(`..${sep}`) || isAbsolute(lexicalRelative)) {
     throw new Error(`Файл вне папки аудита: ${filename}`);
   }
-  return absolute;
+  const realCandidate = realPathWithMissingTail(absolute);
+  const realRelative = relative(realRoot, realCandidate);
+  if (!realRelative || realRelative === '..' || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {
+    throw new Error(`Файл вне папки аудита: ${filename}`);
+  }
+  return realCandidate;
 }
 
 export function fileLineCount(workspaceRoot: string, filename: string): number {

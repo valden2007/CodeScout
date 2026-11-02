@@ -221,13 +221,25 @@ async function validateDefaultModel(context: vscode.ExtensionContext, selection:
 
 const TRUSTED_BASE_URLS_KEY = 'codescout.trustedBaseUrls';
 
-function readBaseUrlInfo(config: vscode.WorkspaceConfiguration): { baseUrl: string; fromWorkspace: boolean } {
+export function readBaseUrlInfo(config: vscode.WorkspaceConfiguration): { baseUrl: string; fromWorkspace: boolean } {
   const envBaseUrl = process.env.CODESCOUT_BASE_URL?.trim() || '';
   const inspected = config.inspect<string>('baseUrl');
   const workspaceValue = typeof inspected?.workspaceValue === 'string' ? inspected.workspaceValue.trim() : '';
+  const workspaceFolderValue = typeof inspected?.workspaceFolderValue === 'string' ? inspected.workspaceFolderValue.trim() : '';
   const effective = config.get<string>('baseUrl')?.trim() || '';
-  const fromWorkspace = Boolean(workspaceValue && effective === workspaceValue);
+  const fromWorkspace = Boolean((workspaceValue && effective === workspaceValue) || (workspaceFolderValue && effective === workspaceFolderValue));
   return { baseUrl: effective || envBaseUrl, fromWorkspace };
+}
+
+export function resolveOnboardingSelection(providerName: ProviderName, key: string): { provider: ProviderName; model: string } {
+  const auto = detectProvider(key);
+  return providerName !== 'custom' && auto && !auto.ambiguous
+    ? auto
+    : { provider: providerName, model: defaultModel(providerName) };
+}
+
+export function combineReviewSignals(internalSignal: AbortSignal, externalSignal?: AbortSignal): AbortSignal {
+  return externalSignal ? AbortSignal.any([externalSignal, internalSignal]) : internalSignal;
 }
 
 async function confirmWorkspaceBaseUrl(context: vscode.ExtensionContext, baseUrl: string): Promise<boolean> {
@@ -1525,6 +1537,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
   const controller = new AbortController();
   activeAbortController?.abort();
   activeAbortController = controller;
+  const reviewSignal = combineReviewSignals(controller.signal, signal);
   output.clear();
   output.show(true);
   output.appendLine(lastCommit ? 'CodeScout: reviewing last commit...' : 'CodeScout: reviewing uncommitted changes...');
@@ -1533,7 +1546,7 @@ async function runReview(context: vscode.ExtensionContext, lastCommit: boolean, 
     const workspaceRoot = getWorkspaceRoot();
     const projectPrompt = workspaceRoot ? buildProjectSystemPrompt(SYSTEM_PROMPT, workspaceRoot) : { prompt: SYSTEM_PROMPT, rulesLoaded: false, contextLoaded: false };
     output.appendLine(projectPrompt.rulesLoaded ? '📚 Загружены правила проекта' : 'ℹ️ Правил нет — дефолт');
-    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), controller.signal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
+    const result = await reviewWorkspace(context, lastCommit, (event, model) => panel.setRetry(event, model), (index, total, filename, elapsedMs) => { panel.setProgress(index, total, filename, t('progress.file.check', currentReportLanguage()), elapsedMs); output.appendLine(`🔎 Проверяю: файл ${index}/${total}: ${filename} · ⏱ ${Math.floor(elapsedMs / 1000)}с`); }, (elapsedMs) => panel.setModelThinking(elapsedMs), reviewSignal, withReportLanguage(projectPrompt.prompt, currentReportLanguage()), effectiveFileCooldownSeconds(1), (seconds) => output.appendLine(`⏸ cooldown ${seconds}с перед следующим файлом`), (filename, error) => output.appendLine(skipReasonLine(filename, formatSkipReason(error))));
     if (result.skippedFiles > 0) {
       output.appendLine(`⚠️ Пропущено файлов: ${result.skippedFiles} (ошибки или rate-limit) — см. строки «Пропущен файл» выше.`);
     }
@@ -2719,8 +2732,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const trimmed = key.trim();
       // Батч 21, п.2: в мастере пользователь УЖЕ выбрал платформу списком —
       // неоднозначное sk- не перебивает этот выбор (без отдельного меню).
-      const auto = detectProvider(trimmed);
-      const det = auto && !auto.ambiguous ? auto : { provider: providerName, model: defaultModel(providerName) };
+      const det = resolveOnboardingSelection(providerName, trimmed);
       let baseUrl = '';
       if (providerName === 'custom') {
         baseUrl = (await vscode.window.showInputBox({ prompt: t('wizard.urlPrompt', lang), value: 'http://localhost:11434/v1', ignoreFocusOut: true }))?.trim() || '';

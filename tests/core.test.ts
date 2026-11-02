@@ -438,26 +438,18 @@ describe('Groq retry handling', () => {
     await expect(provider.review('system', 'user')).rejects.toThrow('Модель вернула некорректный формат: пустой ответ');
   });
 
-  it('retries on timeout (AbortError from deadline) with exponential backoff', async () => {
-    const successResponse = success();
+  it('does not retry a fetcher AbortError', async () => {
     const events: RetryEvent[] = [];
-    // Simulate timeout by throwing AbortError on first 3 calls
     let callCount = 0;
     const provider = new GroqProvider('key', 'model', async () => {
       callCount++;
-      if (callCount <= 3) {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        throw err;
-      }
-      return successResponse;
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
     }, async () => undefined, (event) => events.push(event));
-    await expect(provider.review('system', 'user')).resolves.toContain('issues');
-    expect(events).toEqual([
-      { attempt: 1, maxRetries: 3, waitSeconds: 30 },
-      { attempt: 2, maxRetries: 3, waitSeconds: 60 },
-      { attempt: 3, maxRetries: 3, waitSeconds: 120 }
-    ]);
+    await expect(provider.review('system', 'user')).rejects.toMatchObject({ name: 'AbortError' });
+    expect(callCount).toBe(1);
+    expect(events).toEqual([]);
   });
 
   it('retries on network error (ECONNRESET) with exponential backoff', async () => {

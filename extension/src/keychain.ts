@@ -306,8 +306,8 @@ export async function removeKey(secrets: SecretsLike, profileId: string, keyId: 
   if (!key) return { ok: false, reason: 'unknown' };
   if (target.keys.length <= 1) return { ok: false, reason: 'lastKey' };
   const next = profiles.map((profile) => profile.id !== profileId ? profile : { ...profile, keys: profile.keys.filter((candidate) => candidate.id !== keyId) });
-  await secrets.delete(key.secretId);
   await writeProfiles(next);
+  await secrets.delete(key.secretId);
   deleteRuntimeForKey(profileId, keyId);
   return { ok: true, profile: next.find((profile) => profile.id === profileId) };
 }
@@ -559,6 +559,7 @@ export async function migrateProfilesToMultiKey(context: vscode.ExtensionContext
   }
   let changed = false;
   const next: KeychainProfile[] = [];
+  const legacySecretsToDelete: string[] = [];
   for (const item of normalizeProfiles(raw)) {
     const rawEntry = raw.find((candidate) => candidate && typeof candidate === 'object' && (candidate as { id?: unknown }).id === item.id) as Record<string, unknown> | undefined;
     const hadKeys = Array.isArray(rawEntry?.keys) && (rawEntry?.keys as unknown[]).length > 0;
@@ -567,12 +568,13 @@ export async function migrateProfilesToMultiKey(context: vscode.ExtensionContext
     const oldSecret = (await context.secrets.get(secretKeyForProfile(item.id)))?.trim();
     if (oldSecret) {
       await storeKeySecret(context.secrets, key, oldSecret);
-      await context.secrets.delete(secretKeyForProfile(item.id));
+      legacySecretsToDelete.push(secretKeyForProfile(item.id));
     }
     next.push({ ...item, keys: [key] });
     changed = true;
   }
   await writeProfiles(next);
+  for (const secretId of legacySecretsToDelete) await context.secrets.delete(secretId);
   await context.secrets.store(KEYCHAIN_KEYS_MIGRATED_FLAG, 'true');
   return changed;
 }
