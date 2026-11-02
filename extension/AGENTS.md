@@ -974,5 +974,18 @@ pre-design now.
      динамики второго аудита попадает во вкладку). Заголовок вкладки —
      i18n-ключ title.report (ru+en). Тесты: tests/batch28-11-report-button.test.ts (3)
      + регресс globe; в стуб добавлены учёт reveal/show и Output.show.
+     d) region-категория (задача 4, не попала в 28.10): новая категория 'region'
+     в error-classifier — тексты «Global regions» / «Privacy settings» /
+     «region not available» / «workspace's Privacy» (+ RU варианты). Проверка
+     ДО контекст-стены/биллинга/статусных text-веток и unknown; ProviderHttpError
+     403/404 с region-текстом — тоже region (настройка аккаунта, а не «права»/
+     «нет модели»). err.title/msg/hint.region в оба словарь: подсказка «это
+     настройка приватности/региона провайдера, не квота — смените модель/
+     провайдера или включите Global в консоли аккаунта». Breaker считает region
+     как unknown-подобную (стоп на skipBreakerLimit, ротации/сна нет — category
+     не quota/billing), баннер и Output дают точную подсказку. Тесты:
+     tests/batch28-11-region.test.ts (7: юнит+e2e мок 403 «Global regions» →
+     стоп на 4-м скипе, баннер с hint.region) + регресс 28.9/28.10 зелёные.
+     Tests: 764.
  Backlog v2.x (GitLab CI, compliance mode) — DO NOT start, scope freeze.
  RAG v1.3b is done — the old "RAG" backlog mention is superseded.

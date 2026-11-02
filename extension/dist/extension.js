@@ -1177,6 +1177,9 @@ var ru_default = {
   "err.title.context-wall": "\u0417\u0430\u043F\u0440\u043E\u0441 \u0431\u043E\u043B\u044C\u0448\u0435 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u043E\u0433\u043E \u043E\u043A\u043D\u0430 \u043C\u043E\u0434\u0435\u043B\u0438",
   "err.msg.context-wall": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441 \u0438\u0437-\u0437\u0430 \u0440\u0430\u0437\u043C\u0435\u0440\u0430 (HTTP 400/413): \u0442\u0435\u043A\u0441\u0442 \u043D\u0435 \u0432\u043B\u0435\u0437\u0430\u0435\u0442 \u0432 \u043E\u043A\u043D\u043E \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430 \u043C\u043E\u0434\u0435\u043B\u0438.",
   "err.hint.context-wall": "\u041C\u043E\u0434\u0435\u043B\u044C \u0441 \u0443\u0437\u043A\u0438\u043C \u043E\u043A\u043D\u043E\u043C \u2014 \u0432\u044B\u0431\u0435\u0440\u0438 \u0448\u0438\u0440\u0435; \u0447\u0430\u043D\u043A \u0443\u0436\u0435 \u0434\u0435\u043B\u0451\u043D \u0432\u0434\u0432\u043E\u0435 \u0434\u043E \u043F\u0440\u0435\u0434\u0435\u043B\u0430 (\u0438\u043B\u0438 \u0441\u043D\u0438\u0437\u044C chunkLines/maxRequestKTokens).",
+  "err.title.region": "\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0432 \u044D\u0442\u043E\u043C \u0440\u0435\u0433\u0438\u043E\u043D\u0435",
+  "err.msg.region": "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u043B \u0437\u0430\u043F\u0440\u043E\u0441 \u0438\u0437-\u0437\u0430 \u0440\u0435\u0433\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E\u0439/\u043F\u0440\u0438\u0432\u0430\u0442\u043D\u043E\u0439 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 (Global regions / Privacy settings) \u2014 \u043D\u0435 \u043A\u0432\u043E\u0442\u0430 \u0438 \u043D\u0435 \u0442\u0430\u0440\u0438\u0444.",
+  "err.hint.region": "\u042D\u0442\u043E \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u043E\u0441\u0442\u0438/\u0440\u0435\u0433\u0438\u043E\u043D\u0430 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430, \u043D\u0435 \u043A\u0432\u043E\u0442\u0430 \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C/\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u0438\u043B\u0438 \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u0435 Global \u0432 \u043A\u043E\u043D\u0441\u043E\u043B\u0438 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430.",
   "keychain.badgeBilling": "\u0442\u0430\u0440\u0438\u0444",
   "keychain.bannerBilling": "\u0421\u0442\u0435\u043D\u0430 \u0442\u0430\u0440\u0438\u0444\u0430: \u0436\u0438\u0432\u044B\u0445 \u043A\u043B\u044E\u0447\u0435\u0439 \u043D\u0435\u0442",
   "keychain.billingHint": "\u041C\u043E\u0434\u0435\u043B\u044C/\u0442\u0430\u0440\u0438\u0444 \u043D\u0435 \u043F\u043E\u043A\u0440\u044B\u0442\u044B \u2014 \u0441\u043C\u0435\u043D\u0438\u0442\u0435 \u043C\u043E\u0434\u0435\u043B\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0438\u043B\u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0431\u0430\u043B\u0430\u043D\u0441. \u0421\u043E\u043D \u043D\u0435 \u043F\u043E\u043C\u043E\u0436\u0435\u0442.",
@@ -1673,6 +1676,9 @@ var en_default = {
   "err.title.context-wall": "Request exceeds the model context window",
   "err.msg.context-wall": "The provider rejected the request as too large (HTTP 400/413): the text does not fit into the model context window.",
   "err.hint.context-wall": "Narrow-window model \u2014 pick a wider one; the chunk was already halved to the limit (or lower chunkLines/maxRequestKTokens).",
+  "err.title.region": "Model unavailable in this region",
+  "err.msg.region": "The provider rejected the request due to a region/privacy account setting (Global regions / Privacy settings) \u2014 not a quota or a billing tier.",
+  "err.hint.region": "This is the provider's privacy/region setting, not a quota \u2014 switch the model/provider or enable Global regions in the account console.",
   "keychain.badgeBilling": "tier",
   "keychain.bannerBilling": "Billing wall: no live keys left",
   "keychain.billingHint": "Model/tier not covered \u2014 change the profile model or check the balance. Sleeping will not help.",
@@ -1728,12 +1734,14 @@ function contextWallHit(status, blob) {
   if (status === 400 || status === void 0) return CONTEXT_WALL_TEXT_RE.test(blob);
   return false;
 }
+var REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
 function categorizeError(error) {
   if (error instanceof RateLimitError) {
     if (BILLING_TEXT_RE.test(messageOf(error))) return "billing";
     return QUOTA_RESET_TEXT_RE.test(messageOf(error)) ? "quota" : "rate_limit_exceeded";
   }
   if (error instanceof ProviderHttpError) {
+    if (REGION_TEXT_RE.test(`${error.message} ${error.details}`)) return "region";
     if (error.status === 401) return "auth_invalid_key";
     if (error.status === 403) return "auth_forbidden";
     if (error.status === 402) return "billing";
@@ -1750,6 +1758,7 @@ function categorizeError(error) {
   const raw = messageOf(error);
   if (isTimeoutShape(error, raw)) return "timeout";
   if (isJsonFailure(raw)) return "invalid_json";
+  if (REGION_TEXT_RE.test(raw)) return "region";
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return "auth_invalid_key";
   if (textStatus === 403) return "auth_forbidden";

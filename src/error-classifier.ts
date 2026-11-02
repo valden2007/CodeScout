@@ -21,6 +21,12 @@ export type ErrorCategory =
   // тариф и НЕ лимит: ключ НЕ блокируется, чанк делится пополам (до 3 делений),
   // после предела — скип файла с подсказкой «модель с узким окном».
   | 'context-wall'
+  // МИКРО-БАТЧ 28.11 (задача 4): тексты «Global regions» / «Privacy settings» /
+  // «region not available» / «workspace's Privacy» — модель недоступна из-за
+  // региональной/приватной НАСТРОЙКИ провайдера. Не квота и не тариф: сон и
+  // ротация не помогут, лечится сменой модели/провайдера или включением Global
+  // в консоли аккаунта. Проверяется ДО unknown; breaker считает её как unknown.
+  | 'region'
   | 'model_not_found'
   | 'timeout'
   | 'connection_refused'
@@ -35,7 +41,7 @@ export interface FormattedError {
   rawMessage?: string;
 }
 
-export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'billing', 'context-wall', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
+export const ERROR_CATEGORIES: ErrorCategory[] = ['auth_invalid_key', 'auth_forbidden', 'rate_limit_exceeded', 'quota', 'billing', 'context-wall', 'region', 'model_not_found', 'timeout', 'connection_refused', 'invalid_json', 'unknown'];
 
 const PROBE_TIMEOUT_FALLBACK_SECONDS = 5;
 
@@ -90,12 +96,23 @@ function contextWallHit(status: number | undefined, blob: string): boolean {
   return false;
 }
 
+// МИКРО-БАТЧ 28.11 (задача 4): региональная/приватная стена провайдера.
+// Типичные тексты: «This model is currently unavailable in your region»,
+// «Global regions», «check your workspace's Privacy settings», «region not
+// available». Проверяется ДО контекст-стены, тарифа и unknown-эвристик: в
+// этих текстах бывают слова «not available»/«model», но смысл — настройка
+// аккаунта: ни сон, ни деление чанка не помогут.
+const REGION_TEXT_RE = /global\s+regions?|privacy\s+settings?|workspace(?:'?s)?\s+privacy|regions?\s+(?:is\s+|was\s+)?not\s+available|(?:not\s+available|unavailable|not\s+found)\s+in\s+(?:your|the|this)\s+(?:region|location|geography)|\bregion\b[^\n]{0,40}?(?:disabled|unsupported|blocked|not\s+supported)|недоступ\w*\s+в\s+(?:ваш|этот|текущ)\w*\s+регион|регион\W{0,25}(?:недоступ\w*|запрещ\w*)|настройк\w*\s+(?:конфиденциальност|приватност)/i;
+
 export function categorizeError(error: unknown): ErrorCategory {
   if (error instanceof RateLimitError) {
     if (BILLING_TEXT_RE.test(messageOf(error))) return 'billing';
     return QUOTA_RESET_TEXT_RE.test(messageOf(error)) ? 'quota' : 'rate_limit_exceeded';
   }
   if (error instanceof ProviderHttpError) {
+    // 28.11: региональная стена важнее статуса — 403/404 с текстом про region/
+    // Privacy settings это НЕ «ключ/права/нет такой модели», а настройка аккаунта.
+    if (REGION_TEXT_RE.test(`${error.message} ${error.details}`)) return 'region';
     if (error.status === 401) return 'auth_invalid_key';
     if (error.status === 403) return 'auth_forbidden';
     if (error.status === 402) return 'billing';
@@ -112,6 +129,10 @@ export function categorizeError(error: unknown): ErrorCategory {
   const raw = messageOf(error);
   if (isTimeoutShape(error, raw)) return 'timeout';
   if (isJsonFailure(raw)) return 'invalid_json';
+  // 28.11: «Global regions / Privacy settings / region not available» — ДО
+  // статусных веток и text-эвристик: реальные region-ошибки приходят с
+  // HTTP 403/404, но смысл — настройка аккаунта, а не «ключ/права/нет модели».
+  if (REGION_TEXT_RE.test(raw)) return 'region';
   const textStatus = statusFromText(raw);
   if (textStatus === 401) return 'auth_invalid_key';
   if (textStatus === 403) return 'auth_forbidden';
