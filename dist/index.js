@@ -35241,7 +35241,7 @@ class OpenAICompatibleProvider {
                     // Батч 27: 401/403 — помечаем профиль broken (автопереход запрещён,
                     // ошибка летит наверх как раньше).
                     if (this.failover && error instanceof ProviderHttpError && (error.status === 401 || error.status === 403)) {
-                        await this.failover.onAuthError(error.status);
+                        await this.failover.onAuthError(error.status, `${error.message} ${error.details}`);
                     }
                     // МИКРО-БАТЧ 28.4/28.9: HTTP 402 — СТЕНА ТАРИФА (billing). При
                     // включённом failover спрашиваем keychain: ключ помечается
